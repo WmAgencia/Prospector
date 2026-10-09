@@ -1,0 +1,27 @@
+name: Production access security smoke
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify passwordless private access
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://prospector-operacional-production.up.railway.app
+          PAGE=$(curl --fail --silent --show-error --retry 3 --retry-delay 3 --max-time 20 "$BASE/access")
+          echo "$PAGE" | grep -q "Não é necessário usuário ou senha"
+          REDIRECT=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$BASE/")
+          test "$REDIRECT" = "302"
+          STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$BASE/api/state")
+          test "$STATUS" = "401"
+          HEADERS=$(curl --silent --show-error -D - -o /dev/null "$BASE/api/state")
+          if echo "$HEADERS" | grep -qi "^WWW-Authenticate: Basic"; then
+            echo "Legacy Basic Auth still active"
+            exit 1
+          fi
+          echo "One-click access online; API protected; no Basic Auth."
