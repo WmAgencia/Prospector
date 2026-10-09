@@ -76,7 +76,7 @@ export function handleDecision(leadId,text,isText=true){
   if(!latest||latest.next_step!==exec.next_step)return {decision:'REVIEW',reason:'already_processed'};
   const accepted=outcome.decision==='YES',prefix=accepted?'yes':'no',action=choice[prefix+'_action']||'end';
   const type=choice[prefix+'_type']||'message';
-  const response=String(choice[prefix+'_text']||'').trim();
+  const response=type==='message'?String(choice[prefix+'_text']||'').trim():'';
   const mediaId=choice[prefix+'_media_id']||null;
   const lead=one('SELECT * FROM leads WHERE id=?',leadId);
   if(!lead||!lead.contact_permission||suppressed(lead.phone))throw Error('Lead não autorizado');
@@ -122,7 +122,8 @@ export async function incoming(m) {
  if(result.intent==='OPT_OUT'){
   stopLead(lead.id,result.intent);cancelForOptOut(lead.id);publish();return;
  }
- const routing=handleDecision(lead.id,payload.body,payload.type==='text');
+ const manualChoice=!!one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover;
+ const routing=!manualChoice&&getSetting('automation_enabled',true)?handleDecision(lead.id,payload.body,payload.type==='text'):null;
  if(routing){if(routing.shouldContinue)drive(routing.executionId);publish();return;}
  if(result.intent==='NOT_INTERESTED'){
   stopLead(lead.id,result.intent);cancelForOptOut(lead.id);publish();return;
@@ -158,7 +159,7 @@ export function saveWorkflow(input){
    if(!String(s.context_description||'').trim())throw Error('Descreva a pergunta usada para interpretar a resposta');
    for(const side of ['yes','no']){
     if(!['message','audio'].includes(s[side+'_type']||'message'))throw Error('Resposta deve ser texto ou áudio');
-    if(!['end','continue','request_sample'].includes(s[side+'_action']||'end'))throw Error('Ação inválida na decisão');
+    if(!['end','continue','request_sample'].includes(s[side+'_action']))throw Error('Ação inválida na decisão');
     if(side==='no'&&s.no_action==='request_sample')throw Error('Recusa não pode solicitar site');
     if(s[side+'_action']==='request_sample'&&s.context!=='sample_offer')throw Error('Solicitação de site exige contexto oferta de exemplo');
     if(s[side+'_type']==='audio'){
@@ -191,7 +192,7 @@ export function saveWorkflow(input){
  return workflowId;
 }
 export function setDefaultWorkflow(workflowId){
- if(!one('SELECT id FROM workflows WHERE id=?',workflowId))throw Error('Workflow inválido');
+ if(!one('SELECT id FROM workflows WHERE id=? AND enabled=1',workflowId))throw Error('Workflow inválido');
  tx(()=>{run('UPDATE workflows SET is_default=0');run('UPDATE workflows SET is_default=1 WHERE id=?',workflowId);});
 }
 export function startWorkflow(leadId,selectedAutomationId=null){
