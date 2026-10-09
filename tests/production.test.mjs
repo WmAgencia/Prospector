@@ -23,7 +23,7 @@ test('solicitação, publicação, aprovação e entrega sem duplicar',()=>{
    "assert.equal(explicitSampleRequest('oi tudo bem'),false);",
    "const l=addLead({business:'Empresa de teste',phone:'15999991111',instagram:'exemplo_teste',contact_permission:true}).lead;",
    "const t=getThread(l.id);addMessage({threadId:t.id,direction:'in',body:'me manda um exemplo do site'});",
-   "assert.equal(onReply(l.id,'me manda um exemplo do site',true),'ACCEPTED');",
+   "assert.equal(onReply(l.id,'me manda um exemplo do site',true).status,'REQUESTED');",
    "assert.equal(one('SELECT status FROM production_requests WHERE lead_id=?',l.id).status,'REQUESTED');",
    "assert.equal(one('SELECT manual_takeover FROM threads WHERE id=?',t.id).manual_takeover,1);",
    "assert.equal(all('SELECT * FROM owner_notices').length,1);",
