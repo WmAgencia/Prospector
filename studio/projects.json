@@ -3,6 +3,17 @@
   "updated_at": "2026-10-09",
   "projects": [
     {
+      "slug": "wrs-brasil",
+      "name": "WRS Reformas e Manutenções",
+      "category": "Reformas & Manutenções",
+      "location": "Sorocaba · SP",
+      "description": "Conceito editorial premium para a WRS: serviços, narrativa visual, etapas de projeto e atendimento, com design responsivo.",
+      "status": "PROPOSAL",
+      "cover": "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=80",
+      "created_at": "2026-10-09",
+      "instagram": "https://www.instagram.com/wrs_brasil/"
+    },
+    {
       "slug": "casa-aurea",
       "name": "Casa Áurea",
       "category": "Arquitetura & Interiores",
