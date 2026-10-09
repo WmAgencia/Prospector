@@ -4,6 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {one,all,run,tx,id,now,addLead,stage,getThread,getSetting,setSetting,audit,phone} from './db.mjs';
+import {providerStatus,scoreLead,recordOrigin,discoverProfiles,verifyWebsiteCandidate} from './discovery.mjs';
 import {connection,connectWhatsApp,disconnectWhatsApp,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
@@ -21,15 +22,16 @@ async function body(req,limit=3*1024*1024){
  return Buffer.concat(parts);
 }
 async function json(req){const b=await body(req);return b.length?JSON.parse(b.toString('utf8')):{};}
-const allowedSettings=new Set(['paused','auto_initial','min_minutes','daily_limit','business_start','business_end','automation_enabled','segments','cities']);
+const allowedSettings=new Set(['paused','auto_initial','min_minutes','daily_limit','business_start','business_end','automation_enabled','segments','cities','discovery_sources','discovery_priority','discovery_brazil_wide','score_weights']);
 function snapshot(){
- const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000');
+ const leadOrigins=all('SELECT lead_id,source,verified FROM lead_origins ORDER BY at DESC');
+ const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000').map(l=>{const origins=leadOrigins.filter(o=>o.lead_id===l.id);return {...l,origins:[...new Set(origins.map(o=>o.source))],...scoreLead(l,origins)};});
  const threads=all('SELECT t.*,l.business,l.name,l.phone,l.stage FROM threads t JOIN leads l ON l.id=t.lead_id ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1000');
  const workflows=all('SELECT * FROM workflows ORDER BY is_default DESC,updated_at DESC').map(w=>({...w,steps:JSON.parse(w.steps)}));
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
- const stats={meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:leads.length,contacted:leads.filter(x=>x.stage!=='DISCOVERED').length,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
- return {stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
+ const stats={profiles_analyzed:all('SELECT COUNT(*) as n FROM discoveries').reduce((a,x)=>a+x.n,0),qualified:leads.filter(l=>l.website_status==='NO_WEBSITE'&&l.phone).length,meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:leads.length,contacted:leads.filter(x=>x.stage!=='DISCOVERED').length,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
+ return {providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
 }
 async function upload(req,url,res){
  const kind=url.searchParams.get('kind'),name=String(url.searchParams.get('name')||'mídia').slice(0,100);
@@ -98,12 +100,12 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/connect')return respond(res,200,await connectWhatsApp());
   if(req.method==='POST'&&pathname==='/api/disconnect')return respond(res,200,await disconnectWhatsApp());
   if(req.method==='POST'&&pathname==='/api/leads'){
-   const value=await json(req),result=addLead(value);notify();return respond(res,201,result);
+   const value=await json(req),result=addLead(value);recordOrigin(result.lead.id,'MANUAL',{method:'panel'});notify();return respond(res,201,result);
   }
   if(req.method==='POST'&&pathname==='/api/import'){
    const v=await json(req);if(!Array.isArray(v.leads)||v.leads.length>300)throw Error('Máximo de 300 leads por importação');
    let created=0;const problems=[];
-   for(const l of v.leads){try{if(addLead(l).created)created++;}catch(e){problems.push(e.message);}}
+   for(const l of v.leads){try{const result=addLead(l);recordOrigin(result.lead.id,'MANUAL',{method:'import'});if(result.created)created++;}catch(e){problems.push(e.message);}}
    notify();return respond(res,200,{created,duplicates:v.leads.length-created-problems.length,errors:problems.slice(0,10)});
   }
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/update')){
@@ -130,7 +132,8 @@ async function handler(req,res){
    const meetingId=pathname.split('/')[3];run("UPDATE meetings SET status='CANCELLED' WHERE id=?",meetingId);
    notify();return respond(res,200,{ok:true});
   }
-  if(req.method==='POST'&&pathname==='/api/discover')return respond(res,200,await discovery(await json(req)));
+  if(req.method==='POST'&&pathname==='/api/discover'){const out=await discoverProfiles(await json(req));notify();return respond(res,200,out);}
+  if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/verify-site')){const leadId=pathname.split('/')[3];return respond(res,200,await verifyWebsiteCandidate(leadId));}
   if(req.method==='POST'&&pathname==='/api/workflows'){
    const workflowId=saveWorkflow(await json(req));notify();return respond(res,200,{id:workflowId});
   }

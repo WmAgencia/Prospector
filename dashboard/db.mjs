@@ -17,6 +17,7 @@ export function phone(s){const x=digits(s);if(x.length===10||x.length===11)retur
 export const instagram=s=>String(s||'').trim().replace(/^@/,'').toLowerCase()||null;
 const tables=[
 'CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)',
+'CREATE TABLE IF NOT EXISTS lead_origins(id TEXT PRIMARY KEY,lead_id TEXT NOT NULL REFERENCES leads(id),source TEXT NOT NULL,identity TEXT NOT NULL,verified INTEGER NOT NULL DEFAULT 0,details TEXT NOT NULL,at TEXT NOT NULL,UNIQUE(lead_id,source,identity))',
 'CREATE TABLE IF NOT EXISTS leads(id TEXT PRIMARY KEY,name TEXT,business TEXT NOT NULL,instagram TEXT UNIQUE,phone TEXT UNIQUE,segment TEXT,city TEXT,website TEXT,website_status TEXT NOT NULL DEFAULT "UNCERTAIN",source TEXT,stage TEXT NOT NULL DEFAULT "DISCOVERED",contact_permission INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,last_activity_at TEXT,notes TEXT DEFAULT "")',
 'CREATE TABLE IF NOT EXISTS threads(id TEXT PRIMARY KEY,lead_id TEXT UNIQUE NOT NULL REFERENCES leads(id),jid TEXT UNIQUE,manual_takeover INTEGER NOT NULL DEFAULT 0,unread_count INTEGER NOT NULL DEFAULT 0,last_message_at TEXT,created_at TEXT NOT NULL)',
 'CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL REFERENCES threads(id),provider_id TEXT UNIQUE,direction TEXT NOT NULL,type TEXT NOT NULL,body TEXT DEFAULT "",media_id TEXT,status TEXT NOT NULL,at TEXT NOT NULL)',
@@ -40,7 +41,7 @@ const initialSteps=[{id:'a',type:'message',text:'Olá, {{business_name}}! Tudo b
 if(!one('SELECT id FROM workflows LIMIT 1'))run('INSERT INTO workflows VALUES(?,?,?,?,?,?,?)','default','Abordagem padrão',1,1,JSON.stringify(initialSteps),now(),now());
 export function getSetting(key,fallback=null){const x=one('SELECT value FROM settings WHERE key=?',key);if(!x)return fallback;try{return JSON.parse(x.value);}catch{return fallback;}}
 export function setSetting(key,value){run('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',key,JSON.stringify(value));}
-for(const [key,value] of Object.entries({paused:true,auto_initial:false,min_minutes:5,daily_limit:96,business_start:8,business_end:21,automation_enabled:true,segments:'psicólogo,nutricionista,clínica,estética,advogado,arquiteto',cities:'Sorocaba,Votorantim,Campinas'}))if(!one('SELECT key FROM settings WHERE key=?',key))setSetting(key,value);
+for(const [key,value] of Object.entries({paused:true,auto_initial:false,min_minutes:5,daily_limit:96,business_start:8,business_end:21,automation_enabled:true,segments:'psicólogo,nutricionista,clínica,estética,advogado,arquiteto',cities:'Sorocaba,Votorantim,Campinas',discovery_sources:{web_search:true,meta_ads:false,instagram_search:false,instagram_hashtags:false,instagram_related:false},discovery_priority:'no_website',discovery_brazil_wide:false,score_weights:{noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusiness:2,prioritySegment:2,location:1,businessName:1}}))if(!one('SELECT key FROM settings WHERE key=?',key))setSetting(key,value);
 export function audit(action,lead_id=null,detail={}){run('INSERT INTO audit VALUES(?,?,?,?,?)',id(),now(),action,lead_id,JSON.stringify(detail));}
 export function addLead(item){
  const p=phone(item.phone||item.whatsapp), ig=instagram(item.instagram||item.instagram_username);
