@@ -10,7 +10,7 @@ import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} 
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
 import {dailyReport,reportText,targetNumber} from './notifications.mjs';
 import {syncPublishedSamples} from './studio-sync.mjs';
-import {connection,connectWhatsApp,disconnectWhatsApp,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
+import {connection,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
@@ -256,5 +256,5 @@ const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
 const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)),2500);
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
-server.listen(port,host,()=>console.log('Prospector: http://'+host+':'+port));
+server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));});
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
