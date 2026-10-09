@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospector • Consecom</title><link rel="stylesheet" href="/style.css">
+</head><body>
+<div id="shell">
+ <aside class="sidebar">
+  <div class="brand"><span class="brand-mark">P</span><span><strong>prospector</strong><small>CONSECOM</small></span></div>
+  <div class="navlabel">OPERAÇÃO</div>
+  <nav id="navigation">
+   <button data-route="overview" class="navitem"><span>◫</span> Visão geral</button>
+   <button data-route="conversations" class="navitem"><span>◉</span> Conversas <span id="nav-unread"></span></button>
+   <button data-route="prospects" class="navitem"><span>▦</span> Prospecção</button>
+   <button data-route="workflows" class="navitem"><span>⌁</span> Workflows</button>
+   <button data-route="discovery" class="navitem"><span>⌕</span> Descoberta</button>
+  </nav>
+  <div class="navlabel">SISTEMA</div>
+  <nav><button data-route="connections" class="navitem"><span>☷</span> Conexões</button><button data-route="settings" class="navitem"><span>⚙</span> Configurações</button></nav>
+  <div class="sidefoot"><div class="status-dot" id="dot"></div><div><strong id="service-status">Conferindo estado</strong><small>Motor sem inteligência artificial</small></div></div>
+ </aside>
+ <main class="main">
+  <header class="topbar"><div id="heading"></div><div class="top-actions"><span class="subtle" id="sync-status"></span><button id="pause-btn" class="btn secondary">Pausar</button><span class="userchip">C</span></div></header>
+  <div id="screen" class="screen"><div class="loader">Carregando painel…</div></div>
+ </main>
+</div>
+<div id="toast" role="status"></div>
+<div id="modal" class="modal-backdrop hidden" role="dialog" aria-modal="true"></div>
+<script type="module" src="/app.js"></script>
+</body></html>

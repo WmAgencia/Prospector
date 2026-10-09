@@ -1,15 +1,17 @@
 {
   "name": "prospector",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Painel e motor determinístico de prospecção Consecom",
   "type": "commonjs",
+  "scripts": {
+    "start": "node dashboard/server.mjs",
+    "dev": "node --watch dashboard/server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "qrcode": "^1.5.4",

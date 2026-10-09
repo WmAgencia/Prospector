@@ -1,36 +1,67 @@
-# Prospector Consecom
+# Prospector — Consecom
 
-Código inicial do Prospector: WhatsApp com Baileys, filas em JSONL, cadência, scripts de prospecção e cenários de objeção.
+Painel operacional de prospecção com **motor determinístico (sem LLM no runtime)**, WhatsApp via Baileys, biblioteca de mídias e editor de workflows.
 
-**Status: desenvolvimento; não habilitar envios reais sem corrigir e validar os controles de segurança.**
+## Como iniciar no Windows
 
-## Arquivos nesta versão
+1. Instale o **Node.js 22.13+** e execute `npm ci` dentro da pasta do repositório.
+2. No PowerShell, execute `.\start-dashboard.ps1` (ou `npm start`).
+3. Abra **http://127.0.0.1:3030**.
+4. Acesse **Conexões** → **Conectar WhatsApp** → leia o QR pelo WhatsApp do número comercial.
+5. Em **Workflows**, configure o fluxo padrão; em **Prospecção**, cadastre ou importe leads autorizados.
+6. Inicie um workflow na ficha do lead. Configuração inicial: **pausado**; só habilite envio depois de conferir as regras e a sessão.
 
-- `bot.mjs`: conexão WhatsApp, fila, mensagens recebidas e áudio.
-- `ap-proach.mjs`: preparação de abordagens.
-- `add-prospect.mjs`, `dedup-queue.mjs`: importação e deduplicação simples.
-- `prospect-finder.mjs`, `busca-em-massa.mjs`: geração de consultas de prospecção (não realizam busca completa no Instagram).
-- `send.mjs`: script de teste.
-- `start-bot.ps1`: inicializador no Windows.
-- `simulacao-objeções.md`: cenários de atendimento.
-- `package.json` e `package-lock.json`: dependências.
+O servidor escuta **somente localhost**, não é uma aplicação exposta à internet. O GitHub hospeda o **código**, não o bot em execução. Deixe o PC ligado ou configure um servidor persistente apropriado.
 
-## Atenção à integridade da cópia
+### Funcionalidades implementadas no código
 
-Este repositório reúne apenas os **arquivos que foram anexados à conversa**. Não é uma cópia integral de `D:\Prospector`. A pasta `engine/` (referenciada pelo `bot.mjs`), a pasta `scripts/` e outros arquivos locais não foram enviados e precisarão ser adicionados posteriormente.
+- Sidebar: Visão geral, Conversas, Prospecção (Kanban), Workflows, Descoberta, Conexões e Configurações.
+- Baileys no mesmo processo do painel, QR Code e histórico de conversas recebidas enquanto conectado.
+- Banco local SQLite (em `data/prospector.sqlite`, excluído do Git).
+- Upload de vídeos MP4 de até 60 segundos com validação server-side pelo **FFmpeg/ffprobe**; áudios e imagens.
+- Editor de blocos: mensagem com variáveis, esperar resposta, esperar tempo, vídeo, áudio, imagem e fim.
+- Versões de workflows congeladas quando o lead inicia; etapas e delays persistidos.
+- Fila com trava de abordagem inicial por lead e telefone, sem reenviar trabalhos cujo resultado de entrega é incerto.
+- Classificador conservador para opt-out, desinteresse, intenção comercial, perguntas e dúvidas.
+- Takeover humano e revisão de respostas incertas.
+- Pesquisa pública por Instagram via **Brave Search API**, somente se houver `BRAVE_SEARCH_API_KEY`. A descoberta não prova que a empresa não tenha site: novos resultados começam como `UNCERTAIN`.
 
-## Segurança e privacidade
+### Segurança operacional
 
-Os dados de contatos, conversas, sessões, credenciais, QR codes e mídias **não são versionados**. Mantenha `data/`, `wa-session/`, `audio/`, `logs/` e `.env` fora do Git. Este repositório foi criado como público pelo proprietário.
+- **Nunca execute simultaneamente** `bot.mjs` e `dashboard/server.mjs` usando a mesma sessão WhatsApp.
+- O script `start-bot.ps1` agora direciona para o painel. O bot legado permanece para análise, mas não é o entrypoint recomendado.
+- Os arquivos `data/`, `audio/`, `logs/`, `wa-session/`, `.env*`, tokens e contatos não são versionados.
+- **O envio de novas abordagens é pausado por padrão** e requer que o contato esteja marcado como autorizado.
+- A interface de descoberta por API usa pesquisa pública e não coleta automaticamente números de telefone de perfis protegidos.
+- Se a rede falhar durante o envio, o job fica `UNKNOWN`; nunca é repetido automaticamente.
+- O mecanismo de bloqueio de primeira abordagem impede novos disparos, mesmo em caso de reinicialização.
+- Classificações ambíguas são transferidas para acompanhamento humano.
 
-**O modo `LISTEN_ONLY` no código recebido não é estritamente somente leitura**, pois a `outbox` ainda é processada. O launcher também ativa `AUTO_AUDIO=1`. Revise ambos antes de iniciar qualquer automação.
+### Limitações e dependências externas
 
-## Instalação
+- É necessário escanear um QR Code real para usar a conta WhatsApp. O sistema não pode autenticar em seu lugar.
+- **FFmpeg** com `ffprobe` disponível no PATH é necessário para upload de vídeo.
+- Para pesquisa automática configure no terminal: `$env:BRAVE_SEARCH_API_KEY='sua-chave'` antes de executar `npm start`. A chave não deve ir para o GitHub.
+- A Biblioteca de Anúncios do Meta e buscas internas irrestritas do Instagram **não são implementadas**, pois exigem acesso permitido e validação de API.
+- O painel não oferece integração de calendário nem reconhecimento de voz; novas respostas de áudio ficam para atendimento humano.
+- A pasta `engine/` legada e os dados locais não foram anexados à conversa e não estão aqui; o painel usa seu próprio classificador.
+- **Não há garantia de entrega ou de segurança de contas** com bibliotecas não oficiais do WhatsApp.
 
-Requer Node.js. Para instalar dependências:
+### Desenvolvimento e testes
 
 ```powershell
 npm ci
+npm test
+npm start
 ```
 
-Não execute disparos reais antes de verificar idempotência, opt-out, segurança do áudio e atendimento às regras da plataforma.
+Acesse `http://127.0.0.1:3030/api/state` para confirmar que a API respondeu JSON. Testes de integração com WhatsApp devem ser feitos no seu computador, com conta autorizada e sem disparos de prospecção reais durante a validação.
+
+## Estrutura
+
+- `dashboard/db.mjs` — SQLite + histórico/deduplicação.
+- `dashboard/classifier.mjs` — classificação determinística.
+- `dashboard/runtime.mjs` — Baileys + workflow engine.
+- `dashboard/server.mjs` — servidor HTTP, API e pesquisa pública.
+- `dashboard/public/` — SPA responsiva, sem frontend build.
+- `tests/` — testes automatizados de classificação.
