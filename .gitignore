@@ -1,0 +1,31 @@
+# Dependencias e temporarios
+node_modules/
+*.log
+*.tmp
+
+# Dados operacionais e contatos
+/data/
+/novos-prospects.jsonl
+
+# WhatsApp, midia e logs
+/wa-session/
+/audio/
+/logs/
+/qr.png
+/qr-*.png
+
+# Credenciais e configuracoes locais
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.sqlite
+*.sqlite3
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
