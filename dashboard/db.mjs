@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-const dir=path.resolve('data');
+const dir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data');
 fs.mkdirSync(dir,{recursive:true});
 export const db=new DatabaseSync(path.join(dir,'prospector.sqlite'));
 db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');

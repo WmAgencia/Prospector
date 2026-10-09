@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -13,7 +14,39 @@ import {connection,connectWhatsApp,disconnectWhatsApp,startWorkflow,drive,manual
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
-const mediaDir=path.resolve('data','media');fs.mkdirSync(mediaDir,{recursive:true});
+const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
+
+const envIsProd=process.env.NODE_ENV==='production'||!!process.env.RAILWAY_ENVIRONMENT;
+if(envIsProd&&(!process.env.ADMIN_USERNAME||!process.env.ADMIN_PASSWORD||process.env.ADMIN_PASSWORD.length<20)){
+ throw new Error('Configuração insegura: ADMIN_USERNAME e ADMIN_PASSWORD com senha mínima de 20 caracteres são obrigatórios');
+}
+function protectedAccess(req,res){
+ const user=process.env.ADMIN_USERNAME,pass=process.env.ADMIN_PASSWORD;
+ if(!user||!pass)return !envIsProd;
+ const h=String(req.headers.authorization||'');
+ let supplied='';
+ try{if(h.startsWith('Basic '))supplied=Buffer.from(h.slice(6),'base64').toString('utf8');}catch{}
+ const left=Buffer.from(supplied,'utf8'),right=Buffer.from(user+':'+pass,'utf8');
+ const ok=left.length===right.length&&crypto.timingSafeEqual(left,right);
+ if(!ok){res.writeHead(401,{'WWW-Authenticate':'Basic realm="Consecom Prospector", charset="UTF-8"','Cache-Control':'no-store','Content-Type':'text/plain; charset=utf-8'});res.end('Acesso restrito: utilize usuário e senha do Prospector.');return false;}
+ return true;
+}
+function securityHeaders(res){
+ res.setHeader('X-Content-Type-Options','nosniff');
+ res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
+ res.setHeader('X-Frame-Options','DENY');
+ res.setHeader('Cross-Origin-Resource-Policy','same-origin');
+ res.setHeader('Cache-Control','no-store');
+}
+function sameOriginWrite(req,res){
+ if(!['POST','PUT','PATCH','DELETE'].includes(req.method))return true;
+ const origin=String(req.headers.origin||'');if(!origin)return true;
+ const host=String(req.headers['x-forwarded-host']||req.headers.host||'');
+ const protocol=String(req.headers['x-forwarded-proto']||'https').split(',')[0].trim();
+ if(origin===protocol+'://'+host)return true;
+ res.writeHead(403,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({error:'Origem não autorizada'}));return false;
+}
+
 const clients=new Set();
 function notify(){for(const res of [...clients]){try{res.write('event: update\ndata: {}\n\n');}catch{clients.delete(res);}}}
 setNotifier(notify);
@@ -90,7 +123,11 @@ async function discovery(payload){
 }
 async function handler(req,res){
  try{
+  securityHeaders(res);
   const url=new URL(req.url,'http://localhost');
+  if(url.pathname==='/health'&&req.method==='GET')return respond(res,200,{status:'ok'});
+  if(!protectedAccess(req,res))return;
+  if(!sameOriginWrite(req,res))return;
   const pathname=decodeURIComponent(url.pathname);
   if(pathname==='/api/events'){
    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
@@ -215,9 +252,9 @@ async function handler(req,res){
   res.writeHead(200,{'Content-Type':web[ext]||'text/plain','Cache-Control':'no-cache'});fs.createReadStream(f).pipe(res);
  }catch(e){console.error('[API]',e?.message);error(res,e);}
 }
-const host='127.0.0.1',port=Number(process.env.PORT||3030);
+const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
 const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)),2500);
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>console.log('Prospector: http://'+host+':'+port));
-process.on('SIGINT',()=>{clearInterval(interval);clearInterval(syncInterval);server.close();process.exit(0);});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});

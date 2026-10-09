@@ -1,0 +1,12 @@
+node_modules
+data
+wa-session
+audio
+logs
+.env
+.env.*
+*.sqlite
+*.sqlite-*
+*.db
+*.log
+.git

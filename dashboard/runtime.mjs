@@ -22,7 +22,7 @@ export async function connectWhatsApp(){
  try{
   const B=await import('@whiskeysockets/baileys');
   const Q=await import('qrcode');
-  const dir=path.resolve('wa-session');fs.mkdirSync(dir,{recursive:true});
+  const dir=path.resolve(process.env.PROSPECTOR_SESSION_DIR||path.join(process.env.PROSPECTOR_DATA_DIR||'data','wa-session'));fs.mkdirSync(dir,{recursive:true});
   const {state,saveCreds}=await B.useMultiFileAuthState(dir);
   const {version}=await B.fetchLatestBaileysVersion();
   const socket=B.default({version,auth:state,printQRInTerminal:false,
@@ -276,7 +276,7 @@ async function send(job,lead){
  let payload={text:job.text};
  if(job.type!=='message'){
   const media=one('SELECT * FROM media WHERE id=?',job.media_id);if(!media)throw Error('Mídia inexistente');
-  const buf=fs.readFileSync(path.join('data','media',media.filename));
+  const buf=fs.readFileSync(path.join(process.env.PROSPECTOR_DATA_DIR||'data','media',media.filename));
   if(job.type==='video')payload={video:buf,mimetype:media.mime};
   else if(job.type==='audio')payload={audio:buf,mimetype:media.mime,ptt:/opus|ogg/.test(media.mime)};
   else if(job.type==='image')payload={image:buf,mimetype:media.mime};
