@@ -24,6 +24,7 @@ jobs:
           node --check dashboard/server.mjs
           node --check dashboard/public/app.js
           node --check dashboard/import-legacy.mjs
+          node --check preview/server.mjs
       - name: Start local API and verify JSON
         run: |
           node dashboard/server.mjs >/tmp/prospector.log 2>&1 &

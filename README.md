@@ -75,3 +75,9 @@ Acesse `http://127.0.0.1:3030/api/state` para confirmar que a API respondeu JSON
 - `dashboard/server.mjs` — servidor HTTP, API e pesquisa pública.
 - `dashboard/public/` — SPA responsiva, sem frontend build.
 - `tests/` — testes automatizados de classificação.
+
+## Prévia visual sem WhatsApp
+
+Execute `npm run preview:ui` e abra **http://127.0.0.1:4173**. Esta página usa dados fictícios no navegador e não realiza envio, pesquisa nem autenticação real. É ideal para avaliar o visual com segurança.
+
+Para visualizar na internet, é necessário autorizar a integração GitHub na Vercel para o workspace `consecom` e habilitar permissão de implantação, ou ativar **Settings → Pages → GitHub Actions** neste repositório e executar `Publish visual preview`.
