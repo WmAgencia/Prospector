@@ -11,6 +11,16 @@ Painel operacional de prospecção com **motor determinístico (sem LLM no runti
 5. Em **Workflows**, configure o fluxo padrão; em **Prospecção**, cadastre ou importe leads autorizados.
 6. Inicie um workflow na ficha do lead. Configuração inicial: **pausado**; só habilite envio depois de conferir as regras e a sessão.
 
+### Aproveitar dados anteriores de D:\Prospector
+
+Se já houver o bot antigo com leads, faça a migração local para a nova pasta **sem enviar contatos ao GitHub**:
+
+```powershell
+npm run import:legacy -- "D:\Prospector\data"
+```
+
+A importação inclui histórico de abordagens e bloqueios, para evitar abordar novamente quem já recebeu mensagens.
+
 O servidor escuta **somente localhost**, não é uma aplicação exposta à internet. O GitHub hospeda o **código**, não o bot em execução. Deixe o PC ligado ou configure um servidor persistente apropriado.
 
 ### Funcionalidades implementadas no código

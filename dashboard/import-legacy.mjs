@@ -28,7 +28,7 @@ function obtain(s){
 // Contatos conhecidos entram primeiro, sem disparar nada.
 for(const item of lines('prospects.jsonl')){
  try{
-  const result=addLead(item);if(result.created)stats.prospects++;else stats.duplicates++;
+  const result=addLead({...item,website_status:['NO_WEBSITE','HAS_WEBSITE','UNCERTAIN','SOCIAL_ONLY','LINK_AGGREGATOR_ONLY','BROKEN_WEBSITE'].includes(item.website_status||item.status_site)?(item.website_status||item.status_site):'UNCERTAIN'});if(result.created)stats.prospects++;else stats.duplicates++;
   if(item.id)mapping.set(String(item.id),result.lead);
   if(item.status==='INTERESSADO'||item.status==='INTERESTED')stage(result.lead.id,'INTERESTED','migração');
  }catch(e){stats.skipped++;console.warn('Lead ignorado:',e.message);}

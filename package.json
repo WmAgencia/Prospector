@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node dashboard/server.mjs",
     "dev": "node --watch dashboard/server.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "import:legacy": "node dashboard/import-legacy.mjs"
   },
   "engines": {
     "node": ">=22.13.0"
