@@ -17,19 +17,63 @@ const root=path.join(here,'public');
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
 
 const envIsProd=process.env.NODE_ENV==='production'||!!process.env.RAILWAY_ENVIRONMENT;
-if(envIsProd&&(!process.env.ADMIN_USERNAME||!process.env.ADMIN_PASSWORD||process.env.ADMIN_PASSWORD.length<20)){
- throw new Error('Configuração insegura: ADMIN_USERNAME e ADMIN_PASSWORD com senha mínima de 20 caracteres são obrigatórios');
+const authToken=process.env.ADMIN_ACCESS_TOKEN||'';
+const sessionSecret=process.env.ADMIN_SESSION_SECRET||'';
+if(envIsProd&&(authToken.length<40||sessionSecret.length<40)){
+ throw new Error('Acesso privado: configure ADMIN_ACCESS_TOKEN e ADMIN_SESSION_SECRET (40+ caracteres)');
 }
-function protectedAccess(req,res){
- const user=process.env.ADMIN_USERNAME,pass=process.env.ADMIN_PASSWORD;
- if(!user||!pass)return !envIsProd;
- const h=String(req.headers.authorization||'');
- let supplied='';
- try{if(h.startsWith('Basic '))supplied=Buffer.from(h.slice(6),'base64').toString('utf8');}catch{}
- const left=Buffer.from(supplied,'utf8'),right=Buffer.from(user+':'+pass,'utf8');
- const ok=left.length===right.length&&crypto.timingSafeEqual(left,right);
- if(!ok){res.writeHead(401,{'WWW-Authenticate':'Basic realm="Consecom Prospector", charset="UTF-8"','Cache-Control':'no-store','Content-Type':'text/plain; charset=utf-8'});res.end('Acesso restrito: utilize usuário e senha do Prospector.');return false;}
- return true;
+const authCookieName='ps_session';
+const sessionSeconds=90*24*60*60;
+const attempts=new Map();
+function safeEqual(a,b){
+ const aa=Buffer.from(String(a||''),'utf8'),bb=Buffer.from(String(b||''),'utf8');
+ return aa.length===bb.length&&crypto.timingSafeEqual(aa,bb);
+}
+function getCookie(req,name){
+ const found=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='));
+ return found?found.slice(name.length+1):'';
+}
+function authorized(req){
+ if(!envIsProd)return true;
+ const raw=getCookie(req,authCookieName),dot=raw.lastIndexOf('.');
+ if(dot<1)return false;
+ const payload=raw.slice(0,dot),signature=raw.slice(dot+1);
+ const expected=crypto.createHmac('sha256',sessionSecret).update(payload).digest('base64url');
+ if(!safeEqual(signature,expected))return false;
+ try{
+  const claim=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));
+  return claim.v===1&&Number.isFinite(claim.exp)&&claim.exp>Date.now()&&claim.exp<Date.now()+sessionSeconds*1000+60000;
+ }catch{return false;}
+}
+function newSessionCookie(){
+ const payload=Buffer.from(JSON.stringify({v:1,exp:Date.now()+sessionSeconds*1000,nonce:crypto.randomBytes(18).toString('base64url')}),'utf8').toString('base64url');
+ const sig=crypto.createHmac('sha256',sessionSecret).update(payload).digest('base64url');
+ return authCookieName+'='+payload+'.'+sig+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age='+sessionSeconds;
+}
+const accessHtml='<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Acesso Consecom</title><style>body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#f4f6f3;color:#29382f;font:15px system-ui,sans-serif;padding:20px}main{max-width:440px;padding:36px;border:1px solid #d7e0d8;border-radius:22px;background:white;box-shadow:0 20px 60px #192c1920}h1{font-size:24px;margin:0 0 12px}p{line-height:1.7;color:#667468}</style><main><h1>Prospector Consecom</h1><p id="message">Validando acesso privado...</p></main><script>(async()=>{const p=location.hash.slice(1);history.replaceState(null,"","/access");const m=document.getElementById("message");if(!p){m.textContent="Abra seu link privado de acesso. Não é necessário usuário ou senha.";return;}try{const r=await fetch("/api/auth/exchange",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:p})});if(!r.ok)throw Error("link inválido");location.replace("/");}catch(e){m.textContent="Não foi possível validar seu acesso. Solicite um novo link privado.";}})();</script></html>';
+function showAccess(res){
+ res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"});res.end(accessHtml);
+}
+async function exchangeAccess(req,res){
+ const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim();
+ const nowMs=Date.now(),previous=attempts.get(ip)||{count:0,reset:nowMs+600000};
+ const item=previous.reset<nowMs?{count:0,reset:nowMs+600000}:previous;
+ if(item.count>=8)return respond(res,429,{error:'Muitas tentativas'});
+ const bytes=await body(req,4096);let token='';
+ try{token=String(JSON.parse(bytes.toString('utf8')).token||'');}catch{}
+ if(!safeEqual(token,authToken)){
+  attempts.set(ip,{count:item.count+1,reset:item.reset});
+  return respond(res,401,{error:'Link inválido'});
+ }
+ attempts.delete(ip);res.setHeader('Set-Cookie',newSessionCookie());
+ return respond(res,200,{ok:true});
+}
+function protectedAccess(req,res,pathname){
+ if(authorized(req))return true;
+ if(req.method==='GET'&&(pathname==='/'||pathname==='/index.html')){
+  res.writeHead(302,{Location:'/access','Cache-Control':'no-store'});res.end();return false;
+ }
+ respond(res,401,{error:'Acesso privado necessário'});return false;
 }
 function securityHeaders(res){
  res.setHeader('X-Content-Type-Options','nosniff');
@@ -126,8 +170,10 @@ async function handler(req,res){
   securityHeaders(res);
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/health'&&req.method==='GET')return respond(res,200,{status:'ok'});
-  if(!protectedAccess(req,res))return;
   if(!sameOriginWrite(req,res))return;
+  if(url.pathname==='/access'&&req.method==='GET')return showAccess(res);
+  if(url.pathname==='/api/auth/exchange'&&req.method==='POST')return exchangeAccess(req,res);
+  if(!protectedAccess(req,res,url.pathname))return;
   const pathname=decodeURIComponent(url.pathname);
   if(pathname==='/api/events'){
    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
