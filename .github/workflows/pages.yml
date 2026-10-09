@@ -1,10 +1,5 @@
 name: Publish visual preview
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'preview/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 permissions:
   contents: read
