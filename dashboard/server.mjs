@@ -5,6 +5,9 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {one,all,run,tx,id,now,addLead,stage,getThread,getSetting,setSetting,audit,phone} from './db.mjs';
 import {providerStatus,scoreLead,recordOrigin,discoverProfiles,verifyWebsiteCandidate} from './discovery.mjs';
+import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
+import {dailyReport,reportText,targetNumber} from './notifications.mjs';
+import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,connectWhatsApp,disconnectWhatsApp,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
@@ -22,7 +25,7 @@ async function body(req,limit=3*1024*1024){
  return Buffer.concat(parts);
 }
 async function json(req){const b=await body(req);return b.length?JSON.parse(b.toString('utf8')):{};}
-const allowedSettings=new Set(['paused','auto_initial','min_minutes','daily_limit','business_start','business_end','automation_enabled','segments','cities','discovery_sources','discovery_priority','discovery_brazil_wide','score_weights']);
+const allowedSettings=new Set(['paused','auto_initial','min_minutes','daily_limit','business_start','business_end','automation_enabled','segments','cities','discovery_sources','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
 function snapshot(){
  const leadOrigins=all('SELECT lead_id,source,verified FROM lead_origins ORDER BY at DESC');
  const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000').map(l=>{const origins=leadOrigins.filter(o=>o.lead_id===l.id);return {...l,origins:[...new Set(origins.map(o=>o.source))],...scoreLead(l,origins)};});
@@ -31,7 +34,7 @@ function snapshot(){
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
  const stats={profiles_analyzed:all('SELECT details FROM discoveries').reduce((total,row)=>{try{return total+(JSON.parse(row.details||'{}').examined||0);}catch{return total;}},0),qualified:leads.filter(l=>l.website_status==='NO_WEBSITE'&&l.phone).length,meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:leads.length,contacted:leads.filter(x=>x.stage!=='DISCOVERED').length,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
- return {providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
+ return {production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
 }
 async function upload(req,url,res){
  const kind=url.searchParams.get('kind'),name=String(url.searchParams.get('name')||'mídia').slice(0,100);
@@ -140,13 +143,26 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/workflows/default'){
    const v=await json(req);setDefaultWorkflow(v.id);notify();return respond(res,200,{ok:true});
   }
+  if(req.method==='POST'&&pathname==='/api/production/sync'){const result=await syncPublishedSamples();notify();return respond(res,200,result);}
+  if(req.method==='GET'&&pathname==='/api/production')return respond(res,200,productionList());
+  if(req.method==='GET'&&/^\/api\/production\/brief\/[^/]+$/.test(pathname))return respond(res,200,brief(pathname.split('/')[4]));
+  if(req.method==='POST'&&pathname==='/api/production/offer'){const v=await json(req);const x=offer(v.lead_id,v.media_id);notify();return respond(res,201,x);}
+  if(req.method==='POST'&&pathname==='/api/production/accept'){const v=await json(req);const x=manualAccept(v.lead_id);notify();return respond(res,200,x);}
+  if(req.method==='POST'&&pathname==='/api/production/move'){const v=await json(req);const x=move(v.lead_id,v.status,v.site_url);notify();return respond(res,200,x);}
+  if(req.method==='POST'&&pathname==='/api/production/approve'){const v=await json(req);const x=approveAndQueue(v.lead_id);notify();return respond(res,200,x);}
+  if(req.method==='POST'&&pathname==='/api/production/close'){const v=await json(req);closeDeal(v.lead_id);notify();return respond(res,200,{ok:true});}
+  if(req.method==='GET'&&pathname==='/api/report/today')return respond(res,200,{metrics:dailyReport(),text:reportText(dailyReport())});
   if(req.method==='POST'&&pathname==='/api/settings'){
    const v=await json(req);
    for(const [k,value] of Object.entries(v)){
     if(!allowedSettings.has(k))throw Error('Configuração desconhecida: '+k);
     if(['min_minutes','daily_limit','business_start','business_end'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
-    setSetting(k,value);
+    if(k==='owner_report_hour'&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>23))throw Error('Hora do relatório inválida');
+    if(['owner_phone_a','owner_phone_b'].includes(k)&&value&&(!phone(value)||phone(value).length<12||phone(value).length>13))throw Error('Informe WhatsApp brasileiro válido com DDD');
+    setSetting(k,['owner_phone_a','owner_phone_b'].includes(k)&&value?phone(value):value);
    }
+   const a=getSetting('owner_phone_a',''),b=getSetting('owner_phone_b','');
+   if(a&&b&&a===b){setSetting('owner_notifications_enabled',false);throw Error('Os dois números de WhatsApp devem ser diferentes');}
    notify();return respond(res,200,{ok:true});
   }
   if(req.method==='POST'&&pathname.startsWith('/api/workflows/start/')){
@@ -163,7 +179,7 @@ async function handler(req,res){
   }
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/stage')){
    const leadId=pathname.split('/')[3],v=await json(req);
-   if(!['DISCOVERED','CONTACTED','REPLIED','INTERESTED','NO_INTEREST'].includes(v.stage))throw Error('Etapa inválida');
+   if(!['DISCOVERED','CONTACTED','REPLIED','INTERESTED','NO_INTEREST','CLOSED_WON'].includes(v.stage))throw Error('Etapa inválida');
    stage(leadId,v.stage);notify();return respond(res,200,{ok:true});
   }
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/permission')){
@@ -196,5 +212,6 @@ async function handler(req,res){
 const host='127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
 const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)),2500);
+const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>console.log('Prospector: http://'+host+':'+port));
-process.on('SIGINT',()=>{clearInterval(interval);server.close();process.exit(0);});
+process.on('SIGINT',()=>{clearInterval(interval);clearInterval(syncInterval);server.close();process.exit(0);});

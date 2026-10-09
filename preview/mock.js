@@ -20,11 +20,20 @@ const leads=[
 const threads=leads.filter(x=>!['DISCOVERED'].includes(x.stage)).map((l,i)=>({id:'thread-'+i,lead_id:l.id,business:l.business,name:l.name,phone:l.phone,stage:l.stage,unread_count:l.stage==='INTERESTED'?1:0,manual_takeover:0,last_message_at:new Date(Date.now()-i*900000).toISOString()}));
 const messages={};
 for(const t of threads){const l=leads.find(x=>x.id===t.lead_id);messages[t.id]=[{id:t.id+'-1',type:'text',body:'Olá, '+l.name+'! Tudo bem? Vi o trabalho da '+l.business+' e queria apresentar uma ideia.',direction:'out',status:'sent',at:new Date(Date.now()-15000000).toISOString()},{id:t.id+'-2',type:'text',body:l.stage==='INTERESTED'?'Oi! Gostei. Pode me explicar melhor como funciona?':l.stage==='NO_INTEREST'?'Obrigado, mas não tenho interesse no momento.':'Oi, tudo bem sim. Pode falar!',direction:'in',status:'received',at:new Date(Date.now()-1600000).toISOString()}];}
-const settings={paused:true,auto_initial:false,min_minutes:5,daily_limit:96,business_start:8,business_end:21,automation_enabled:true,segments:'Psicologia, Estética, Odontologia, Arquitetura, Engenharia',cities:'Sorocaba, Votorantim, Campinas, São Paulo',discovery_sources:{web_search:true,meta_ads:false,instagram_search:false,instagram_hashtags:false,instagram_related:false},discovery_priority:'no_website',discovery_brazil_wide:false,score_weights:{noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusiness:2,prioritySegment:2,location:1,businessName:1}};
+const settings={owner_phone_a:'',owner_phone_b:'',owner_notifications_enabled:false,owner_report_hour:20,paused:true,auto_initial:false,min_minutes:5,daily_limit:96,business_start:8,business_end:21,automation_enabled:true,segments:'Psicologia, Estética, Odontologia, Arquitetura, Engenharia',cities:'Sorocaba, Votorantim, Campinas, São Paulo',discovery_sources:{web_search:true,meta_ads:false,instagram_search:false,instagram_hashtags:false,instagram_related:false},discovery_priority:'no_website',discovery_brazil_wide:false,score_weights:{noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusiness:2,prioritySegment:2,location:1,businessName:1}};
 let workflows=[{id:'default',name:'Abordagem padrão',is_default:1,version:1,steps:[{id:'s1',type:'message',text:'Olá, {{business_name}}! Tudo bem?'},{id:'s2',type:'wait_reply'},{id:'s3',type:'delay',seconds:12},{id:'s4',type:'video',media_id:'video-demo'},{id:'s5',type:'delay',seconds:8},{id:'s6',type:'audio',media_id:'audio-demo'},{id:'s7',type:'end'}]}];
 let media=[{id:'video-demo',name:'Apresentação Consecom.mp4 (exemplo)',kind:'video',mime:'video/mp4',duration:49,bytes:4200000},{id:'audio-demo',name:'Mensagem comercial.ogg (exemplo)',kind:'audio',mime:'audio/ogg',duration:24,bytes:190000}];
 let meetings=[{id:'m1',lead_id:'lead-8',business:'Clínica Harmonia',name:'Fernanda',start_at:new Date(Date.now()+86400000).toISOString(),status:'SCHEDULED',notes:'Entender serviços e necessidade do site'},{id:'m2',lead_id:'lead-9',business:'Avante Engenharia',name:'Lucas',start_at:new Date(Date.now()+172800000).toISOString(),status:'SCHEDULED',notes:'Apresentar proposta inicial'}];
 const providers=[{id:'meta_ads',label:'Biblioteca de Anúncios',status:'NOT_IMPLEMENTED',note:'Depende de integração e permissões oficiais.'},{id:'instagram_search',label:'Pesquisa direta no Instagram',status:'NOT_IMPLEMENTED',note:'API de busca geral não integrada.'},{id:'instagram_hashtags',label:'Hashtags',status:'NOT_IMPLEMENTED',note:'Permissões oficiais pendentes.'},{id:'instagram_related',label:'Perfis relacionados',status:'NOT_IMPLEMENTED',note:'Recurso ainda não integrado.'},{id:'web_search',label:'Pesquisa web complementar',status:'NEEDS_API_KEY',note:'Brave Search em produção local quando configurado.'}];
+
+leads.push({id:'lead-wrs-demo',business:'WRS Reformas e Manutenções',name:'Contato demonstrativo',phone:'55••••••••••',instagram:'wrs_brasil',city:'Sorocaba',segment:'Reformas',stage:'INTERESTED',website_status:'UNCERTAIN',contact_permission:0,source:'DEMO',created_at:new Date().toISOString()});
+const production=[
+ {id:'demo-req-1',lead_id:'lead-8',business:'Clínica Harmonia',instagram:'harmonia.clinica',city:'Sorocaba',segment:'Estética',status:'REQUESTED',accepted_at:new Date().toISOString(),due_at:new Date(Date.now()+600000).toISOString()},
+ {id:'demo-req-2',lead_id:'lead-9',business:'Avante Engenharia',instagram:'avanteengenharia',city:'Votorantim',segment:'Engenharia',status:'IN_PROGRESS',accepted_at:new Date().toISOString(),due_at:new Date(Date.now()+600000).toISOString()},
+ {id:'demo-req-3',lead_id:'lead-wrs-demo',business:'WRS Reformas e Manutenções',instagram:'wrs_brasil',city:'Sorocaba',segment:'Reformas',status:'READY',accepted_at:new Date().toISOString(),site_url:'https://prospector-ui-production.up.railway.app/studio/sites/wrs-brasil.html'}
+];
+const report={day:'DEMONSTRAÇÃO',approached:12,responded:6,interested:3,notInterested:2,requested:2,closed:1};
+
 const jobLogs=[];
 let counter=100;
 const output=(data,status=200)=>Promise.resolve(new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}}));
@@ -36,7 +45,7 @@ window.fetch=async (path,opts={})=>{
  let v={};try{v=opts.body&&typeof opts.body==='string'?JSON.parse(opts.body):{};}catch{}
  if(p==='/api/state'){
   const count=s=>leads.filter(x=>x.stage===s).length;
-  return output({leads,threads,workflows,media,meetings,providers,settings,jobs:jobLogs,discoveries:[],searchConfigured:false,connection:{status:'DISCONNECTED',qr:null,error:'Prévia visual — conecte seu WhatsApp apenas na instalação local.'},stats:{profiles_analyzed:134,found:leads.length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length,qualified:leads.filter(x=>x.website_status==='NO_WEBSITE').length,contacted:leads.filter(x=>x.stage!=='DISCOVERED').length,responded:count('REPLIED')+count('NO_INTEREST')+count('INTERESTED'),interested:count('INTERESTED'),meetings:meetings.filter(x=>x.status==='SCHEDULED').length}});
+  return output({isPreview:true,production,report,leads,threads,workflows,media,meetings,providers,settings,jobs:jobLogs,discoveries:[],searchConfigured:false,connection:{status:'DISCONNECTED',qr:null,error:'Prévia visual — conecte seu WhatsApp apenas na instalação local.'},stats:{profiles_analyzed:134,found:leads.length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length,qualified:leads.filter(x=>x.website_status==='NO_WEBSITE').length,contacted:leads.filter(x=>x.stage!=='DISCOVERED').length,responded:count('REPLIED')+count('NO_INTEREST')+count('INTERESTED'),interested:count('INTERESTED'),meetings:meetings.filter(x=>x.status==='SCHEDULED').length}});
  }
  let m=p.match(/^\/api\/threads\/([^/]+)\/messages$/);
  if(m)return output(messages[m[1]]||[]);
@@ -55,6 +64,30 @@ window.fetch=async (path,opts={})=>{
   return output({ok:true});
  }
  if(p==='/api/leads'&&method==='POST'){const l={id:'lead-'+counter++,business:v.business||'Novo prospect',name:v.name||'',phone:v.phone||'',instagram:v.instagram||'',city:v.city||'',segment:v.segment||'',stage:'DISCOVERED',website_status:v.website_status||'UNCERTAIN',source:'MANUAL',origins:['MANUAL'],score:0,contact_permission:v.contact_permission?1:0,created_at:new Date().toISOString()};leads.unshift(l);return output({lead:l,created:true},201);}
+ if(p.match(/^\/api\/production\/brief\/[^/]+$/)){
+  const leadId=p.split('/')[4],l=leads.find(x=>x.id===leadId),pr=production.find(x=>x.lead_id===leadId);
+  if(!l)return output({error:'Lead não encontrado'},404);
+  return output({job_reference:pr?.id,company:l.business,instagram:'https://instagram.com/'+l.instagram,category:l.segment,city:l.city,notes:'BRIEFING DEMONSTRATIVO — sem dados pessoais reais',instructions:'Crie landing premium e publique no Site Studio com production_ref igual a job_reference. Não envie ao cliente.'});
+ }
+ if(p==='/api/production/move'&&method==='POST'){
+  const x=production.find(x=>x.lead_id===v.lead_id);if(!x)return output({error:'Pedido não encontrado'},404);
+  const permitted={REQUESTED:['IN_PROGRESS'],IN_PROGRESS:['READY']};if(!permitted[x.status]?.includes(v.status))return output({error:'Transição não permitida'},400);
+  if(v.status==='READY'&&!/^https:\/\/prospector-ui-production\.up\.railway\.app\/studio\/sites\/[a-z0-9-]+\.html$/.test(v.site_url||''))return output({error:'Informe URL válida do Site Studio'},400);
+  x.status=v.status;if(v.site_url)x.site_url=v.site_url;return output(x);
+ }
+ if(p==='/api/production/approve'&&method==='POST'){
+  const x=production.find(x=>x.lead_id===v.lead_id);if(!x||x.status!=='READY')return output({error:'Ainda não está pronto'},400);
+  x.status='SEND_QUEUED';return output({...x,simulated:true});
+ }
+ if(p==='/api/production/accept'&&method==='POST'){
+  const x=production.find(x=>x.lead_id===v.lead_id);if(!x||!['OFFER_SENT','NEEDS_REVIEW'].includes(x.status))return output({error:'Nenhuma oferta pendente'},400);
+  x.status='REQUESTED';return output(x);
+ }
+ if(p==='/api/production/close'&&method==='POST'){
+  const x=production.find(x=>x.lead_id===v.lead_id);if(x?.status!=='DELIVERED')return output({error:'Sem entrega confirmada'},400);
+  report.closed++;return output({ok:true});
+ }
+ if(p==='/api/production/offer'&&method==='POST')return output({error:'Prévia fictícia: não há envio real de áudio'},400);
  if(p==='/api/settings'&&method==='POST'){Object.assign(settings,v);return output({ok:true});}
  if(p==='/api/workflows'&&method==='POST'){const wf=workflows.find(x=>x.id===v.id);if(wf)Object.assign(wf,{name:v.name,steps:v.steps,version:wf.version+1});else workflows.push({id:'wf-'+counter++,name:v.name,steps:v.steps,is_default:0,version:1});return output({id:wf?.id||workflows[workflows.length-1].id});}
  if(p==='/api/workflows/default'){workflows.forEach(x=>x.is_default=x.id===v.id?1:0);return output({ok:true});}

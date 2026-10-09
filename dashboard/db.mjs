@@ -31,17 +31,21 @@ const tables=[
 'CREATE TABLE IF NOT EXISTS media(id TEXT PRIMARY KEY,name TEXT NOT NULL,kind TEXT NOT NULL,mime TEXT NOT NULL,filename TEXT NOT NULL,duration REAL,bytes INTEGER NOT NULL,created_at TEXT NOT NULL)',
 'CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY,at TEXT NOT NULL,action TEXT NOT NULL,lead_id TEXT,detail TEXT NOT NULL)',
 'CREATE TABLE IF NOT EXISTS discoveries(id TEXT PRIMARY KEY,query TEXT NOT NULL,found INTEGER NOT NULL,at TEXT NOT NULL,status TEXT NOT NULL,details TEXT)',
-'CREATE TABLE IF NOT EXISTS meetings(id TEXT PRIMARY KEY,lead_id TEXT NOT NULL REFERENCES leads(id),start_at TEXT UNIQUE NOT NULL,notes TEXT DEFAULT "",status TEXT NOT NULL DEFAULT "SCHEDULED",created_at TEXT NOT NULL)'
+'CREATE TABLE IF NOT EXISTS meetings(id TEXT PRIMARY KEY,lead_id TEXT NOT NULL REFERENCES leads(id),start_at TEXT UNIQUE NOT NULL,notes TEXT DEFAULT "",status TEXT NOT NULL DEFAULT "SCHEDULED",created_at TEXT NOT NULL)',
+'CREATE TABLE IF NOT EXISTS production_requests(id TEXT PRIMARY KEY,lead_id TEXT NOT NULL UNIQUE REFERENCES leads(id),status TEXT NOT NULL,offer_job_id TEXT UNIQUE,delivery_job_id TEXT UNIQUE,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,accepted_at TEXT,due_at TEXT,site_url TEXT,delivered_at TEXT)',
+'CREATE TABLE IF NOT EXISTS owner_notices(id TEXT PRIMARY KEY,unique_key TEXT NOT NULL UNIQUE,kind TEXT NOT NULL,lead_id TEXT,message TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT)'
 ];
 for(const sql of tables)db.exec(sql);
 // Envios interrompidos por queda devem ir para revisão; NUNCA repetir automaticamente.
 run("UPDATE jobs SET status='UNKNOWN',error='Processo interrompido',updated_at=? WHERE status='SENDING'",new Date().toISOString());
 run("UPDATE executions SET state='NEEDS_REVIEW' WHERE state='SENDING'");
+run("UPDATE owner_notices SET status='UNKNOWN',error='Processo interrompido' WHERE status='SENDING'");
+run("UPDATE production_requests SET status='NEEDS_REVIEW',updated_at=? WHERE status IN ('OFFER_QUEUED','SEND_QUEUED') AND (offer_job_id IN (SELECT id FROM jobs WHERE status='UNKNOWN') OR delivery_job_id IN (SELECT id FROM jobs WHERE status='UNKNOWN'))",now());
 const initialSteps=[{id:'a',type:'message',text:'Olá, {{business_name}}! Tudo bem?'},{id:'b',type:'wait_reply'},{id:'c',type:'end'}];
 if(!one('SELECT id FROM workflows LIMIT 1'))run('INSERT INTO workflows VALUES(?,?,?,?,?,?,?)','default','Abordagem padrão',1,1,JSON.stringify(initialSteps),now(),now());
 export function getSetting(key,fallback=null){const x=one('SELECT value FROM settings WHERE key=?',key);if(!x)return fallback;try{return JSON.parse(x.value);}catch{return fallback;}}
 export function setSetting(key,value){run('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',key,JSON.stringify(value));}
-for(const [key,value] of Object.entries({paused:true,auto_initial:false,min_minutes:5,daily_limit:96,business_start:8,business_end:21,automation_enabled:true,segments:'psicólogo,nutricionista,clínica,estética,advogado,arquiteto',cities:'Sorocaba,Votorantim,Campinas',discovery_sources:{web_search:true,meta_ads:false,instagram_search:false,instagram_hashtags:false,instagram_related:false},discovery_priority:'no_website',discovery_brazil_wide:false,score_weights:{noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusiness:2,prioritySegment:2,location:1,businessName:1}}))if(!one('SELECT key FROM settings WHERE key=?',key))setSetting(key,value);
+for(const [key,value] of Object.entries({paused:true,auto_initial:false,min_minutes:5,daily_limit:96,business_start:8,business_end:21,automation_enabled:true,segments:'psicólogo,nutricionista,clínica,estética,advogado,arquiteto',cities:'Sorocaba,Votorantim,Campinas',discovery_sources:{web_search:true,meta_ads:false,instagram_search:false,instagram_hashtags:false,instagram_related:false},discovery_priority:'no_website',discovery_brazil_wide:false,score_weights:{noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusiness:2,prioritySegment:2,location:1,businessName:1},owner_phone_a:'',owner_phone_b:'',owner_notifications_enabled:false,owner_report_hour:20}))if(!one('SELECT key FROM settings WHERE key=?',key))setSetting(key,value);
 export function audit(action,lead_id=null,detail={}){run('INSERT INTO audit VALUES(?,?,?,?,?)',id(),now(),action,lead_id,JSON.stringify(detail));}
 export function addLead(item){
  const p=phone(item.phone||item.whatsapp), ig=instagram(item.instagram||item.instagram_username);

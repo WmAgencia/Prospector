@@ -21,6 +21,9 @@ jobs:
           node --check dashboard/classifier.mjs
           node --check dashboard/runtime.mjs
           node --check dashboard/discovery.mjs
+          node --check dashboard/production.mjs
+          node --check dashboard/notifications.mjs
+          node --check dashboard/studio-sync.mjs
           node --check dashboard/server.mjs
           node --check dashboard/public/app.js
           node --check dashboard/import-legacy.mjs

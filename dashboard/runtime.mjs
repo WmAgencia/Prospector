@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {one,all,run,tx,id,now,phone,getSetting,addLead,getThread,addMessage,stage,audit,stopLead,suppressed} from './db.mjs';
 import {classify,renderTemplate} from './classifier.mjs';
+import {onReply,cancelForOptOut,onSent,onUnknown} from './production.mjs';
+import {scheduleReport,flushNotices} from './notifications.mjs';
 
 let sock=null,connecting=false,waStatus='DISCONNECTED',qrData=null,lastError=null,waUser=null;
 let notifier=()=>{};
@@ -75,8 +77,10 @@ export async function incoming(m) {
  const result=payload.type==='text'?classify(payload.body):{intent:'UNCERTAIN',confidence:0,matched_rules:['MEDIA'],requires_human:true,allow_media:false};
  audit('INTENT_CLASSIFIED',lead.id,{intent:result.intent,matched_rules:result.matched_rules,confidence:result.confidence});
  if(result.intent==='OPT_OUT'||result.intent==='NOT_INTERESTED'){
-  stopLead(lead.id,result.intent);publish();return;
+  stopLead(lead.id,result.intent);cancelForOptOut(lead.id);publish();return;
  }
+ const sampleReply=onReply(lead.id,payload.body,payload.type==='text');
+ if(sampleReply){publish();return;}
  const manual=one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover;
  if(['INTERESTED','QUESTION','UNCERTAIN'].includes(result.intent)){
   stage(lead.id,'INTERESTED',result.intent);
@@ -213,7 +217,10 @@ export async function tick(){
   for(const r of all("SELECT id FROM executions WHERE state='WAIT_DELAY' AND wake_at<=?",now())){
    run("UPDATE executions SET state='ACTIVE',updated_at=? WHERE id=?",now(),r.id);drive(r.id);
   }
+  scheduleReport(new Date());
   if(waStatus!=='CONNECTED')return;
+  await flushNotices(sock);
+  if(getSetting('paused',true))return;
   const jobs=all("SELECT * FROM jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10");
   for(const job of jobs){
    const lead=one('SELECT * FROM leads WHERE id=?',job.lead_id);if(!lead||suppressed(lead.phone)){run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);continue;}
@@ -235,11 +242,12 @@ export async function tick(){
     const t=getThread(lead.id,result.jid);
     addMessage({threadId:t.id,providerId:result.ack?.key?.id||null,direction:'out',type:job.type==='message'?'text':job.type,body:job.text,mediaId:job.media_id,status:'sent'});
     if(job.execution_id){run("UPDATE executions SET state='ACTIVE',updated_at=? WHERE id=?",now(),job.execution_id);drive(job.execution_id);}
+    onSent(job.id);
     publish();
    }catch(e){
     run("UPDATE jobs SET status='UNKNOWN',error=?,updated_at=? WHERE id=?",String(e.message),now(),job.id);
     if(job.execution_id)run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE id=?",now(),job.execution_id);
-    audit('DELIVERY_UNKNOWN',lead.id,{job:job.id,error:e.message});publish();
+    audit('DELIVERY_UNKNOWN',lead.id,{job:job.id,error:e.message});onUnknown(job.id);publish();
    }
   }
  }finally{locked=false;}
