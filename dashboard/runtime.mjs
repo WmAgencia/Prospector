@@ -12,6 +12,11 @@ let locked=false;
 export function setNotifier(fn){notifier=fn;}
 const publish=()=>{try{notifier();}catch{}};
 export function connection(){return {status:waStatus,qr:qrData,user:waUser,error:lastError};}
+export async function restoreWhatsAppSession(){
+ const folder=path.resolve(process.env.PROSPECTOR_SESSION_DIR||path.join(process.env.PROSPECTOR_DATA_DIR||'data','wa-session'));
+ if(!fs.existsSync(path.join(folder,'creds.json')))return {restored:false,reason:'not_paired'};
+ return {restored:true,status:await connectWhatsApp()};
+}
 function jidFor(lead) {
  const thread=one('SELECT jid FROM threads WHERE lead_id=?',lead.id);
  return thread?.jid&&thread.jid.endsWith('@lid')?thread.jid:(lead.phone?lead.phone+'@s.whatsapp.net':thread?.jid);
