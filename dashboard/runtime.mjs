@@ -127,7 +127,7 @@ export function startWorkflow(leadId){
   if(!lead.phone)throw Error('Lead sem WhatsApp');
   if(!lead.contact_permission)throw Error('Canal não autorizado: marque contato permitido para esse lead');
   if(suppressed(lead.phone))throw Error('Contato bloqueado/opt-out');
-  if(one('SELECT id FROM initial_contacts WHERE phone=? OR lead_id=?',lead.phone,leadId))throw Error('Primeira abordagem já registrada');
+  if(one('SELECT lead_id FROM initial_contacts WHERE phone=? OR lead_id=?',lead.phone,leadId))throw Error('Primeira abordagem já registrada');
   if(one('SELECT id FROM executions WHERE lead_id=?',leadId))throw Error('Lead já possui workflow iniciado');
   const wf=one('SELECT * FROM workflows WHERE is_default=1 ORDER BY updated_at DESC LIMIT 1');
   if(!wf)throw Error('Configure workflow padrão');
