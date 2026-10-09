@@ -1,0 +1,33 @@
+name: Tests and API smoke
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+      - name: Validate module syntax
+        run: |
+          node --check dashboard/db.mjs
+          node --check dashboard/classifier.mjs
+          node --check dashboard/runtime.mjs
+          node --check dashboard/server.mjs
+          node --check dashboard/public/app.js
+      - name: Start local API and verify JSON
+        run: |
+          node dashboard/server.mjs >/tmp/prospector.log 2>&1 &
+          echo $! >/tmp/prospector.pid
+          sleep 3
+          curl --fail --silent --show-error http://127.0.0.1:3030/api/state | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!Array.isArray(x.leads)||!Array.isArray(x.workflows))process.exit(1);console.log('API smoke passed')})"
+      - name: Show server output on failure
+        if: failure()
+        run: cat /tmp/prospector.log || true
