@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 const directory=path.dirname(fileURLToPath(import.meta.url));
 const allow=new Set(['index.html','style.css','mock.js','app.js']);
 const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript; charset=utf-8','.css':'text/css; charset=utf-8'};
-const port=Number(process.env.PREVIEW_PORT||4173);
+const port=Number(process.env.PORT||process.env.PREVIEW_PORT||4173);
 http.createServer((req,res)=>{
  const pathname=new URL(req.url,'http://localhost').pathname;
  const file=pathname==='/'?'index.html':pathname.replace(/^\//,'');
@@ -14,4 +14,4 @@ http.createServer((req,res)=>{
  const target=path.join(directory,file);
  res.writeHead(200,{'Content-Type':mime[path.extname(file)],'Cache-Control':'no-store'});
  fs.createReadStream(target).pipe(res);
-}).listen(port,'127.0.0.1',()=>console.log('Preview visual: http://127.0.0.1:'+port));
+}).listen(port,process.env.PORT?'0.0.0.0':'127.0.0.1',()=>console.log('Preview visual: http://127.0.0.1:'+port));
