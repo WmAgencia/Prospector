@@ -128,3 +128,28 @@ export function brief(leadId){
  origin:l.source,notes:l.notes||null,requested_at:r.accepted_at,deadline_target:r.due_at,
  instructions:'Criar landing page demonstrativa premium, responsiva, autoral e fluida sem layout padronizado. Pesquisar fontes públicas e não inventar fatos, serviços ou portfólio. Criar arquivo studio/sites/<slug>.html no GitHub WmAgencia/Prospector, cadastrar em studio/projects.json com production_ref igual a job_reference, publicar e retornar link. O lead deve revisar antes de qualquer envio ao cliente.'};
 }
+
+
+// Uso dentro da transação do motor de decisão. Idempotência pelo lead_id.
+export function requestFromAutomation(leadId,workflowId) {
+ const l=one('SELECT * FROM leads WHERE id=?',leadId);
+ if(!l?.phone||!l.contact_permission||suppressed(l.phone))throw Error('Lead sem autorização');
+ const at=now();let req=get(leadId);
+ if(!req){
+  const rid=id();
+  run("INSERT INTO production_requests(id,lead_id,status,created_at,updated_at,accepted_at,due_at) VALUES(?,?,'REQUESTED',?,?,?,?)",
+    rid,leadId,at,at,at,new Date(Date.now()+10*60*1000).toISOString());
+  req=get(leadId);
+ }else if(req.status==='OFFER_SENT'||req.status==='NEEDS_REVIEW'){
+  run("UPDATE production_requests SET status='REQUESTED',accepted_at=?,due_at=?,updated_at=? WHERE id=?",
+    at,new Date(Date.now()+10*60*1000).toISOString(),at,req.id);req=get(leadId);
+ }else if(!['REQUESTED','IN_PROGRESS','READY','SEND_QUEUED','DELIVERED'].includes(req.status)){
+  throw Error('Pedido de exemplo não pode ser reaberto automaticamente');
+ }
+ const t=getThread(leadId);
+ run('UPDATE threads SET manual_takeover=1 WHERE id=?',t.id);
+ stage(leadId,'INTERESTED','Exemplo aceito no fluxo da automação');
+ audit('SITE_SAMPLE_REQUESTED',leadId,{origin:'automation',workflowId,request:req.id});
+ notify(leadId,'SITE_REQUEST','sample:requested:'+req.id);
+ return req;
+}

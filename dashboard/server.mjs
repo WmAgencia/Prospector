@@ -6,6 +6,7 @@ import {spawnSync} from 'node:child_process';
 import {one,all,run,tx,id,now,addLead,stage,getThread,getSetting,setSetting,audit,phone} from './db.mjs';
 import {providerStatus,scoreLead,recordOrigin,discoverProfiles,verifyWebsiteCandidate} from './discovery.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
+import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
 import {dailyReport,reportText,targetNumber} from './notifications.mjs';
 import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,connectWhatsApp,disconnectWhatsApp,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
@@ -30,7 +31,7 @@ function snapshot(){
  const leadOrigins=all('SELECT lead_id,source,verified FROM lead_origins ORDER BY at DESC');
  const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000').map(l=>{const origins=leadOrigins.filter(o=>o.lead_id===l.id);return {...l,origins:[...new Set(origins.map(o=>o.source))],...scoreLead(l,origins)};});
  const threads=all('SELECT t.*,l.business,l.name,l.phone,l.stage FROM threads t JOIN leads l ON l.id=t.lead_id ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1000');
- const workflows=all('SELECT * FROM workflows ORDER BY is_default DESC,updated_at DESC').map(w=>({...w,steps:JSON.parse(w.steps)}));
+ const workflows=all('SELECT * FROM workflows ORDER BY is_default DESC,updated_at DESC').map(w=>({...w,enabled:!!w.enabled,segments:JSON.parse(w.segments_json||'[]'),steps:JSON.parse(w.steps)}));
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
  const stats={profiles_analyzed:all('SELECT details FROM discoveries').reduce((total,row)=>{try{return total+(JSON.parse(row.details||'{}').examined||0);}catch{return total;}},0),qualified:leads.filter(l=>l.website_status==='NO_WEBSITE'&&l.phone).length,meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:leads.length,contacted:leads.filter(x=>x.stage!=='DISCOVERED').length,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
@@ -140,6 +141,11 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/workflows'){
    const workflowId=saveWorkflow(await json(req));notify();return respond(res,200,{id:workflowId});
   }
+  if(req.method==='POST'&&pathname==='/api/automations/test'){
+   const v=await json(req);if(!['sample_offer','general_interest'].includes(v.context))throw Error('Contexto inválido');
+   if(typeof v.text!=='string'||v.text.length>1000)throw Error('Texto de teste inválido');
+   return respond(res,200,evaluateDecision(v.text,v.context));
+  }
   if(req.method==='POST'&&pathname==='/api/workflows/default'){
    const v=await json(req);setDefaultWorkflow(v.id);notify();return respond(res,200,{ok:true});
   }
@@ -166,7 +172,7 @@ async function handler(req,res){
    notify();return respond(res,200,{ok:true});
   }
   if(req.method==='POST'&&pathname.startsWith('/api/workflows/start/')){
-   const leadId=pathname.split('/')[4];const runId=startWorkflow(leadId);drive(runId);notify();return respond(res,200,{executionId:runId});
+   const leadId=pathname.split('/')[4],input=await json(req);const runId=startWorkflow(leadId,input.workflow_id||null);drive(runId);notify();return respond(res,200,{executionId:runId});
   }
   if(req.method==='POST'&&pathname.startsWith('/api/workflows/resume/')){
    const leadId=pathname.split('/')[4];resume(leadId);notify();return respond(res,200,{ok:true});

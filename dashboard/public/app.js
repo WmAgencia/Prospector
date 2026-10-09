@@ -23,7 +23,7 @@ function navigate(to,thread=null){
  page=to;selectedThread=thread||null;location.hash='/'+to+(thread?'/'+thread:'');
  draw();
 }
-const titles={overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Workflows','Configure o que será enviado após cada resposta'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],production:['Produção','Pedidos de exemplo e entregas'],studio:['Site Studio','Propostas visuais exclusivas para apresentar aos clientes'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção']};
+const titles={overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Automações','Crie fluxos por segmento e defina o caminho após cada resposta'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],production:['Produção','Pedidos de exemplo e entregas'],studio:['Site Studio','Propostas visuais exclusivas para apresentar aos clientes'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção']};
 function draw(){
  if(!state)return;
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===page));
@@ -94,31 +94,65 @@ function getCurrentWorkflow(){
  if(!w)return null;workflowId=w.id;editing=structuredClone(w);dirty=false;return editing;
 }
 function workflows(){
- const wf=getCurrentWorkflow();if(!wf)return '<div class="empty">Nenhum workflow</div>';
- const assets=state.media.filter(x=>x.kind===mediaTab);
- let body='<div class="between section-head"><div><h2>Editor de fluxo</h2><p>Crie blocos verticais de mensagens, espera e mídias. Sem IA no runtime.</p></div><div class="actionsrow"><button class="btn secondary" data-action="new-workflow">+ Novo</button><button class="btn" data-action="save-workflow">Salvar workflow'+(dirty?' •':'')+'</button></div></div>';
- body+='<div class="toolbar"><select id="workflow-select" style="max-width:310px">'+state.workflows.map(x=>'<option value="'+x.id+'" '+(x.id===wf.id?'selected':'')+'>'+esc(x.name)+(x.is_default?' • padrão':'')+'</option>').join('')+'</select><button class="btn small secondary" data-action="default-workflow">Definir como padrão</button><span class="tag">Versão '+esc(wf.version)+'</span></div>';
- body+='<div class="workflow-layout"><section class="panel"><h3>Biblioteca de mídias</h3><div class="toolbar"><button class="btn small '+(mediaTab==='video'?'':'secondary')+'" data-action="media-tab" data-kind="video">Vídeos</button><button class="btn small '+(mediaTab==='audio'?'':'secondary')+'" data-action="media-tab" data-kind="audio">Áudios</button><button class="btn small '+(mediaTab==='image'?'':'secondary')+'" data-action="media-tab" data-kind="image">Imagens</button></div><div class="field"><input id="upload-input" type="file" accept="'+(mediaTab==='video'?'video/mp4':mediaTab==='audio'?'audio/*':'image/png,image/jpeg,image/webp')+'"></div>'+
- (assets.length?assets.map(a=>'<div class="asset"><span>'+icons[a.kind]+'</span><div style="flex:1;min-width:0"><strong>'+esc(a.name)+'</strong><small>'+Math.round(a.bytes/1024)+' KB'+(a.duration?' · '+Math.ceil(a.duration)+'s':'')+'</small></div><a href="/api/media/'+a.id+'" target="_blank">↗</a></div>').join(''):'<div class="empty" style="padding:34px 0">Nenhum arquivo enviado</div>')+
- '<div class="spacer"></div><p class="subtle" style="font-size:11px;line-height:1.8">Vídeos de até 60 segundos. Validação no servidor requer FFmpeg/ffprobe instalado.</p></section>';
- body+='<section class="panel"><div class="between"><h3>Blocos do workflow</h3><span class="tag green">'+wf.steps.length+' etapas</span></div><div class="field"><label>Nome do workflow</label><input id="workflow-name" value="'+esc(wf.name)+'"></div><div class="editor">';
- body+=wf.steps.map((step,i)=>'<div class="step"><div class="stepname"><div class="row"><span class="tag '+(step.type==='end'?'green':'blue')+'">'+(i+1)+'</span><strong>'+esc(({message:'Mensagem',wait_reply:'Aguardar resposta',delay:'Esperar',video:'Enviar vídeo',audio:'Enviar áudio',image:'Enviar imagem',end:'Fim do fluxo'})[step.type]||step.type)+'</strong></div><div class="controls">'+(step.type!=='end'?'<button class="btn small ghost" data-action="step-up" data-index="'+i+'">↑</button><button class="btn small ghost" data-action="step-down" data-index="'+i+'">↓</button><button class="btn small danger" data-action="step-delete" data-index="'+i+'">×</button>':'')+'</div></div>'+
- (step.type==='message'?'<textarea data-step-field="text" data-index="'+i+'" rows="3" placeholder="Olá, {{business_name}}!">'+esc(step.text||'')+'</textarea><small>Variáveis: {{first_name}}, {{person_name}}, {{business_name}}, {{city}}, {{segment}}</small>':
- step.type==='delay'?'<div class="row"><input type="number" min="1" max="86400" data-step-field="seconds" data-index="'+i+'" value="'+esc(step.seconds||10)+'" style="max-width:145px"><small>segundos</small></div>':
- ['audio','video','image'].includes(step.type)?'<select data-step-field="media_id" data-index="'+i+'"><option value="">Selecione a mídia…</option>'+state.media.filter(a=>a.kind===step.type).map(a=>'<option value="'+a.id+'" '+(a.id===step.media_id?'selected':'')+'>'+esc(a.name)+'</option>').join('')+'</select>':
- step.type==='wait_reply'?'<small>O fluxo fica parado até chegar uma resposta real. Recusas e pedidos de parada interrompem automaticamente.</small>':
- '<small>Não há outras etapas.</small>')+'</div>'+(i<wf.steps.length-1?'<div class="step-arrow">↓</div>':'')).join('');
- body+='</div><div class="toolbar">'+['message','wait_reply','delay','video','audio','image'].map(type=>'<button class="btn small secondary" data-action="add-step" data-type="'+type+'">+ '+({message:'Mensagem',wait_reply:'Resposta',delay:'Espera',video:'Vídeo',audio:'Áudio',image:'Imagem'})[type]+'</button>').join('')+'</div></section></div>';
+ const wf=getCurrentWorkflow();if(!wf)return '<div class="empty">Nenhuma automação cadastrada</div>';
+ const assets=(state.media||[]).filter(x=>x.kind===mediaTab);
+ const option=(values,current)=>values.map(([value,label])=>'<option value="'+value+'" '+(value===current?'selected':'')+'>'+label+'</option>').join('');
+ const stepField=(i,key,value,placeholder='',rows=2)=>'<textarea data-step-field="'+key+'" data-index="'+i+'" rows="'+rows+'" placeholder="'+esc(placeholder)+'">'+esc(value||'')+'</textarea>';
+ const mediaSelect=(i,key,kind,current)=>'<select data-step-field="'+key+'" data-index="'+i+'"><option value="">Selecione '+kind+'…</option>'+(state.media||[]).filter(a=>a.kind===kind).map(a=>'<option value="'+esc(a.id)+'" '+(a.id===current?'selected':'')+'>'+esc(a.name)+'</option>').join('')+'</select>';
+ const renderDecision=(step,i)=>{
+  const side=(p,title,shade)=>{
+   const isAudio=step[p+'_type']==='audio';
+   return '<div class="branch-choice '+shade+'"><h4>'+title+'</h4>'+
+   '<div class="two"><div class="field"><label>Formato da resposta</label><select data-step-field="'+p+'_type" data-index="'+i+'">'+option([['message','Texto'],['audio','Áudio gravado']],step[p+'_type']||'message')+'</select></div>'+
+   '<div class="field"><label>Próximo movimento</label><select data-step-field="'+p+'_action" data-index="'+i+'">'+option(p==='yes'?[['request_sample','Criar pedido de exemplo'],['continue','Continuar automação'],['end','Encerrar']]:[['end','Encerrar'],['continue','Continuar automação']],step[p+'_action']||(p==='no'?'end':'request_sample'))+'</select></div></div>'+
+   (isAudio?'<div class="field"><label>Áudio que será enviado</label>'+mediaSelect(i,p+'_media_id','audio',step[p+'_media_id'])+'</div><div class="field"><label>Descrição exata do conteúdo do áudio</label>'+stepField(i,p+'_audio_description',step[p+'_audio_description'],'Explique o que este áudio diz e seu objetivo')+'</div>':
+   '<div class="field"><label>Mensagem enviada ao cliente</label>'+stepField(i,p+'_text',step[p+'_text'],p==='yes'?'Perfeito! Vou preparar sua prévia em cerca de 10 minutos.':'Tudo bem! Agradeço seu retorno. Se precisar, estou à disposição.')+'</div>')+'</div>';
+  };
+  return '<div class="field"><label>O que a mensagem ou áudio anterior perguntou?</label>'+stepField(i,'context_description',step.context_description,'Ex.: Perguntei se quer receber uma demonstração visual')+'<small>A descrição documenta o áudio/pergunta, mas não é interpretada por IA.</small></div>'+
+  '<div class="field"><label>Tipo de interesse avaliado</label><select data-step-field="context" data-index="'+i+'">'+option([['sample_offer','Aceitou exemplo de site'],['general_interest','Aceitou continuar a conversa']],step.context||'sample_offer')+'</select></div>'+
+  '<div class="branch-split">'+side('yes','✓ Se respondeu SIM','yes')+side('no','× Se respondeu NÃO','no')+'</div>'+
+  '<div class="branch-fallback"><strong>Resposta indefinida:</strong> pausar para revisão humana; nunca disparar vídeo, áudio ou pedido de site por suposição.</div>'+
+  '<div class="field"><label>Testar texto de resposta</label><div class="row"><input id="test-reply-'+i+'" placeholder="Ex.: pode sim / não tenho interesse / talvez depois"><button class="btn small secondary" data-action="decision-test" data-index="'+i+'">Testar</button></div></div>';
+ };
+ let body='<div class="between section-head"><div><h2>Automações</h2><p>Mensagens e áudios por segmento, com decisões determinísticas e aprovação humana quando necessário.</p></div>'+
+ '<div class="actionsrow"><button class="btn secondary" data-action="new-workflow">+ Nova automação</button><button class="btn" data-action="save-workflow">Salvar automação'+(dirty?' •':'')+'</button></div></div>';
+ body+='<div class="toolbar"><select id="workflow-select" style="max-width:370px">'+state.workflows.map(x=>'<option value="'+esc(x.id)+'" '+(x.id===wf.id?'selected':'')+'>'+esc(x.name)+(x.is_default?' • padrão':'')+(x.enabled===false?' • pausada':'')+'</option>').join('')+'</select><button class="btn small secondary" data-action="default-workflow">Usar como padrão geral</button><span class="tag">Versão '+esc(wf.version)+'</span></div>';
+ body+='<div class="workflow-layout"><section class="panel"><h3>Biblioteca de mídias</h3><div class="toolbar">'+['video','audio','image'].map(k=>'<button class="btn small '+(k===mediaTab?'':'secondary')+'" data-action="media-tab" data-kind="'+k+'">'+({video:'Vídeos',audio:'Áudios',image:'Imagens'})[k]+'</button>').join('')+'</div>'+
+ '<div class="field"><input id="upload-input" type="file" accept="'+(mediaTab==='video'?'video/mp4':mediaTab==='audio'?'audio/*':'image/png,image/jpeg,image/webp')+'"></div>'+
+ (assets.length?assets.map(a=>'<div class="asset"><span>'+icons[a.kind]+'</span><div style="flex:1"><strong>'+esc(a.name)+'</strong><small>'+Math.round(a.bytes/1024)+' KB'+(a.duration?' · '+Math.ceil(a.duration)+'s':'')+'</small></div><a href="/api/media/'+a.id+'" target="_blank" rel="noopener noreferrer">↗</a></div>').join(''):'<div class="empty">Envie seu primeiro áudio ou vídeo</div>')+
+ '<div class="spacer"></div><p class="subtle" style="font-size:11px;line-height:1.8">Grave o áudio e descreva o conteúdo no bloco em que ele será utilizado. Esse texto é uma instrução humana, não transcrição automática.</p>'+
+ '<div class="spacer"></div><h3>Como funciona a decisão?</h3><p class="subtle" style="line-height:1.8">Depois de <strong>Aguardar resposta</strong>, use <strong>Decisão</strong> para separar respostas afirmativas, negativas ou ambíguas. O classificador lê apenas texto e expressões programadas, com prioridade para recusas e bloqueios.</p></section>';
+ body+='<section class="panel"><div class="between"><h3>Montar automação</h3><span class="tag green">'+wf.steps.length+' blocos</span></div>'+
+ '<div class="field"><label>Nome da automação</label><input id="workflow-name" value="'+esc(wf.name)+'"></div>'+
+ '<div class="field"><label>Segmentos atendidos (separados por vírgula)</label><input id="workflow-segments" placeholder="Ex.: Psicologia, Estética, Odontologia" value="'+esc((wf.segments||[]).join(', '))+'"><small>Se o segmento corresponder, esta automação será selecionada. Sem correspondência, será usada a automação padrão.</small></div>'+
+ '<div class="switchrow"><div><strong>Automação ativada</strong><small>Desativar impede novas execuções, sem alterar execuções já iniciadas.</small></div><input id="workflow-enabled" type="checkbox" '+(wf.enabled!==false?'checked':'')+'></div>'+
+ '<div class="editor">'+wf.steps.map((step,i)=>{
+  const titles={message:'Mensagem de texto',wait_reply:'Aguardar resposta',delay:'Tempo de espera',video:'Enviar vídeo',audio:'Enviar áudio',image:'Enviar imagem',decision:'Decisão por resposta',end:'Finalizar'};
+  let fields='';
+  if(step.type==='message')fields=stepField(i,'text',step.text,'Olá, {{business_name}}! Tudo bem?',3)+'<small>Variáveis: {{first_name}}, {{person_name}}, {{business_name}}, {{city}}, {{segment}}</small>';
+  else if(step.type==='delay')fields='<div class="row"><input type="number" min="1" max="86400" data-step-field="seconds" data-index="'+i+'" value="'+esc(step.seconds||10)+'"><small>segundos</small></div>';
+  else if(['audio','video','image'].includes(step.type))fields=mediaSelect(i,'media_id',step.type,step.media_id)+(step.type==='audio'?'<div class="field"><label>Descrição do áudio gravado (obrigatória)</label>'+stepField(i,'description',step.description,'O que é dito neste áudio e qual pergunta faz?',3)+'</div>':'');
+  else if(step.type==='wait_reply')fields='<small>O fluxo aguarda a mensagem do contato. Coloque um bloco Decisão logo depois para configurar as respostas.</small>';
+  else if(step.type==='decision')fields=renderDecision(step,i);
+  else fields='<small>Fim desta sequência.</small>';
+  return '<div class="step '+(step.type==='decision'?'decision-step':'')+'"><div class="stepname"><div class="row"><span class="tag '+(step.type==='end'?'green':step.type==='decision'?'yellow':'blue')+'">'+(i+1)+'</span><strong>'+titles[step.type]+'</strong></div>'+
+  '<div class="controls">'+(step.type!=='end'?'<button class="btn small ghost" data-action="step-up" data-index="'+i+'">↑</button><button class="btn small ghost" data-action="step-down" data-index="'+i+'">↓</button><button class="btn small danger" data-action="step-delete" data-index="'+i+'">×</button>':'')+'</div></div>'+fields+'</div>'+(i<wf.steps.length-1?'<div class="step-arrow">↓</div>':'');
+ }).join('')+'</div><div class="toolbar">'+['message','wait_reply','decision','delay','audio','video','image'].map(type=>'<button class="btn small secondary" data-action="add-step" data-type="'+type+'">+ '+({message:'Mensagem',wait_reply:'Resposta',decision:'Decisão',delay:'Espera',audio:'Áudio',video:'Vídeo',image:'Imagem'})[type]+'</button>').join('')+'</div>'+
+ '<p class="subtle" style="font-size:11px;margin-top:17px;line-height:1.7">Após o aceite do exemplo, a automação é finalizada e o lead vai para Produção, com notificação e briefing copiável. Entrega ao cliente só após sua aprovação.</p></section></div>';
  return body;
 }
 function bindWorkflowInputs(){
  $('#workflow-name')?.addEventListener('input',e=>{getCurrentWorkflow().name=e.target.value;dirty=true;});
- document.querySelectorAll('[data-step-field]').forEach(el=>el.addEventListener('input',e=>{
-  const x=getCurrentWorkflow().steps[Number(el.dataset.index)],k=el.dataset.stepField;
-  x[k]=k==='seconds'?Number(el.value):el.value;dirty=true;
- }));
+ $('#workflow-segments')?.addEventListener('input',e=>{getCurrentWorkflow().segments=e.target.value.split(',').map(x=>x.trim()).filter(Boolean);dirty=true;});
+ $('#workflow-enabled')?.addEventListener('change',e=>{getCurrentWorkflow().enabled=e.target.checked;dirty=true;});
+ document.querySelectorAll('[data-step-field]').forEach(el=>{
+  el.addEventListener('input',()=>{
+   const obj=getCurrentWorkflow().steps[Number(el.dataset.index)],key=el.dataset.stepField;
+   obj[key]=key==='seconds'?Number(el.value):el.value;dirty=true;
+  });
+  if(['yes_type','no_type','context'].includes(el.dataset.stepField))el.addEventListener('change',()=>draw());
+ });
 }
-
 
 function production(){
  const prod=state.production||[],met=state.report||{},lanes=[['REQUESTED','Pedido recebido'],['IN_PROGRESS','Em produção'],['READY','Aprovar'],['SEND_QUEUED','Envio pendente'],['DELIVERED','Entregue'],['NEEDS_REVIEW','Revisão']];
@@ -241,12 +275,19 @@ document.addEventListener('click',async event=>{
   if(action==='takeover'){await request('/api/threads/'+el.dataset.thread+'/takeover',{value:el.dataset.value==='1'});await load();showToast('Modo de atendimento atualizado.');return;}
   if(action==='verify-site'){const result=await request('/api/leads/'+el.dataset.lead+'/verify-site',{});modal('<h2>Possíveis sites da empresa</h2><p class="subtle">Confirme manualmente se pertencem ao mesmo negócio; ausência de resultados não comprova ausência de site.</p>'+(result.candidates?.length?result.candidates.map(x=>'<div class="activity"><div style="flex:1"><strong>'+esc(x.title||x.domain)+'</strong><small>'+esc(x.domain)+'</small></div><a href="'+esc(x.url)+'" target="_blank" rel="noopener noreferrer">Abrir ↗</a></div>').join(''):'<div class="empty">Nenhum site identificado. Mantenha a classificação incerta.</div>')+'<div class="footer"><button class="btn" data-action="close-modal">Fechar</button></div>');return;}
   if(action==='save-permission'){await request('/api/leads/'+el.dataset.lead+'/update',{website:$('#edit-website').value,website_status:$('#edit-website-status').value,phone:$('#edit-phone').value});await request('/api/leads/'+el.dataset.lead+'/permission',{value:$('#permission').checked});closeModal();await load();showToast('Lead atualizado.');return;}
-  if(action==='start-lead'){await request('/api/workflows/start/'+el.dataset.lead,{});showToast('Workflow iniciado.');await load();return;}
+  if(action==='start-lead'){const lead=state.leads.find(x=>x.id===el.dataset.lead);if(!lead)return;
+    const automationOptions=(state.workflows||[]).filter(w=>w.enabled!==false);
+    modal('<h2>Iniciar automação</h2><p class="subtle">Empresa: <strong>'+esc(lead.business)+'</strong> · Segmento: '+esc(lead.segment||'Não informado')+'</p><p class="subtle">Selecione o fluxo indicado para o cliente. A primeira abordagem só será enviada quando houver permissão e sessão conectada.</p><div class="field"><label>Automação</label><select id="lead-automation"><option value="">Selecionar automaticamente pelo segmento</option>'+automationOptions.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+' • '+esc((w.segments||[]).join(', ')||'Geral')+'</option>').join('')+'</select></div><div class="footer"><button class="btn secondary" data-action="close-modal">Cancelar</button><button class="btn" data-action="start-lead-confirm" data-lead="'+esc(lead.id)+'">Iniciar automação</button></div>');return;}
+  if(action==='start-lead-confirm'){await request('/api/workflows/start/'+el.dataset.lead,{workflow_id:$('#lead-automation')?.value||null});closeModal();showToast('Automação iniciada.');await load();return;}
   if(action==='connect'){await request('/api/connect',{});await load();return;}
   if(action==='disconnect'){await request('/api/disconnect',{});await load();return;}
-  if(action==='new-workflow'){workflowId='new';editing={id:null,name:'Novo workflow',version:1,steps:[{id:crypto.randomUUID(),type:'message',text:'Olá, {{business_name}}! Tudo bem?'},{id:crypto.randomUUID(),type:'wait_reply'},{id:crypto.randomUUID(),type:'end'}]};dirty=true;draw();return;}
+  if(action==='new-workflow'){workflowId='new';editing={id:null,name:'Nova automação · Oferta de site',version:1,segments:[],enabled:true,steps:[
+ {id:crypto.randomUUID(),type:'message',text:'Olá, {{business_name}}! Vi o seu trabalho e queria apresentar uma ideia para sua presença digital. Posso enviar uma prévia visual de como poderia ficar seu site?'},
+ {id:crypto.randomUUID(),type:'wait_reply'},
+ {id:crypto.randomUUID(),type:'decision',context:'sample_offer',context_description:'Perguntei ao cliente se deseja receber um exemplo visual do site.',yes_type:'message',yes_text:'Ótimo! Vou preparar um exemplo visual. A meta é te apresentar em cerca de 10 minutos e te aviso quando estiver pronto.',yes_action:'request_sample',no_type:'message',no_text:'Tudo bem! Agradeço seu retorno. Se precisar futuramente, fico à disposição.',no_action:'end'},
+ {id:crypto.randomUUID(),type:'end'}]};dirty=true;draw();return;}
   if(action==='media-tab'){mediaTab=el.dataset.kind;draw();return;}
-  if(action==='add-step'){const a=getCurrentWorkflow();a.steps.splice(a.steps.length-1,0,{id:crypto.randomUUID(),type:el.dataset.type,text:el.dataset.type==='message'?'Olá, {{business_name}}! Tudo bem?':undefined,seconds:10});dirty=true;draw();return;}
+  if(action==='add-step'){const a=getCurrentWorkflow();a.steps.splice(a.steps.length-1,0,{id:crypto.randomUUID(),type:el.dataset.type,text:el.dataset.type==='message'?'Olá, {{business_name}}! Tudo bem?':undefined,seconds:10,...(el.dataset.type==='decision'?{context:'sample_offer',context_description:'Perguntei se a pessoa quer ver uma prévia do site',yes_type:'message',yes_text:'Perfeito! Vou preparar um exemplo visual para você.',yes_action:'request_sample',no_type:'message',no_text:'Sem problemas. Obrigado pelo retorno!',no_action:'end'}:{})});dirty=true;draw();return;}
   if(action.startsWith('step-')){
    const wf=getCurrentWorkflow(),steps=wf.steps,i=Number(el.dataset.index);
    if(action==='step-delete')steps.splice(i,1);
@@ -254,8 +295,9 @@ document.addEventListener('click',async event=>{
    if(action==='step-down'&&i<steps.length-2)[steps[i],steps[i+1]]=[steps[i+1],steps[i]];
    dirty=true;draw();return;
   }
-  if(action==='save-workflow'){const wf=getCurrentWorkflow();const r=await request('/api/workflows',{id:wf.id||undefined,name:wf.name,steps:wf.steps});editing=null;workflowId=r.id;dirty=false;await load();showToast('Workflow salvo e versionado.');return;}
-  if(action==='default-workflow'){await request('/api/workflows/default',{id:getCurrentWorkflow().id});await load();showToast('Workflow padrão atualizado.');return;}
+  if(action==='decision-test'){const i=Number(el.dataset.index),wf=getCurrentWorkflow(),v=$('#test-reply-'+i)?.value||'';const r=await request('/api/automations/test',{text:v,context:wf.steps[i].context});showToast(r.decision==='YES'?'SIM — seguir caminho de aceite':r.decision==='NO'?'NÃO — seguir caminho de recusa':'INDEFINIDO — revisão humana');return;}
+  if(action==='save-workflow'){const wf=getCurrentWorkflow();const r=await request('/api/workflows',{id:wf.id||undefined,name:wf.name,steps:wf.steps,segments:wf.segments||[],enabled:wf.enabled!==false});editing=null;workflowId=r.id;dirty=false;await load();showToast('Automação salva e versionada.');return;}
+  if(action==='default-workflow'){await request('/api/workflows/default',{id:getCurrentWorkflow().id});await load();showToast('Automação padrão atualizada.');return;}
   if(action==='save-settings'){
    const data={};document.querySelectorAll('[data-setting]').forEach(x=>data[x.dataset.setting]=x.checked);
    document.querySelectorAll('[data-setting-number]').forEach(x=>data[x.dataset.settingNumber]=Number(x.value));

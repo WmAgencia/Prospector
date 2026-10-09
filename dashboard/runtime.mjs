@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {one,all,run,tx,id,now,phone,getSetting,addLead,getThread,addMessage,stage,audit,stopLead,suppressed} from './db.mjs';
 import {classify,renderTemplate} from './classifier.mjs';
-import {onReply,cancelForOptOut,onSent,onUnknown} from './production.mjs';
+import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
+import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
 import {scheduleReport,flushNotices} from './notifications.mjs';
 
 let sock=null,connecting=false,waStatus='DISCONNECTED',qrData=null,lastError=null,waUser=null;
@@ -57,6 +58,48 @@ function formMessage(m){
  const type=x.audioMessage?'audio':x.videoMessage?'video':x.imageMessage?'image':x.documentMessage?'file':'text';
  return {body,type};
 }
+
+// Executa apenas quando o bloco anterior aguardava resposta. Não processa textos isolados.
+export function handleDecision(leadId,text,isText=true){
+ const exec=one("SELECT * FROM executions WHERE lead_id=? AND state='WAIT_REPLY'",leadId);
+ if(!exec)return null;
+ const steps=JSON.parse(exec.steps),choice=steps[exec.next_step];
+ if(choice?.type!=='decision')return null;
+ const outcome=isText?evaluateDecision(text,choice.context):{decision:'REVIEW',reason:'media_not_transcribed'};
+ if(outcome.decision==='REVIEW'){
+  run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE id=?",now(),exec.id);
+  audit('AUTOMATION_REPLY_REVIEW',leadId,{workflowId:exec.workflow_id,reason:outcome.reason,step:exec.next_step});
+  return outcome;
+ }
+ return tx(()=>{
+  const latest=one("SELECT * FROM executions WHERE id=? AND state='WAIT_REPLY'",exec.id);
+  if(!latest||latest.next_step!==exec.next_step)return {decision:'REVIEW',reason:'already_processed'};
+  const accepted=outcome.decision==='YES',prefix=accepted?'yes':'no',action=choice[prefix+'_action']||'end';
+  const type=choice[prefix+'_type']||'message';
+  const response=String(choice[prefix+'_text']||'').trim();
+  const mediaId=choice[prefix+'_media_id']||null;
+  const lead=one('SELECT * FROM leads WHERE id=?',leadId);
+  if(!lead||!lead.contact_permission||suppressed(lead.phone))throw Error('Lead não autorizado');
+  if(response||type==='audio'){
+   const jid=id(),key='decision:'+exec.id+':'+exec.next_step+':'+prefix;
+   run("INSERT OR IGNORE INTO jobs(id,lead_id,type,text,media_id,key,status,created_at,updated_at) VALUES(?,?,?,?,? ,?,'PENDING',?,?)",
+     jid,leadId,type,response,mediaId,key,now(),now());
+  }
+  if(accepted&&action==='request_sample'){
+   run("UPDATE executions SET state='COMPLETE',next_step=next_step+1,updated_at=? WHERE id=?",now(),exec.id);
+   requestFromAutomation(leadId,exec.workflow_id);
+  }else if(action==='continue'){
+   run("UPDATE executions SET state='ACTIVE',next_step=next_step+1,updated_at=? WHERE id=?",now(),exec.id);
+   stage(leadId,accepted?'INTERESTED':'REPLIED','Respondeu a pergunta da automação');
+  }else{
+   run("UPDATE executions SET state='COMPLETE',next_step=next_step+1,updated_at=? WHERE id=?",now(),exec.id);
+   stage(leadId,accepted?'INTERESTED':'NO_INTEREST','Automação finalizada por resposta');
+  }
+  audit('AUTOMATION_DECISION',leadId,{workflowId:exec.workflow_id,decision:outcome.decision,context:choice.context,action});
+  return {...outcome,action,shouldContinue:action==='continue',executionId:exec.id};
+ });
+}
+
 export async function incoming(m) {
  const from=m.key?.remoteJid||'',alt=m.key?.remoteJidAlt||'';
  if(!m.message||m.key?.fromMe||from.endsWith('@g.us')||from.endsWith('@newsletter')||from==='status@broadcast')return;
@@ -76,7 +119,12 @@ export async function incoming(m) {
  if(!saved)return; // webhook duplicado
  const result=payload.type==='text'?classify(payload.body):{intent:'UNCERTAIN',confidence:0,matched_rules:['MEDIA'],requires_human:true,allow_media:false};
  audit('INTENT_CLASSIFIED',lead.id,{intent:result.intent,matched_rules:result.matched_rules,confidence:result.confidence});
- if(result.intent==='OPT_OUT'||result.intent==='NOT_INTERESTED'){
+ if(result.intent==='OPT_OUT'){
+  stopLead(lead.id,result.intent);cancelForOptOut(lead.id);publish();return;
+ }
+ const routing=handleDecision(lead.id,payload.body,payload.type==='text');
+ if(routing){if(routing.shouldContinue)drive(routing.executionId);publish();return;}
+ if(result.intent==='NOT_INTERESTED'){
   stopLead(lead.id,result.intent);cancelForOptOut(lead.id);publish();return;
  }
  const sampleReply=onReply(lead.id,payload.body,payload.type==='text');
@@ -99,42 +147,65 @@ export async function incoming(m) {
 export function saveWorkflow(input){
  const steps=input.steps;
  if(!Array.isArray(steps)||steps.length<2||steps.length>30)throw Error('Workflow deve ter entre 2 e 30 blocos');
- const allowed=['message','wait_reply','delay','video','audio','image','end'];
- for(const s of steps){
+ const allowed=['message','wait_reply','delay','video','audio','image','decision','end'];
+ for(const [index,s] of steps.entries()){
   if(!allowed.includes(s.type))throw Error('Bloco inválido: '+s.type);
   if(s.type==='message'&&!String(s.text||'').trim())throw Error('Bloco de texto vazio');
   if(s.type==='delay'&&(!Number.isInteger(Number(s.seconds))||Number(s.seconds)<1||Number(s.seconds)>86400))throw Error('Delay inválido');
+  if(s.type==='decision'){
+   if(index===0||steps[index-1]?.type!=='wait_reply')throw Error('Decisão deve vir logo após Aguardar resposta');
+   if(!['sample_offer','general_interest'].includes(s.context))throw Error('Escolha o contexto da pergunta');
+   if(!String(s.context_description||'').trim())throw Error('Descreva a pergunta usada para interpretar a resposta');
+   for(const side of ['yes','no']){
+    if(!['message','audio'].includes(s[side+'_type']||'message'))throw Error('Resposta deve ser texto ou áudio');
+    if(!['end','continue','request_sample'].includes(s[side+'_action']||'end'))throw Error('Ação inválida na decisão');
+    if(side==='no'&&s.no_action==='request_sample')throw Error('Recusa não pode solicitar site');
+    if(s[side+'_action']==='request_sample'&&s.context!=='sample_offer')throw Error('Solicitação de site exige contexto oferta de exemplo');
+    if(s[side+'_type']==='audio'){
+     if(!String(s[side+'_audio_description']||'').trim())throw Error('Descreva o áudio da resposta '+side);
+     const media=one('SELECT * FROM media WHERE id=?',s[side+'_media_id']||'');
+     if(media?.kind!=='audio')throw Error('Escolha o áudio da resposta '+side);
+    }else if(!String(s[side+'_text']||'').trim())throw Error('Escreva a resposta '+side);
+   }
+  }
   if(['video','audio','image'].includes(s.type)){
    const asset=one('SELECT * FROM media WHERE id=?',s.media_id||'');
    if(!asset||asset.kind!==s.type)throw Error('Mídia indisponível para o bloco '+s.type);
+   if(s.type==='audio'&&!String(s.description||'').trim())throw Error('Preencha a descrição do áudio para orientar a classificação contextual');
   }
  }
  if(steps[0].type!=='message')throw Error('O primeiro bloco deve ser uma mensagem inicial');
+ const segments=Array.isArray(input.segments)?input.segments:String(input.segments||'').split(',');
+ const tags=[...new Set(segments.map(v=>String(v).trim()).filter(Boolean))];
+ if(tags.length>25||tags.some(x=>x.length>80))throw Error('Máximo de 25 segmentos, 80 caracteres cada');
+ const tagJson=JSON.stringify(tags);
+ const enabled=input.enabled===false?0:1;
  if(steps[steps.length-1].type!=='end')throw Error('Último bloco deve ser FIM');
  if(input.id){
   const w=one('SELECT * FROM workflows WHERE id=?',input.id);if(!w)throw Error('Workflow inexistente');
-  run('UPDATE workflows SET name=?,version=?,steps=?,updated_at=? WHERE id=?',String(input.name||w.name),w.version+1,JSON.stringify(steps),now(),w.id);
+  run('UPDATE workflows SET name=?,version=?,steps=?,segments_json=?,enabled=?,updated_at=? WHERE id=?',String(input.name||w.name),w.version+1,JSON.stringify(steps),tagJson,enabled,now(),w.id);
   audit('WORKFLOW_UPDATED',null,{id:w.id,version:w.version+1});return w.id;
  }
  const workflowId=id();
- run('INSERT INTO workflows VALUES(?,?,?,?,?,?,?)',workflowId,String(input.name||'Novo workflow'),0,1,JSON.stringify(steps),now(),now());
+ run('INSERT INTO workflows(id,name,is_default,version,steps,created_at,updated_at,segments_json,enabled) VALUES(?,?,?,?,?,?,?,?,?)',workflowId,String(input.name||'Nova automação'),0,1,JSON.stringify(steps),now(),now(),tagJson,enabled);
  return workflowId;
 }
 export function setDefaultWorkflow(workflowId){
  if(!one('SELECT id FROM workflows WHERE id=?',workflowId))throw Error('Workflow inválido');
  tx(()=>{run('UPDATE workflows SET is_default=0');run('UPDATE workflows SET is_default=1 WHERE id=?',workflowId);});
 }
-export function startWorkflow(leadId){
+export function startWorkflow(leadId,selectedAutomationId=null){
  return tx(()=>{
   const lead=one('SELECT * FROM leads WHERE id=?',leadId);
   if(!lead)throw Error('Lead não encontrado');
   if(!lead.phone)throw Error('Lead sem WhatsApp');
+  if(lead.stage==='NO_INTEREST'||lead.stage==='CLOSED_WON')throw Error('Lead recusou contato ou negociação concluída');
   if(!lead.contact_permission)throw Error('Canal não autorizado: marque contato permitido para esse lead');
   if(suppressed(lead.phone))throw Error('Contato bloqueado/opt-out');
   if(one('SELECT lead_id FROM initial_contacts WHERE phone=? OR lead_id=?',lead.phone,leadId))throw Error('Primeira abordagem já registrada');
   if(one('SELECT id FROM executions WHERE lead_id=?',leadId))throw Error('Lead já possui workflow iniciado');
-  const wf=one('SELECT * FROM workflows WHERE is_default=1 ORDER BY updated_at DESC LIMIT 1');
-  if(!wf)throw Error('Configure workflow padrão');
+  const wf=selectAutomationForLead(lead,all('SELECT * FROM workflows'),selectedAutomationId);
+  if(!wf)throw Error('Não existe automação ativa aplicável ao segmento');
   const runId=id();
   run("INSERT INTO executions(id,lead_id,workflow_id,version,steps,next_step,state,updated_at) VALUES(?,?,?,?,?,0,'ACTIVE',?)",runId,leadId,wf.id,wf.version,wf.steps,now());
   audit('WORKFLOW_STARTED',leadId,{workflowId:wf.id,version:wf.version});
@@ -150,6 +221,7 @@ export function drive(runId){
   if(takeover?.manual_takeover)return;
   const steps=JSON.parse(r.steps),step=steps[r.next_step];
   if(!step||step.type==='end'){run("UPDATE executions SET state='COMPLETE',updated_at=? WHERE id=?",now(),runId);publish();return;}
+  if(step.type==='decision'){run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE id=?",now(),runId);audit('AUTOMATION_INVALID_DECISION',lead.id,{runId});publish();return;}
   if(step.type==='wait_reply'){run("UPDATE executions SET state='WAIT_REPLY',next_step=next_step+1,updated_at=? WHERE id=?",now(),runId);publish();return;}
   if(step.type==='delay'){
    const wake=new Date(Date.now()+Math.round(Number(step.seconds))*1000).toISOString();

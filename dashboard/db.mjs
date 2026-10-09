@@ -36,6 +36,10 @@ const tables=[
 'CREATE TABLE IF NOT EXISTS owner_notices(id TEXT PRIMARY KEY,unique_key TEXT NOT NULL UNIQUE,kind TEXT NOT NULL,lead_id TEXT,message TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT)'
 ];
 for(const sql of tables)db.exec(sql);
+// Migração compatível: múltiplas automações por segmento sem perder fluxos antigos.
+const workflowColumns=db.prepare('PRAGMA table_info(workflows)').all().map(c=>c.name);
+if(!workflowColumns.includes('segments_json'))db.exec("ALTER TABLE workflows ADD COLUMN segments_json TEXT NOT NULL DEFAULT '[]'");
+if(!workflowColumns.includes('enabled'))db.exec('ALTER TABLE workflows ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1');
 // Envios interrompidos por queda devem ir para revisão; NUNCA repetir automaticamente.
 run("UPDATE jobs SET status='UNKNOWN',error='Processo interrompido',updated_at=? WHERE status='SENDING'",new Date().toISOString());
 run("UPDATE executions SET state='NEEDS_REVIEW' WHERE state='SENDING'");
