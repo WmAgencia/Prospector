@@ -23,7 +23,7 @@ function navigate(to,thread=null){
  page=to;selectedThread=thread||null;location.hash='/'+to+(thread?'/'+thread:'');
  draw();
 }
-const titles={overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Workflows','Configure o que será enviado após cada resposta'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção']};
+const titles={overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Workflows','Configure o que será enviado após cada resposta'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],studio:['Site Studio','Propostas visuais exclusivas para apresentar aos clientes'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção']};
 function draw(){
  if(!state)return;
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===page));
@@ -34,10 +34,11 @@ function draw(){
  $('#pause-btn').textContent=state.settings.paused?'Retomar prospecção':'Pausar prospecção';
  $('#nav-unread').textContent=state.threads.reduce((sum,t)=>sum+t.unread_count,0)||'';
  $('#sync-status').textContent=state.connection.status==='CONNECTED'?'WhatsApp conectado':'WhatsApp: '+state.connection.status.toLowerCase();
- const views={overview,conversations,prospects,workflows,discovery,connections,settings};
+ const views={overview,conversations,prospects,workflows,discovery,studio,connections,settings};
  $('#screen').innerHTML=(views[page]||overview)();
  if(page==='conversations'&&selectedThread)loadMessages();
  if(page==='workflows')bindWorkflowInputs();
+ if(page==='studio')loadStudio();
 }
 function overview(){
  const counts=[['Perfis analisados',state.stats.profiles_analyzed||0],['Encontrados',state.stats.found],['Sem site',state.stats.without_site],['Qualificados',state.stats.qualified||0],['Abordados',state.stats.contacted],['Responderam',state.stats.responded],['Interessados',state.stats.interested],['Reuniões',state.stats.meetings||0]];
@@ -116,6 +117,30 @@ function bindWorkflowInputs(){
   x[k]=k==='seconds'?Number(el.value):el.value;dirty=true;
  }));
 }
+
+function studio(){
+ return '<div class="between section-head" style="align-items:start"><div><span class="tag green">Novo · conectado ao ChatGPT</span><h2 style="margin-top:12px">Seu estúdio de propostas</h2><p>Landing pages comerciais criadas aqui na conversa, organizadas para você apresentar e vender.</p></div><button class="btn" data-action="studio-copy">+ Preparar pedido no ChatGPT</button></div>'+
+ '<div class="panel" style="margin-bottom:19px"><div class="row wrap" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Do Instagram à proposta profissional</h3><p class="subtle" style="margin:0;font-size:12px;max-width:690px;line-height:1.75">Você envia a empresa neste chat. O ChatGPT pesquisa fontes públicas, cria uma identidade visual exclusiva e salva os arquivos no GitHub. Aqui você encontra o link compartilhável e a versão para PDF.</p></div><span class="tag">Sem API de IA adicional</span></div></div>'+
+ '<div class="between" style="margin:25px 0 12px"><h3 style="font-size:15px;margin:0">Propostas publicadas</h3><span class="tag">Visualização pública apenas após publicação</span></div>'+
+ '<div id="studio-list" class="studio-projects"><div class="panel empty">Buscando propostas salvas...</div></div>'+
+ '<p class="subtle" style="margin-top:19px;font-size:11px;line-height:1.7">Esta área publica somente páginas autorizadas no repositório. Não inclua dados confidenciais de clientes. Os formulários e CTAs nas prévias são ilustrativos; a exportação PDF abre a opção “Salvar como PDF” do navegador.</p>';
+}
+async function loadStudio(){
+ const target=document.getElementById('studio-list');if(!target)return;
+ try{
+  const response=await fetch('/studio/projects.json',{cache:'no-store'});
+  if(!response.ok)throw Error('Catálogo de propostas indisponível');
+  const data=await response.json();if(page!=='studio')return;
+  const projects=Array.isArray(data.projects)?data.projects.filter(p=>/^[a-z0-9-]{2,80}$/.test(String(p.slug))):[];
+  if(!projects.length){target.innerHTML='<div class="panel empty"><strong>Nenhuma proposta publicada</strong><p>Envie o primeiro Instagram nesta conversa para começarmos.</p></div>';return;}
+  target.innerHTML=projects.map(p=>{
+   const link='/studio/sites/'+encodeURIComponent(p.slug)+'.html';
+   const image=p.cover&&/^https:\/\/images\.unsplash\.com\//.test(p.cover)?'<img src="'+esc(p.cover)+'" alt="" loading="lazy">':'<div class="studio-no-cover">CONCECOM / SITE STUDIO</div>';
+   return '<article class="studio-project"><a href="'+link+'" target="_blank" rel="noopener noreferrer" class="studio-cover">'+image+'<span class="studio-demo">'+esc(p.status==='DEMO'?'Exemplo fictício':'Proposta visual')+'</span></a><div class="studio-meta"><span>'+esc(p.category||'Landing page')+'</span><span>'+esc(p.location||'')+'</span></div><h3>'+esc(p.name||'Projeto sem nome')+'</h3><p>'+esc(p.description||'Proposta visual personalizada')+'</p><div class="studio-actions"><a class="btn small" target="_blank" rel="noopener noreferrer" href="'+link+'">Ver landing page ↗</a><a class="btn small secondary" target="_blank" rel="noopener noreferrer" href="'+link+'?print=1">Exportar PDF ↗</a></div></article>';
+  }).join('');
+ }catch(e){target.innerHTML='<div class="panel empty"><strong>Não foi possível consultar o catálogo.</strong><p>'+esc(e.message)+'</p></div>';}
+}
+
 function discovery(){
  const providers=state.providers||[];
  return '<div class="section-head"><h2>Fontes de descoberta</h2><p>Descubra oportunidades de diferentes origens com transparência sobre as integrações.</p></div>'+
@@ -172,6 +197,7 @@ document.addEventListener('click',async event=>{
  const action=el.dataset.action;
  try{
   if(action==='route')return navigate(el.dataset.to);
+  if(action==='studio-copy'){const prompt='Crie uma landing page demonstrativa para esta empresa: [COLE AQUI O INSTAGRAM OU GOOGLE MAPS]. Faça uma pesquisa com fontes públicas, direção de arte individual, versão mobile e desktop, publique no Site Studio do Prospector e me entregue o link compartilhável e uma forma de exportar PDF. Sem backend funcional e sem inventar dados da empresa.';try{await navigator.clipboard.writeText(prompt);showToast('Pedido copiado! Cole no ChatGPT e substitua o link.');}catch{modal('<h2>Pedido para o ChatGPT</h2><textarea readonly style="min-height:160px">'+esc(prompt)+'</textarea><div class="footer"><button class="btn" data-action="close-modal">Fechar</button></div>');}return;}
   if(action==='close-modal')return closeModal();
   if(action==='new-lead')return openLeadModal();
   if(action==='review-lead')return openLeadModal(state.leads.find(l=>l.id===el.dataset.lead));

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "updated_at": "2026-10-09",
+  "projects": [
+    {
+      "slug": "casa-aurea",
+      "name": "Casa Áurea",
+      "category": "Arquitetura & Interiores",
+      "location": "Projeto demonstrativo",
+      "description": "Landing page editorial premium com narrativa visual, portfólio e convite para consulta.",
+      "status": "DEMO",
+      "cover": "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=900&q=80",
+      "created_at": "2026-10-09"
+    }
+  ]
+}

@@ -178,6 +178,14 @@ async function handler(req,res){
    const media=one('SELECT * FROM media WHERE id=?',pathname.split('/')[3]);if(!media)return respond(res,404,{error:'Arquivo não encontrado'});
    const f=path.join(mediaDir,media.filename);res.writeHead(200,{'Content-Type':media.mime,'Content-Length':media.bytes,'Cache-Control':'private, max-age=120'});fs.createReadStream(f).pipe(res);return;
   }
+  if(req.method==='GET'&&/^\/studio\/(?:projects\.json|sites\/[a-z0-9-]{2,80}\.html)$/.test(pathname)){
+   const studioRoot=path.resolve(here,'..','studio');
+   const filePath=path.resolve(here,'..',pathname.slice(1));
+   if(!filePath.startsWith(studioRoot+path.sep)||!fs.existsSync(filePath))return respond(res,404,{error:'Prévia não encontrada'});
+   const mime=pathname.endsWith('.json')?'application/json; charset=utf-8':'text/html; charset=utf-8';
+   res.writeHead(200,{'Content-Type':mime,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+   fs.createReadStream(filePath).pipe(res);return;
+  }
   if(req.method!=='GET')return respond(res,404,{error:'Rota inexistente'});
   const target=pathname==='/'?'index.html':pathname.slice(1);
   if(!['index.html','app.js','style.css'].includes(target))return respond(res,404,{error:'Arquivo inexistente'});
