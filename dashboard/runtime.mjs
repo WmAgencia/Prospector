@@ -5,68 +5,106 @@ import {classify,renderTemplate} from './classifier.mjs';
 import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
 import {scheduleReport,flushNotices} from './notifications.mjs';
+import {currentWebVersion,classifyDisconnect,retryDelay} from './whatsapp-reliability.mjs';
 
 let sock=null,connecting=false,waStatus='DISCONNECTED',qrData=null,lastError=null,waUser=null;
-let reconnectTimer=null,retries=0,lastQrAt=0;
-let notifier=()=>{};
-let locked=false;
+let notifier=()=>{},locked=false,reconnectTimer=null,retries=0,closeCode=null,lastEventAt=null,lastQrAt=null,nextRetryAt=null;
 export function setNotifier(fn){notifier=fn;}
-const publish=()=>{try{notifier();}catch{}};
-export function connection(){return {status:waStatus,qr:qrData,user:waUser,error:lastError};}
+const publish=()=>{lastEventAt=new Date().toISOString();try{notifier();}catch{}};
+export function connection(){return {status:waStatus,qr:qrData,user:waUser,error:lastError,closeCode,lastEventAt,lastQrAt,nextRetryAt};}
+const authDir=()=>path.resolve(process.env.PROSPECTOR_SESSION_DIR||path.join(process.env.PROSPECTOR_DATA_DIR||'data','wa-session'));
+function backupSession(folder){
+ if(!fs.existsSync(path.join(folder,'creds.json')))return false;
+ const backup=folder+'.backup-'+Date.now();
+ fs.renameSync(folder,backup);fs.mkdirSync(folder,{recursive:true});
+ audit('WHATSAPP_SESSION_ARCHIVED',null,{reason:'requested_repair',backup:path.basename(backup)});
+ console.info('[whatsapp] Sessão anterior preservada em backup para novo pareamento');
+ return true;
+}
 export async function restoreWhatsAppSession(){
- const folder=path.resolve(process.env.PROSPECTOR_SESSION_DIR||path.join(process.env.PROSPECTOR_DATA_DIR||'data','wa-session'));
+ const folder=authDir();
  if(!fs.existsSync(path.join(folder,'creds.json')))return {restored:false,reason:'not_paired'};
- return {restored:true,status:await connectWhatsApp()};
+ return {restored:true,status:await connectWhatsApp({restore:true})};
 }
 function jidFor(lead) {
  const thread=one('SELECT jid FROM threads WHERE lead_id=?',lead.id);
  return thread?.jid&&thread.jid.endsWith('@lid')?thread.jid:(lead.phone?lead.phone+'@s.whatsapp.net':thread?.jid);
 }
-export async function connectWhatsApp(){
- if(connecting||waStatus==='CONNECTED')return connection();
- connecting=true;waStatus='CONNECTING';lastError=null;publish();
+function queueReconnect(){
+ if(retries>=5)return;
+ retries++;
+ const delay=retryDelay(retries);
+ nextRetryAt=new Date(Date.now()+delay).toISOString();
+ clearTimeout(reconnectTimer);
+ reconnectTimer=setTimeout(()=>{
+  reconnectTimer=null;nextRetryAt=null;
+  connectWhatsApp({restore:true}).catch(e=>{lastError=String(e.message);waStatus='ERROR';publish();});
+ },delay);
+ reconnectTimer.unref();
+ console.info('[whatsapp] Reconexão transitória agendada em '+Math.round(delay/1000)+' s');
+}
+export async function connectWhatsApp(options={}){
+ const fresh=options?.fresh===true,restore=options?.restore===true;
+ if(connecting)return connection();
+ if(sock&&['CONNECTED','QR_READY','CONNECTING'].includes(waStatus)&&!fresh)return connection();
+ if(fresh&&sock){const old=sock;sock=null;try{old.end(new Error('Novo pareamento solicitado'));}catch{}}
+ const oldStatus=waStatus;
+ clearTimeout(reconnectTimer);reconnectTimer=null;nextRetryAt=null;
+ connecting=true;waStatus='CONNECTING';lastError=null;closeCode=null;qrData=null;publish();
  try{
   const B=await import('@whiskeysockets/baileys');
   const Q=await import('qrcode');
-  const dir=path.resolve(process.env.PROSPECTOR_SESSION_DIR||path.join(process.env.PROSPECTOR_DATA_DIR||'data','wa-session'));fs.mkdirSync(dir,{recursive:true});
-  if(waStatus==='LOGGED_OUT'&&fs.existsSync(path.join(dir,'creds.json'))){
-   const target=dir+'.previous-'+Date.now();fs.renameSync(dir,target);fs.mkdirSync(dir,{recursive:true});
-   audit('WHATSAPP_SESSION_ARCHIVED',null,{reason:'re-pairing',directory:path.basename(target)});
-  }
-  const {state,saveCreds}=await B.useMultiFileAuthState(dir);
-  const {version}=await B.fetchLatestBaileysVersion();
+  const folder=authDir();fs.mkdirSync(folder,{recursive:true});
+  // Recuperar sessão inválida só por ação explícita; jamais apagar credenciais na restauração do servidor.
+  if(!restore&&(fresh||oldStatus==='LOGGED_OUT'))backupSession(folder);
+  const {state,saveCreds}=await B.useMultiFileAuthState(folder);
+  const version=await currentWebVersion(B);
+  console.info('[whatsapp] Iniciando conexão com versão Web '+version.join('.')+(restore?' (restauração)':' (pareamento)'));
   const socket=B.default({version,auth:state,printQRInTerminal:false,
+   browser:B.Browsers?.macOS?.('Chrome'),connectTimeoutMs:45000,
    logger:{level:'silent',child(){return this;},trace(){},debug(){},info(){},warn(){},error(){},fatal(){}}});
   sock=socket;
   socket.ev.on('creds.update',saveCreds);
-  socket.ev.on('connection.update',async u=>{
+  socket.ev.on('connection.update',async update=>{
    if(sock!==socket)return;
-   if(u.qr){try{qrData=await Q.default.toDataURL(u.qr,{width:320,margin:2});waStatus='QR_READY';lastQrAt=Date.now();lastError=null;}catch(e){lastError=e.message;}publish();}
-   if(u.connection==='open'){waStatus='CONNECTED';qrData=null;waUser=socket.user?.id||null;connecting=false;retries=0;lastError=null;publish();}
-   if(u.connection==='close'){
-    const reason=u.lastDisconnect?.error?.output?.statusCode;
-    const invalid=reason===B.DisconnectReason.loggedOut;
-    waStatus=invalid?'LOGGED_OUT':'DISCONNECTED';
-    lastError=String(u.lastDisconnect?.error?.message||reason||'conexão fechada');
+   if(update.qr){
+    try{qrData=await Q.default.toDataURL(update.qr,{width:320,margin:2});waStatus='QR_READY';lastQrAt=new Date().toISOString();lastError=null;}
+    catch(e){lastError='Não foi possível gerar a imagem QR: '+e.message;}
+    publish();
+   }
+   if(update.connection==='open'){
+    waStatus='CONNECTED';qrData=null;waUser=socket.user?.id||null;
+    connecting=false;retries=0;closeCode=null;lastError=null;nextRetryAt=null;publish();
+    console.info('[whatsapp] Sessão autenticada e conectada');
+   }
+   if(update.connection==='close'){
+    closeCode=update.lastDisconnect?.error?.output?.statusCode||null;
+    waStatus=classifyDisconnect(closeCode,B.DisconnectReason.loggedOut);
+    lastError=String(update.lastDisconnect?.error?.message||closeCode||'Conexão fechada').slice(0,180);
     connecting=false;sock=null;qrData=null;waUser=null;publish();
-    // Só reconecta em erros temporários; logout requer pareamento novo pelo usuário.
-    if(!invalid&&retries<3){retries++;clearTimeout(reconnectTimer);reconnectTimer=setTimeout(()=>connectWhatsApp().catch(e=>audit('WHATSAPP_RECONNECT_ERROR',null,{error:e.message})),15000*retries);reconnectTimer.unref();}
+    console.warn('[whatsapp] Socket fechado: status='+String(closeCode||'desconhecido')+'; estado='+waStatus+'; '+lastError);
+    if(waStatus!=='LOGGED_OUT')queueReconnect();
    }
   });
   socket.ev.on('messages.upsert',async event=>{
-   if(event.type!=='notify')return;
+   if(sock!==socket||event.type!=='notify')return;
    for(const m of event.messages||[]){
     try{await incoming(m);}catch(e){audit('INBOUND_ERROR',null,{error:e.message});}
    }
   });
- }catch(e){waStatus='ERROR';lastError=e.message;connecting=false;publish();}
+ }catch(e){
+  waStatus='ERROR';lastError=String(e.message).slice(0,180);connecting=false;sock=null;publish();
+  console.error('[whatsapp] Falha de inicialização: '+lastError);
+  // Erro de versão ou protocolo requer revisão: não gerar reconexões agressivas.
+ }
  return connection();
 }
 export async function disconnectWhatsApp(){
- clearTimeout(reconnectTimer);retries=3;
+ clearTimeout(reconnectTimer);reconnectTimer=null;nextRetryAt=null;retries=5;
  const old=sock;sock=null;
  if(old){try{old.end(new Error('Desconectado pelo painel'));}catch{}}
- connecting=false;waStatus='DISCONNECTED';qrData=null;waUser=null;publish();return connection();
+ connecting=false;waStatus='DISCONNECTED';qrData=null;waUser=null;lastError=null;closeCode=null;publish();
+ return connection();
 }
 function formMessage(m){
  const x=m.message||{};

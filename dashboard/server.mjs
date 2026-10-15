@@ -185,7 +185,7 @@ async function handler(req,res){
   if(req.method==='GET'&&/^\/api\/threads\/[^/]+\/messages$/.test(pathname)){
    const threadId=pathname.split('/')[3];return respond(res,200,all('SELECT * FROM messages WHERE thread_id=? ORDER BY at DESC LIMIT 300',threadId).reverse());
   }
-  if(req.method==='POST'&&pathname==='/api/connect')return respond(res,200,await connectWhatsApp());
+  if(req.method==='POST'&&pathname==='/api/connect'){const args=await json(req);return respond(res,200,await connectWhatsApp({fresh:args.fresh===true}));}
   if(req.method==='POST'&&pathname==='/api/disconnect')return respond(res,200,await disconnectWhatsApp());
   if(req.method==='POST'&&pathname==='/api/leads'){
    const value=await json(req),result=addLead(value);recordOrigin(result.lead.id,'MANUAL',{method:'panel'});notify();return respond(res,201,result);
