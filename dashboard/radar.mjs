@@ -62,7 +62,9 @@ export function radarSnapshot(input=new Date()){
  const scanningEnabled=!getSetting('paused',true)&&getSetting('discovery_auto_enabled',true)!==false;
  const scanHour=hourSP(input);
  const discoveryReason=!scanningEnabled?'PAUSED':foundToday.length>=discoveryTarget?'TARGET_REACHED':scanHour<budget.start||scanHour>=budget.end?'OUTSIDE_HOURS':'RUNNING_OR_WAITING_FOR_PROVIDER';
- return {asOf:input.toISOString(),pilot,...budget,discoveryTarget,discoveryReason,foundToday:foundToday.length,foundTotal:one('SELECT COUNT(*) AS n FROM leads')?.n||0,
+ const campaignId=String(getSetting('autonomous_campaign_id',''));
+ const campaignReady=!!(campaignId&&one('SELECT id FROM workflows WHERE id=? AND enabled=1',campaignId));
+ return {asOf:input.toISOString(),pilot,...budget,campaignReady,discoveryTarget,discoveryReason,foundToday:foundToday.length,foundTotal:one('SELECT COUNT(*) AS n FROM leads')?.n||0,
   examinedToday:examined,searchesToday:todayRuns.length,searchInProgress:scanned,
   lastSearch:history[0]?{query:history[0].query,status:history[0].status,at:history[0].at}:null,
   recentFinds:foundToday.slice(0,28).map(x=>({id:x.id,name:x.business,source:x.source,segment:x.segment,city:x.city})),

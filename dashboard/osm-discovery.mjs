@@ -119,7 +119,9 @@ export async function discoverLocal(payload={},automatic=false){
   if(data.remark)throw Error('A API pública não concluiu a pesquisa: '+String(data.remark).slice(0,120));
   if(!Array.isArray(data.elements))throw Error('A fonte não retornou uma lista válida');
   let added=0,examined=0,withPhone=0;
+  const quota=automatic?Math.max(0,Math.min(150,Number(getSetting('discovery_target_daily',150))||150)-radarSnapshot().foundToday):70;
   for(const item of data.elements.slice(0,70)){
+   if(added>=quota)break;
    const tags=item.tags||{};
    const business=String(tags.name||'').trim().slice(0,120);
    if(!business||!['node','way','relation'].includes(item.type)||!Number.isSafeInteger(item.id))continue;
