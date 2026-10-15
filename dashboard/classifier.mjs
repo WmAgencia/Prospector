@@ -9,7 +9,7 @@ const rules=[
 export function classify(s){
  const text=normalize(s);
  for(const [intent,rx] of rules)if(rx.test(text))return {intent,confidence:intent==='OPT_OUT'?1:0.96,matched_rules:[intent],allow_media:!['OPT_OUT','NOT_INTERESTED'].includes(intent),requires_human:['INTERESTED','QUESTION'].includes(intent)};
- if(/^(oi|ola|bom dia|boa tarde|boa noite|tudo bem|pode falar|sim|ok|certo|manda ai|blz|beleza|pode mandar|opa)[!?. ]*$/.test(text))return {intent:'NEUTRAL',confidence:0.9,matched_rules:['GREETING'],allow_media:true,requires_human:false};
+ if(/^(oi|ola|bom dia|boa tarde|boa noite|tudo bem|pode falar|sim|ok|certo|manda ai|blz|beleza|pode mandar|opa)[!?. ]*$/.test(text)||/^(?:oi|ola|opa|bom dia|boa tarde|boa noite)(?: tudo bem)? (?:pode falar|pode mandar|sim|claro|manda ai)[!?. ]*$/.test(text))return {intent:'NEUTRAL',confidence:0.9,matched_rules:['GREETING'],allow_media:true,requires_human:false};
  return {intent:'UNCERTAIN',confidence:0.3,matched_rules:[],allow_media:false,requires_human:true};
 }
 export function safeName(s){

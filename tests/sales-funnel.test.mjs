@@ -8,6 +8,8 @@ const db=await import('../dashboard/db.mjs');
 const runtime=await import('../dashboard/runtime.mjs');
 const cadence=await import('../dashboard/contact-cadence.mjs');
 const offer=await import('../dashboard/campaign-rules.mjs');
+const routing=await import('../dashboard/automation-router.mjs');
+const intent=await import('../dashboard/classifier.mjs');
 test('funil: áudio após resposta e 60 segundos; vídeo após áudio',async()=>{
  const audio='audio-test',video='video-test',at=db.now();
  db.run("INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)",audio,'Oferta de exemplo','audio','audio/ogg','offer.ogg',12,at);
@@ -53,4 +55,19 @@ test('histórico de 90 dias e promoção não expirada',()=>{
  assert.equal(cadence.allowedToRecontact({phone:'5515999887766',contact_permission:1,stage:'NO_INTEREST',next_contact_at:end},Date.parse(end)),false);
  assert.equal(offer.isOfferActive('2026-10-18',Date.parse('2026-10-18T20:00:00-03:00')),true);
  assert.equal(offer.isOfferActive('2026-10-18',Date.parse('2026-10-19T00:00:00-03:00')),false);
+});
+
+test('primeira resposta: cumprimento isolado exige revisão; autorização clara é aceita',async()=>{
+ assert.equal(intent.classify('Oi, pode falar').intent,'NEUTRAL');
+ assert.equal(routing.evaluateDecision('Oi, pode falar').decision,'YES');
+ assert.equal(routing.evaluateDecision('Oi').decision,'REVIEW');
+ const lead=db.addLead({business:'Teste Cumprimento',phone:'5515999889900',contact_permission:true,source:'TEST'}).lead;
+ const workflow=runtime.saveWorkflow({name:'Campanha Saudação Teste',enabled:true,steps:offer.proposedFlow({audioId:'audio-test',videoId:'video-test'})});
+ const ex=runtime.startWorkflow(lead.id,workflow);runtime.drive(ex);
+ db.run("UPDATE jobs SET status='SENT' WHERE lead_id=?",lead.id);
+ db.run("UPDATE executions SET state='ACTIVE' WHERE id=?",ex);runtime.drive(ex);
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',ex).state,'WAIT_REPLY');
+ await runtime.incoming({key:{remoteJid:'5515999889900@s.whatsapp.net',id:'isolated-hi'},message:{conversation:'Oi'}});
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',ex).state,'NEEDS_REVIEW');
+ assert.equal(db.one("SELECT COUNT(*) n FROM jobs WHERE lead_id=? AND type='audio'",lead.id).n,0);
 });

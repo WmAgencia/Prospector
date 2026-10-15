@@ -241,7 +241,19 @@ export async function incoming(m) {
  }else stage(lead.id,'REPLIED','resposta recebida');
  if(!manual&&getSetting('automation_enabled',true)){
   const execution=one("SELECT * FROM executions WHERE lead_id=? AND state='WAIT_REPLY'",lead.id);
-  if(execution){run("UPDATE executions SET state='ACTIVE',updated_at=? WHERE id=?",now(),execution.id);drive(execution.id);}
+  if(execution){
+   const steps=JSON.parse(execution.steps),upcoming=steps[execution.next_step],after=steps[execution.next_step+1];
+   // Cumprimento isolado nao libera audio comercial.
+   if(upcoming?.type==='delay'&&after?.type==='audio'){
+    const decision=payload.type==='text'?evaluateDecision(payload.body,'general_interest').decision:'REVIEW';
+    if(decision!=='YES'){
+     run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE id=?",now(),execution.id);
+     audit('PROMOTIONAL_REPLY_REVIEW',lead.id,{decision,reason:'no_explicit_go_ahead'});
+     publish();return;
+    }
+   }
+   run("UPDATE executions SET state='ACTIVE',updated_at=? WHERE id=?",now(),execution.id);drive(execution.id);
+  }
  }
  publish();
 }
@@ -313,6 +325,14 @@ export function startWorkflow(leadId,selectedAutomationId=null){
   return runId;
  });
 }
+function isPromotionalExecution(runId){
+ if(!runId)return false;
+ const record=one('SELECT w.name FROM executions e JOIN workflows w ON w.id=e.workflow_id WHERE e.id=?',runId);
+ return /^Oferta Consecom R\$350\b/.test(String(record?.name||''));
+}
+function promotionExpired(runId){
+ return isPromotionalExecution(runId)&&!isOfferActive(getSetting('campaign_offer_expiry',''));
+}
 export function drive(runId){
  for(let i=0;i<50;i++){
   const r=one('SELECT * FROM executions WHERE id=?',runId);if(!r||r.state!=='ACTIVE')return;
@@ -321,6 +341,10 @@ export function drive(runId){
   const takeover=one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id);
   if(takeover?.manual_takeover)return;
   const steps=JSON.parse(r.steps),step=steps[r.next_step];
+  if(promotionExpired(r.id)){
+   run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE id=?",now(),r.id);
+   audit('PROMOTION_EXPIRED_REVIEW',r.lead_id,{executionId:r.id});publish();return;
+  }
   if(!step||step.type==='end'){run("UPDATE executions SET state='COMPLETE',updated_at=? WHERE id=?",now(),runId);publish();return;}
   if(step.type==='decision'){run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE id=?",now(),runId);audit('AUTOMATION_INVALID_DECISION',lead.id,{runId});publish();return;}
   if(step.type==='wait_reply'){run("UPDATE executions SET state='WAIT_REPLY',next_step=next_step+1,updated_at=? WHERE id=?",now(),runId);publish();return;}
@@ -381,7 +405,9 @@ async function send(job,lead){
   else if(job.type==='audio')payload={audio:buf,mimetype:media.mime,ptt:/opus|ogg/.test(media.mime)};
   else if(job.type==='image')payload={image:buf,mimetype:media.mime};
  }
- return {ack:await sock.sendMessage(jid,payload),jid};
+ const ack=await sock.sendMessage(jid,payload);
+ if(!ack?.key?.id)throw Error('Envio sem identificador de confirmação do WhatsApp');
+ return {ack,jid};
 }
 export async function tick(){
  if(locked)return;locked=true;
@@ -401,7 +427,16 @@ export async function tick(){
   }
   const jobs=all("SELECT * FROM jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10");
   for(const job of jobs){
-   const lead=one('SELECT * FROM leads WHERE id=?',job.lead_id);if(!lead||suppressed(lead.phone)){run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);continue;}
+   const lead=one('SELECT * FROM leads WHERE id=?',job.lead_id);
+   if(!lead||!lead.contact_permission||['NO_INTEREST','CLOSED_WON'].includes(lead.stage)||suppressed(lead.phone)){
+    run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);
+    audit('DELIVERY_BLOCKED',job.lead_id,{jobId:job.id,reason:'permission_or_stage'});continue;
+   }
+   if(job.execution_id&&promotionExpired(job.execution_id)){
+    run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);
+    run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE id=?",now(),job.execution_id);
+    audit('PROMOTION_EXPIRED_REVIEW',job.lead_id,{jobId:job.id});continue;
+   }
    if(job.execution_id){
     const execution=one('SELECT * FROM executions WHERE id=?',job.execution_id);
     const thread=one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id);

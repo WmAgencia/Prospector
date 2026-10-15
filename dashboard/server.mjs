@@ -299,6 +299,10 @@ async function handler(req,res){
    if(v.value===true&&!one('SELECT id FROM leads WHERE id=?',leadId))throw Error('Lead não encontrado');
    if(v.value===true&&!String(v.proof||'').trim())throw Error('Registre como a pessoa autorizou mensagens pelo WhatsApp');
    run('UPDATE leads SET contact_permission=? WHERE id=?',v.value?1:0,leadId);
+   if(v.value!==true){
+    run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE lead_id=? AND status='PENDING'",now(),leadId);
+    run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE lead_id=? AND state NOT IN ('COMPLETE','CANCELLED')",now(),leadId);
+   }
    audit('CONSENT_UPDATED',leadId,{permitted:v.value===true,evidence:String(v.proof||'').slice(0,150)});
    notify();return respond(res,200,{ok:true});
   }
