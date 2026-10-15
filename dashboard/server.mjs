@@ -386,7 +386,7 @@ const server=http.createServer(handler);
 const activation=enableAuthorizedOutreach();
 console.log('[authorized outreach]',activation.status,'ready='+activation.ready,'waiting='+activation.awaitingConsent);
 const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)),2500);
-const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
+const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
 setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
 setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
 const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),60*1000);
