@@ -26,6 +26,11 @@ export const LOCATIONS={
 };
 export const SEGMENTS={
   dentista:{label:'Dentistas',filter:'amenity',value:'dentist'},
+  nutricionista:{label:'Nutricionistas',filter:'healthcare',value:'dietitian'},
+  massoterapeuta:{label:'Massoterapeutas',filter:'shop',value:'massage'},
+  quiropraxista:{label:'Quiropraxistas',filter:'healthcare',value:'chiropractor'},
+  esteticista:{label:'Esteticistas',filter:'shop',value:'beauty'},
+  personal:{label:'Personal trainers / treino',filter:'leisure',value:'fitness_centre'},
   psicologo:{label:'Psicólogos',filter:'healthcare',value:'psychotherapist'},
   clinica:{label:'Clínicas',filter:'amenity',value:'clinic'},
   estetica:{label:'Estética',filter:'shop',value:'beauty'},

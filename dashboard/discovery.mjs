@@ -3,6 +3,8 @@ import {one,all,run,id,now,getSetting,audit,addLead} from './db.mjs';
 
 export const providerDefinitions=[
  {id:'osm',label:'Empresas locais · OpenStreetMap',supportsSearch:true,note:'Pesquisa pública local sem chave. © OpenStreetMap contributors (ODbL); não confirma inexistência de site nem autorização para contato.'},
+ {id:'cnpj',label:'CNPJ · Receita Federal (arquivos oficiais)',supportsSearch:true,note:'Importação assistida de registros públicos oficiais; arquivo obtido legitimamente pelo operador.'},
+ {id:'cnes',label:'CNES · Estabelecimentos de Saúde',supportsSearch:true,note:'Importação assistida de registros CNES; não equivale a cadastro de todos os profissionais.'},
  {id:'meta_ads',label:'Biblioteca de Anúncios',supportsSearch:false,note:'Pesquisa comercial ampla não disponibilizada por esta integração. Requer conector oficial autorizado.'},
  {id:'instagram_search',label:'Pesquisa direta no Instagram',supportsSearch:false,note:'Instagram não fornece uma busca geral irrestrita de contas comerciais nesta integração.'},
  {id:'instagram_hashtags',label:'Hashtags',supportsSearch:false,note:'Depende de permissões oficiais e contas profissionais elegíveis.'},
@@ -15,7 +17,7 @@ export const weightsDefault={noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusin
 export function providerStatus(){
  const key=!!process.env.BRAVE_SEARCH_API_KEY;
  const enabled=getSetting('discovery_sources',{osm:true,web_search:true})||{};
- return providerDefinitions.map(p=>({...p,enabled:p.id==='osm'&&enabled.osm===undefined?true:!!enabled[p.id],status:p.id==='osm'?'READY':p.id==='web_search'?(key?'READY':'NEEDS_API_KEY'):p.id==='google_places'?(process.env.GOOGLE_PLACES_API_KEY?'READY':'NEEDS_API_KEY'):p.id==='foursquare'?(process.env.FOURSQUARE_API_KEY?'READY':'NEEDS_API_KEY'):'NOT_IMPLEMENTED',
+ return providerDefinitions.map(p=>({...p,enabled:p.id==='osm'&&enabled.osm===undefined?true:!!enabled[p.id],status:p.id==='osm'?'READY':['cnpj','cnes'].includes(p.id)?'IMPORT_READY':p.id==='web_search'?(key?'READY':'NEEDS_API_KEY'):p.id==='google_places'?(process.env.GOOGLE_PLACES_API_KEY?'READY':'NEEDS_API_KEY'):p.id==='foursquare'?(process.env.FOURSQUARE_API_KEY?'READY':'NEEDS_API_KEY'):'NOT_IMPLEMENTED',
   last_run:one('SELECT at,found,status,details FROM discoveries WHERE query LIKE ? ORDER BY at DESC LIMIT 1',p.id+':%')||null
  }));
 }
@@ -38,7 +40,7 @@ export function scoreLead(lead,origins=[]){
 }
 export function recordOrigin(leadId,source,details={},verified=false){
  if(!providerDefinitions.some(x=>x.id===source)&&!['MANUAL','LEGACY_IMPORT','WHATSAPP_INBOUND'].includes(source))throw Error('Fonte inválida');
- const identity=String(details.url||details.instagram||source).slice(0,600);
+ const identity=String(details.identity||details.url||details.instagram||source).slice(0,600);
  run('INSERT INTO lead_origins(id,lead_id,source,identity,verified,details,at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(lead_id,source,identity) DO UPDATE SET at=excluded.at',
   id(),leadId,source,identity,verified?1:0,JSON.stringify(details),now());
 }

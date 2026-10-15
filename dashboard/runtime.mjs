@@ -6,6 +6,7 @@ import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
 import {scheduleReport,flushNotices,queueNotice} from './notifications.mjs';
 import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
+import {canSendInitial} from './radar.mjs';
 import {isOfferActive} from './campaign-rules.mjs';
 import {currentWebVersion,classifyDisconnect,retryDelay,isPairingRestart} from './whatsapp-reliability.mjs';
 
@@ -382,18 +383,7 @@ export function takeover(threadId,value){
  }
  audit('TAKEOVER',t.lead_id,{enabled:value});publish();
 }
-function insideHours(){
- const h=Number(new Intl.DateTimeFormat('en-US',{hour:'numeric',hour12:false,timeZone:'America/Sao_Paulo'}).format(new Date()));
- return h>=Number(getSetting('business_start',8))&&h<Number(getSetting('business_end',21));
-}
-function canInitial(){
- if(getSetting('paused',true)||!insideHours())return false;
- const sent=one("SELECT MAX(updated_at) as last FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status='SENT'");
- if(sent?.last&&Date.now()-new Date(sent.last).getTime()<Number(getSetting('min_minutes',5))*60000)return false;
- const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
- const count=all("SELECT updated_at FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status='SENT'").filter(x=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(x.updated_at))===today).length;
- return count<Number(getSetting('daily_limit',96));
-}
+function canInitial(){return canSendInitial();}
 async function send(job,lead){
  if(waStatus!=='CONNECTED'||!sock)throw Error('WhatsApp desconectado');
  const jid=jidFor(lead);if(!jid)throw Error('JID não encontrado');
