@@ -8,6 +8,7 @@ import {one,all,run,tx,id,now,addLead,stage,getThread,getSetting,setSetting,audi
 import {providerStatus,scoreLead,recordOrigin,discoverProfiles,verifyWebsiteCandidate} from './discovery.mjs';
 import {setSalesCampaign} from './sales-campaign.mjs';
 import {searchDirectory} from './external-research.mjs';
+import {evidence,STATUSES} from './website-review.mjs';
 import {eligibleRecontacts,scheduleApprovedRecontact} from './contact-cadence.mjs';
 import {discoverLocal,dailyLocalDiscovery,LOCATIONS,SEGMENTS} from './osm-discovery.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
@@ -110,7 +111,11 @@ async function json(req){const b=await body(req);return b.length?JSON.parse(b.to
 const allowedSettings=new Set(['paused','auto_initial','min_minutes','daily_limit','business_start','business_end','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
 function snapshot(){
  const leadOrigins=all('SELECT lead_id,source,verified FROM lead_origins ORDER BY at DESC');
- const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000').map(l=>{const origins=leadOrigins.filter(o=>o.lead_id===l.id);return {...l,origins:[...new Set(origins.map(o=>o.source))],...scoreLead(l,origins)};});
+ const lastSiteReview=new Map();
+ for(const row of all("SELECT lead_id,detail FROM audit WHERE action='WEBSITE_EVIDENCE_RECORDED' ORDER BY at DESC LIMIT 3000")){
+  if(!lastSiteReview.has(row.lead_id)){try{lastSiteReview.set(row.lead_id,JSON.parse(row.detail));}catch{}}
+ }
+ const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000').map(l=>{const origins=leadOrigins.filter(o=>o.lead_id===l.id);return {...l,origins:[...new Set(origins.map(o=>o.source))],siteEvidence:lastSiteReview.get(l.id)||null,...scoreLead(l,origins)};});
  const threads=all('SELECT t.*,l.business,l.name,l.phone,l.stage FROM threads t JOIN leads l ON l.id=t.lead_id ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1000');
  const workflows=all('SELECT * FROM workflows ORDER BY is_default DESC,updated_at DESC').map(w=>({...w,enabled:!!w.enabled,segments:JSON.parse(w.segments_json||'[]'),steps:JSON.parse(w.steps)}));
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
@@ -208,19 +213,28 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/connect'){const args=await json(req);return respond(res,200,await connectWhatsApp({fresh:args.fresh===true}));}
   if(req.method==='POST'&&pathname==='/api/disconnect')return respond(res,200,await disconnectWhatsApp());
   if(req.method==='POST'&&pathname==='/api/leads'){
-   const value=await json(req),result=addLead(value);recordOrigin(result.lead.id,'MANUAL',{method:'panel'});notify();return respond(res,201,result);
+   const value=await json(req);
+   if(value.contact_permission===true&&!String(value.permission_proof||'').trim())throw Error('Contato autorizado exige registro de comprovante');
+   const result=addLead(value);recordOrigin(result.lead.id,'MANUAL',{method:'panel'});
+   if(value.contact_permission===true)audit('CONSENT_UPDATED',result.lead.id,{permitted:true,evidence:String(value.permission_proof).trim().slice(0,300),method:'manual_registration'});
+   notify();return respond(res,201,result);
   }
   if(req.method==='POST'&&pathname==='/api/import'){
    const v=await json(req);if(!Array.isArray(v.leads)||v.leads.length>300)throw Error('Máximo de 300 leads por importação');
    let created=0;const problems=[];
-   for(const l of v.leads){try{const result=addLead(l);recordOrigin(result.lead.id,'MANUAL',{method:'import'});if(result.created)created++;}catch(e){problems.push(e.message);}}
+   for(const l of v.leads){try{
+    if(l.contact_permission===true&&!String(l.permission_proof||'').trim())throw Error('Importação de contato autorizado exige comprovante');
+    const result=addLead(l);recordOrigin(result.lead.id,'MANUAL',{method:'import'});
+    if(l.contact_permission===true)audit('CONSENT_UPDATED',result.lead.id,{permitted:true,evidence:String(l.permission_proof).trim().slice(0,300),method:'import'});
+    if(result.created)created++;
+   }catch(e){problems.push(e.message);}}
    notify();return respond(res,200,{created,duplicates:v.leads.length-created-problems.length,errors:problems.slice(0,10)});
   }
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/update')){
    const leadId=pathname.split('/')[3],v=await json(req),old=one('SELECT * FROM leads WHERE id=?',leadId);
    if(!old)throw Error('Lead não encontrado');
-   const allowedStatus=['UNCERTAIN','NO_WEBSITE','HAS_WEBSITE','SOCIAL_ONLY','LINK_AGGREGATOR_ONLY','BROKEN_WEBSITE'];
-   if(v.website_status&&!allowedStatus.includes(v.website_status))throw Error('Status do site inválido');
+   if(v.website_status&&!STATUSES.includes(v.website_status))throw Error('Status do site inválido');
+   const siteReview=evidence(v,old);
    const nPhone=v.phone!==undefined?phone(v.phone):old.phone;
    if(v.phone!==undefined&&old.phone!==nPhone&&one('SELECT lead_id FROM initial_contacts WHERE lead_id=?',leadId))throw Error('Telefone de lead já abordado não pode ser modificado');
    if(v.phone!==undefined&&v.phone&&!nPhone)throw Error('Telefone inválido');
@@ -228,6 +242,7 @@ async function handler(req,res){
      String(v.name??old.name??''),String(v.business??old.business),nPhone,String(v.segment??old.segment??''),
      String(v.city??old.city??''),String(v.website??old.website??''),String(v.website_status??old.website_status),
      String(v.notes??old.notes??''),leadId);
+   if(siteReview)audit('WEBSITE_EVIDENCE_RECORDED',leadId,siteReview);
    audit('LEAD_UPDATED',leadId,{website_status:v.website_status});notify();return respond(res,200,{ok:true});
   }
   if(req.method==='POST'&&pathname==='/api/meetings'){
@@ -296,7 +311,9 @@ async function handler(req,res){
   }
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/permission')){
    const leadId=pathname.split('/')[3],v=await json(req);
-   if(v.value===true&&!one('SELECT id FROM leads WHERE id=?',leadId))throw Error('Lead não encontrado');
+   const oldPermission=one('SELECT id,contact_permission FROM leads WHERE id=?',leadId);
+   if(!oldPermission)throw Error('Lead não encontrado');
+   if(v.value===true&&oldPermission.contact_permission===1&&!String(v.proof||'').trim())return respond(res,200,{ok:true,unchanged:true});
    if(v.value===true&&!String(v.proof||'').trim())throw Error('Registre como a pessoa autorizou mensagens pelo WhatsApp');
    run('UPDATE leads SET contact_permission=? WHERE id=?',v.value?1:0,leadId);
    if(v.value!==true){
