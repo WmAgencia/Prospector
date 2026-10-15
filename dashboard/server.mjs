@@ -105,7 +105,7 @@ function sameOriginWrite(req,res){
 const clients=new Set();
 function notify(){for(const res of [...clients]){try{res.write('event: update\ndata: {}\n\n');}catch{clients.delete(res);}}}
 setNotifier(notify);
-const web={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
+const web={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
 function respond(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
 function error(res,e){const msg=e?.message||'Erro desconhecido';respond(res,400,{error:msg});}
 async function body(req,limit=3*1024*1024){
@@ -374,7 +374,7 @@ async function handler(req,res){
   }
   if(req.method!=='GET')return respond(res,404,{error:'Rota inexistente'});
   const target=pathname==='/'?'index.html':pathname.slice(1);
-  if(!['index.html','app.js','style.css','campaign-ui.js','campaign-ui.css','radar-ui.js'].includes(target))return respond(res,404,{error:'Arquivo inexistente'});
+  if(!['index.html','app.js','style.css','campaign-ui.js','campaign-ui-state.mjs','campaign-ui.css','radar-ui.js'].includes(target))return respond(res,404,{error:'Arquivo inexistente'});
   const f=path.join(root,target),ext=path.extname(f);
   res.writeHead(200,{'Content-Type':web[ext]||'text/plain','Cache-Control':'no-cache'});fs.createReadStream(f).pipe(res);
  }catch(e){console.error('[API]',e?.message);error(res,e);}

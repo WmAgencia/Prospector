@@ -5,7 +5,7 @@ const labelStage={DISCOVERED:'Encontrado',CONTACTED:'Em abordagem',REPLIED:'Resp
 const websiteLabel={UNCERTAIN:'Verificação inconclusiva',NOT_FOUND_AFTER_CHECK:'Site não encontrado na pesquisa',NO_WEBSITE:'Sem site após revisão humana',HAS_WEBSITE:'Site próprio confirmado',SOCIAL_ONLY:'Somente redes sociais',LINK_AGGREGATOR_ONLY:'Página agregadora',BROKEN_WEBSITE:'Site indisponível'};
 const stages=[['DISCOVERED','Encontrados','blue'],['CONTACTED','Em abordagem','blue'],['REPLIED','Responderam','yellow'],['INTERESTED','Interessados','green'],['NO_INTEREST','Sem interesse','red'],['CLOSED_WON','Fechados','green']];
 let state=null,page=location.hash.split('/')[1]||'overview',selectedThread=location.hash.split('/')[2]||null,mediaTab='video',workflowId='default',editing=null,dirty=false,loading=false,chatSearch='',kanbanSearch='';
-let toastTimer=null;
+let toastTimer=null,kanbanStage='ALL';
 const icons={video:'▣',audio:'♫',image:'▧',message:'✉',wait_reply:'◌',delay:'◷',end:'✓'};
 function showToast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),4200);}
 async function request(path,data,method='POST'){
@@ -16,7 +16,7 @@ async function request(path,data,method='POST'){
 }
 async function load(shouldDraw=true){
  if(loading)return;loading=true;
- try{const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw Error('API indisponível');state=await r.json();if(shouldDraw)draw();}
+ try{const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw Error('API indisponível');state=await r.json();if(shouldDraw)draw();else window.dispatchEvent(new CustomEvent('prospector:data',{detail:{page,state}}));}
  catch(e){$('#sync-status').textContent='Offline';if(!state)$('#screen').innerHTML='<div class="empty"><strong>Não foi possível conectar ao backend</strong><p>'+esc(e.message)+'</p></div>';}
  finally{loading=false;}
 }
@@ -102,16 +102,17 @@ function overview(){
 }
 function prospects(){
  const filtered=state.leads.filter(l=>!kanbanSearch||[l.business,l.name,l.phone,l.instagram].some(x=>String(x||'').toLowerCase().includes(kanbanSearch)));
- let markup='<div class="between section-head"><div><h2>Pipeline comercial</h2><p>Clique em um card para abrir a conversa, ou altere a etapa.</p></div><div class="actionsrow"><button class="btn secondary" data-action="import">Importar JSON</button><button class="btn" data-action="new-lead">+ Adicionar lead</button></div></div>';
- markup+='<div class="toolbar"><input class="searchbox" placeholder="Buscar por empresa, telefone ou Instagram..." id="kanban-search" value="'+esc(kanbanSearch)+'"></div>';
- markup+='<div class="board">'+stages.map(([stage,title,color])=>{
+ let markup='<div class="between section-head"><div><h2>Suas oportunidades</h2><p>Encontre, acompanhe e converse com os profissionais selecionados.</p></div><div class="actionsrow"><button class="btn secondary" data-action="route" data-to="discovery">⌕ Buscar empresas</button><button class="btn" data-action="new-lead">+ Adicionar</button></div></div>';
+ markup+='<div class="toolbar"><input class="searchbox" placeholder="Buscar empresa, telefone ou Instagram..." id="kanban-search" value="'+esc(kanbanSearch)+'"></div>';
+ markup+='<div class="simple-stage-tabs">'+[['ALL','Todas'],...stages.map(x=>[x[0],x[1]])].map(([key,title])=>'<button class="simple-stage-tab '+(kanbanStage===key?'selected':'')+'" data-action="kanban-filter" data-stage="'+key+'">'+esc(title)+' <span>'+filtered.filter(x=>key==='ALL'||x.stage===key).length+'</span></button>').join('')+'</div>';
+ markup+='<div class="board '+(kanbanStage==='ALL'?'':'simple-board-focus')+'">'+stages.filter(x=>kanbanStage==='ALL'||x[0]===kanbanStage).map(([stage,title,color])=>{
   const arr=filtered.filter(l=>l.stage===stage);
   return '<div class="column" data-dropstage="'+stage+'"><div class="column-header"><strong>'+title+'</strong><span class="count">'+arr.length+'</span></div>'+
   (arr.length?arr.map(l=>'<div class="leadcard" draggable="true" data-dragid="'+l.id+'" data-action="open-lead" data-lead="'+l.id+'"><strong>'+esc(l.name||l.business)+'</strong><div class="phone">'+esc(l.phone||'WhatsApp não identificado')+'</div><footer><small>'+esc(l.business)+' · '+(l.score??0)+' pts</small><span class="tag '+color+'">'+esc(labelStage[stage])+'</span></footer><div class="actionsrow" style="margin-top:10px"><button class="btn small secondary" data-action="review-lead" data-lead="'+l.id+'">Revisar</button>'+(stage==='DISCOVERED'?'<button class="btn small" data-action="start-lead" data-lead="'+l.id+'">Iniciar</button>':'')+'</div></div>').join(''):'<div class="empty" style="padding:25px 4px;font-size:12px">Nenhum lead</div>')+'</div>';
  }).join('')+'</div>';
  const fresh=filtered.filter(l=>l.stage==='DISCOVERED');
- markup+='<section class="panel" style="margin-top:12px"><div class="between"><h3>Novos leads para qualificação ('+fresh.length+')</h3><span class="tag">Não abordados</span></div>'+
- (fresh.length?fresh.slice(0,80).map(l=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(l.business)+'</strong><small>'+esc(l.instagram?'@'+l.instagram:'')+' · '+esc(l.city||'Cidade não informada')+' · '+esc(websiteLabel[l.website_status]||l.website_status)+'</small></div><button class="btn small secondary" data-action="review-lead" data-lead="'+l.id+'">Detalhes</button><button class="btn small" data-action="start-lead" data-lead="'+l.id+'">Iniciar fluxo</button></div>').join(''):'<div class="empty">Sem leads novos</div>')+'</section>';
+ markup+='<details class="panel simple-lead-extras" style="margin-top:12px"><summary>Lista de encontrados para revisão ('+fresh.length+')</summary><div class="between"><h3>Novos leads para qualificação ('+fresh.length+')</h3><span class="tag">Não abordados</span></div>'+
+ (fresh.length?fresh.slice(0,80).map(l=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(l.business)+'</strong><small>'+esc(l.instagram?'@'+l.instagram:'')+' · '+esc(l.city||'Cidade não informada')+' · '+esc(websiteLabel[l.website_status]||l.website_status)+'</small></div><button class="btn small secondary" data-action="review-lead" data-lead="'+l.id+'">Detalhes</button><button class="btn small" data-action="start-lead" data-lead="'+l.id+'">Iniciar fluxo</button></div>').join('') :'<div class="empty">Sem leads novos</div>')+'</details>';
  return markup;
 }
 function conversations(){
@@ -256,12 +257,14 @@ function discovery(){
  '<p class="subtle" style="line-height:1.6;font-size:12px;margin-top:15px">A consulta pode levar até 40 segundos. Apenas informações publicadas na fonte são importadas; não presume que uma empresa não possui site ou autorizou mensagens.</p>'+
  '<p class="subtle" style="font-size:11px"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors · ODbL</a></p></section>'+
  '<section class="panel"><h3>Últimas pesquisas</h3>'+(state.discoveries.length?state.discoveries.slice(0,7).map(d=>'<div class="activity"><span class="dotmini">⌕</span><div><strong>'+esc(d.query)+'</strong><small>'+d.found+' novo(s) · '+fmtDate(d.at)+' · '+esc(d.status)+'</small></div></div>').join(''):'<div class="empty">Nenhuma pesquisa registrada.</div>')+'</section></div>'+
+ '<details class="simple-discovery-extra"><summary>Outras fontes e importações <span aria-hidden="true">⌄</span></summary>'+ 
  '<section class="panel" style="margin-top:18px"><div class="between"><h3>Busca web complementar (Brave)</h3><span class="tag">'+(state.searchConfigured?'Configurada':'Opcional')+'</span></div>'+
  '<div class="two"><div class="field"><label>Consulta livre</label><input id="discover-query" placeholder="Ex.: psicóloga Sorocaba ou clínica Campinas"></div><button class="btn secondary" data-action="discover" '+(!state.searchConfigured?'disabled':'')+'>Pesquisar perfis indexados</button></div>'+
  '<p class="subtle">Brave requer chave válida do provedor. Bibliotecas no GitHub não fornecem chaves de serviços externos.</p></section>'+
  '<section class="panel" style="margin-top:18px"><div class="between"><h3>Diretórios empresariais complementares</h3><span class="tag">APIs oficiais</span></div><p class="subtle">Google Places e Foursquare oferecem informações adicionais de sites e empresas quando você configura suas próprias chaves na Railway. Podem existir custos e limitações de armazenamento. Resultados são exibidos para revisão e não são copiados automaticamente ao banco.</p><div class="two"><div class="field"><label>Fonte</label><select id="external-provider"><option value="google_places">Google Places</option><option value="foursquare">Foursquare Places</option></select></div><div class="field"><label>Segmento</label><input id="external-query" placeholder="Ex.: clínica odontológica"></div></div><div class="two"><div class="field"><label>Cidade</label><input id="external-city" value="Sorocaba"></div><button class="btn secondary" data-action="external-search">Pesquisar nesta fonte</button></div></section>'+
  '<section class="panel" style="margin-top:18px"><h3>Importar CNPJ / CNES · fontes oficiais</h3><p class="subtle">Use um arquivo CSV ou JSON obtido legitimamente na fonte original. O sistema registra a procedência, cruza duplicados e cria oportunidades sem permissão de contato. O download massivo dessas bases não é realizado pelo servidor.</p><div class="two"><div class="field"><label>Fonte</label><select id="official-source"><option value="cnpj">CNPJ / Receita Federal</option><option value="cnes">CNES / Ministério da Saúde</option></select></div><div class="field"><label>Arquivo (até 200 registros)</label><input type="file" id="official-file" accept=".csv,.json"></div></div><div class="actionsrow"><button class="btn secondary" data-action="import-official">Importar lote verificado</button><span class="tag">Sem envio de mensagens</span></div><small class="subtle">CSV com colunas cnpj ou cnes, nome_fantasia ou nome, municipio, telefone (opcional). CNES e CNPJ devem conter seus códigos completos.</small></section>'+
  '<section class="panel" style="margin-top:18px"><h3>Provedores de prospecção</h3>'+providers.map(p=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(p.label)+'</strong><small>'+esc(p.note)+'</small></div><span class="tag '+(p.status==='READY'?'green':p.status==='NEEDS_API_KEY'?'yellow':'')+'">'+esc(p.status==='READY'?'Pronto':p.status==='NEEDS_API_KEY'?'Sem chave':p.status==='IMPORT_READY'?'Importação pronta':'Não integrado')+'</span></div>').join('')+'</section>'+
+ '</details>'+ 
  '<section class="panel" style="margin-top:18px"><h3>Segurança das abordagens</h3><p class="subtle">Empresas descobertas entram com contato não autorizado. A plataforma não envia campanhas para números coletados sem permissão. Fonte pública não equivale a autorização para WhatsApp. Empresas sem tag de site continuam como site incerto.</p></section>';
 }
 function connections(){
@@ -337,6 +340,7 @@ document.addEventListener('click',async event=>{
  const action=el.dataset.action;
  try{
   if(action==='route')return navigate(el.dataset.to);
+  if(action==='kanban-filter'){kanbanStage=el.dataset.stage||'ALL';draw();return;}
   if(action==='prod-open')return navigate('production',el.dataset.lead);
   if(action==='prod-copy'){await prodCopy(el.dataset.lead);return;}
   if(action==='prod-move'){await request('/api/production/move',{lead_id:el.dataset.lead,status:el.dataset.status,site_url:$('#prod-url')?.value});closeModal();await load();return;}

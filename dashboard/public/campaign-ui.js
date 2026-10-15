@@ -129,5 +129,9 @@ const observer=new MutationObserver(()=>{
  if(screen.querySelector('.section-head')||screen.querySelector('.workflow-layout'))load();
 });
 observer.observe(document.body,{childList:true,subtree:true});
+window.addEventListener('prospector:data',e=>{
+ if(e.detail?.page!=='workflows'||mode==='edit')return;
+ snapshot=e.detail.state;render();
+});
 window.addEventListener('hashchange',()=>{if(location.hash.startsWith('#/workflows')&&!location.hash.includes('/classic'))load();});
 if(location.hash.startsWith('#/workflows')&&!location.hash.includes('/classic'))load();
