@@ -108,10 +108,15 @@ export function reconcileAgentManifest(data){
   else if(needsSave)run('UPDATE workflows SET name=?,steps=?,version=version+1,updated_at=?,enabled=? WHERE id=?',m.name,content,now(),enable,workflowId);
   setSetting('agent_bridge_workflow_id',workflowId);
   if(ready){
-   run('UPDATE workflows SET is_default=0');
-   run('UPDATE workflows SET is_default=1 WHERE id=?',workflowId);
-   setSetting('autonomous_campaign_id',workflowId);
-   // A flag auto_initial e o estado de pausa NÃO são alterados pela ponte.
+   // Respeita a campanha escolhida pelo operador. O sincronizador nunca
+   // sobrepõe outra campanha selecionada na interface.
+   const operatorChoice=String(getSetting('autonomous_campaign_id','')||'');
+   if(!operatorChoice||operatorChoice===workflowId){
+    run('UPDATE workflows SET is_default=0');
+    run('UPDATE workflows SET is_default=1 WHERE id=?',workflowId);
+    setSetting('autonomous_campaign_id',workflowId);
+   }
+   // Nem auto_initial nem o estado de pausa são alterados pela ponte.
   }
   if(needsSave)audit('AGENT_BRIDGE_APPLIED',null,{workflowId,revision:m.revision,ready,audio:!!a,video:!!v,manifestHash:inputHash});
  });
