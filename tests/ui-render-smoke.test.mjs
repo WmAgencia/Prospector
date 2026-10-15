@@ -1,9 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {webcrypto} from 'node:crypto';
 const handlers={};const inner={innerHTML:''};
 globalThis.location={hash:'#/workflows'};
-globalThis.crypto=webcrypto;
 globalThis.document={getElementById:id=>id==='campaign-app'?inner:null,addEventListener:(name,fn)=>{handlers['document:'+name]=fn;}};
 globalThis.window={addEventListener:(name,fn)=>{handlers['window:'+name]=fn;}};
 const workflow={
