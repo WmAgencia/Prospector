@@ -192,6 +192,7 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+  if(req.method==='GET'&&pathname==='/api/radar')return respond(res,200,radarSnapshot());
   if(req.method==='GET'&&pathname==='/api/recontacts')return respond(res,200,eligibleRecontacts());
   if(req.method==='POST'&&pathname==='/api/recontacts/approve'){
    const v=await json(req),result=scheduleApprovedRecontact(v.lead_id,v.text);

@@ -1,0 +1,105 @@
+// Interface de campanhas enxuta. Mídias precisam ser enviadas pelo operador.
+// Não cria autorizações nem inicia disparos ao carregar.
+const q=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uuid=()=>crypto.randomUUID();
+let snapshot=null,selected=null,draft=null,loading=false,notice='';
+const endpoint=async(path,data)=>{
+ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+ const value=await r.json();if(!r.ok)throw Error(value.error||'Operação indisponível');return value;
+};
+const list=()=>snapshot?.workflows||[];
+const isCampaign=x=>x&&x.steps?.some(s=>s.type==='audio')&&x.steps?.some(s=>s.type==='video')&&x.steps?.some(s=>s.type==='decision');
+function newCampaign(){
+ return {id:null,name:'Nova campanha · Sites profissionais',enabled:false,segments:[],steps:[
+ {id:uuid(),type:'message',text:'Olá, {{business_name}}! Tudo bem? Posso explicar rapidamente uma proposta de site para sua empresa?'},
+ {id:uuid(),type:'wait_reply'},
+ {id:uuid(),type:'delay',seconds:45},
+ {id:uuid(),type:'audio',media_id:'',description:'Descreva com fidelidade o áudio gravado e o objetivo da apresentação.'},
+ {id:uuid(),type:'video',media_id:''},
+ {id:uuid(),type:'wait_reply'},
+ {id:uuid(),type:'decision',context:'general_interest',context_description:'O cliente confirma se tem interesse na proposta após áudio e vídeo.',yes_type:'message',yes_text:'',yes_action:'handover',no_type:'message',no_text:'Sem problemas! Obrigado pelo retorno. Fico à disposição.',no_action:'end'},
+ {id:uuid(),type:'end'}
+ ]};
+}
+function render(){
+ if(!location.hash.startsWith('#/workflows')||location.hash.includes('/classic'))return;
+ const screen=q('#screen');if(!screen)return;
+ if(!snapshot){screen.innerHTML='<div class="loader">Carregando campanhas…</div>';return;}
+ if(!draft)draft=newCampaign();
+ const steps=draft.steps,initial=steps.find(x=>x.type==='message'),delay=steps.find(x=>x.type==='delay'),audio=steps.find(x=>x.type==='audio'),video=steps.find(x=>x.type==='video'),decision=steps.find(x=>x.type==='decision');
+ if(!initial||!delay||!audio||!video||!decision){screen.innerHTML='<div class="panel"><h3>Fluxo avançado</h3><p>Esta automação utiliza blocos de formato antigo. Use o editor clássico para alterá-la.</p><button class="btn secondary" data-campaign="classic">Abrir editor clássico</button><button class="btn" data-campaign="new">Criar nova campanha</button></div>';return;}
+ const options=(kind,current)=>'<option value="">Selecione um '+kind+'…</option>'+(snapshot.media||[]).filter(m=>m.kind===kind).map(m=>'<option value="'+esc(m.id)+'" '+(m.id===current?'selected':'')+'>'+esc(m.name)+'</option>').join('');
+ const available=list().map(w=>'<button class="cp-item '+(w.id===draft.id?'cp-selected':'')+'" data-campaign="select" data-id="'+esc(w.id)+'"><strong>'+esc(w.name)+'</strong><small>'+((snapshot.settings?.autonomous_campaign_id===w.id)?'Em uso automático · ':'')+(w.enabled?'Ativa':'Rascunho')+'</small></button>').join('');
+ screen.innerHTML='<div class="cp-head"><div><div class="panel-eyebrow">CONSECOM / AUTOMAÇÕES</div><h2>Campanhas de prospecção</h2><p>Configure o fluxo uma vez. O motor começa com os contatos que realmente autorizaram mensagens.</p></div><div class="actionsrow"><button class="btn secondary" data-campaign="new">+ Nova campanha</button><button class="btn secondary" data-campaign="classic">Editor clássico ↗</button></div></div>'+
+ '<div class="cp-layout"><aside class="panel cp-library"><div class="between"><h3>Suas campanhas</h3><span class="tag">'+list().length+'</span></div>'+available+'</aside><section class="panel cp-editor"><div class="between"><h3>Configuração do fluxo</h3><span class="tag '+(draft.enabled?'green':'yellow')+'">'+(draft.enabled?'Ativada':'Rascunho')+'</span></div>'+
+ '<div class="field"><label>Nome</label><input data-cp-field="name" value="'+esc(draft.name)+'" placeholder="Campanha de sites"></div><div class="field"><label>Segmentos (opcional, separados por vírgula)</label><input data-cp-field="segments" value="'+esc((draft.segments||[]).join(', '))+'" placeholder="Psicólogo, Nutricionista…"></div>'+
+ '<div class="cp-steps">'+
+ '<div class="cp-step"><span class="cp-number">01</span><div class="cp-step-content"><h4>Mensagem de abordagem</h4><p>Primeira mensagem. Aguarda uma autorização clara para continuar com a apresentação.</p><textarea data-cp-field="message" rows="3">'+esc(initial.text)+'</textarea></div></div>'+
+ '<div class="cp-step"><span class="cp-number">02</span><div class="cp-step-content"><h4>Aguardar resposta</h4><p>O áudio só é liberado quando o contato permite continuar. Respostas incertas vão para revisão.</p></div></div>'+
+ '<div class="cp-step"><span class="cp-number">03</span><div class="cp-step-content"><h4>Espera antes da apresentação</h4><div class="row"><input data-cp-field="delay" type="number" min="1" max="86400" value="'+Number(delay.seconds||45)+'"><span class="subtle">segundos</span></div></div></div>'+
+ '<div class="cp-step"><span class="cp-number">04</span><div class="cp-step-content"><h4>Enviar áudio</h4><select data-cp-field="audio">'+options('áudio',audio.media_id)+'</select><input type="file" data-cp-upload="audio" accept=".ogg,.mp3,.m4a,.opus,audio/*"><label>Resumo fiel do áudio</label><textarea data-cp-field="audio-description" rows="2">'+esc(audio.description)+'</textarea></div></div>'+
+ '<div class="cp-step"><span class="cp-number">05</span><div class="cp-step-content"><h4>Enviar vídeo</h4><select data-cp-field="video">'+options('vídeo',video.media_id)+'</select><input type="file" data-cp-upload="video" accept="video/mp4,.mp4"><p>MP4, no máximo 60 segundos.</p></div></div>'+
+ '<div class="cp-step"><span class="cp-number">06</span><div class="cp-step-content"><h4>Aguardar decisão</h4><p>SIM: vai para Interessados, com atendimento humano. NÃO: mensagem de despedida e Sem interesse. Dúvidas: revisão.</p><label>Mensagem após recusa</label><textarea data-cp-field="farewell" rows="2">'+esc(decision.no_text||'Sem problemas! Obrigado pelo retorno.')+'</textarea></div></div></div>'+
+ '<div class="cp-actions"><button class="btn secondary" data-campaign="save">Salvar rascunho</button><button class="btn" data-campaign="activate">Salvar e ativar campanha</button></div><p class="helper-text">Ativar define esta campanha como padrão para novos contatos autorizados, sem iniciar mensagens enquanto a operação estiver pausada. Cadência máxima: 150/dia, 08h–18h.</p></section></div>'+
+ (notice?'<p class="cp-notice" role="status">'+esc(notice)+'</p>':'');
+}
+async function load(){
+ if(loading)return;loading=true;
+ try{let r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw Error('Acesso à sessão indisponível');snapshot=await r.json();
+  if(selected&&!draft)draft=structuredClone(list().find(w=>w.id===selected)||newCampaign());
+  render();
+ }catch(e){notice=e.message;render();}finally{loading=false;}
+}
+function updateField(name,value){
+ if(!draft)return;
+ const st=draft.steps;
+ if(name==='name')draft.name=value;
+ if(name==='segments')draft.segments=value.split(',').map(x=>x.trim()).filter(Boolean);
+ if(name==='message')st.find(x=>x.type==='message').text=value;
+ if(name==='delay')st.find(x=>x.type==='delay').seconds=Number(value);
+ if(name==='audio')st.find(x=>x.type==='audio').media_id=value;
+ if(name==='video')st.find(x=>x.type==='video').media_id=value;
+ if(name==='audio-description')st.find(x=>x.type==='audio').description=value;
+ if(name==='farewell')st.find(x=>x.type==='decision').no_text=value;
+}
+document.addEventListener('input',e=>{const el=e.target.closest('[data-cp-field]');if(el)updateField(el.dataset.cpField,el.value);});
+document.addEventListener('change',async e=>{
+ const el=e.target.closest('[data-cp-upload]');if(!el||!el.files?.[0])return;
+ const kind=el.dataset.cpUpload,file=el.files[0];
+ try{
+  if(kind==='video'&&!file.name.toLowerCase().endsWith('.mp4'))throw Error('Escolha vídeo MP4');
+  if(file.size>(kind==='video'?65:25)*1024*1024)throw Error('Arquivo muito grande');
+  const r=await fetch('/api/media?kind='+kind+'&name='+encodeURIComponent(file.name),{method:'POST',headers:{'Content-Type':file.type||(kind==='video'?'video/mp4':'audio/mpeg')},body:file});
+  const value=await r.json();if(!r.ok)throw Error(value.error||'Falha ao enviar mídia');
+  updateField(kind,value.id);notice=kind==='video'?'Vídeo anexado':'Áudio anexado';
+  await load();
+ }catch(error){notice=error.message;render();}
+});
+document.addEventListener('click',async e=>{
+ const el=e.target.closest('[data-campaign]');if(!el)return;e.preventDefault();
+ const action=el.dataset.campaign;
+ try{
+  if(action==='classic'){location.hash='/workflows/classic';return;}
+  if(action==='new'){selected=null;draft=newCampaign();notice='Rascunho novo. Selecione áudio e vídeo antes de ativar.';render();return;}
+  if(action==='select'){selected=el.dataset.id;draft=structuredClone(list().find(w=>w.id===selected));notice='';render();return;}
+  if(!draft)throw Error('Escolha uma campanha');
+  if(action==='save'||action==='activate'){
+   const active=action==='activate';
+   if(active&&(!draft.steps.find(s=>s.type==='audio')?.media_id||!draft.steps.find(s=>s.type==='video')?.media_id))throw Error('Inclua áudio e vídeo antes de ativar.');
+   const out=await endpoint('/api/workflows',{id:draft.id||undefined,name:draft.name,enabled:active,segments:draft.segments||[],steps:draft.steps});
+   selected=out.id;
+   if(active)await endpoint('/api/workflows/default',{id:out.id});
+   draft=null;notice=active?'Campanha ativada. A execução depende de operação retomada e autorização de contato.':'Rascunho salvo.';
+   await load();return;
+  }
+ }catch(error){notice=error.message;render();}
+});
+const observer=new MutationObserver(()=>{
+ if(!location.hash.startsWith('#/workflows')||location.hash.includes('/classic'))return;
+ const screen=q('#screen');if(!screen||screen.querySelector('.cp-head')||screen.querySelector('.loader'))return;
+ if(screen.querySelector('.section-head')||screen.querySelector('.workflow-layout'))load();
+});
+observer.observe(document.body,{childList:true,subtree:true});
+window.addEventListener('hashchange',()=>{if(location.hash.startsWith('#/workflows')&&!location.hash.includes('/classic'))load();});
+if(location.hash.startsWith('#/workflows')&&!location.hash.includes('/classic'))load();

@@ -30,6 +30,9 @@ jobs:
           node --check dashboard/studio-sync.mjs
           node --check dashboard/server.mjs
           node --check dashboard/public/app.js
+          node --check dashboard/public/campaign-ui.js
+          node --check dashboard/public/radar-ui.js
+          node --check dashboard/radar.mjs
           node --check dashboard/import-legacy.mjs
           node --check preview/server.mjs
       - name: Start local API and verify JSON
