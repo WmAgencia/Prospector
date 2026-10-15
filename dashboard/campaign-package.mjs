@@ -8,7 +8,7 @@ const expected=['campaign.json','audio.ogg','video.mp4'];
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');
 const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
 export function extractStoredZip(buf){
- if(!Buffer.isBuffer(buf)||buf.length<80||buf.length>38*1024*1024)throw Error('Pacote ZIP inválido ou acima de 38 MB');
+ if(!Buffer.isBuffer(buf)||buf.length<34||buf.length>38*1024*1024)throw Error('Pacote ZIP inválido ou acima de 38 MB');
  const files=new Map();let p=0;
  while(p+4<=buf.length&&buf.readUInt32LE(p)===0x04034b50){
   if(p+30>buf.length)throw Error('ZIP incompleto');
