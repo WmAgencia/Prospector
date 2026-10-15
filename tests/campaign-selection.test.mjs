@@ -37,7 +37,11 @@ test('operator chooses exactly one campaign, selection survives pause, and leave
  assert.equal(one('SELECT is_default FROM workflows WHERE id=?',a).is_default,0);
  assert.equal(one('SELECT is_default FROM workflows WHERE id=?',b).is_default,1);
  assert.equal(one('SELECT enabled FROM workflows WHERE id=?',a).enabled,1);
- assert.throws(()=>rejectActiveCampaignEdit({id:b}),/somente leitura/);
+ assert.doesNotThrow(()=>rejectActiveCampaignEdit({id:b,enabled:true}));
+ assert.throws(()=>rejectActiveCampaignEdit({id:b,enabled:false}),/habilitada/);
+ setSetting('paused',false);
+ assert.throws(()=>rejectActiveCampaignEdit({id:b,enabled:true}),/Pause as abordagens/);
+ setSetting('paused',true);
  assert.doesNotThrow(()=>rejectActiveCampaignEdit({id:a}));
 });
 test('campaign without real attached media stays a draft and cannot become active',()=>{

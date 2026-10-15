@@ -87,6 +87,10 @@ function persistStatus(value){
 export function reconcileAgentManifest(data){
  const m=validateAgentManifest(data);
  const inputHash=crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
+ // Manifesto já aplicado não pode sobrescrever edições feitas pelo operador.
+ // A ponte volta a aplicar apenas em nova revisão, ou quando ainda faltam mídias.
+ if(getSetting('agent_bridge_applied_hash','')===inputHash&&getSetting('agent_bridge_media_ready',false))
+  return bridgeStatus();
  const paused=getSetting('paused',true);
  if(!paused)return persistStatus({state:'PAUSED_REQUIRED',ready:false,revision:m.revision,message:'Pausar operação antes de aplicar alterações de campanha. Nenhum envio foi interrompido.',manifestHash:inputHash});
  const a=findBridgeMedia('audio',m.audioHash),v=findBridgeMedia('video',m.videoHash);
@@ -107,6 +111,7 @@ export function reconcileAgentManifest(data){
   if(!prev)run('INSERT INTO workflows(id,name,is_default,version,steps,created_at,updated_at,segments_json,enabled) VALUES(?,?,?,?,?,?,?,?,?)',workflowId,m.name,0,1,content,now(),now(),'[]',enable);
   else if(needsSave)run('UPDATE workflows SET name=?,steps=?,version=version+1,updated_at=?,enabled=? WHERE id=?',m.name,content,now(),enable,workflowId);
   setSetting('agent_bridge_workflow_id',workflowId);
+  if(ready){setSetting('agent_bridge_applied_hash',inputHash);setSetting('agent_bridge_media_ready',true);}
   if(ready){
    // Respeita a campanha escolhida pelo operador. O sincronizador nunca
    // sobrepõe outra campanha selecionada na interface.

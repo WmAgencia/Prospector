@@ -59,12 +59,13 @@ export function radarSnapshot(input=new Date()){
  const examined=todayRuns.reduce((v,r)=>{try{return v+(Number(JSON.parse(r.details||'{}').examined)||0);}catch{return v;}},0);
  const scanned=todayRuns.some(x=>x.status==='RUNNING'&&Date.now()-Date.parse(x.at)<60000);
  const discoveryTarget=Math.min(150,Math.max(1,Number(getSetting('discovery_target_daily',150))||150));
- const scanningEnabled=!getSetting('paused',true)&&getSetting('discovery_auto_enabled',true)!==false;
- const scanHour=hourSP(input);
- const discoveryReason=!scanningEnabled?'PAUSED':foundToday.length>=discoveryTarget?'TARGET_REACHED':scanHour<budget.start||scanHour>=budget.end?'OUTSIDE_HOURS':'RUNNING_OR_WAITING_FOR_PROVIDER';
+ const scanningEnabled=getSetting('discovery_auto_enabled',true)!==false&&(getSetting('discovery_sources',{}).osm!==false);
+ const scanHour=hourSP(input),discoveryStartHour=Number(getSetting('discovery_start_hour',5));
+ const osmSearchesToday=todayRuns.filter(x=>x.query.startsWith('osm:')).length;
+ const discoveryReason=!scanningEnabled?'DISABLED':foundToday.length>=discoveryTarget?'TARGET_REACHED':scanHour<discoveryStartHour?'BEFORE_START':osmSearchesToday>=8?'PROVIDER_LIMIT':'RUNNING_OR_WAITING_FOR_PROVIDER';
  const campaignId=String(getSetting('autonomous_campaign_id',''));
  const campaignReady=!!(campaignId&&one('SELECT id FROM workflows WHERE id=? AND enabled=1',campaignId));
- return {asOf:input.toISOString(),pilot,...budget,campaignReady,discoveryTarget,discoveryReason,foundToday:foundToday.length,foundTotal:one('SELECT COUNT(*) AS n FROM leads')?.n||0,
+ return {asOf:input.toISOString(),pilot,...budget,campaignReady,discoveryTarget,discoveryStartHour,discoveryReason,osmSearchesToday,foundToday:foundToday.length,foundTotal:one('SELECT COUNT(*) AS n FROM leads')?.n||0,
   examinedToday:examined,searchesToday:todayRuns.length,searchInProgress:scanned,
   lastSearch:history[0]?{query:history[0].query,status:history[0].status,at:history[0].at}:null,
   recentFinds:foundToday.slice(0,28).map(x=>({id:x.id,name:x.business,source:x.source,segment:x.segment,city:x.city})),

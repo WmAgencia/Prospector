@@ -5,10 +5,10 @@ import {evaluateDecision,permitsPresentation} from '../dashboard/automation-rout
 import {buildConsecomSteps,CAMPAIGN_INTRO,CAMPAIGN_VIDEO_CAPTION,CAMPAIGN_FAREWELL} from '../dashboard/consecom-flow.mjs';
 const steps=buildConsecomSteps();
 test('personalized first contact uses only known personal name, with safe fallback',()=>{
- assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Maria Fernandes',business:'Clínica'}),'Olá, Maria. Tudo bem? A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?');
- assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Dra. Juliana',business:'Consultório de Juliana'}).startsWith('Olá, Juliana. Tudo bem?'),true);
- assert.equal(renderTemplate(CAMPAIGN_INTRO,{business:'Empresa sem nome pessoal'}).startsWith('Olá, tudo bem?'),true);
- assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Contato',business:'Empresa'}).startsWith('Olá, tudo bem?'),true);
+ assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Maria Fernandes',business:'Clínica'}),'Olá, Maria, como vai? A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?');
+ assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Dra. Juliana',business:'Consultório de Juliana'}).startsWith('Olá, Juliana, como vai?'),true);
+ assert.equal(renderTemplate(CAMPAIGN_INTRO,{business:'Empresa sem nome pessoal'}).startsWith('Olá, como vai?'),true);
+ assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Contato',business:'Empresa'}).startsWith('Olá, como vai?'),true);
 });
 test('recognizes explicit first-stage permissions across natural variants',()=>{
  assert.equal(classify('Pode enviar').intent,'UNCERTAIN');

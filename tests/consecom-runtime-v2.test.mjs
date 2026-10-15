@@ -25,7 +25,7 @@ test('cadence and personalized caption are persisted in real workflow jobs',asyn
  const execution=runtime.startWorkflow(lead.id,workflowId);
  runtime.drive(execution);
  const initial=deliverAndAdvance(lead.id,execution,'message');
- assert.equal(initial.text,'Olá, Mariana. Tudo bem? A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?');
+ assert.equal(initial.text,'Olá, Mariana, como vai? A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?');
  assert.equal(db.one('SELECT state FROM executions WHERE id=?',execution).state,'WAIT_REPLY');
  await runtime.incoming({key:{remoteJid:'5515999771133@s.whatsapp.net',id:'permission-test'},message:{conversation:'Sim, pode enviar'}});
  let waiting=db.one('SELECT state,wake_at FROM executions WHERE id=?',execution);
@@ -62,5 +62,5 @@ test('no-person-name greeting does not invent business contact name',()=>{
  const execution=runtime.startWorkflow(lead.id,workflowId);
  runtime.drive(execution);
  const first=db.one('SELECT text FROM jobs WHERE lead_id=? AND type=?',lead.id,'message');
- assert.ok(first.text.startsWith('Olá, tudo bem?'));
+ assert.ok(first.text.startsWith('Olá, como vai?'));
 });

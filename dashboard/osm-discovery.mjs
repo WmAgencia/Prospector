@@ -1,9 +1,9 @@
 // Busca pública local — licença ODbL, © OpenStreetMap contributors.
 // Não infere consentimento, não presume ausência de site e não envia mensagens.
-// Apenas 1 consulta automática ao dia; consultas manuais são limitadas e registradas.
+// Buscas diárias graduais até a meta, respeitando as cotas da fonte comunitária.
 import {one,all,run,id,now,phone,addLead,getSetting,audit} from './db.mjs';
 import {recordOrigin} from './discovery.mjs';
-import {daySP,hourSP,budgetConfig,radarSnapshot} from './radar.mjs';
+import {daySP,hourSP,radarSnapshot} from './radar.mjs';
 
 export const LOCATIONS={
   sorocaba:{label:'Sorocaba',lat:-23.5015,lon:-47.4526,radius:9500},
@@ -102,7 +102,7 @@ export async function discoverLocal(payload={},automatic=false){
   throw Error('A fonte pública apresentou uma falha recente. Aguarde 15 minutos antes de repetir a consulta.');
  const today=daySP();
  const attempts=all("SELECT at FROM discoveries WHERE query LIKE 'osm:%'").filter(x=>daySP(new Date(x.at))===today).length;
- if(attempts>=8)throw Error('Limite diário de pesquisas públicas atingido. Tente amanhã.');
+ if(attempts>=OSM_DAILY_MAX_SEARCHES)throw Error('Limite diário de pesquisas públicas atingido. Tente amanhã.');
  busy=true;
  try{
   // Registre ANTES da requisição: também conta falhas e protege a API comunitária.
@@ -152,23 +152,32 @@ export async function discoverLocal(payload={},automatic=false){
  }finally{busy=false;}
 }
 let autoBusy=false;
+export const DISCOVERY_START_HOUR=5;
+export const OSM_DAILY_MAX_SEARCHES=8;
+export const OSM_COOLDOWN_MS=45*60000;
+export function discoveryWindow(input=new Date(),startHour=DISCOVERY_START_HOUR){
+ const hour=hourSP(input),start=Number(startHour);
+ return {hour,start,allowed:Number.isInteger(start)&&start>=0&&start<=23&&hour>=start};
+}
 // Pesquisa progressiva: somente serviços realmente configurados, respeitando limite
 // da API comunitária e interrompendo-se ao atingir 150 leads únicos/dia.
 export async function dailyLocalDiscovery(input=new Date()){
- if(autoBusy||getSetting('paused',true)||getSetting('discovery_auto_enabled',true)===false||getSetting('discovery_sources',{}).osm===false)return {status:'PAUSED'};
- const budget=budgetConfig(input);
- const hour=hourSP(input);
- if(hour<budget.start||hour>=budget.end)return {status:'OUTSIDE_HOURS'};
+ if(autoBusy)return {status:'BUSY'};
+ if(getSetting('discovery_auto_enabled',true)===false||getSetting('discovery_sources',{}).osm===false)return {status:'DISABLED'};
+ const window=discoveryWindow(input,getSetting('discovery_start_hour',DISCOVERY_START_HOUR));
+ if(!window.allowed)return {status:'BEFORE_START',startHour:window.start};
+ // O horário de envio/pausa não interrompe as pesquisas de empresas.
+ // Respeitamos os limites da fonte pública mesmo quando a meta não é alcançada.
  const target=Math.min(150,Math.max(1,Number(getSetting('discovery_target_daily',150))||150));
  const snapshot=radarSnapshot(input);
  if(snapshot.foundToday>=target)return {status:'TARGET_REACHED',foundToday:snapshot.foundToday,target};
  const today=daySP(input);
  const rows=all("SELECT query,at FROM discoveries WHERE query LIKE 'osm:%' ORDER BY at DESC LIMIT 100");
  const attempts=rows.filter(x=>daySP(new Date(x.at))===today);
- if(attempts.length>=8)return {status:'OSM_DAILY_LIMIT',foundToday:snapshot.foundToday,target};
+ if(attempts.length>=OSM_DAILY_MAX_SEARCHES)return {status:'PROVIDER_LIMIT',foundToday:snapshot.foundToday,target,nextAttempt:'TOMORROW'};
  const last=Date.parse(getSetting('osm_last_auto_at','')||'')||0;
  // Espaçamento real de 45 minutos, incluindo tentativas que falharam.
- if(input.getTime()-last<45*60000)return {status:'COOLDOWN',foundToday:snapshot.foundToday,target};
+ if(input.getTime()-last<OSM_COOLDOWN_MS)return {status:'COOLDOWN',foundToday:snapshot.foundToday,target,nextAt:new Date(last+OSM_COOLDOWN_MS).toISOString()};
  const cities=String(getSetting('cities','Sorocaba,Votorantim,Campinas')).split(',').map(x=>resolveLocation(x.trim())).filter(Boolean);
  const segments=String(getSetting('segments','psicólogo,nutricionista,massoterapeuta,fisioterapeuta,esteticista')).split(',').map(x=>resolveSegment(x.trim())).filter(Boolean);
  const uniqueCities=[...new Map(cities.map(x=>[x.label,x])).values()];

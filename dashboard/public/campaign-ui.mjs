@@ -28,9 +28,9 @@ function freshDraft(){
  ]};
 }
 const previewRows=s=>{
- const p=campaignPreview(s);
+ const p=campaignPreview(s),sample=String(p.initial||'').replaceAll('{{greeting}}','Olá, [nome], como vai?');
  return '<div class="cm-steps-compact">'+[
-  ['01','Abordagem',p.initial||'Não configurada'],
+  ['01','Abordagem',sample||'Não configurada'],
   ['02','Aguardar resposta','Permissão para continuar'],
   ['03','Apresentação',p.waitBeforeAudio+' segundos → áudio '+(p.hasAudio?'anexado':'pendente')],
   ['04','Portfólio',p.waitBeforeVideo+' segundos → vídeo '+(p.hasVideo?'anexado':'pendente')],
@@ -76,7 +76,7 @@ function renderEditor(){
  if(!message||delays.length<2||!audio||!video||!decision)return '<section class="cm-detail"><h3>Roteiro avançado</h3><p>Esta campanha usa um formato diferente. Faça uma cópia com o modelo simplificado.</p><button class="btn secondary" data-cm="cancel">Voltar</button></section>';
  return '<section class="cm-editor"><div class="cm-detail-head"><div><span class="cm-overline">EDITOR DE CAMPANHAS</span><h3>'+esc(draft.id?'Editar rascunho':'Criar campanha')+'</h3><p>Configure uma vez, salve e depois ative pelo card.</p></div><button class="btn secondary small" data-cm="cancel">Cancelar</button></div>'+
  '<div class="cm-field"><label for="cm-name">Nome da campanha</label><input id="cm-name" data-cm-field="name" value="'+esc(draft.name)+'" maxlength="100"></div>'+
- '<div class="cm-field"><label for="cm-message">1 · Mensagem inicial</label><textarea id="cm-message" data-cm-field="message" rows="3">'+esc(message.text)+'</textarea><small>O sistema substitui {{greeting}} pelo primeiro nome, quando disponível.</small></div>'+
+ '<div class="cm-field"><label for="cm-message">1 · Mensagem inicial</label><textarea id="cm-message" data-cm-field="message" rows="3">'+esc(message.text)+'</textarea><small>Exemplo: <strong>Olá, Maria, como vai?</strong> Quando não houver nome, envia <strong>Olá, como vai?</strong> O código {{greeting}} faz a personalização.</small></div>'+
  '<div class="cm-inline-fields"><div class="cm-field"><label for="cm-before">2 · Espera após a resposta (segundos)</label><input id="cm-before" data-cm-field="before" type="number" min="1" max="86400" value="'+Number(delays[0].seconds)+'"></div><div class="cm-field"><label for="cm-after">3 · Espera entre áudio e vídeo (segundos)</label><input id="cm-after" data-cm-field="after" type="number" min="1" max="86400" value="'+Number(delays[1].seconds)+'"></div></div>'+
  '<div class="cm-inline-fields"><div class="cm-field"><label for="cm-audio">4 · Áudio de apresentação</label><select id="cm-audio" data-cm-field="audio">'+opt('audio',audio.media_id)+'</select><label class="cm-upload-label">Enviar novo áudio<input data-cm-upload="audio" type="file" accept=".ogg,.opus,.mp3,.m4a,audio/*"></label></div>'+
  '<div class="cm-field"><label for="cm-video">5 · Vídeo da campanha</label><select id="cm-video" data-cm-field="video">'+opt('video',video.media_id)+'</select><label class="cm-upload-label">Enviar novo vídeo<input data-cm-upload="video" type="file" accept=".mp4,video/mp4"></label></div></div>'+

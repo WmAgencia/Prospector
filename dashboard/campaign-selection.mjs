@@ -42,5 +42,9 @@ export function activateCampaign(workflowId){
  });
 }
 export function rejectActiveCampaignEdit(input){
- if(input?.id&&input.id===getSetting('autonomous_campaign_id',''))throw Error('A campanha ativa é somente leitura. Duplique-a para criar uma versão editável.');
+ if(!input?.id||input.id!==getSetting('autonomous_campaign_id',''))return;
+ if(!getSetting('paused',true))throw Error('Pause as abordagens antes de editar a campanha ativa.');
+ if(input.enabled!==true)throw Error('A edição da campanha ativa deve manter a campanha habilitada.');
+ // O motor salva os passos no snapshot de cada execução; edições valem
+ // apenas para novos contatos, preservando conversas já iniciadas.
 }

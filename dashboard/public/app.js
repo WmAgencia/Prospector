@@ -310,10 +310,11 @@ function settings(){
  toggle('paused','Operação pausada','Quando ligado, não são iniciadas novas abordagens.')+
  toggle('automation_enabled','Continuar respostas automaticamente','Avança a campanha após respostas reconhecidas.')+
  toggle('auto_initial','Iniciar campanha com contatos autorizados','Requer campanha selecionada e autorização registrada.')+
- toggle('discovery_auto_enabled','Buscar empresas automaticamente','Pesquisa progressiva, respeitando a meta e as cotas das fontes.')+
+ toggle('discovery_auto_enabled','Buscar empresas automaticamente','Começa às 05h, mesmo com as abordagens pausadas; tenta chegar a 150 empresas novas.')+
  '<h3 class="simple-subheading">Limites e horários</h3><div class="simple-fields-grid">'+
  num('daily_limit','Máximo de abordagens por dia',1,150,150)+
  num('discovery_target_daily','Meta de novas empresas por dia',1,150,150)+
+ num('discovery_start_hour','Início da descoberta (Brasília)',5,5,5)+
  num('initial_interval_seconds','Intervalo entre abordagens (segundos)',144,3600,240)+
  num('business_start','Início (hora de Brasília)',0,23,8)+
  num('business_end','Término (hora de Brasília)',1,24,18)+'</div>'+

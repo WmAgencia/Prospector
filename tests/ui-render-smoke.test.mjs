@@ -27,7 +27,8 @@ test('campaign manager draws a compact selected-campaign card without editable a
  assert.match(inner.innerHTML,/Consecom · Oferta de site R\$350/);
  assert.match(inner.innerHTML,/Selecionada · operação pausada/);
  assert.match(inner.innerHTML,/Ver etapas da campanha/);
- assert.match(inner.innerHTML,/Criar uma cópia editável/);
+ assert.match(inner.innerHTML,/Editar campanha/);
+ assert.match(inner.innerHTML,/data-cm="edit"/);
  assert.ok(!inner.innerHTML.includes('data-cm-field="message"'));
 });
 test('the operator can see alternative saved campaigns on the left',()=>{
