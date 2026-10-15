@@ -231,9 +231,9 @@ export async function incoming(m) {
  const sampleReply=onReply(lead.id,payload.body,payload.type==='text');
  if(sampleReply){publish();return;}
  const manual=one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover;
- if(['INTERESTED','QUESTION','UNCERTAIN'].includes(result.intent)){
-  stage(lead.id,'INTERESTED',result.intent);
-  if(result.intent==='UNCERTAIN'){
+ if(['QUESTION','UNCERTAIN'].includes(result.intent)){
+  stage(lead.id,'REPLIED','Resposta sob análise: '+result.intent);
+  if(result.intent==='QUESTION'||result.intent==='UNCERTAIN'){
    run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE lead_id=? AND state IN ('WAIT_REPLY','WAIT_DELAY','ACTIVE')",now(),lead.id);
    run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE lead_id=? AND status='PENDING' AND execution_id IS NOT NULL",now(),lead.id);
    publish();return;

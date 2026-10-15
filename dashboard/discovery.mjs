@@ -85,7 +85,7 @@ export async function verifyWebsiteCandidate(leadId){
  const name=String(lead.business||'').trim();
  if(!name||name.length>120)throw Error('Nome comercial inválido');
  const q='"'+name.replace(/["']/g,'')+'" '+String(lead.city||'').replace(/[^\p{L}\s]/gu,'').slice(0,40)+' site oficial';
- const results=await braveSearch(q,10);const candidates=[];
+ const results=process.env.BRAVE_SEARCH_API_KEY?await braveSearch(q,10):[];const candidates=[];
  for(const r of results){
   let url;try{url=new URL(r.url);}catch{continue;}
   const hostname=url.hostname.toLowerCase().replace(/^www\./,'');
@@ -94,5 +94,5 @@ export async function verifyWebsiteCandidate(leadId){
   candidates.push({url:url.toString(),domain:hostname,title:String(r.title||'').slice(0,130),snippet:String(r.description||'').slice(0,300)});
  }
  audit('WEBSITE_REVIEW',leadId,{count:candidates.length});
- return {leadId,status:'NEEDS_REVIEW',candidates:candidates.slice(0,10),explanation:'Busca não comprova ausência de site; confirme manualmente antes de classificar NO_WEBSITE.'};
+ return {leadId,status:'NEEDS_REVIEW',candidates:candidates.slice(0,10),searchLinks:[{label:'Google',url:'https://www.google.com/search?q='+encodeURIComponent(q)},{label:'Bing',url:'https://www.bing.com/search?q='+encodeURIComponent(q)}],explanation:process.env.BRAVE_SEARCH_API_KEY?'Analise os possíveis domínios oficiais. Ausência de resultado não confirma ausência de site.':'Sem chave Brave. Use as pesquisas públicas para verificação manual; a ausência de um site cadastrado não prova que ele não existe.'};
 }
