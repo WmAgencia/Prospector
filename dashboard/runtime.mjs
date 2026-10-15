@@ -3,7 +3,7 @@ import path from 'node:path';
 import {one,all,run,tx,id,now,phone,getSetting,addLead,getThread,addMessage,stage,audit,stopLead,suppressed} from './db.mjs';
 import {classify,renderTemplate} from './classifier.mjs';
 import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
-import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
+import {evaluateDecision,selectAutomationForLead,permitsPresentation} from './automation-router.mjs';
 import {scheduleReport,flushNotices,queueNotice} from './notifications.mjs';
 import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
 import {canSendInitial} from './radar.mjs';
@@ -229,8 +229,14 @@ export async function incoming(m) {
  // Decisão final do fluxo tem prioridade sobre o classificador genérico.
  // No primeiro aceite, apenas autorizações explícitas podem liberar mídia.
  const waiting=one("SELECT * FROM executions WHERE lead_id=? AND state='WAIT_REPLY'",lead.id);
- let next=null;
- if(waiting){try{next=JSON.parse(waiting.steps)[waiting.next_step];}catch{}}
+ let next=null,firstApproval=false;
+ if(waiting){
+  try{
+   const steps=JSON.parse(waiting.steps);
+   next=steps[waiting.next_step];
+   firstApproval=payload.type==='text'&&permitsPresentation(steps,waiting.next_step,payload.body);
+  }catch{}
+ }
  if(result.intent==='INTERESTED'&&next?.type!=='decision'&&next?.type!=='delay'){
   handoverInterest(lead,'Interesse comercial declarado');publish();return;
  }
@@ -243,7 +249,7 @@ export async function incoming(m) {
  const sampleReply=onReply(lead.id,payload.body,payload.type==='text');
  if(sampleReply){publish();return;}
  const manual=one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover;
- if(['QUESTION','UNCERTAIN'].includes(result.intent)){
+ if(['QUESTION','UNCERTAIN'].includes(result.intent)&&!firstApproval){
   stage(lead.id,'REPLIED','Resposta sob análise: '+result.intent);
   if(result.intent==='QUESTION'||result.intent==='UNCERTAIN'){
    run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE lead_id=? AND state IN ('WAIT_REPLY','WAIT_DELAY','ACTIVE')",now(),lead.id);

@@ -6,6 +6,9 @@ export function evaluateDecision(text, context='general_interest'){
  // Desistência e recusa sempre sobrepõem afirmações presentes na mesma mensagem.
  if(/\b(?:nao|nunca|nem|sem interesse|nao quero|nao preciso|dispenso|prefiro nao|ja tenho (?:site|pagina)|agora nao|nao obrigado|melhor nao)\b/.test(s))
   return {decision:'NO',reason:'refusal'};
+ // Aceite explícito de receber a apresentação, mesmo com "sim" / "ok" antes da frase.
+ if(/^(?:(?:sim|claro|beleza|ok)\s+)?(?:pode enviar|pode mandar|pode passar|me envia|pode explicar|pode falar|manda|manda ai)(?:\s+(?:sim|por favor|o audio|o video|a proposta|pra mim))?$/.test(s))
+  return {decision:'YES',reason:'explicit_permission'};
  // Não adivinhar "quero" no meio de frase que não fala de demonstração.
  const strong=/^(?:sim|s|pode|pode sim|pode mandar|pode enviar|manda|manda sim|me manda|manda ai|quero|quero sim|quero ver|claro|claro que sim|com certeza|por favor|pode ser|beleza|ok|bora|pode falar|fale|gostaria|pode mostrar|mostra|me mostra)[!?. ]*$/;
  const sample=/(?:(?:quero|pode|manda|me envia|me mostra|gostaria|aceito).{0,45}(?:exemplo|demonstracao|previa|modelo).{0,50}(?:site|pagina|landing)?|(?:exemplo|demonstracao|previa).{0,32}(?:site|pagina))/.test(s);
@@ -29,4 +32,8 @@ export function selectAutomationForLead(lead,workflows,preferredId=null){
  });
  if(matches.length)return [...matches].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')||a.id.localeCompare(b.id))[0];
  return enabled.find(w=>w.is_default===1)||null;
+}
+
+export function permitsPresentation(steps,nextStep,text){
+ return steps?.[nextStep]?.type==='delay'&&steps?.[nextStep+1]?.type==='audio'&&evaluateDecision(text,'general_interest').decision==='YES';
 }

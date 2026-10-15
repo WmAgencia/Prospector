@@ -62,6 +62,18 @@ if(!getSetting('prospector_150_rollout_applied',false)){
  for(const [key,value] of Object.entries({daily_limit:150,business_start:8,business_end:18,initial_interval_seconds:240,discovery_target_daily:150,auto_initial:true,autonomous_campaign_id:'',discovery_auto_enabled:true,today_start_override:{day:'2026-10-15',hour:12}}))setSetting(key,value);
  setSetting('prospector_150_rollout_applied',true);
 }
+// Rascunho persistente da campanha Consecom; não cria mídias nem inicia envios.
+if(!getSetting('consecom_350_seeded_v1',false)){
+ const existing=one('SELECT id FROM workflows WHERE name=? ORDER BY updated_at DESC LIMIT 1','Consecom | Site profissional R$ 350 | Áudio + vídeo');
+ if(existing){setSetting('consecom_campaign_seed_id',existing.id);}
+ else{
+  const workflowId=id();
+  run('INSERT INTO workflows(id,name,is_default,version,steps,created_at,updated_at,segments_json,enabled) VALUES(?,?,?,?,?,?,?,?,?)',
+   workflowId,'Consecom | Site profissional R$ 350 | Áudio + vídeo',0,1,"[{\"id\":\"a\",\"type\":\"message\",\"text\":\"Olá, tudo bem? Aqui é da Consecom, de Sorocaba. A gente conheceu o trabalho de vocês e gostaria de apresentar uma proposta para um site profissional. Posso te enviar um áudio explicando e um vídeo de alguns projetos?\"},{\"id\":\"b\",\"type\":\"wait_reply\"},{\"id\":\"c\",\"type\":\"delay\",\"seconds\":45},{\"id\":\"d\",\"type\":\"audio\",\"media_id\":\"\",\"description\":\"Áudio original gravado pelo Wesley, da Consecom. Apresenta a agência de sites em Sorocaba, seleção de empresas, proposta de site completo por R$ 350 com 80% de desconto, portfólio mediante permissão e entrega em até três dias; pede para ver vídeo e informar se tem interesse.\"},{\"id\":\"e\",\"type\":\"video\",\"media_id\":\"\"},{\"id\":\"f\",\"type\":\"wait_reply\"},{\"id\":\"g\",\"type\":\"decision\",\"context\":\"general_interest\",\"context_description\":\"Após o áudio e o vídeo, o profissional decide se quer contratar o site profissional por R$ 350.\",\"yes_type\":\"message\",\"yes_text\":\"\",\"yes_action\":\"handover\",\"no_type\":\"message\",\"no_text\":\"Sem problemas! Muito obrigado pelo retorno. Ficamos à disposição.\",\"no_action\":\"end\"},{\"id\":\"h\",\"type\":\"end\"}]",now(),now(),'[]',0);
+  setSetting('consecom_campaign_seed_id',workflowId);
+ }
+ setSetting('consecom_350_seeded_v1',true);
+}
 export function audit(action,lead_id=null,detail={}){run('INSERT INTO audit VALUES(?,?,?,?,?)',id(),now(),action,lead_id,JSON.stringify(detail));}
 export function addLead(item){
  const p=phone(item.phone||item.whatsapp), ig=instagram(item.instagram||item.instagram_username);
