@@ -1,11 +1,12 @@
 <!doctype html>
 <html lang="pt-BR"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#112d29"><meta name="description" content="Prospector Consecom — central de prospecção comercial">
 <title>Prospector • Consecom</title><link rel="stylesheet" href="/style.css">
 </head><body>
 <div id="shell">
  <aside class="sidebar">
-  <div class="brand"><span class="brand-mark">P</span><span><strong>prospector</strong><small>CONSECOM</small></span></div>
+  <div class="brand"><span class="brand-mark">C<span class="brand-spark">✳</span></span><span><strong>prospector<span class="brand-point">.</span></strong><small>CONSECOM / OPERATIONS</small></span></div>
   <div class="navlabel">OPERAÇÃO</div>
   <nav id="navigation">
    <button data-route="overview" class="navitem"><span>◫</span> Visão geral</button>
@@ -21,7 +22,7 @@
   <div class="sidefoot"><div class="status-dot" id="dot"></div><div><strong id="service-status">Conferindo estado</strong><small>Motor sem inteligência artificial</small></div></div>
  </aside>
  <main class="main">
-  <header class="topbar"><div id="heading"></div><div class="top-actions"><span class="subtle" id="sync-status"></span><button id="pause-btn" class="btn secondary">Pausar</button><span class="userchip">C</span></div></header>
+  <header class="topbar"><button id="sidebar-toggle" class="sidebar-toggle" aria-label="Abrir menu de navegação">☰</button><div id="heading"></div><div class="top-actions"><button id="wa-pill" class="top-wa offline" data-route="connections"><span class="live-dot"></span>WhatsApp</button><span class="subtle sync-label" id="sync-status">Sincronizando</span><button id="pause-btn" class="btn secondary">Pausar</button><span class="userchip" title="Consecom">C</span></div></header>
   <div id="screen" class="screen"><div class="loader">Carregando painel…</div></div>
  </main>
 </div>

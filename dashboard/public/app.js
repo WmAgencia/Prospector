@@ -28,12 +28,16 @@ function draw(){
  if(!state)return;
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===page));
  const t=titles[page]||titles.overview;
- $('#heading').innerHTML='<h1>'+t[0]+'</h1><p>'+t[1]+'</p>';
+ $('#heading').innerHTML='<div class="eyebrow">CONSECOM <span> / </span> PROSPECTOR</div><h1>'+esc(t[0])+'</h1><p>'+esc(t[1])+'</p>';
  $('#dot').classList.toggle('on',!state.settings.paused);
  $('#service-status').textContent=state.settings.paused?'Prospecção pausada':'Prospecção habilitada';
  $('#pause-btn').textContent=state.settings.paused?'Retomar prospecção':'Pausar prospecção';
  $('#nav-unread').textContent=state.threads.reduce((sum,t)=>sum+t.unread_count,0)||'';
- $('#sync-status').textContent=state.connection.status==='CONNECTED'?'WhatsApp conectado':'WhatsApp: '+state.connection.status.toLowerCase();
+ $('#sync-status').textContent='Atualizado agora';
+ const connected=state.connection.status==='CONNECTED';
+ const quick=$('#wa-pill');
+ if(quick){quick.className='top-wa '+(connected?'online':'offline');quick.innerHTML='<span class="live-dot"></span>'+esc(connected?'WhatsApp conectado':state.connection.status==='QR_READY'?'QR aguardando leitura':'WhatsApp desconectado');}
+ const pa=$('#pause-btn');if(pa)pa.classList.toggle('is-running',!state.settings.paused);
  const views={overview,conversations,prospects,workflows,discovery,production,studio,connections,settings};
  $('#screen').innerHTML=(views[page]||overview)();
  if(page==='conversations'&&selectedThread)loadMessages();
@@ -42,17 +46,32 @@ function draw(){
  if(page==='production'&&selectedThread){const id=selectedThread;selectedThread=null;prodModal(id);}
 }
 function overview(){
- const counts=[['Perfis analisados',state.stats.profiles_analyzed||0],['Encontrados',state.stats.found],['Sem site',state.stats.without_site],['Qualificados',state.stats.qualified||0],['Abordados',state.stats.contacted],['Responderam',state.stats.responded],['Interessados',state.stats.interested],['Reuniões',state.stats.meetings||0]];
- return '<div class="metrics">'+counts.map(([title,n])=>'<div class="panel metric"><small>'+title+'</small><strong>'+n+'</strong><span class="tag">Dados do banco</span></div>').join('')+'</div>'+
- '<div class="content-grid"><section class="panel"><div class="between"><h3>Últimas oportunidades</h3><button class="btn small secondary" data-action="route" data-to="prospects">Ver Kanban →</button></div>'+
- (state.leads.length?state.leads.slice(0,7).map(l=>'<div class="activity"><span class="dotmini">◉</span><div style="flex:1"><strong>'+esc(l.business)+'</strong><small>'+esc(l.instagram?'@'+l.instagram:l.phone||'Sem contato')+' · '+esc((l.origins||[l.source]).join(', '))+'</small></div><span class="tag '+(l.stage==='INTERESTED'?'green':'')+'">'+esc(labelStage[l.stage]||l.stage)+'</span></div>').join(''):'<div class="empty">Nenhum lead encontrado. Use a página Descoberta para começar.</div>')+'</section>'+
- '<section class="panel"><h3>Central operacional</h3><div class="activity"><span class="dotmini">◎</span><div><strong>WhatsApp</strong><small>'+esc(state.connection.status)+'</small></div></div>'+
- '<div class="activity"><span class="dotmini">⌁</span><div><strong>Workflows</strong><small>'+state.workflows.length+' configurado(s)</small></div></div>'+
- '<div class="activity"><span class="dotmini">◷</span><div><strong>Fila de mensagens</strong><small>'+state.jobs.filter(x=>x.status==='PENDING').length+' aguardando · '+state.jobs.filter(x=>x.status==='UNKNOWN').length+' com estado desconhecido</small></div></div>'+
- '<div class="activity"><span class="dotmini">⌕</span><div><strong>Pesquisa externa</strong><small>'+'OpenStreetMap local disponível'+(state.searchConfigured?' · Brave conectado':' · Brave opcional')+'</small></div></div>'+
- '<p class="subtle" style="font-size:12px;line-height:1.7;margin-top:24px">O painel não executa campanhas sem permissão configurada. Mensagens ambíguas exigem revisão humana.</p></section></div>'+
- '<section class="panel" style="margin-top:18px"><div class="between"><h3>Próximas reuniões</h3><button class="btn small" data-action="new-meeting">+ Agendar reunião</button></div>'+
- ((state.meetings||[]).filter(m=>m.status==='SCHEDULED'&&new Date(m.start_at)>new Date()).slice(0,10).map(m=>'<div class="activity"><span class="dotmini">◷</span><div style="flex:1"><strong>'+esc(m.business)+'</strong><small>'+fmtDate(m.start_at)+' · '+esc(m.notes||'')+'</small></div><button class="btn small ghost" data-action="cancel-meeting" data-id="'+m.id+'">Cancelar</button></div>').join('')||'<div class="empty">Nenhuma reunião agendada.</div>')+'</section>';
+ const stats=state.stats||{},c=state.connection||{},s=state.settings||{};
+ const wa=c.status==='CONNECTED';
+ const queue=state.jobs.filter(x=>x.status==='PENDING').length;
+ const unknown=state.jobs.filter(x=>x.status==='UNKNOWN').length;
+ const qualified=state.leads.filter(x=>x.contact_permission===1&&x.phone).length;
+ const sent=Number(stats.contacted||0);
+ const steps=[
+  {ok:stats.found>0,title:'Empresas descobertas',detail:(stats.found||0)+' oportunidades registradas',to:'discovery'},
+  {ok:wa,title:'WhatsApp autenticado',detail:wa?'Conexão ativa':'Novo pareamento necessário',to:'connections'},
+  {ok:qualified>0,title:'Contatos autorizados',detail:qualified+' lead(s) com permissão registrada',to:'prospects'},
+  {ok:!s.paused&&wa,title:'Operação habilitada',detail:s.paused?'Prospecção pausada':'Prospecção habilitada',to:'settings'}
+ ];
+ const metric=(icon,label,value,hint,to)=>'<button type="button" class="stat-tile" data-action="route" data-to="'+to+'"><span class="stat-icon">'+icon+'</span><span class="stat-label">'+label+'</span><strong>'+Number(value||0).toLocaleString('pt-BR')+'</strong><span class="stat-hint">'+hint+' <span>↗</span></span></button>';
+ const latest=state.leads.slice(0,5);
+ return '<div class="hero"><div class="hero-main"><div class="hero-kicker"><span class="live-dot"></span>CENTRAL COMERCIAL · VISÃO EM TEMPO REAL</div><h2>Sua operação, <em>sem complicação.</em></h2><p>Acompanhe oportunidades, conversas e próximos passos em um só lugar. Cada indicador vem diretamente do banco do Prospector.</p><div class="hero-actions"><button class="btn" data-action="route" data-to="discovery">⌕ &nbsp;Encontrar empresas</button><button class="btn hero-outline" data-action="route" data-to="connections">◎ &nbsp;Conectar WhatsApp</button></div></div><div class="hero-side"><span class="hero-side-label">PRÓXIMA AÇÃO</span><strong>'+(!wa?'Concluir pareamento':s.paused?'Revisar início das automações':'Revisar oportunidades')+'</strong><p>'+(!wa?'A sessão WhatsApp precisa de um QR novo antes de enviar qualquer mensagem.':s.paused?'Os envios estão pausados. Ative apenas com contatos autorizados.':'Confira respostas e propostas pendentes.')+'</p><button class="text-link" data-action="route" data-to="'+(!wa?'connections':s.paused?'settings':'prospects')+'">Resolver agora →</button></div></div>'+
+ '<div class="stat-grid">'+metric('⌕','Empresas encontradas',stats.found,'Banco de oportunidades','prospects')+metric('✳','Qualificados',stats.qualified,'Contatos para revisão','prospects')+metric('↗','Abordagens confirmadas',sent,'Mensagens iniciais enviadas','conversations')+metric('◉','Respostas recebidas',stats.responded,'Conversas identificadas','conversations')+'</div>'+
+ '<div class="dashboard-grid"><section class="panel progress-panel"><div class="between"><div><div class="panel-eyebrow">PROGRESSO</div><h3>Checklist da operação</h3></div><span class="tag">'+steps.filter(x=>x.ok).length+' de 4 etapas</span></div><div class="progress-track"><span style="width:'+(steps.filter(x=>x.ok).length*25)+'%"></span></div><div class="checklist">'+steps.map((step,i)=>'<button class="check-row" data-action="route" data-to="'+step.to+'"><span class="check-marker '+(step.ok?'done':'')+'">'+(step.ok?'✓':i+1)+'</span><span class="check-body"><strong>'+esc(step.title)+'</strong><small>'+esc(step.detail)+'</small></span><span class="check-arrow">→</span></button>').join('')+'</div></section>'+
+ '<section class="panel pulse-panel"><div class="panel-eyebrow">AGORA</div><h3>Saúde da operação</h3>'+
+ '<div class="status-line"><span><span class="live-dot '+(wa?'':'muted')+'"></span> WhatsApp</span><strong class="'+(wa?'text-good':'text-warn')+'">'+esc(c.status||'Indefinido')+'</strong></div>'+
+ '<div class="status-line"><span>Descoberta de empresas</span><strong>OpenStreetMap</strong></div>'+
+ '<div class="status-line"><span>Fila aguardando</span><strong>'+queue+'</strong></div>'+
+ '<div class="status-line"><span>Entregas para revisar</span><strong class="'+(unknown?'text-warn':'')+'">'+unknown+'</strong></div>'+
+ '<div class="status-line"><span>Automações</span><strong>'+(!s.paused?'Ativas':'Pausadas')+'</strong></div>'+
+ '<p class="helper-text">Leads coletados não recebem mensagens sem autorização explícita.</p><button class="btn secondary panel-action" data-action="route" data-to="settings">Gerenciar controles →</button></section></div>'+
+ '<section class="panel recent-panel"><div class="between"><div><div class="panel-eyebrow">PIPELINE</div><h3>Oportunidades recentes</h3></div><button class="btn small secondary" data-action="route" data-to="prospects">Abrir Kanban ↗</button></div>'+
+ (latest.length?'<div class="recent-list">'+latest.map(l=>'<div class="recent-item"><span class="recent-avatar">'+esc((l.business||'E').slice(0,1).toUpperCase())+'</span><div class="recent-info"><strong>'+esc(l.business)+'</strong><small>'+esc(l.city||'Cidade não informada')+' · '+esc(l.segment||'Segmento não identificado')+'</small></div><span class="tag '+(l.stage==='INTERESTED'?'green':'')+'">'+esc(labelStage[l.stage]||l.stage)+'</span></div>').join('')+'</div>':'<div class="empty"><div class="symbol">⌕</div><strong>Nenhuma empresa encontrada ainda</strong><p>Comece pela descoberta e acompanhe seus leads aqui.</p><button class="btn small" data-action="route" data-to="discovery">Iniciar descoberta</button></div>')+'</section>';
 }
 function prospects(){
  const filtered=state.leads.filter(l=>!kanbanSearch||[l.business,l.name,l.phone,l.instagram].some(x=>String(x||'').toLowerCase().includes(kanbanSearch)));
@@ -217,13 +236,18 @@ function discovery(){
  '<section class="panel" style="margin-top:18px"><h3>Segurança das abordagens</h3><p class="subtle">Empresas descobertas entram com contato não autorizado. A plataforma não envia campanhas para números coletados sem permissão. Fonte pública não equivale a autorização para WhatsApp. Empresas sem tag de site continuam como site incerto.</p></section>';
 }
 function connections(){
- const c=state.connection,connected=c.status==='CONNECTED';
- return '<div class="cards"><section class="panel"><div class="between"><div><h3>WhatsApp</h3><span class="tag '+(connected?'green':'yellow')+'">'+esc(c.status)+'</span></div><div class="avatar" style="background:#dff5ed;color:#108f70">◉</div></div>'+
- '<p class="subtle">Conexão por Baileys. Apenas um processo deve usar a sessão de cada vez.</p>'+
- (c.qr?'<img class="qr" src="'+esc(c.qr)+'" alt="QR Code WhatsApp"><p>WhatsApp → Aparelhos conectados → Conectar aparelho.</p>':'')+
- '<div class="spacer"></div><div class="actionsrow"><button class="btn" data-action="connect" '+(connected?'disabled':'')+'>Conectar / gerar QR</button><button class="btn secondary" data-action="disconnect">Desconectar</button></div>'+
- (c.user?'<p class="subtle">Conta: '+esc(c.user)+'</p>':'')+(c.error?'<p class="tag red">'+esc(c.error)+'</p>':'')+'</section>'+
- '<section class="panel"><h3>Integrações de descoberta</h3><div class="activity"><span class="dotmini">⌕</span><div><strong>Brave Search API</strong><small>'+(state.searchConfigured?'Configurada':'Credencial não configurada')+'</small></div></div><p class="subtle" style="line-height:1.8;font-size:12px">A conexão com Instagram autenticado e a Biblioteca de Anúncios ainda não está configurada. Não existe endpoint oficial para pesquisar irrestritamente todos os perfis do Instagram.</p><h3 style="margin-top:25px">Obsidian</h3><p class="subtle" style="line-height:1.8;font-size:12px">A integração direta com o vault não está instalada neste pacote. O motor funciona sem IA e sem Obsidian.</p></section></div>';
+ const c=state.connection||{},connected=c.status==='CONNECTED',waiting=c.status==='QR_READY',working=c.status==='CONNECTING';
+ const fail=c.status==='LOGGED_OUT'||c.status==='ERROR';
+ const desc=connected?'Sessão autenticada e pronta para receber mensagens.':waiting?'Escaneie o código com o WhatsApp do celular.':working?'Conectando ao servidor do WhatsApp…':fail?'A sessão anterior não foi aceita. Você pode iniciar um pareamento novo sem perder o backup.':'Clique em conectar para gerar seu QR Code.';
+ return '<div class="connection-header"><div><span class="panel-eyebrow">CANAIS · INTEGRAÇÃO</span><h2>Seu WhatsApp, pronto para trabalhar.</h2><p>Conexão segura pelo aparelho. Uma sessão de cada vez, sem enviar mensagens automaticamente.</p></div><div class="connection-indicator '+(connected?'ok':waiting?'ready':'needs')+'"><span class="live-dot"></span>'+esc(connected?'Conectado':waiting?'Aguardando leitura':'Não conectado')+'</div></div>'+
+ '<div class="connection-layout"><section class="panel wa-panel"><div class="wa-top"><div class="wa-logo">◎</div><div><h3>WhatsApp Business</h3><p>'+esc(desc)+'</p></div></div>'+
+ (c.qr?'<div class="qr-frame"><img class="qr" src="'+esc(c.qr)+'" alt="QR Code para conectar WhatsApp"><span class="qr-caption">QR temporário · mantenha esta tela aberta</span></div>':'<div class="qr-placeholder"><span class="qr-placeholder-icon">'+(connected?'✓':working?'◌':'▦')+'</span><strong>'+esc(connected?'Canal conectado':working?'Preparando QR Code':'QR Code indisponível')+'</strong><small>'+esc(connected?'Seu canal está ativo.':working?'Pode levar alguns segundos.':'Gere um novo código para conectar o celular.')+'</small></div>')+
+ (fail?'<div class="wa-error" role="alert"><strong>Conexão recusada pelo WhatsApp</strong><span>'+esc(c.error||'Sessão expirada')+(c.closeCode?' · código '+esc(c.closeCode):'')+'</span><small>O reparo guarda a autenticação anterior em backup e solicita um QR novo.</small></div>':'')+
+ '<div class="wa-buttons"><button class="btn" data-action="'+(fail?'relink':'connect')+'" '+(connected||working||waiting?'disabled':'')+'>'+esc(fail?'↻  Reparar e gerar novo QR':working?'Conectando…':waiting?'Aguardando leitura…':connected?'✓ Conectado':'◎  Conectar WhatsApp')+'</button>'+
+ (connected||waiting?'<button class="btn secondary" data-action="disconnect">Desconectar</button>':'')+'</div>'+
+ (c.lastEventAt?'<p class="helper-text">Última atualização: '+fmtDate(c.lastEventAt)+'</p>':'')+'</section>'+
+ '<section class="connection-guide"><div class="panel"><div class="panel-eyebrow">COMECE AQUI</div><h3>Como conectar</h3><ol class="guide-steps"><li><span>01</span><div><strong>Abra o WhatsApp no celular</strong><small>Use o aparelho que administra o número.</small></div></li><li><span>02</span><div><strong>Entre em Aparelhos conectados</strong><small>Toque em “Conectar aparelho”.</small></div></li><li><span>03</span><div><strong>Leia o QR Code ao lado</strong><small>Aguarde o status mudar para “Conectado”.</small></div></li></ol></div>'+
+ '<div class="panel"><div class="panel-eyebrow">OUTRAS INTEGRAÇÕES</div><h3>Descoberta comercial</h3><div class="status-line"><span>OpenStreetMap</span><strong class="text-good">Disponível</strong></div><div class="status-line"><span>Brave Search</span><strong>'+(state.searchConfigured?'Configurado':'Opcional')+'</strong></div><p class="helper-text">Pesquisar empresas é independente da conexão WhatsApp. Nenhuma fonte de dados concede permissão automática para envio de mensagens.</p><button class="btn secondary panel-action" data-action="route" data-to="discovery">Ver fontes →</button></div></section></div>';
 }
 function settings(){
  const s=state.settings;
@@ -289,7 +313,11 @@ document.addEventListener('click',async event=>{
     const automationOptions=(state.workflows||[]).filter(w=>w.enabled!==false);
     modal('<h2>Iniciar automação</h2><p class="subtle">Empresa: <strong>'+esc(lead.business)+'</strong> · Segmento: '+esc(lead.segment||'Não informado')+'</p><p class="subtle">Selecione o fluxo indicado para o cliente. A primeira abordagem só será enviada quando houver permissão e sessão conectada.</p><div class="field"><label>Automação</label><select id="lead-automation"><option value="">Selecionar automaticamente pelo segmento</option>'+automationOptions.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+' • '+esc((w.segments||[]).join(', ')||'Geral')+'</option>').join('')+'</select></div><div class="footer"><button class="btn secondary" data-action="close-modal">Cancelar</button><button class="btn" data-action="start-lead-confirm" data-lead="'+esc(lead.id)+'">Iniciar automação</button></div>');return;}
   if(action==='start-lead-confirm'){await request('/api/workflows/start/'+el.dataset.lead,{workflow_id:$('#lead-automation')?.value||null});closeModal();showToast('Automação iniciada.');await load();return;}
-  if(action==='connect'){await request('/api/connect',{});await load();return;}
+  if(action==='connect'){await request('/api/connect',{});await load();showToast('Solicitação de conexão enviada. Aguarde o QR.');return;}
+  if(action==='relink'){
+   if(!window.confirm('Iniciar uma sessão WhatsApp nova? As credenciais atuais serão guardadas em backup no servidor.'))return;
+   await request('/api/connect',{fresh:true});await load();showToast('Repareamento iniciado. Aguarde o QR Code.');return;
+  }
   if(action==='disconnect'){await request('/api/disconnect',{});await load();return;}
   if(action==='new-workflow'){workflowId='new';editing={id:null,name:'Nova automação · Oferta de site',version:1,segments:[],enabled:true,steps:[
  {id:crypto.randomUUID(),type:'message',text:'Olá, {{business_name}}! Vi o seu trabalho e queria apresentar uma ideia para sua presença digital. Posso enviar uma prévia visual de como poderia ficar seu site?'},
@@ -361,6 +389,15 @@ document.addEventListener('submit',async e=>{
   try{await request('/api/leads/'+t.lead_id+'/messages',{text});$('#message-text').value='';showToast('Mensagem adicionada à fila.');await load();}catch(err){showToast(err.message);}
  }
 });
+$('#sidebar-toggle')?.addEventListener('click',()=>document.body.classList.toggle('nav-expanded'));
+document.addEventListener('keydown',event=>{
+ if(event.key==='Escape'){$('#modal')?.classList.add('hidden');document.body.classList.remove('nav-expanded');}
+ if(event.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){
+  event.preventDefault();if(page!=='prospects')navigate('prospects');
+  const field=$('#kanban-search');field?.focus();
+ }
+});
+document.querySelectorAll('[data-route]').forEach(b=>b.addEventListener('click',()=>document.body.classList.remove('nav-expanded')));
 $('#pause-btn').addEventListener('click',async()=>{if(!state)return;try{await request('/api/settings',{paused:!state.settings.paused});await load();}catch(e){showToast(e.message);}});
 document.addEventListener('dragstart',e=>{const card=e.target.closest('[data-dragid]');if(card)e.dataTransfer.setData('text/plain',card.dataset.dragid);});
 document.addEventListener('dragover',e=>{if(e.target.closest('[data-dropstage]'))e.preventDefault();});
