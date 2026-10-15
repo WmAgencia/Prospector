@@ -43,9 +43,9 @@ function renderActive(){
  const status=campaignStatus({workflow:active,activeId:id,settings:snapshot.settings,connection:snapshot.connection});
  const p=campaignPreview(active.steps);
  return '<section class="cm-active" aria-label="Campanha selecionada"><div class="cm-active-head"><div class="cm-active-icon">↗</div><span class="cm-overline">CAMPANHA SELECIONADA</span><span class="cm-state '+(status.running?'cm-green':'cm-muted')+'">'+(status.running?'● ':'')+esc(status.label)+'</span></div>'+
- '<h3>'+esc(active.name)+'</h3><p>Fluxo salvo e protegido contra alterações acidentais. '+(snapshot.settings.paused?'Os envios permanecem pausados.':'Somente contatos autorizados podem receber abordagens.')+'</p>'+
+ '<h3>'+esc(active.name)+'</h3><p>O roteiro pode ser editado quando as abordagens estiverem pausadas. '+(snapshot.settings.paused?'Os envios permanecem pausados.':'Somente contatos autorizados podem receber abordagens.')+'</p>'+
  '<div class="cm-mini-stats"><span>◷ Espera '+p.waitBeforeAudio+'s + '+p.waitBeforeVideo+'s</span><span>♫ Áudio '+(p.hasAudio?'pronto':'pendente')+'</span><span>▣ Vídeo '+(p.hasVideo?'pronto':'pendente')+'</span></div>'+
- '<details class="cm-disclosure"><summary>Ver etapas da campanha <span aria-hidden="true">⌄</span></summary>'+previewRows(active.steps)+'</details></section>';
+ '<div class="cm-actions"><button class="btn secondary cm-edit-in-dark" data-cm="edit" data-id="'+esc(active.id)+'">✎ Editar campanha</button></div><details class="cm-disclosure"><summary>Ver etapas da campanha <span aria-hidden="true">⌄</span></summary>'+previewRows(active.steps)+'</details></section>';
 }
 function renderList(){
  const activeId=activeCampaign()?.id||null;
@@ -54,19 +54,19 @@ function renderList(){
   return '<button type="button" data-cm="select" data-id="'+esc(w.id)+'" class="cm-library-item '+(w.id===selectedId?'cm-selected':'')+'" aria-pressed="'+(w.id===selectedId?'true':'false')+'"><span class="cm-library-title">'+esc(w.name)+'</span><span class="cm-library-meta"><span class="cm-indicator '+(status.active?'cm-dot-active':'')+'"></span>'+esc(status.active?'Selecionada':status.label)+'</span></button>';
  }).join('');
  return '<aside class="cm-library"><div class="cm-library-head"><div><span class="cm-overline">BIBLIOTECA</span><h3>Suas campanhas</h3></div><span class="cm-count">'+workflows().filter(w=>w.id!=='default'||w.id===activeId).length+'</span></div><div class="cm-list">'+(cards||'<p class="cm-empty">Sua primeira campanha aparecerá aqui.</p>')+'</div>'+
- '<button type="button" data-cm="new" class="btn cm-new-btn">＋ Criar campanha</button><p class="cm-help">Selecione um card para visualizar ou ativar. A campanha em uso não pode ser editada.</p></aside>';
+ '<button type="button" data-cm="new" class="btn cm-new-btn">＋ Criar campanha</button><p class="cm-help">Selecione um card para visualizar ou ativar. A campanha em uso pode ser editada após pausar as abordagens.</p></aside>';
 }
 function renderDetail(){
  const chosen=selectedCampaign();
  if(!chosen)return '<section class="cm-detail cm-muted-panel"><span class="cm-overline">SELECIONE UMA CAMPANHA</span><h3>Escolha um card à esquerda</h3><p>Veja as etapas, ative outra campanha ou crie uma nova.</p></section>';
  const activeId=activeCampaign()?.id,status=campaignStatus({workflow:chosen,activeId,settings:snapshot.settings,connection:snapshot.connection});
- if(status.active)return '<section class="cm-detail cm-detail-small"><div class="cm-detail-icon">✓</div><div><strong>Esta é a campanha selecionada.</strong><p>Para trocar, escolha outro card na esquerda. Para alterar esse roteiro, crie uma cópia como nova campanha.</p><button class="btn secondary small" data-cm="duplicate" data-id="'+esc(chosen.id)+'">Criar uma cópia editável</button></div></section>';
+ if(status.active)return '<section class="cm-detail cm-detail-small"><div class="cm-detail-icon">✓</div><div><strong>Esta é a campanha selecionada.</strong><p>Para trocar, escolha outro card na esquerda. Para alterar o roteiro, pause as abordagens e clique em Editar.</p><button class="btn secondary small" data-cm="edit" data-id="'+esc(chosen.id)+'">✎ Editar campanha</button> <button class="btn secondary small" data-cm="duplicate" data-id="'+esc(chosen.id)+'">Duplicar</button></div></section>';
  const p=campaignPreview(chosen.steps);
  return '<section class="cm-detail"><div class="cm-detail-head"><div><span class="cm-overline">CAMPANHA SALVA</span><h3>'+esc(chosen.name)+'</h3><p>Revise o resumo antes de selecionar esta campanha.</p></div><span class="cm-state">'+esc(status.label)+'</span></div>'+
  '<div class="cm-brief-grid"><span><strong>'+p.steps+'</strong> etapas</span><span><strong>'+p.waitBeforeAudio+'s</strong> antes do áudio</span><span><strong>'+p.waitBeforeVideo+'s</strong> antes do vídeo</span></div>'+
  '<details class="cm-disclosure" open><summary>Etapas configuradas <span aria-hidden="true">⌄</span></summary>'+previewRows(chosen.steps)+'</details>'+
  '<div class="cm-actions">'+(status.canActivate?'<button class="btn" data-cm="activate" data-id="'+esc(chosen.id)+'">✓ Ativar esta campanha</button>':'<span class="cm-warning">Para ativar, anexe áudio e vídeo.</span>')+
- (!chosen.enabled?'<button class="btn secondary" data-cm="edit" data-id="'+esc(chosen.id)+'">Editar rascunho</button>':'<button class="btn secondary" data-cm="duplicate" data-id="'+esc(chosen.id)+'">Duplicar para editar</button>')+'</div></section>';
+ '<button class="btn secondary" data-cm="edit" data-id="'+esc(chosen.id)+'">✎ Editar campanha</button><button class="btn secondary" data-cm="duplicate" data-id="'+esc(chosen.id)+'">Duplicar</button>'+'</div></section>';
 }
 const opt=(kind,value)=>'<option value="">Selecione '+(kind==='audio'?'um áudio':'um vídeo')+'</option>'+(snapshot.media||[]).filter(x=>x.kind===kind).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===value?'selected':'')+'>'+esc(x.name)+'</option>').join('');
 function renderEditor(){
@@ -74,7 +74,7 @@ function renderEditor(){
  const steps=draft.steps;
  const message=steps.find(x=>x.type==='message'),delays=steps.filter(x=>x.type==='delay'),audio=steps.find(x=>x.type==='audio'),video=steps.find(x=>x.type==='video'),decision=steps.find(x=>x.type==='decision');
  if(!message||delays.length<2||!audio||!video||!decision)return '<section class="cm-detail"><h3>Roteiro avançado</h3><p>Esta campanha usa um formato diferente. Faça uma cópia com o modelo simplificado.</p><button class="btn secondary" data-cm="cancel">Voltar</button></section>';
- return '<section class="cm-editor"><div class="cm-detail-head"><div><span class="cm-overline">EDITOR DE CAMPANHAS</span><h3>'+esc(draft.id?'Editar rascunho':'Criar campanha')+'</h3><p>Configure uma vez, salve e depois ative pelo card.</p></div><button class="btn secondary small" data-cm="cancel">Cancelar</button></div>'+
+ return '<section class="cm-editor"><div class="cm-detail-head"><div><span class="cm-overline">EDITOR DE CAMPANHAS</span><h3>'+esc(draft.id?'Editar campanha':'Criar campanha')+'</h3><p>'+(draft.id===activeCampaign()?.id?'As alterações valem para novos contatos; conversas iniciadas preservam o roteiro anterior.':'Configure uma vez, salve e depois ative pelo card.')+'</p></div><button class="btn secondary small" data-cm="cancel">Cancelar</button></div>'+
  '<div class="cm-field"><label for="cm-name">Nome da campanha</label><input id="cm-name" data-cm-field="name" value="'+esc(draft.name)+'" maxlength="100"></div>'+
  '<div class="cm-field"><label for="cm-message">1 · Mensagem inicial</label><textarea id="cm-message" data-cm-field="message" rows="3">'+esc(message.text)+'</textarea><small>Exemplo: <strong>Olá, Maria, como vai?</strong> Quando não houver nome, envia <strong>Olá, como vai?</strong> O código {{greeting}} faz a personalização.</small></div>'+
  '<div class="cm-inline-fields"><div class="cm-field"><label for="cm-before">2 · Espera após a resposta (segundos)</label><input id="cm-before" data-cm-field="before" type="number" min="1" max="86400" value="'+Number(delays[0].seconds)+'"></div><div class="cm-field"><label for="cm-after">3 · Espera entre áudio e vídeo (segundos)</label><input id="cm-after" data-cm-field="after" type="number" min="1" max="86400" value="'+Number(delays[1].seconds)+'"></div></div>'+
@@ -83,7 +83,7 @@ function renderEditor(){
  '<div class="cm-field"><label for="cm-description">Descrição do áudio</label><textarea id="cm-description" data-cm-field="description" rows="2">'+esc(audio.description||'')+'</textarea></div>'+
  '<div class="cm-field"><label for="cm-caption">6 · Legenda do vídeo (sem adicionar som ao arquivo)</label><textarea id="cm-caption" data-cm-field="caption" rows="2">'+esc(video.caption||'')+'</textarea></div>'+
  '<div class="cm-field"><label for="cm-farewell">7 · Mensagem para quem não tem interesse</label><textarea id="cm-farewell" data-cm-field="farewell" rows="2">'+esc(decision.no_text||'')+'</textarea><small>Quem confirmar interesse vai direto ao Kanban. Respostas incertas precisam de revisão.</small></div>'+
- '<div class="cm-actions"><button type="button" class="btn" data-cm="save">Salvar campanha</button><button type="button" class="btn secondary" data-cm="cancel">Cancelar</button></div><p class="cm-help">Salvar cria um rascunho, sem iniciar envios. Depois, selecione o card para ativá-lo.</p></section>';
+ '<div class="cm-actions"><button type="button" class="btn" data-cm="save">'+(draft.id===activeCampaign()?.id?'Salvar alterações':'Salvar campanha')+'</button><button type="button" class="btn secondary" data-cm="cancel">Cancelar</button></div><p class="cm-help">'+(draft.id===activeCampaign()?.id?'Salvar preserva a campanha selecionada e o estado pausado.':'Salvar cria um rascunho, sem iniciar envios. Depois, selecione o card para ativá-lo.')+'</p></section>';
 }
 function renderBridge(){
  const bridge=snapshot?.bridge||{},state=bridge.state||'NOT_SYNCED';
@@ -126,9 +126,9 @@ async function execute(action,button){
   const chosen=workflows().find(w=>w.id===button.dataset.id);
   if(action==='duplicate'||action==='edit'){
    if(!chosen)throw Error('Campanha não encontrada');
-   if(action==='edit'&&chosen.id===activeCampaign()?.id)throw Error('Duplique a campanha em uso para editá-la.');
+   if(action==='edit'&&chosen.id===activeCampaign()?.id&&!snapshot.settings?.paused)throw Error('Pause as abordagens antes de editar a campanha ativa.');
    draft=structuredClone(chosen);if(action==='duplicate'){draft.id=null;draft.name='Cópia de '+draft.name;}
-   draft.enabled=false;mode='edit';notice='';render();return;
+   draft.enabled=action==='edit'&&chosen.id===activeCampaign()?.id;mode='edit';notice='';render();return;
   }
   if(action==='activate'){
    if(!chosen)throw Error('Selecione uma campanha válida');
@@ -140,9 +140,10 @@ async function execute(action,button){
   if(action==='save'){
    if(!draft||!draft.name.trim())throw Error('Informe o nome da campanha');
    if(draft.name.trim().length>100)throw Error('Use um nome de até 100 caracteres.');
-   const data={id:draft.id||undefined,name:draft.name.trim(),enabled:false,segments:draft.segments||[],steps:draft.steps};
+   const editingActive=!!(draft.id&&draft.id===activeCampaign()?.id);
+   const data={id:draft.id||undefined,name:draft.name.trim(),version:draft.version,enabled:editingActive,segments:draft.segments||[],steps:draft.steps};
    const result=await request('/api/workflows',data);
-   selectedId=result.id;mode='view';draft=null;notice='Campanha salva como rascunho. Para usá-la, clique em Ativar campanha.';
+   selectedId=result.id;mode='view';draft=null;notice=editingActive?'Alterações salvas para novos contatos. Campanha e pausa preservadas.':'Campanha salva como rascunho. Para usá-la, clique em Ativar campanha.';
    await refresh();return;
   }
   if(action==='bridge-sync'){
