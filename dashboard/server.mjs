@@ -270,7 +270,7 @@ async function handler(req,res){
    const workflowId=saveWorkflow(await json(req));notify();return respond(res,200,{id:workflowId});
   }
   if(req.method==='POST'&&pathname==='/api/automations/test'){
-   const v=await json(req);if(!['sample_offer','general_interest'].includes(v.context))throw Error('Contexto inválido');
+   const v=await json(req);if(!['sample_offer','general_interest','website_interest'].includes(v.context))throw Error('Contexto inválido');
    if(typeof v.text!=='string'||v.text.length>1000)throw Error('Texto de teste inválido');
    return respond(res,200,evaluateDecision(v.text,v.context));
   }

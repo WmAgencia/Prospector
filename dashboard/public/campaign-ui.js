@@ -12,13 +12,14 @@ const list=()=>snapshot?.workflows||[];
 const isCampaign=x=>x&&x.steps?.some(s=>s.type==='audio')&&x.steps?.some(s=>s.type==='video')&&x.steps?.some(s=>s.type==='decision');
 function newCampaign(){
  return {id:null,name:'Nova campanha · Sites profissionais',enabled:false,segments:[],steps:[
- {id:uuid(),type:'message',text:'Olá, {{business_name}}! Tudo bem? Posso explicar rapidamente uma proposta de site para sua empresa?'},
+ {id:uuid(),type:'message',text:'{{greeting}} A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?'},
  {id:uuid(),type:'wait_reply'},
  {id:uuid(),type:'delay',seconds:45},
  {id:uuid(),type:'audio',media_id:'',description:'Descreva com fidelidade o áudio gravado e o objetivo da apresentação.'},
- {id:uuid(),type:'video',media_id:''},
+ {id:uuid(),type:'delay',seconds:10},
+ {id:uuid(),type:'video',media_id:'',caption:'O que achou? Gostaria de ter um assim também?'},
  {id:uuid(),type:'wait_reply'},
- {id:uuid(),type:'decision',context:'general_interest',context_description:'O cliente confirma se tem interesse na proposta após áudio e vídeo.',yes_type:'message',yes_text:'',yes_action:'handover',no_type:'message',no_text:'Sem problemas! Obrigado pelo retorno. Fico à disposição.',no_action:'end'},
+ {id:uuid(),type:'decision',context:'website_interest',context_description:'Após o vídeo, o cliente responde se gostaria de ter um site assim.',yes_type:'message',yes_text:'',yes_action:'handover',no_type:'message',no_text:'Sem problemas, muito obrigado pelo retorno, ficamos à disposição.',no_action:'end'},
  {id:uuid(),type:'end'}
  ]};
 }
@@ -27,7 +28,7 @@ function render(){
  const screen=q('#screen');if(!screen)return;
  if(!snapshot){screen.innerHTML='<div class="loader">Carregando campanhas…</div>';return;}
  if(!draft)draft=newCampaign();
- const steps=draft.steps,initial=steps.find(x=>x.type==='message'),delay=steps.find(x=>x.type==='delay'),audio=steps.find(x=>x.type==='audio'),video=steps.find(x=>x.type==='video'),decision=steps.find(x=>x.type==='decision');
+ const steps=draft.steps,initial=steps.find(x=>x.type==='message'),delay=steps.find(x=>x.type==='delay'),videoDelay=steps.filter(x=>x.type==='delay')[1]||{seconds:10},audio=steps.find(x=>x.type==='audio'),video=steps.find(x=>x.type==='video'),decision=steps.find(x=>x.type==='decision');
  if(!initial||!delay||!audio||!video||!decision){screen.innerHTML='<div class="panel"><h3>Fluxo avançado</h3><p>Esta automação utiliza blocos de formato antigo. Use o editor clássico para alterá-la.</p><button class="btn secondary" data-campaign="classic">Abrir editor clássico</button><button class="btn" data-campaign="new">Criar nova campanha</button></div>';return;}
  const options=(kind,current)=>'<option value="">Selecione um '+kind+'…</option>'+(snapshot.media||[]).filter(m=>m.kind===kind).map(m=>'<option value="'+esc(m.id)+'" '+(m.id===current?'selected':'')+'>'+esc(m.name)+'</option>').join('');
  const available=list().map(w=>'<button class="cp-item '+(w.id===draft.id?'cp-selected':'')+'" data-campaign="select" data-id="'+esc(w.id)+'"><strong>'+esc(w.name)+'</strong><small>'+((snapshot.settings?.autonomous_campaign_id===w.id)?'Em uso automático · ':'')+(w.enabled?'Ativa':'Rascunho')+'</small></button>').join('');
@@ -39,8 +40,9 @@ function render(){
  '<div class="cp-step"><span class="cp-number">02</span><div class="cp-step-content"><h4>Aguardar resposta</h4><p>O áudio só é liberado quando o contato permite continuar. Respostas incertas vão para revisão.</p></div></div>'+
  '<div class="cp-step"><span class="cp-number">03</span><div class="cp-step-content"><h4>Espera antes da apresentação</h4><div class="row"><input data-cp-field="delay" type="number" min="1" max="86400" value="'+Number(delay.seconds||45)+'"><span class="subtle">segundos</span></div></div></div>'+
  '<div class="cp-step"><span class="cp-number">04</span><div class="cp-step-content"><h4>Enviar áudio</h4><select data-cp-field="audio">'+options('áudio',audio.media_id)+'</select><input type="file" data-cp-upload="audio" accept=".ogg,.mp3,.m4a,.opus,audio/*"><label>Resumo fiel do áudio</label><textarea data-cp-field="audio-description" rows="2">'+esc(audio.description)+'</textarea></div></div>'+
- '<div class="cp-step"><span class="cp-number">05</span><div class="cp-step-content"><h4>Enviar vídeo</h4><select data-cp-field="video">'+options('vídeo',video.media_id)+'</select><input type="file" data-cp-upload="video" accept="video/mp4,.mp4"><p>MP4, no máximo 60 segundos.</p></div></div>'+
- '<div class="cp-step"><span class="cp-number">06</span><div class="cp-step-content"><h4>Aguardar decisão</h4><p>SIM: vai para Interessados, com atendimento humano. NÃO: mensagem de despedida e Sem interesse. Dúvidas: revisão.</p><label>Mensagem após recusa</label><textarea data-cp-field="farewell" rows="2">'+esc(decision.no_text||'Sem problemas! Obrigado pelo retorno.')+'</textarea></div></div></div>'+
+ '<div class="cp-step"><span class="cp-number">05</span><div class="cp-step-content"><h4>Esperar após o áudio</h4><div class="row"><input data-cp-field="video-delay" type="number" min="1" max="86400" value="'+Number(videoDelay.seconds||10)+'"><span class="subtle">segundos</span></div></div></div>'+ 
+ '<div class="cp-step"><span class="cp-number">06</span><div class="cp-step-content"><h4>Enviar vídeo</h4><select data-cp-field="video">'+options('vídeo',video.media_id)+'</select><input type="file" data-cp-upload="video" accept="video/mp4,.mp4"><p>MP4, no máximo 60 segundos. O texto vai como legenda do vídeo, sem alterar a imagem nem adicionar som.</p><label>Legenda da mensagem de vídeo</label><textarea data-cp-field="video-caption" rows="2">'+esc(video.caption||'')+'</textarea></div></div>'+
+ '<div class="cp-step"><span class="cp-number">07</span><div class="cp-step-content"><h4>Aguardar decisão</h4><p>SIM: vai para Interessados, com atendimento humano. NÃO: mensagem de despedida e Sem interesse. Dúvidas: revisão.</p><label>Mensagem após recusa</label><textarea data-cp-field="farewell" rows="2">'+esc(decision.no_text||'Sem problemas! Obrigado pelo retorno.')+'</textarea></div></div></div>'+
  '<div class="cp-actions"><button class="btn secondary" data-campaign="save">Salvar rascunho</button><button class="btn" data-campaign="activate">Salvar e ativar campanha</button></div><p class="helper-text">Ativar define esta campanha como padrão para novos contatos autorizados, sem iniciar mensagens enquanto a operação estiver pausada. Cadência máxima: 150/dia, 08h–18h.</p></section></div>'+
  (notice?'<p class="cp-notice" role="status">'+esc(notice)+'</p>':'');
 }
@@ -58,8 +60,10 @@ function updateField(name,value){
  if(name==='segments')draft.segments=value.split(',').map(x=>x.trim()).filter(Boolean);
  if(name==='message')st.find(x=>x.type==='message').text=value;
  if(name==='delay')st.find(x=>x.type==='delay').seconds=Number(value);
+ if(name==='video-delay'){let second=st.filter(x=>x.type==='delay')[1];if(!second){second={id:uuid(),type:'delay',seconds:10};st.splice(st.findIndex(x=>x.type==='video'),0,second);}second.seconds=Number(value);}
  if(name==='audio')st.find(x=>x.type==='audio').media_id=value;
  if(name==='video')st.find(x=>x.type==='video').media_id=value;
+ if(name==='video-caption')st.find(x=>x.type==='video').caption=value;
  if(name==='audio-description')st.find(x=>x.type==='audio').description=value;
  if(name==='farewell')st.find(x=>x.type==='decision').no_text=value;
 }

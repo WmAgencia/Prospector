@@ -34,6 +34,7 @@ jobs:
           node --check dashboard/public/radar-ui.js
           node --check dashboard/radar.mjs
           node --check dashboard/campaign-package.mjs
+          node --check dashboard/consecom-flow.mjs
           node --check dashboard/import-legacy.mjs
           node --check preview/server.mjs
       - name: Start local API and verify JSON

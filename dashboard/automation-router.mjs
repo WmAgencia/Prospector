@@ -7,7 +7,7 @@ export function evaluateDecision(text, context='general_interest'){
  if(/\b(?:nao|nunca|nem|sem interesse|nao quero|nao preciso|dispenso|prefiro nao|ja tenho (?:site|pagina)|agora nao|nao obrigado|melhor nao)\b/.test(s))
   return {decision:'NO',reason:'refusal'};
  // Aceite explícito de receber a apresentação, mesmo com "sim" / "ok" antes da frase.
- if(/^(?:(?:sim|claro|beleza|ok)\s+)?(?:pode enviar|pode mandar|pode passar|me envia|pode explicar|pode falar|manda|manda ai)(?:\s+(?:sim|por favor|o audio|o video|a proposta|pra mim))?$/.test(s))
+ if(/^(?:(?:sim|claro|beleza|ok|perfeito|tranquilo|tudo bem)\s+)?(?:pode enviar|pode mandar|pode me mandar|pode passar|me envia|pode explicar|pode falar|manda|manda ai)(?:\s+(?:sim|por favor|o audio|o video|a proposta|pra mim))?$/.test(s))
   return {decision:'YES',reason:'explicit_permission'};
  // Não adivinhar "quero" no meio de frase que não fala de demonstração.
  const strong=/^(?:sim|s|pode|pode sim|pode mandar|pode enviar|manda|manda sim|me manda|manda ai|quero|quero sim|quero ver|claro|claro que sim|com certeza|por favor|pode ser|beleza|ok|bora|pode falar|fale|gostaria|pode mostrar|mostra|me mostra)[!?. ]*$/;

@@ -1,0 +1,66 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'consecom-runtime-v2-'));
+const db=await import('../dashboard/db.mjs');
+const runtime=await import('../dashboard/runtime.mjs');
+const {buildConsecomSteps,CAMPAIGN_VIDEO_CAPTION,CAMPAIGN_FAREWELL}=await import('../dashboard/consecom-flow.mjs');
+const a='consecom-audio-test',v='consecom-video-test';
+db.run("INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)",a,'Wesley','audio','audio/ogg','wesley.ogg',20,db.now());
+db.run("INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)",v,'Portfólio mudo','video','video/mp4','portfolio.mp4',20,db.now());
+const steps=buildConsecomSteps({audioId:a,videoId:v});
+const workflowId=runtime.saveWorkflow({name:'Teste Consecom V2',segments:[],enabled:true,steps});
+function deliverAndAdvance(leadId,execution,type){
+ const j=db.one('SELECT * FROM jobs WHERE lead_id=? AND type=? ORDER BY created_at DESC LIMIT 1',leadId,type);
+ assert.ok(j,'Não enfileirou '+type);
+ db.run("UPDATE jobs SET status='SENT' WHERE id=?",j.id);
+ db.run("UPDATE executions SET state='ACTIVE' WHERE id=?",execution);
+ runtime.drive(execution);
+ return j;
+}
+test('cadence and personalized caption are persisted in real workflow jobs',async()=>{
+ const lead=db.addLead({business:'Clínica Sol',name:'Mariana Silva',phone:'5515999771133',contact_permission:true,source:'TEST'}).lead;
+ const execution=runtime.startWorkflow(lead.id,workflowId);
+ runtime.drive(execution);
+ const initial=deliverAndAdvance(lead.id,execution,'message');
+ assert.equal(initial.text,'Olá, Mariana. Tudo bem? A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?');
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',execution).state,'WAIT_REPLY');
+ await runtime.incoming({key:{remoteJid:'5515999771133@s.whatsapp.net',id:'permission-test'},message:{conversation:'Sim, pode enviar'}});
+ let waiting=db.one('SELECT state,wake_at FROM executions WHERE id=?',execution);
+ assert.equal(waiting.state,'WAIT_DELAY');
+ assert.ok(Date.parse(waiting.wake_at)-Date.now()>40000);
+ db.run("UPDATE executions SET state='ACTIVE' WHERE id=?",execution);runtime.drive(execution);
+ const audio=deliverAndAdvance(lead.id,execution,'audio');
+ assert.equal(audio.media_id,a);
+ waiting=db.one('SELECT state,wake_at FROM executions WHERE id=?',execution);
+ assert.equal(waiting.state,'WAIT_DELAY');
+ assert.ok(Date.parse(waiting.wake_at)-Date.now()>8000&&Date.parse(waiting.wake_at)-Date.now()<15000);
+ db.run("UPDATE executions SET state='ACTIVE' WHERE id=?",execution);runtime.drive(execution);
+ const video=deliverAndAdvance(lead.id,execution,'video');
+ assert.equal(video.media_id,v);
+ assert.equal(video.text,CAMPAIGN_VIDEO_CAPTION);
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',execution).state,'WAIT_REPLY');
+ await runtime.incoming({key:{remoteJid:'5515999771133@s.whatsapp.net',id:'interest-test'},message:{conversation:'Quero um assim'}});
+ assert.equal(db.one('SELECT stage FROM leads WHERE id=?',lead.id).stage,'INTERESTED');
+ assert.equal(db.one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id).manual_takeover,1);
+});
+test('explicit decline queues farewell and moves contact to NO_INTEREST',async()=>{
+ const lead=db.addLead({business:'Studio Delta',phone:'5515999771144',contact_permission:true,source:'TEST'}).lead;
+ const execution=runtime.startWorkflow(lead.id,workflowId);
+ runtime.drive(execution);
+ db.run("UPDATE executions SET state='WAIT_REPLY',next_step=7 WHERE id=?",execution);
+ await runtime.incoming({key:{remoteJid:'5515999771144@s.whatsapp.net',id:'decline-test'},message:{conversation:'Não tenho interesse'}});
+ assert.equal(db.one('SELECT stage FROM leads WHERE id=?',lead.id).stage,'NO_INTEREST');
+ const farewell=db.one("SELECT text,key,status FROM jobs WHERE lead_id=? AND key LIKE 'decision:%:no'",lead.id);
+ assert.equal(farewell.text,CAMPAIGN_FAREWELL);
+ assert.equal(farewell.status,'PENDING');
+});
+test('no-person-name greeting does not invent business contact name',()=>{
+ const lead=db.addLead({business:'Empresa sem nome pessoal',phone:'5515999771155',contact_permission:true,source:'TEST'}).lead;
+ const execution=runtime.startWorkflow(lead.id,workflowId);
+ runtime.drive(execution);
+ const first=db.one('SELECT text FROM jobs WHERE lead_id=? AND type=?',lead.id,'message');
+ assert.ok(first.text.startsWith('Olá, tudo bem?'));
+});

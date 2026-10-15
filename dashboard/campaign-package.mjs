@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {one,run,tx,id,now,audit,getSetting,setSetting} from './db.mjs';
+import {CAMPAIGN_NAME,CAMPAIGN_INTRO,CAMPAIGN_VIDEO_CAPTION,CAMPAIGN_FAREWELL,buildConsecomSteps} from './consecom-flow.mjs';
 const expected=['campaign.json','audio.ogg','video.mp4'];
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');
 const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
@@ -22,17 +23,10 @@ export function extractStoredZip(buf){
  if(files.size!==expected.length||expected.some(k=>!files.has(k))||p+4>buf.length||buf.readUInt32LE(p)!==0x02014b50)throw Error('Pacote incompleto: campanha, áudio e vídeo obrigatórios');
  return Object.fromEntries(files);
 }
-export function buildCampaignSteps({intro,delay_seconds,description,farewell,audioId,videoId}){
- return [
-  {id:id(),type:'message',text:intro},
-  {id:id(),type:'wait_reply'},
-  {id:id(),type:'delay',seconds:delay_seconds},
-  {id:id(),type:'audio',media_id:audioId,description},
-  {id:id(),type:'video',media_id:videoId},
-  {id:id(),type:'wait_reply'},
-  {id:id(),type:'decision',context:'general_interest',context_description:'Após o áudio e o vídeo, o profissional decide se quer contratar o site profissional por R$ 350.',yes_type:'message',yes_text:'',yes_action:'handover',no_type:'message',no_text:farewell,no_action:'end'},
-  {id:id(),type:'end'}
- ];
+// Interface compatível com o pacote ZIP v1: os textos atuais prevalecem sobre
+// manifestos antigos. Áudio e vídeo originais seguem preservados por SHA-256.
+export function buildCampaignSteps({audioId='',videoId=''}={}){
+ return buildConsecomSteps({audioId,videoId});
 }
 function probe(file){
  const r=spawnSync('ffprobe',['-v','error','-show_entries','stream=codec_type,codec_name:format=duration','-of','json',file],{encoding:'utf8',timeout:15000});
@@ -64,7 +58,7 @@ export function importCampaignPackage(buf){
   const audioDuration=Number(a.format?.duration),videoDuration=Number(v.format?.duration);
   if(!a.streams?.some(s=>s.codec_type==='audio')||!Number.isFinite(audioDuration)||audioDuration<=0||audioDuration>180)throw Error('Áudio incompatível');
   if(!v.streams?.some(s=>s.codec_type==='video')||v.streams.some(s=>s.codec_type==='audio')||!Number.isFinite(videoDuration)||videoDuration<=0||videoDuration>60)throw Error('O vídeo precisa ter até 60 segundos e NÃO conter áudio');
-  const steps=buildCampaignSteps({intro,delay_seconds,description,farewell,audioId,videoId});
+  const steps=buildCampaignSteps({audioId,videoId});
   tx(()=>{
    run('INSERT INTO media VALUES(?,?,?,?,?,?,?,?)',audioId,String(m.audio_name||'Áudio de apresentação').slice(0,100),'audio','audio/ogg',audioId+'.ogg',audioDuration,audio.length,now());
    run('INSERT INTO media VALUES(?,?,?,?,?,?,?,?)',videoId,String(m.video_name||'Vídeo sem som').slice(0,100),'video','video/mp4',videoId+'.mp4',videoDuration,video.length,now());
