@@ -13,6 +13,6 @@ test('fontes públicas não inventam telefone, site ou permissões',()=>{
  assert.equal(extractPhone({phone:'+55 (15) 99999-8888'}),'5515999998888');
  assert.equal(extractInstagram({'contact:instagram':'https://instagram.com/empresa.oficial'}),'empresa.oficial');
  const q=makeQuery(resolveLocation('Sorocaba'),resolveSegment('dentista'));
- assert.match(q,/nwr\["name"\]\["amenity"="dentist"\]/);
+ assert.match(q,/nwr\["amenity"="dentist"\]\["name"\]/);
  assert.match(q,/out center 70/);
 });

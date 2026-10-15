@@ -42,7 +42,7 @@ export function extractInstagram(tags){
  return match?match[1].toLowerCase():null;
 }
 export function makeQuery(location,segment){
- return '[out:json][timeout:22];(nwr["name"]["'+segment.filter+'"="'+segment.value+'"](around:'+location.radius+','+location.lat+','+location.lon+'););out center 70;';
+ return '[out:json][timeout:24];(nwr["'+segment.filter+'"="'+segment.value+'"]["name"](around:'+location.radius+','+location.lat+','+location.lon+'););out center 70;';
 }
 let busy=false;
 export async function discoverLocal(payload={},automatic=false){
@@ -70,6 +70,7 @@ export async function discoverLocal(payload={},automatic=false){
   });
   if(!response.ok)throw Error('Overpass respondeu HTTP '+response.status+(response.status===429?' (limite da API comunitária)':''));
   const data=await response.json();
+  if(data.remark)throw Error('A API pública não concluiu a pesquisa: '+String(data.remark).slice(0,120));
   if(!Array.isArray(data.elements))throw Error('A fonte não retornou uma lista válida');
   let added=0,examined=0,withPhone=0,withoutSiteClaimed=0;
   for(const item of data.elements.slice(0,70)){
