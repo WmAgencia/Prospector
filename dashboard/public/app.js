@@ -232,6 +232,7 @@ function discovery(){
  '<section class="panel" style="margin-top:18px"><div class="between"><h3>Busca web complementar (Brave)</h3><span class="tag">'+(state.searchConfigured?'Configurada':'Opcional')+'</span></div>'+
  '<div class="two"><div class="field"><label>Consulta livre</label><input id="discover-query" placeholder="Ex.: psicóloga Sorocaba ou clínica Campinas"></div><button class="btn secondary" data-action="discover" '+(!state.searchConfigured?'disabled':'')+'>Pesquisar perfis indexados</button></div>'+
  '<p class="subtle">Brave requer chave válida do provedor. Bibliotecas no GitHub não fornecem chaves de serviços externos.</p></section>'+
+ '<section class="panel" style="margin-top:18px"><div class="between"><h3>Diretórios empresariais complementares</h3><span class="tag">APIs oficiais</span></div><p class="subtle">Google Places e Foursquare oferecem informações adicionais de sites e empresas quando você configura suas próprias chaves na Railway. Podem existir custos e limitações de armazenamento. Resultados são exibidos para revisão e não são copiados automaticamente ao banco.</p><div class="two"><div class="field"><label>Fonte</label><select id="external-provider"><option value="google_places">Google Places</option><option value="foursquare">Foursquare Places</option></select></div><div class="field"><label>Segmento</label><input id="external-query" placeholder="Ex.: clínica odontológica"></div></div><div class="two"><div class="field"><label>Cidade</label><input id="external-city" value="Sorocaba"></div><button class="btn secondary" data-action="external-search">Pesquisar nesta fonte</button></div></section>'+
  '<section class="panel" style="margin-top:18px"><h3>Provedores de prospecção</h3>'+providers.map(p=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(p.label)+'</strong><small>'+esc(p.note)+'</small></div><span class="tag '+(p.status==='READY'?'green':p.status==='NEEDS_API_KEY'?'yellow':'')+'">'+esc(p.status==='READY'?'Pronto':p.status==='NEEDS_API_KEY'?'Sem chave':'Não integrado')+'</span></div>').join('')+'</section>'+
  '<section class="panel" style="margin-top:18px"><h3>Segurança das abordagens</h3><p class="subtle">Empresas descobertas entram com contato não autorizado. A plataforma não envia campanhas para números coletados sem permissão. Fonte pública não equivale a autorização para WhatsApp. Empresas sem tag de site continuam como site incerto.</p></section>';
 }
@@ -375,6 +376,14 @@ document.addEventListener('click',async event=>{
    data.discovery_priority=$('#discovery-priority').value;data.discovery_brazil_wide=$('#discovery-brazil').checked;
    data.score_weights={};document.querySelectorAll('[data-weight]').forEach(x=>data.score_weights[x.dataset.weight]=Number(x.value));
    await request('/api/settings',data);await load();showToast('Configurações salvas.');return;
+  }
+  if(action==='external-search'){
+    el.disabled=true;
+    try{
+     const result=await request('/api/research/external',{provider:$('#external-provider').value,query:$('#external-query').value,city:$('#external-city').value});
+     const html=result.results.length?result.results.map(x=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(x.name)+'</strong><small>'+esc(x.address||'')+'</small><small>'+esc(x.website||'Site não informado no provedor (não comprovado)')+'</small></div>'+(x.website?'<a target="_blank" rel="noopener noreferrer" href="'+esc(x.website)+'">Site ↗</a>':'')+'</div>').join(''):'<div class="empty">Nenhum registro retornado por esta fonte.</div>';
+     modal('<h2>Pesquisa em '+esc(result.source)+'</h2><p class="subtle">Resultados para revisão, não importados automaticamente. Confirme os termos do provedor e o site da empresa.</p>'+html+'<div class="footer"><button class="btn secondary" data-action="close-modal">Fechar</button></div>');
+    }finally{el.disabled=false;}return;
   }
   if(action==='discover-osm'){const city=$('#local-city').value,segment=$('#local-segment').value;el.disabled=true;try{const r=await request('/api/discover/osm',{city,segment});showToast(r.cached?'Consulta recente em cache.':r.added+' empresa(s) adicionada(s) de '+r.examined+' analisada(s).');await load();}finally{el.disabled=false;}return;}
   if(action==='discover'){const q=$('#discover-query').value;el.disabled=true;try{const r=await request('/api/discover',{query:q});showToast(r.added+' novo(s) perfil(is) encontrado(s).');await load();}finally{el.disabled=false;}return;}

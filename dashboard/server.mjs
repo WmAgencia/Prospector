@@ -7,6 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {one,all,run,tx,id,now,addLead,stage,getThread,getSetting,setSetting,audit,phone} from './db.mjs';
 import {providerStatus,scoreLead,recordOrigin,discoverProfiles,verifyWebsiteCandidate} from './discovery.mjs';
 import {setSalesCampaign} from './sales-campaign.mjs';
+import {searchDirectory} from './external-research.mjs';
 import {eligibleRecontacts,scheduleApprovedRecontact} from './contact-cadence.mjs';
 import {discoverLocal,dailyLocalDiscovery,LOCATIONS,SEGMENTS} from './osm-discovery.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
@@ -239,6 +240,7 @@ async function handler(req,res){
    const meetingId=pathname.split('/')[3];run("UPDATE meetings SET status='CANCELLED' WHERE id=?",meetingId);
    notify();return respond(res,200,{ok:true});
   }
+  if(req.method==='POST'&&pathname==='/api/research/external'){const result=await searchDirectory(await json(req));return respond(res,200,result);}
   if(req.method==='POST'&&pathname==='/api/discover/osm'){const out=await discoverLocal(await json(req));notify();return respond(res,200,out);}
   if(req.method==='POST'&&pathname==='/api/discover'){const out=await discoverProfiles(await json(req));notify();return respond(res,200,out);}
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/verify-site')){const leadId=pathname.split('/')[3];return respond(res,200,await verifyWebsiteCandidate(leadId));}

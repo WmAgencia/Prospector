@@ -7,13 +7,15 @@ export const providerDefinitions=[
  {id:'instagram_search',label:'Pesquisa direta no Instagram',supportsSearch:false,note:'Instagram não fornece uma busca geral irrestrita de contas comerciais nesta integração.'},
  {id:'instagram_hashtags',label:'Hashtags',supportsSearch:false,note:'Depende de permissões oficiais e contas profissionais elegíveis.'},
  {id:'instagram_related',label:'Perfis relacionados',supportsSearch:false,note:'Sem endpoint autorizado de recomendações de contas disponível.'},
+ {id:'google_places',label:'Google Places · Pesquisa de empresas',supportsSearch:true,note:'API oficial com chave própria; resultados transitórios, uso sujeito a preço e termos do Google.'},
+ {id:'foursquare',label:'Foursquare Places · Pesquisa de empresas',supportsSearch:true,note:'API oficial com chave própria; resultados transitórios, sujeitos à licença do provedor.'},
  {id:'web_search',label:'Pesquisa web complementar',supportsSearch:true,note:'Pesquisa indexada via Brave, quando configurada.'}
 ];
 export const weightsDefault={noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusiness:2,prioritySegment:2,location:1,businessName:1};
 export function providerStatus(){
  const key=!!process.env.BRAVE_SEARCH_API_KEY;
  const enabled=getSetting('discovery_sources',{osm:true,web_search:true})||{};
- return providerDefinitions.map(p=>({...p,enabled:p.id==='osm'&&enabled.osm===undefined?true:!!enabled[p.id],status:p.id==='osm'?'READY':p.id==='web_search'?(key?'READY':'NEEDS_API_KEY'):'NOT_IMPLEMENTED',
+ return providerDefinitions.map(p=>({...p,enabled:p.id==='osm'&&enabled.osm===undefined?true:!!enabled[p.id],status:p.id==='osm'?'READY':p.id==='web_search'?(key?'READY':'NEEDS_API_KEY'):p.id==='google_places'?(process.env.GOOGLE_PLACES_API_KEY?'READY':'NEEDS_API_KEY'):p.id==='foursquare'?(process.env.FOURSQUARE_API_KEY?'READY':'NEEDS_API_KEY'):'NOT_IMPLEMENTED',
   last_run:one('SELECT at,found,status,details FROM discoveries WHERE query LIKE ? ORDER BY at DESC LIMIT 1',p.id+':%')||null
  }));
 }
