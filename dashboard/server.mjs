@@ -307,7 +307,7 @@ async function handler(req,res){
     if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
     if(k==='daily_limit'&&Number(value)>150)throw Error('O teto diário é 150 primeiras abordagens');
     if(k==='discovery_target_daily'&&(Number(value)<1||Number(value)>150))throw Error('A meta de descoberta deve ser de 1 a 150');
-    if(k==='discovery_start_hour'&&Number(value)!==5)throw Error('O início da descoberta está definido para 05h');
+    if(k==='discovery_start_hour'&&(Number(value)<0||Number(value)>23))throw Error('O início da descoberta deve ficar entre 0h e 23h');
     if(k==='initial_interval_seconds'&&Number(value)<144)throw Error('Intervalo mínimo é 144 segundos');
     if(k==='owner_report_hour'&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>23))throw Error('Hora do relatório inválida');
     if(['owner_phone_a','owner_phone_b'].includes(k)&&value&&(!phone(value)||phone(value).length<12||phone(value).length>13))throw Error('Informe WhatsApp brasileiro válido com DDD');
@@ -384,7 +384,7 @@ const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
 setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
 setTimeout(()=>syncAgentBridge().then(()=>notify()).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
-const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),5*60*1000);
+const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),60*1000);
 setTimeout(()=>dailyLocalDiscovery().then(x=>{if(x?.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),120000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));});
