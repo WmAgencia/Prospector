@@ -111,7 +111,7 @@ async function body(req,limit=3*1024*1024){
  return Buffer.concat(parts);
 }
 async function json(req){const b=await body(req);return b.length?JSON.parse(b.toString('utf8')):{};}
-const allowedSettings=new Set(['paused','auto_initial','min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
+const allowedSettings=new Set(['paused','auto_initial','min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
 function snapshot(){
  const leadOrigins=all('SELECT lead_id,source,verified FROM lead_origins ORDER BY at DESC');
  const lastSiteReview=new Map();
@@ -273,7 +273,16 @@ async function handler(req,res){
    return respond(res,200,evaluateDecision(v.text,v.context));
   }
   if(req.method==='POST'&&pathname==='/api/workflows/default'){
-   const v=await json(req);setDefaultWorkflow(v.id);notify();return respond(res,200,{ok:true});
+   const v=await json(req);
+   const workflow=one('SELECT id,steps,enabled FROM workflows WHERE id=?',v.id);
+   if(!workflow||!workflow.enabled)throw Error('Ative a campanha antes de usá-la automaticamente');
+   const steps=JSON.parse(workflow.steps);
+   if(!steps.some(x=>x.type==='wait_reply')||!steps.some(x=>x.type==='decision'))throw Error('Campanha exige espera de resposta e decisão final');
+   const medias=steps.filter(x=>['audio','video'].includes(x.type));
+   if(!medias.some(x=>x.type==='audio')||!medias.some(x=>x.type==='video')||medias.some(x=>!one('SELECT id FROM media WHERE id=? AND kind=?',x.media_id||'',x.type)))throw Error('Inclua áudio e vídeo reais na campanha antes de ativar');
+   setDefaultWorkflow(v.id);setSetting('autonomous_campaign_id',v.id);setSetting('auto_initial',true);
+   audit('AUTONOMOUS_CAMPAIGN_SELECTED',null,{workflowId:v.id});
+   notify();return respond(res,200,{ok:true});
   }
   if(req.method==='POST'&&pathname==='/api/production/sync'){const result=await syncPublishedSamples();notify();return respond(res,200,result);}
   if(req.method==='GET'&&pathname==='/api/production')return respond(res,200,productionList());
@@ -288,9 +297,10 @@ async function handler(req,res){
    const v=await json(req);
    for(const [k,value] of Object.entries(v)){
     if(!allowedSettings.has(k))throw Error('Configuração desconhecida: '+k);
-    if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
-    if(k==='daily_limit'&&Number(value)>200)throw Error('O teto diário é 200 primeiras abordagens');
-    if(k==='initial_interval_seconds'&&Number(value)<108)throw Error('Intervalo de 108 segundos é o mínimo para a janela de 6 horas');
+    if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
+    if(k==='daily_limit'&&Number(value)>150)throw Error('O teto diário é 150 primeiras abordagens');
+    if(k==='discovery_target_daily'&&(Number(value)<1||Number(value)>150))throw Error('A meta de descoberta deve ser de 1 a 150');
+    if(k==='initial_interval_seconds'&&Number(value)<144)throw Error('Intervalo mínimo é 144 segundos');
     if(k==='owner_report_hour'&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>23))throw Error('Hora do relatório inválida');
     if(['owner_phone_a','owner_phone_b'].includes(k)&&value&&(!phone(value)||phone(value).length<12||phone(value).length>13))throw Error('Informe WhatsApp brasileiro válido com DDD');
     setSetting(k,['owner_phone_a','owner_phone_b'].includes(k)&&value?phone(value):value);
@@ -356,7 +366,7 @@ async function handler(req,res){
 const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
 const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)),2500);
-const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),60*60*1000);
+const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),5*60*1000);
 setTimeout(()=>dailyLocalDiscovery().then(x=>{if(x?.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),120000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));});

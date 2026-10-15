@@ -3,6 +3,7 @@
 // Apenas 1 consulta automática ao dia; consultas manuais são limitadas e registradas.
 import {one,all,run,id,now,phone,addLead,getSetting,audit} from './db.mjs';
 import {recordOrigin} from './discovery.mjs';
+import {daySP,hourSP,budgetConfig,radarSnapshot} from './radar.mjs';
 
 export const LOCATIONS={
   sorocaba:{label:'Sorocaba',lat:-23.5015,lon:-47.4526,radius:9500},
@@ -99,8 +100,8 @@ export async function discoverLocal(payload={},automatic=false){
  }
  if(recent?.status==='FAILED'&&age<15*60_000)
   throw Error('A fonte pública apresentou uma falha recente. Aguarde 15 minutos antes de repetir a consulta.');
- const today=new Date().toISOString().slice(0,10);
- const attempts=all("SELECT at FROM discoveries WHERE query LIKE 'osm:%'").filter(x=>String(x.at||'').startsWith(today)).length;
+ const today=daySP();
+ const attempts=all("SELECT at FROM discoveries WHERE query LIKE 'osm:%'").filter(x=>daySP(new Date(x.at))===today).length;
  if(attempts>=8)throw Error('Limite diário de pesquisas públicas atingido. Tente amanhã.');
  busy=true;
  try{
@@ -149,26 +150,45 @@ export async function discoverLocal(payload={},automatic=false){
  }finally{busy=false;}
 }
 let autoBusy=false;
-export async function dailyLocalDiscovery(){
- if(autoBusy||getSetting('discovery_auto_enabled',true)===false||getSetting('discovery_sources',{}).osm===false)return null;
- const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
- const last=getSetting('osm_last_auto_day','');
- if(last===today)return null;
- // 1 search per São Paulo day; no API-key, no aggressive collection.
- const candidatesCity=String(getSetting('cities','Sorocaba')).split(',').map(x=>resolveLocation(x.trim())).filter(Boolean);
- const candidatesSegment=String(getSetting('segments','dentista')).split(',').map(x=>resolveSegment(x.trim())).filter(Boolean);
- const cities=candidatesCity.length?candidatesCity:[LOCATIONS.sorocaba];
- const segments=candidatesSegment.length?candidatesSegment:[SEGMENTS.dentista];
- const epoch=Math.floor(Date.parse(today+'T12:00:00Z')/86400000);
- const city=cities[epoch%cities.length],segment=segments[(Math.floor(epoch/cities.length))%segments.length];
+// Pesquisa progressiva: somente serviços realmente configurados, respeitando limite
+// da API comunitária e interrompendo-se ao atingir 150 leads únicos/dia.
+export async function dailyLocalDiscovery(input=new Date()){
+ if(autoBusy||getSetting('paused',true)||getSetting('discovery_auto_enabled',true)===false||getSetting('discovery_sources',{}).osm===false)return {status:'PAUSED'};
+ const budget=budgetConfig(input);
+ const hour=hourSP(input);
+ if(hour<budget.start||hour>=budget.end)return {status:'OUTSIDE_HOURS'};
+ const target=Math.min(150,Math.max(1,Number(getSetting('discovery_target_daily',150))||150));
+ const snapshot=radarSnapshot(input);
+ if(snapshot.foundToday>=target)return {status:'TARGET_REACHED',foundToday:snapshot.foundToday,target};
+ const today=daySP(input);
+ const rows=all("SELECT query,at FROM discoveries WHERE query LIKE 'osm:%' ORDER BY at DESC LIMIT 100");
+ const attempts=rows.filter(x=>daySP(new Date(x.at))===today);
+ if(attempts.length>=8)return {status:'OSM_DAILY_LIMIT',foundToday:snapshot.foundToday,target};
+ const last=Date.parse(getSetting('osm_last_auto_at','')||'')||0;
+ // Espaçamento real de 45 minutos, incluindo tentativas que falharam.
+ if(input.getTime()-last<45*60000)return {status:'COOLDOWN',foundToday:snapshot.foundToday,target};
+ const cities=String(getSetting('cities','Sorocaba,Votorantim,Campinas')).split(',').map(x=>resolveLocation(x.trim())).filter(Boolean);
+ const segments=String(getSetting('segments','psicólogo,nutricionista,massoterapeuta,fisioterapeuta,esteticista')).split(',').map(x=>resolveSegment(x.trim())).filter(Boolean);
+ const uniqueCities=[...new Map(cities.map(x=>[x.label,x])).values()];
+ const uniqueSegments=[...new Map(segments.map(x=>[x.filter+':'+x.value,x])).values()];
+ if(!uniqueCities.length||!uniqueSegments.length)return {status:'NO_SUPPORTED_CITY_OR_SEGMENT'};
+ const candidates=[];
+ for(const city of uniqueCities)for(const segment of uniqueSegments){
+  const key='osm:'+normalize(city.label)+':'+segment.filter+':'+segment.value;
+  const latest=rows.find(x=>x.query===key);
+  if(latest&&input.getTime()-Date.parse(latest.at)<23*3600000)continue;
+  candidates.push({city,segment});
+ }
+ if(!candidates.length)return {status:'NO_NEW_COMBINATIONS'};
+ const choice=candidates[attempts.length%candidates.length];
  autoBusy=true;
  try{
-  const out=await discoverLocal({city:city.label,segment:Object.keys(SEGMENTS).find(k=>SEGMENTS[k]===segment)},true);
-  if(out?.cached||out?.source==='osm')run("INSERT INTO settings(key,value) VALUES('osm_last_auto_day',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(today));
-  return out;
- }catch(error){
-  // Não repita agressivamente em caso de erro de serviço comunitário.
-  run("INSERT INTO settings(key,value) VALUES('osm_last_auto_day',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(today));
-  return {error:error.message};
+  run("INSERT INTO settings(key,value) VALUES('osm_last_auto_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(input.toISOString()));
+  const segmentId=Object.keys(SEGMENTS).find(k=>SEGMENTS[k]===choice.segment);
+  const result=await discoverLocal({city:choice.city.label,segment:segmentId},true);
+  return {...result,target,foundToday:radarSnapshot().foundToday};
+ }catch(e){
+  audit('DISCOVERY_AUTO_REVIEW',null,{provider:'osm',message:String(e.message).slice(0,180)});
+  return {status:'SOURCE_ERROR',error:String(e.message).slice(0,180)};
  }finally{autoBusy=false;}
 }
