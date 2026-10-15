@@ -22,6 +22,7 @@ function deliverAndAdvance(leadId,execution,type){
 }
 test('cadence and personalized caption are persisted in real workflow jobs',async()=>{
  const lead=db.addLead({business:'Clínica Sol',name:'Mariana Silva',phone:'5515999771133',contact_permission:true,source:'TEST'}).lead;
+ db.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Autorização de contato registrada no fixture de teste'});
  const execution=runtime.startWorkflow(lead.id,workflowId);
  runtime.drive(execution);
  const initial=deliverAndAdvance(lead.id,execution,'message');
@@ -48,6 +49,7 @@ test('cadence and personalized caption are persisted in real workflow jobs',asyn
 });
 test('explicit decline queues farewell and moves contact to NO_INTEREST',async()=>{
  const lead=db.addLead({business:'Studio Delta',phone:'5515999771144',contact_permission:true,source:'TEST'}).lead;
+ db.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Autorização de contato registrada no fixture de teste'});
  const execution=runtime.startWorkflow(lead.id,workflowId);
  runtime.drive(execution);
  db.run("UPDATE executions SET state='WAIT_REPLY',next_step=7 WHERE id=?",execution);
@@ -59,6 +61,7 @@ test('explicit decline queues farewell and moves contact to NO_INTEREST',async()
 });
 test('no-person-name greeting does not invent business contact name',()=>{
  const lead=db.addLead({business:'Empresa sem nome pessoal',phone:'5515999771155',contact_permission:true,source:'TEST'}).lead;
+ db.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Autorização de contato registrada no fixture de teste'});
  const execution=runtime.startWorkflow(lead.id,workflowId);
  runtime.drive(execution);
  const first=db.one('SELECT text FROM jobs WHERE lead_id=? AND type=?',lead.id,'message');

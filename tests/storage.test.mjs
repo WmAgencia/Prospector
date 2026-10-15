@@ -12,10 +12,11 @@ test('SQLite, deduplicação e cancelamento seguro do workflow',()=>{
  try{
   const script=[
    "import assert from 'node:assert/strict';",
-   "import {addLead,one,all,stopLead,getSetting} from "+JSON.stringify(dbUrl)+";",
+   "import {addLead,one,all,stopLead,getSetting,audit} from "+JSON.stringify(dbUrl)+";",
    "import {startWorkflow,drive} from "+JSON.stringify(runtimeUrl)+";",
    "const a=addLead({business:'Clínica Exemplo',instagram:'clinica.exemplo',phone:'15999998888',contact_permission:true});",
    "assert.equal(a.created,true);",
+   "audit('CONSENT_UPDATED',a.lead.id,{permitted:true,evidence:'Contato opt-in teste'});",
    "assert.equal(addLead({business:'Outra',instagram:'clinica.exemplo'}).created,false);",
    "assert.equal(getSetting('paused'),true);",
    "const workflow=startWorkflow(a.lead.id);drive(workflow);",

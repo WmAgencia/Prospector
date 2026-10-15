@@ -15,6 +15,7 @@ test('funil: áudio após resposta e 60 segundos; vídeo após áudio',async()=>
  db.run("INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)",audio,'Oferta de exemplo','audio','audio/ogg','offer.ogg',12,at);
  db.run("INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)",video,'Exemplo de site','video','video/mp4','demo.mp4',12,at);
  const lead=db.addLead({business:'Empresa Fluxo de Teste',phone:'5515999776655',contact_permission:true,source:'TEST'}).lead;
+ db.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Consentimento documentado no teste'});
  const steps=offer.proposedFlow({audioId:audio,videoId:video,intro:'Olá, {{business_name}}! Posso apresentar uma oferta da Consecom?'});
  assert.deepEqual(steps.map(x=>x.type),['message','wait_reply','delay','audio','delay','video','wait_reply','end']);
  const id=runtime.saveWorkflow({name:'Campanha Teste',segments:[],enabled:true,steps});
@@ -62,6 +63,7 @@ test('primeira resposta: cumprimento isolado exige revisão; autorização clara
  assert.equal(routing.evaluateDecision('Oi, pode falar').decision,'YES');
  assert.equal(routing.evaluateDecision('Oi').decision,'REVIEW');
  const lead=db.addLead({business:'Teste Cumprimento',phone:'5515999889900',contact_permission:true,source:'TEST'}).lead;
+ db.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Consentimento documentado no teste'});
  const workflow=runtime.saveWorkflow({name:'Campanha Saudação Teste',enabled:true,steps:offer.proposedFlow({audioId:'audio-test',videoId:'video-test'})});
  const ex=runtime.startWorkflow(lead.id,workflow);runtime.drive(ex);
  db.run("UPDATE jobs SET status='SENT' WHERE lead_id=?",lead.id);

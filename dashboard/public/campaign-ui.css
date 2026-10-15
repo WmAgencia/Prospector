@@ -202,3 +202,5 @@
 
 .cm-active .cm-edit-in-dark{background:#e5f8ec!important;color:#185a3c!important;border-color:#e5f8ec!important;font-size:12px}
 .cm-active .cm-edit-in-dark:hover{background:#fff!important;color:#185a3c!important}
+
+.simple-autoqueue{padding:19px 23px;margin:0 0 16px;border-color:#cde7d8;background:#f9fcfa}.simple-autoqueue .between{gap:15px;align-items:flex-start}.simple-autoqueue h3{font-size:16px;color:#244a36;margin:7px 0}.simple-autoqueue p{font-size:11px;color:#738c7b;max-width:620px;line-height:1.65;margin:0}.simple-autoqueue-numbers{display:flex;flex-wrap:wrap;gap:9px;margin-top:15px}.simple-autoqueue-numbers span{display:flex;align-items:center;gap:6px;border-radius:8px;padding:8px 10px;background:#eef7f0;color:#567361;font-size:11px}.simple-autoqueue-numbers strong{color:#126940;font-size:15px}@media(max-width:700px){.simple-autoqueue .between{flex-direction:column}.simple-autoqueue-numbers{gap:7px}}
