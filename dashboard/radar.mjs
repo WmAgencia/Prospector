@@ -46,11 +46,15 @@ export function radarSnapshot(input=new Date()){
  const threshold=new Date(input.getTime()-48*3600000).toISOString();
  const recent=all('SELECT id,business,source,segment,city,created_at FROM leads WHERE created_at>=? ORDER BY created_at DESC LIMIT 1600',threshold);
  const foundToday=recent.filter(l=>daySP(new Date(l.created_at))===budget.day);
+ const cohort=all("SELECT l.id,l.website_status,l.contact_permission,l.stage,ic.status AS initial_status FROM leads l LEFT JOIN initial_contacts ic ON ic.lead_id=l.id ORDER BY l.created_at ASC LIMIT 200");
+ const pilot={total:cohort.length,siteReviewed:cohort.filter(l=>['NO_WEBSITE','HAS_WEBSITE','SOCIAL_ONLY','LINK_AGGREGATOR_ONLY','BROKEN_WEBSITE'].includes(l.website_status)).length,
+  authorized:cohort.filter(l=>l.contact_permission===1).length,contacted:cohort.filter(l=>l.initial_status==='SENT').length,
+  interested:cohort.filter(l=>['INTERESTED','CLOSED_WON'].includes(l.stage)).length,closed:cohort.filter(l=>l.stage==='CLOSED_WON').length};
  const history=all('SELECT query,found,status,at,details FROM discoveries WHERE at>=? ORDER BY at DESC LIMIT 100',threshold);
  const todayRuns=history.filter(x=>daySP(new Date(x.at))===budget.day);
  const examined=todayRuns.reduce((v,r)=>{try{return v+(Number(JSON.parse(r.details||'{}').examined)||0);}catch{return v;}},0);
  const scanned=history.some(x=>x.status==='RUNNING');
- return {asOf:input.toISOString(),...budget,foundToday:foundToday.length,foundTotal:one('SELECT COUNT(*) AS n FROM leads')?.n||0,
+ return {asOf:input.toISOString(),pilot,...budget,foundToday:foundToday.length,foundTotal:one('SELECT COUNT(*) AS n FROM leads')?.n||0,
   examinedToday:examined,searchesToday:todayRuns.length,searchInProgress:scanned,
   lastSearch:history[0]?{query:history[0].query,status:history[0].status,at:history[0].at}:null,
   recentFinds:foundToday.slice(0,28).map(x=>({id:x.id,name:x.business,source:x.source,segment:x.segment,city:x.city})),

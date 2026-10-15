@@ -68,7 +68,7 @@ function radarView(){
 }
 function radarPage(){
  const r=state.radar||{};
- const cohort=state.pilot||{};
+ const cohort=r.pilot||{};
  return radarView()+'<div class="dashboard-grid" style="margin-top:18px"><section class="panel"><div class="panel-eyebrow">PILOTO DE VALIDAÇÃO</div><h3>Primeiras 200 oportunidades</h3><div class="status-line"><span>Amostra identificada</span><strong>'+Number(cohort.total||0)+' / 200</strong></div><div class="status-line"><span>Sites revisados</span><strong>'+Number(cohort.siteReviewed||0)+'</strong></div><div class="status-line"><span>Contatos autorizados</span><strong>'+Number(cohort.authorized||0)+'</strong></div><div class="status-line"><span>Abordados</span><strong>'+Number(cohort.contacted||0)+'</strong></div><div class="status-line"><span>Interessados</span><strong>'+Number(cohort.interested||0)+'</strong></div><p class="helper-text">Amostra real, sem taxas de conversão projetadas.</p></section><section class="panel"><div class="panel-eyebrow">SEGURANÇA OPERACIONAL</div><h3>Regras aplicadas no backend</h3><div class="status-line"><span>Teto de primeiras abordagens</span><strong>200/dia</strong></div><div class="status-line"><span>Horário (São Paulo)</span><strong>12h–18h</strong></div><div class="status-line"><span>Intervalo alvo</span><strong>108 segundos</strong></div><div class="status-line"><span>Envio para contatos sem autorização</span><strong>Bloqueado</strong></div><p class="helper-text">O teto não é uma meta de disparos: caso não haja 200 contatos consentidos, serão realizadas menos abordagens.</p></section></div>';
 }
 
