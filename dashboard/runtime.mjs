@@ -314,6 +314,7 @@ export function saveWorkflow(input){
  if(steps[steps.length-1].type!=='end')throw Error('Último bloco deve ser FIM');
  if(input.id){
   const w=one('SELECT * FROM workflows WHERE id=?',input.id);if(!w)throw Error('Workflow inexistente');
+  if(input.version!=null&&Number(input.version)!==Number(w.version))throw Error('Esta campanha foi alterada. Recarregue o painel antes de salvar novamente.');
   run('UPDATE workflows SET name=?,version=?,steps=?,segments_json=?,enabled=?,updated_at=? WHERE id=?',String(input.name||w.name),w.version+1,JSON.stringify(steps),tagJson,enabled,now(),w.id);
   audit('WORKFLOW_UPDATED',null,{id:w.id,version:w.version+1});return w.id;
  }

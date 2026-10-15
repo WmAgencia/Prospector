@@ -1,7 +1,7 @@
 {
   "schema": "consecom.prospector.ai-bridge/v1",
   "task_id": "consecom-campanha-sites-350",
-  "revision": 1,
+  "revision": 2,
   "mode": "upsert_campaign_draft",
   "campaign": {
     "name": "Consecom | Site profissional R$ 350 | Áudio + vídeo",

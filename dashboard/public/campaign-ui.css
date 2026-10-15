@@ -199,3 +199,6 @@
 @media(max-width:720px){#shell{grid-template-columns:minmax(0,1fr)}.sidebar{height:auto;position:relative}.sidebar .brand{padding:6px 10px 13px}.sidebar nav{flex-direction:row;overflow-x:auto;gap:5px}.sidebar nav .navitem{flex-shrink:0;padding:11px}.screen{padding:16px}.topbar{padding:13px;min-height:65px}.topbar .eyebrow{font-size:9px}.topbar h1{font-size:19px}.top-actions .sync-label,.top-actions .userchip{display:none}.cm-title{align-items:start;flex-direction:column}.cm-title h2{font-size:22px}.cm-active,.cm-detail,.cm-editor{padding:17px}.simple-overview-grid{grid-template-columns:1fr}.simple-hero{padding:22px}.simple-hero h2{font-size:27px}.simple-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.simple-fields-grid,.cm-inline-fields{grid-template-columns:1fr}.cm-detail-head{flex-direction:column;align-items:start}}
 @media(max-width:450px){.cm-list{grid-template-columns:1fr}.cm-active-head{gap:8px}.cm-state{margin-left:0}.simple-stats{gap:8px}.simple-stat strong{font-size:24px}.simple-hero-actions .btn{width:100%}}
 @media(prefers-reduced-motion:reduce){.cm-library-item{transition:none}}
+
+.cm-active .cm-edit-in-dark{background:#e5f8ec!important;color:#185a3c!important;border-color:#e5f8ec!important;font-size:12px}
+.cm-active .cm-edit-in-dark:hover{background:#fff!important;color:#185a3c!important}
