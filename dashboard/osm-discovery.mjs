@@ -52,9 +52,14 @@ export async function discoverLocal(payload={},automatic=false){
  if(!location||!segment)throw Error('Cidade ou segmento não atendido pela busca local. Selecione uma das opções disponíveis.');
  if(busy)throw Error('Há uma pesquisa local em andamento. Aguarde.');
  const searchKey='osm:'+normalize(location.label)+':'+segment.filter+':'+segment.value;
- const recent=one("SELECT at FROM discoveries WHERE query=? ORDER BY at DESC LIMIT 1",searchKey);
- if(recent&&Date.now()-Date.parse(recent.at)<(automatic?23*3600_000:45*60_000))
-  return {source:'osm',city:location.label,segment:segment.label,added:0,examined:0,cached:true,info:'Pesquisa já realizada recentemente. Aguarde para não sobrecarregar o OpenStreetMap.'};
+ const recent=one("SELECT at,status,found,details FROM discoveries WHERE query=? ORDER BY at DESC LIMIT 1",searchKey);
+ const age=recent?Date.now()-Date.parse(recent.at):Infinity;
+ if(recent?.status==='COMPLETE'&&age<(automatic?23*3600_000:45*60_000)){
+  let details={};try{details=JSON.parse(recent.details||'{}');}catch{}
+  return {source:'osm',city:location.label,segment:segment.label,added:0,examined:details.examined||0,cached:true,previouslyAdded:recent.found||0,info:'Pesquisa concluída recentemente; os resultados estão no Kanban.'};
+ }
+ if(recent?.status==='FAILED'&&age<15*60_000)
+  throw Error('A fonte pública apresentou uma falha recente. Aguarde 15 minutos antes de repetir a consulta.');
  const today=new Date().toISOString().slice(0,10);
  const attempts=all("SELECT at FROM discoveries WHERE query LIKE 'osm:%'").filter(x=>String(x.at||'').startsWith(today)).length;
  if(attempts>=8)throw Error('Limite diário de pesquisas públicas atingido. Tente amanhã.');
@@ -69,10 +74,11 @@ export async function discoverLocal(payload={},automatic=false){
    signal:AbortSignal.timeout(38000)
   });
   if(!response.ok)throw Error('Overpass respondeu HTTP '+response.status+(response.status===429?' (limite da API comunitária)':''));
-  const data=await response.json();
+  const raw=await response.text();
+  let data;try{data=JSON.parse(raw);}catch{throw Error('A fonte pública não retornou JSON válido (HTTP '+response.status+')');}
   if(data.remark)throw Error('A API pública não concluiu a pesquisa: '+String(data.remark).slice(0,120));
   if(!Array.isArray(data.elements))throw Error('A fonte não retornou uma lista válida');
-  let added=0,examined=0,withPhone=0,withoutSiteClaimed=0;
+  let added=0,examined=0,withPhone=0;
   for(const item of data.elements.slice(0,70)){
    const tags=item.tags||{};
    const business=String(tags.name||'').trim().slice(0,120);
@@ -92,7 +98,7 @@ export async function discoverLocal(payload={},automatic=false){
    recordOrigin(result.lead.id,'osm',{url,city:location.label,segment:segment.label,phonePublished:!!p,hasWebsiteTag:!!safeWebsite});
    if(result.created)added++;
   }
-  run('UPDATE discoveries SET status=?,found=?,details=? WHERE id=?','COMPLETE',added,JSON.stringify({examined,withPhone,automatic}),attemptId);
+  run('UPDATE discoveries SET status=?,found=?,details=? WHERE id=?','COMPLETE',added,JSON.stringify({examined,withPhone,automatic,matchedTotal:data.elements.length}),attemptId);
   audit('DISCOVER_OSM',null,{city:location.label,segment:segment.label,examined,added,withPhone,automatic});
   return {source:'osm',city:location.label,segment:segment.label,examined,added,withPhone,
    info:'Contatos públicos sem autorização de envio; a ausência de site no cadastro não comprova que a empresa não tem site.',

@@ -13,7 +13,7 @@ export const weightsDefault={noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusin
 export function providerStatus(){
  const key=!!process.env.BRAVE_SEARCH_API_KEY;
  const enabled=getSetting('discovery_sources',{osm:true,web_search:true})||{};
- return providerDefinitions.map(p=>({...p,enabled:!!enabled[p.id],status:p.id==='osm'?'READY':p.id==='web_search'?(key?'READY':'NEEDS_API_KEY'):'NOT_IMPLEMENTED',
+ return providerDefinitions.map(p=>({...p,enabled:p.id==='osm'&&enabled.osm===undefined?true:!!enabled[p.id],status:p.id==='osm'?'READY':p.id==='web_search'?(key?'READY':'NEEDS_API_KEY'):'NOT_IMPLEMENTED',
   last_run:one('SELECT at,found,status,details FROM discoveries WHERE query LIKE ? ORDER BY at DESC LIMIT 1',p.id+':%')||null
  }));
 }
