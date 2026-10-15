@@ -33,3 +33,7 @@ export function selectAutomationForLead(lead,workflows,preferredId=null){
  if(matches.length)return [...matches].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')||a.id.localeCompare(b.id))[0];
  return enabled.find(w=>w.is_default===1)||null;
 }
+
+export function permitsPresentation(steps,nextStep,text){
+ return steps?.[nextStep]?.type==='delay'&&steps?.[nextStep+1]?.type==='audio'&&evaluateDecision(text,'general_interest').decision==='YES';
+}
