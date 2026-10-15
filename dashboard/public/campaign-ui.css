@@ -32,3 +32,6 @@
 @media(max-width:600px){.cp-head{flex-direction:column}.cp-editor{padding:16px}.cp-step{padding:12px}}
 
 .cp-import-label{cursor:pointer;display:inline-flex;align-items:center;gap:8px}.cp-import-hint{background:#eff8f2;border:1px solid #d4eadd;border-radius:12px;color:#376350;font-size:12px;line-height:1.6;padding:12px 16px;margin:0 0 18px}
+
+.cp-bridge{border:1px solid #b8e3ce;border-radius:14px;padding:18px;background:linear-gradient(120deg,#effbf3,#fff);margin:0 0 16px}
+.cp-bridge strong{font-size:13px;color:#1b5f44}.cp-bridge p{font-size:12px;color:#5c7c6d;line-height:1.7;max-width:630px;margin:5px 0 10px}.cp-bridge .tag{white-space:nowrap}.cp-bridge-grid{display:flex;gap:18px;flex-wrap:wrap;margin:9px 0 15px}.cp-bridge-grid span{font-size:11px;color:#638171}.cp-bridge-grid strong{font-size:11px}.cp-bridge .actionsrow{gap:8px;flex-wrap:wrap}@media(max-width:650px){.cp-bridge>.between{align-items:flex-start;flex-direction:column}}

@@ -13,6 +13,7 @@ import {eligibleRecontacts,scheduleApprovedRecontact} from './contact-cadence.mj
 import {discoverLocal,dailyLocalDiscovery,LOCATIONS,SEGMENTS} from './osm-discovery.mjs';
 import {radarSnapshot} from './radar.mjs';
 import {importCampaignPackage} from './campaign-package.mjs';
+import {bridgeStatus,bridgeSpec,syncAgentBridge} from './agent-bridge.mjs';
 import {importOfficial} from './official-import.mjs';
 import {siteAudit} from './site-audit.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
@@ -125,7 +126,7 @@ function snapshot(){
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
  const stats={profiles_analyzed:all('SELECT details FROM discoveries').reduce((total,row)=>{try{return total+(JSON.parse(row.details||'{}').examined||0);}catch{return total;}},0),qualified:leads.filter(l=>l.website_status==='NO_WEBSITE'&&l.phone).length,meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:leads.length,contacted:one("SELECT COUNT(*) AS total FROM initial_contacts WHERE status='SENT'")?.total||0,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
- return {radar:radarSnapshot(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
+ return {radar:radarSnapshot(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
 }
 async function upload(req,url,res){
  const kind=url.searchParams.get('kind'),name=String(url.searchParams.get('name')||'mídia').slice(0,100);
@@ -193,6 +194,11 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+  if(req.method==='GET'&&pathname==='/api/agent-bridge/status')return respond(res,200,bridgeStatus());
+  if(req.method==='GET'&&pathname==='/api/agent-bridge/spec')return respond(res,200,bridgeSpec());
+  if(req.method==='POST'&&pathname==='/api/agent-bridge/sync'){
+   const result=await syncAgentBridge();notify();return respond(res,result.state==='SYNC_ERROR'?502:200,result);
+  }
   if(req.method==='GET'&&pathname==='/api/radar')return respond(res,200,radarSnapshot());
   if(req.method==='GET'&&pathname==='/api/recontacts')return respond(res,200,eligibleRecontacts());
   if(req.method==='POST'&&pathname==='/api/recontacts/approve'){
@@ -349,7 +355,8 @@ async function handler(req,res){
    const mime=String(req.headers['content-type']||'').split(';')[0];
    if(!['application/zip','application/octet-stream'].includes(mime))throw Error('Envie o arquivo ZIP de campanha');
    const result=importCampaignPackage(await body(req,38*1024*1024));
-   notify();return respond(res,200,result);
+   const bridge=await syncAgentBridge();
+   notify();return respond(res,200,{...result,bridge:bridge.state});
   }
   if(req.method==='POST'&&pathname==='/api/media')return upload(req,url,res);
   if(req.method==='GET'&&pathname.startsWith('/api/media/')){
@@ -374,8 +381,10 @@ async function handler(req,res){
 const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
 const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)),2500);
+const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
+setTimeout(()=>syncAgentBridge().then(()=>notify()).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
 const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),5*60*1000);
 setTimeout(()=>dailyLocalDiscovery().then(x=>{if(x?.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),120000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));});
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(agentBridgeTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});

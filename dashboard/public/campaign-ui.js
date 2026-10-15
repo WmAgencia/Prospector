@@ -31,8 +31,12 @@ function render(){
  const steps=draft.steps,initial=steps.find(x=>x.type==='message'),delay=steps.find(x=>x.type==='delay'),videoDelay=steps.filter(x=>x.type==='delay')[1]||{seconds:10},audio=steps.find(x=>x.type==='audio'),video=steps.find(x=>x.type==='video'),decision=steps.find(x=>x.type==='decision');
  if(!initial||!delay||!audio||!video||!decision){screen.innerHTML='<div class="panel"><h3>Fluxo avançado</h3><p>Esta automação utiliza blocos de formato antigo. Use o editor clássico para alterá-la.</p><button class="btn secondary" data-campaign="classic">Abrir editor clássico</button><button class="btn" data-campaign="new">Criar nova campanha</button></div>';return;}
  const options=(kind,current)=>'<option value="">Selecione um '+kind+'…</option>'+(snapshot.media||[]).filter(m=>m.kind===kind).map(m=>'<option value="'+esc(m.id)+'" '+(m.id===current?'selected':'')+'>'+esc(m.name)+'</option>').join('');
+ const bridge=snapshot.bridge||{state:'NOT_SYNCED'};
+ const bridgeLabel={READY:'Campanha sincronizada',WAITING_MEDIA:'Aguardando áudio e vídeo',NOT_SYNCED:'Aguardando primeira sincronização',SYNC_ERROR:'Falha na sincronização',PAUSED_REQUIRED:'Pause a operação para atualizar'}[bridge.state]||bridge.state;
+ const bridgeHtml='<div class="cp-bridge"><div class="between"><div><strong>✧ Ponte para IA</strong><p>Campanha e roteiro recebidos pelo GitHub. Os arquivos de áudio e vídeo só ficam prontos depois de enviados à biblioteca privada.</p></div><span class="tag '+(bridge.ready?'green':'yellow')+'">'+esc(bridgeLabel)+'</span></div><div class="cp-bridge-grid"><span>Áudio: <strong>'+(bridge.audio?.present?'Importado':'Pendente')+'</strong></span><span>Vídeo mudo: <strong>'+(bridge.video?.present?'Importado':'Pendente')+'</strong></span><span>Revisão: <strong>'+Number(bridge.revision||0)+'</strong></span></div><div class="actionsrow"><button class="btn small secondary" data-campaign="bridge-sync">Sincronizar com IA</button><a href="https://github.com/WmAgencia/Prospector/blob/main/bridge/campaigns/consecom-350.json" target="_blank" rel="noopener noreferrer" class="btn small secondary">Ver configurações no GitHub ↗</a></div></div>';
  const available=list().map(w=>'<button class="cp-item '+(w.id===draft.id?'cp-selected':'')+'" data-campaign="select" data-id="'+esc(w.id)+'"><strong>'+esc(w.name)+'</strong><small>'+((snapshot.settings?.autonomous_campaign_id===w.id)?'Em uso automático · ':'')+(w.enabled?'Ativa':'Rascunho')+'</small></button>').join('');
  screen.innerHTML='<div class="cp-head"><div><div class="panel-eyebrow">CONSECOM / AUTOMAÇÕES</div><h2>Campanhas de prospecção</h2><p>Configure o fluxo uma vez. O motor começa com os contatos que realmente autorizaram mensagens.</p></div><div class="actionsrow"><label class="btn secondary cp-import-label">⬆ Importar campanha pronta<input data-campaign-import type="file" accept=".zip,application/zip" style="display:none"></label><button class="btn secondary" data-campaign="new">+ Nova campanha</button><button class="btn secondary" data-campaign="classic">Editor clássico ↗</button></div></div>'+
+ bridgeHtml+
  '<div class="cp-import-hint">Já tem o áudio e o vídeo da campanha Consecom? Importe o pacote ZIP completo: o sistema instala os dois arquivos, cria o fluxo, define a campanha ativa e mantém o estado de pausa atual.</div><div class="cp-layout"><aside class="panel cp-library"><div class="between"><h3>Suas campanhas</h3><span class="tag">'+list().length+'</span></div>'+available+'</aside><section class="panel cp-editor"><div class="between"><h3>Configuração do fluxo</h3><span class="tag '+(draft.enabled?'green':'yellow')+'">'+(draft.enabled?'Ativada':'Rascunho')+'</span></div>'+
  '<div class="field"><label>Nome</label><input data-cp-field="name" value="'+esc(draft.name)+'" placeholder="Campanha de sites"></div><div class="field"><label>Segmentos (opcional, separados por vírgula)</label><input data-cp-field="segments" value="'+esc((draft.segments||[]).join(', '))+'" placeholder="Psicólogo, Nutricionista…"></div>'+
  '<div class="cp-steps">'+
@@ -98,6 +102,12 @@ document.addEventListener('click',async e=>{
  const el=e.target.closest('[data-campaign]');if(!el)return;e.preventDefault();
  const action=el.dataset.campaign;
  try{
+  if(action==='bridge-sync'){
+   notice='Consultando o manifesto da IA no GitHub…';render();
+   const result=await endpoint('/api/agent-bridge/sync',{});
+   notice=result.message||'Sincronização concluída.';
+   await load();return;
+  }
   if(action==='classic'){location.hash='/workflows/classic';return;}
   if(action==='new'){selected=null;draft=newCampaign();notice='Rascunho novo. Selecione áudio e vídeo antes de ativar.';render();return;}
   if(action==='select'){selected=el.dataset.id;draft=structuredClone(list().find(w=>w.id===selected));notice='';render();return;}
