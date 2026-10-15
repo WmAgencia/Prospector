@@ -5,10 +5,10 @@ import {classify,renderTemplate} from './classifier.mjs';
 import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
 import {scheduleReport,flushNotices} from './notifications.mjs';
-import {currentWebVersion,classifyDisconnect,retryDelay} from './whatsapp-reliability.mjs';
+import {currentWebVersion,classifyDisconnect,retryDelay,isPairingRestart} from './whatsapp-reliability.mjs';
 
 let sock=null,connecting=false,waStatus='DISCONNECTED',qrData=null,lastError=null,waUser=null;
-let notifier=()=>{},locked=false,reconnectTimer=null,retries=0,closeCode=null,lastEventAt=null,lastQrAt=null,nextRetryAt=null;
+let notifier=()=>{},locked=false,reconnectTimer=null,retries=0,closeCode=null,lastEventAt=null,lastQrAt=null,nextRetryAt=null,pairedRestartCount=0;
 export function setNotifier(fn){notifier=fn;}
 const publish=()=>{lastEventAt=new Date().toISOString();try{notifier();}catch{}};
 export function connection(){return {status:waStatus,qr:qrData,user:waUser,error:lastError,closeCode,lastEventAt,lastQrAt,nextRetryAt};}
@@ -56,12 +56,12 @@ export async function connectWhatsApp(options={}){
   const Q=await import('qrcode');
   const folder=authDir();fs.mkdirSync(folder,{recursive:true});
   // Recuperar sessão inválida só por ação explícita; jamais apagar credenciais na restauração do servidor.
-  if(!restore&&(fresh||oldStatus==='LOGGED_OUT'))backupSession(folder);
+  if(!restore&&(fresh||oldStatus==='LOGGED_OUT')){backupSession(folder);pairedRestartCount=0;retries=0;}
   const {state,saveCreds}=await B.useMultiFileAuthState(folder);
   const version=await currentWebVersion(B);
   console.info('[whatsapp] Iniciando conexão com versão Web '+version.join('.')+(restore?' (restauração)':' (pareamento)'));
   const socket=B.default({version,auth:state,printQRInTerminal:false,
-   browser:B.Browsers?.macOS?.('Chrome'),connectTimeoutMs:45000,
+   browser:B.Browsers?.macOS?.('Chrome'),connectTimeoutMs:45000,markOnlineOnConnect:true,
    logger:{level:'silent',child(){return this;},trace(){},debug(){},info(){},warn(){},error(){},fatal(){}}});
   sock=socket;
   socket.ev.on('creds.update',saveCreds);
@@ -74,15 +74,44 @@ export async function connectWhatsApp(options={}){
    }
    if(update.connection==='open'){
     waStatus='CONNECTED';qrData=null;waUser=socket.user?.id||null;
-    connecting=false;retries=0;closeCode=null;lastError=null;nextRetryAt=null;publish();
+    connecting=false;retries=0;pairedRestartCount=0;closeCode=null;lastError=null;nextRetryAt=null;publish();
     console.info('[whatsapp] Sessão autenticada e conectada');
    }
    if(update.connection==='close'){
-    closeCode=update.lastDisconnect?.error?.output?.statusCode||null;
-    waStatus=classifyDisconnect(closeCode,B.DisconnectReason.loggedOut);
-    lastError=String(update.lastDisconnect?.error?.message||closeCode||'Conexão fechada').slice(0,180);
-    connecting=false;sock=null;qrData=null;waUser=null;publish();
-    console.warn('[whatsapp] Socket fechado: status='+String(closeCode||'desconhecido')+'; estado='+waStatus+'; '+lastError);
+    const code=update.lastDisconnect?.error?.output?.statusCode||null;
+    closeCode=code;
+    const mustRestart=isPairingRestart(code,B.DisconnectReason.restartRequired);
+    connecting=false;sock=null;qrData=null;waUser=null;
+    if(mustRestart){
+     // 515 é a segunda fase esperada do pareamento: grave credenciais e
+     // reinicie o WebSocket sem limpar a sessão e sem atraso exponencial.
+     pairedRestartCount++;
+     waStatus='RESTARTING';lastError=null;publish();
+     console.info('[whatsapp] Pareamento aceito pela primeira fase; reinício 515 (etapa '+pairedRestartCount+')');
+     if(pairedRestartCount>3){
+      waStatus='ERROR';lastError='Muitas reinicializações de pareamento. Aguarde e tente novamente.';publish();return;
+     }
+     try{
+      await saveCreds();
+      const credentialFile=path.join(folder,'creds.json');
+      if(!fs.existsSync(credentialFile))throw Error('O arquivo de autenticação não foi persistido');
+     }catch(error){
+      waStatus='ERROR';lastError='Falha ao salvar as credenciais antes da reconexão: '+error.message;publish();
+      console.error('[whatsapp] '+lastError);return;
+     }
+     clearTimeout(reconnectTimer);
+     nextRetryAt=new Date(Date.now()+150).toISOString();
+     reconnectTimer=setTimeout(()=>{
+      reconnectTimer=null;nextRetryAt=null;
+      connectWhatsApp({restore:true}).catch(error=>{waStatus='ERROR';lastError=String(error.message);publish();});
+     },150);
+     reconnectTimer.unref();
+     return;
+    }
+    waStatus=classifyDisconnect(code,B.DisconnectReason.loggedOut);
+    lastError=String(update.lastDisconnect?.error?.message||code||'Conexão fechada').slice(0,180);
+    publish();
+    console.warn('[whatsapp] Socket fechado: status='+String(code||'desconhecido')+'; estado='+waStatus+'; '+lastError);
     if(waStatus!=='LOGGED_OUT')queueReconnect();
    }
   });

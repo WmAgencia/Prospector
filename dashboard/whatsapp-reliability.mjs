@@ -12,3 +12,8 @@ export async function currentWebVersion(B){
  if(result?.isLatest!==true||!validVersion(result.version))throw Error('Não foi possível confirmar a versão atual do WhatsApp Web. Conexão suspensa para evitar falha no pareamento.');
  return result.version;
 }
+
+/** 515 signals successful QR registration followed by a mandatory socket restart. */
+export function isPairingRestart(code,restartRequired=515){
+ return Number(code)===Number(restartRequired);
+}
