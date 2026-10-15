@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {CAMPAIGN_NAME,buildConsecomSteps} from './consecom-flow.mjs';
 import {DatabaseSync} from 'node:sqlite';
 const dir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data');
 fs.mkdirSync(dir,{recursive:true});
@@ -73,6 +74,23 @@ if(!getSetting('consecom_350_seeded_v1',false)){
   setSetting('consecom_campaign_seed_id',workflowId);
  }
  setSetting('consecom_350_seeded_v1',true);
+}
+// V2: atualiza rascunho e campanha ativa para novos contatos, preservando mídias,
+// o status ativo/desativado e execuções já em andamento (snapshots históricos).
+if(!getSetting('consecom_350_flow_v2',false)){
+ const candidates=[getSetting('autonomous_campaign_id',''),getSetting('campaign_bundle_workflow',''),getSetting('consecom_campaign_seed_id','')].filter(Boolean);
+ let workflow=null;
+ for(const candidate of candidates){
+  const item=one('SELECT * FROM workflows WHERE id=?',candidate);
+  if(item?.name===CAMPAIGN_NAME){workflow=item;break;}
+ }
+ if(!workflow)workflow=one('SELECT * FROM workflows WHERE name=? ORDER BY enabled DESC,updated_at DESC LIMIT 1',CAMPAIGN_NAME);
+ if(workflow){
+  const upgraded=buildConsecomSteps({existingSteps:JSON.parse(workflow.steps)});
+  run('UPDATE workflows SET steps=?,version=version+1,updated_at=? WHERE id=?',JSON.stringify(upgraded),now(),workflow.id);
+  setSetting('consecom_campaign_seed_id',workflow.id);
+ }
+ setSetting('consecom_350_flow_v2',true);
 }
 export function audit(action,lead_id=null,detail={}){run('INSERT INTO audit VALUES(?,?,?,?,?)',id(),now(),action,lead_id,JSON.stringify(detail));}
 export function addLead(item){

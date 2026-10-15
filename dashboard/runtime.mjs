@@ -285,7 +285,7 @@ export function saveWorkflow(input){
   if(s.type==='delay'&&(!Number.isInteger(Number(s.seconds))||Number(s.seconds)<1||Number(s.seconds)>86400))throw Error('Delay inválido');
   if(s.type==='decision'){
    if(index===0||steps[index-1]?.type!=='wait_reply')throw Error('Decisão deve vir logo após Aguardar resposta');
-   if(!['sample_offer','general_interest'].includes(s.context))throw Error('Escolha o contexto da pergunta');
+   if(!['sample_offer','general_interest','website_interest'].includes(s.context))throw Error('Escolha o contexto da pergunta');
    if(!String(s.context_description||'').trim())throw Error('Descreva a pergunta usada para interpretar a resposta');
    for(const side of ['yes','no']){
     if(!['message','audio'].includes(s[side+'_type']||'message'))throw Error('Resposta deve ser texto ou áudio');
@@ -373,7 +373,7 @@ export function drive(runId){
   const initial=r.next_step===0,kind=step.type;
   if(!['message','video','audio','image'].includes(kind))throw Error('Tipo de bloco inválido');
   const jobId=id(),key='workflow:'+runId+':'+r.next_step;
-  const text=kind==='message'?renderTemplate(step.text,lead):'';
+  const text=kind==='message'?renderTemplate(step.text,lead):kind==='video'?renderTemplate(step.caption||'',lead):'';
   if(initial){
    if(!lead.contact_permission)throw Error('Sem autorização de contato');
    try{run("INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,'RESERVED',?,?)",lead.id,lead.phone,jobId,now());}
@@ -408,7 +408,7 @@ async function send(job,lead){
  if(job.type!=='message'){
   const media=one('SELECT * FROM media WHERE id=?',job.media_id);if(!media)throw Error('Mídia inexistente');
   const buf=fs.readFileSync(path.join(process.env.PROSPECTOR_DATA_DIR||'data','media',media.filename));
-  if(job.type==='video')payload={video:buf,mimetype:media.mime};
+  if(job.type==='video')payload={video:buf,mimetype:media.mime,...(job.text?{caption:job.text}:{})};
   else if(job.type==='audio')payload={audio:buf,mimetype:media.mime,ptt:/opus|ogg/.test(media.mime)};
   else if(job.type==='image')payload={image:buf,mimetype:media.mime};
  }

@@ -3,11 +3,22 @@ import {normalize} from './classifier.mjs';
 export function evaluateDecision(text, context='general_interest'){
  const s=normalize(text);
  if(!s)return {decision:'REVIEW',reason:'empty'};
+ // Resposta hesitante deve passar por revisão, sem decisão presumida.
+ if(/^(?:nao sei|nao tenho certeza|talvez|preciso pensar|vou pensar|vou ver|deixa eu pensar|tenho que avaliar)[!?. ]*$/.test(s))
+  return {decision:'REVIEW',reason:'uncertain'};
  // Desistência e recusa sempre sobrepõem afirmações presentes na mesma mensagem.
  if(/\b(?:nao|nunca|nem|sem interesse|nao quero|nao preciso|dispenso|prefiro nao|ja tenho (?:site|pagina)|agora nao|nao obrigado|melhor nao)\b/.test(s))
   return {decision:'NO',reason:'refusal'};
+ // Após o vídeo, o interesse precisa estar claro. "ok", "gostei" e "legal"
+ // não viram automaticamente oportunidades no Kanban.
+ if(context==='website_interest'){
+  const direct=/^(?:sim|sim quero|sim tenho interesse|quero|quero sim|claro|com certeza|quero um|quero um assim|gostaria sim|tenho interesse|tenho interesse sim)[!?. ]*$/;
+  const explicit=/\b(?:quero (?:um|uma|o|esse|site|fazer|contratar)|quero ter (?:um|o) site|gostaria de ter|gostaria de contratar|tenho interesse|me interessei|estou interessad[oa]|vamos (?:fechar|fazer|comecar)|pode comecar|pode fazer|pode fechar|quero fechar|vamos fechar|pode iniciar|quero um desse|quero um igual|aceito a proposta)\b/;
+  if(direct.test(s)||explicit.test(s))return {decision:'YES',reason:'explicit_site_interest'};
+  return {decision:'REVIEW',reason:'interest_not_confirmed'};
+ }
  // Aceite explícito de receber a apresentação, mesmo com "sim" / "ok" antes da frase.
- if(/^(?:(?:sim|claro|beleza|ok)\s+)?(?:pode enviar|pode mandar|pode passar|me envia|pode explicar|pode falar|manda|manda ai)(?:\s+(?:sim|por favor|o audio|o video|a proposta|pra mim))?$/.test(s))
+ if(/^(?:(?:sim|claro|beleza|ok|perfeito|tranquilo|tudo bem)\s+)?(?:pode enviar|pode mandar|pode me mandar|pode passar|me envia|pode explicar|pode falar|manda|manda ai)(?:\s+(?:sim|por favor|o audio|o video|a proposta|pra mim))?$/.test(s))
   return {decision:'YES',reason:'explicit_permission'};
  // Não adivinhar "quero" no meio de frase que não fala de demonstração.
  const strong=/^(?:sim|s|pode|pode sim|pode mandar|pode enviar|manda|manda sim|me manda|manda ai|quero|quero sim|quero ver|claro|claro que sim|com certeza|por favor|pode ser|beleza|ok|bora|pode falar|fale|gostaria|pode mostrar|mostra|me mostra)[!?. ]*$/;

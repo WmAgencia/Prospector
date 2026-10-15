@@ -31,11 +31,16 @@ test('rejects missing, duplicate and unexpected ZIP members',()=>{
 });
 test('creates the confirmed-interest handover flow, not a website sample task',()=>{
  const steps=buildCampaignSteps({intro:'Posso apresentar uma proposta?',delay_seconds:45,description:'Áudio gravado pelo Wesley',farewell:'Obrigado pelo retorno!',audioId:'ogg-id',videoId:'mp4-id'});
- assert.deepEqual(steps.map(s=>s.type),['message','wait_reply','delay','audio','video','wait_reply','decision','end']);
+ assert.deepEqual(steps.map(s=>s.type),['message','wait_reply','delay','audio','delay','video','wait_reply','decision','end']);
  assert.equal(steps[3].media_id,'ogg-id');
- assert.equal(steps[4].media_id,'mp4-id');
- assert.equal(steps[6].yes_action,'handover');
- assert.equal(steps[6].no_action,'end');
- assert.equal(steps[6].no_text,'Obrigado pelo retorno!');
+ assert.equal(steps[4].seconds,10);
+ assert.equal(steps[5].media_id,'mp4-id');
+ assert.equal(steps[5].caption,'O que achou? Gostaria de ter um assim também?');
+ assert.equal(steps[7].context,'website_interest');
+ assert.equal(steps[7].yes_action,'handover');
+ assert.equal(steps[7].no_action,'end');
+ assert.equal(steps[7].no_text,'Sem problemas, muito obrigado pelo retorno, ficamos à disposição.');
+ assert.ok(steps[0].text.includes('{{greeting}}'));
+ assert.equal(steps[2].seconds,45);
  assert.ok(!JSON.stringify(steps).includes('request_sample'));
 });
