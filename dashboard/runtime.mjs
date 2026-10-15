@@ -4,7 +4,9 @@ import {one,all,run,tx,id,now,phone,getSetting,addLead,getThread,addMessage,stag
 import {classify,renderTemplate} from './classifier.mjs';
 import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
-import {scheduleReport,flushNotices} from './notifications.mjs';
+import {scheduleReport,flushNotices,queueNotice} from './notifications.mjs';
+import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
+import {isOfferActive} from './campaign-rules.mjs';
 import {currentWebVersion,classifyDisconnect,retryDelay,isPairingRestart} from './whatsapp-reliability.mjs';
 
 let sock=null,connecting=false,waStatus='DISCONNECTED',qrData=null,lastError=null,waUser=null;
@@ -183,6 +185,18 @@ export function handleDecision(leadId,text,isText=true){
  });
 }
 
+function handoverInterest(lead,reason){
+ const l=one("SELECT stage FROM leads WHERE id=?",lead.id);
+ if(l?.stage==='INTERESTED')return;
+ const t=getThread(lead.id);
+ stage(lead.id,'INTERESTED',reason);
+ run('UPDATE threads SET manual_takeover=1 WHERE id=?',t.id);
+ run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE lead_id=? AND status='PENDING' AND execution_id IS NOT NULL",now(),lead.id);
+ run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE lead_id=? AND state NOT IN ('COMPLETE','CANCELLED')",now(),lead.id);
+ const link=String(process.env.APP_BASE_URL||'https://prospector-ui-production.up.railway.app').replace(/\/$/,'');
+ queueNotice('sales-interest:'+lead.id,'INTERESTED','⭐ *Novo interessado — site Consecom*\n\nEmpresa: '+lead.business+'\nTelefone: '+(lead.phone||'não informado')+'\n\nKanban: '+link+'/#/prospects',lead.id);
+ audit('SALES_INTEREST_HANDOVER',lead.id,{reason});
+}
 export async function incoming(m) {
  const from=m.key?.remoteJid||'',alt=m.key?.remoteJidAlt||'';
  if(!m.message||m.key?.fromMe||from.endsWith('@g.us')||from.endsWith('@newsletter')||from==='status@broadcast')return;
@@ -204,6 +218,9 @@ export async function incoming(m) {
  audit('INTENT_CLASSIFIED',lead.id,{intent:result.intent,matched_rules:result.matched_rules,confidence:result.confidence});
  if(result.intent==='OPT_OUT'){
   stopLead(lead.id,result.intent);cancelForOptOut(lead.id);publish();return;
+ }
+ if(result.intent==='INTERESTED'){
+  handoverInterest(lead,'Interesse comercial declarado');publish();return;
  }
  const manualChoice=!!one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover;
  const routing=!manualChoice&&getSetting('automation_enabled',true)?handleDecision(lead.id,payload.body,payload.type==='text'):null;
@@ -327,7 +344,7 @@ export function drive(runId){
 }
 export function manualJob(leadId,text,type='message',mediaId=null){
  const lead=one('SELECT * FROM leads WHERE id=?',leadId);if(!lead||!lead.phone)throw Error('Lead sem telefone');
- if(suppressed(lead.phone))throw Error('Contato não pode receber mensagens');
+ if(suppressed(lead.phone)||!lead.contact_permission)throw Error('Contato bloqueado ou sem autorização de envio');
  const t=getThread(leadId);
  const jobId=id();run("INSERT INTO jobs(id,lead_id,type,text,media_id,key,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'PENDING',?,?)",jobId,leadId,type,String(text||''),mediaId,'manual:'+jobId,now(),now());
  audit('MANUAL_MESSAGE_QUEUED',leadId,{type});publish();return jobId;
@@ -378,7 +395,7 @@ export async function tick(){
   await flushNotices(sock);
   if(getSetting('paused',true))return;
   // Partida automática SOMENTE para contatos que receberam permissão explícita.
-  if(getSetting('auto_initial',false)&&canInitial()&&!one("SELECT id FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('PENDING','SENDING') LIMIT 1")){
+  if(getSetting('auto_initial',false)&&getSetting('campaign_offer_expiry','')&&isOfferActive(getSetting('campaign_offer_expiry',''))&&canInitial()&&!one("SELECT id FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('PENDING','SENDING') LIMIT 1")){
    const candidate=one("SELECT l.id FROM leads l WHERE l.contact_permission=1 AND l.phone IS NOT NULL AND l.stage='DISCOVERED' AND NOT EXISTS (SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id OR ic.phone=l.phone) AND NOT EXISTS (SELECT 1 FROM executions ex WHERE ex.lead_id=l.id) AND NOT EXISTS (SELECT 1 FROM suppressions sup WHERE sup.phone=l.phone) ORDER BY l.created_at LIMIT 1");
    if(candidate){try{const rid=startWorkflow(candidate.id);drive(rid);}catch(err){audit('AUTO_START_REVIEW',candidate.id,{error:err.message});}}
   }
@@ -389,7 +406,7 @@ export async function tick(){
     const execution=one('SELECT * FROM executions WHERE id=?',job.execution_id);
     const thread=one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id);
     if(execution?.state!=='SENDING'||thread?.manual_takeover){run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);continue;}
-    if(job.step_index===0&&!canInitial())continue;
+    if(job.step_index===0&&(!canInitial()||(getSetting('campaign_offer_expiry','')&&!isOfferActive(getSetting('campaign_offer_expiry','')))))continue;
    }
    // UNKNOWN nunca será reenviado automaticamente: rede pode ter aceitado a mensagem.
    run("UPDATE jobs SET status='SENDING',updated_at=? WHERE id=?",now(),job.id);
@@ -397,9 +414,11 @@ export async function tick(){
     const result=await send(job,lead);
     run("UPDATE jobs SET status='SENT',updated_at=? WHERE id=?",now(),job.id);
     if(job.step_index===0&&job.execution_id){
+     rememberOutreach(lead.id,'initial');
      run("UPDATE initial_contacts SET status='SENT' WHERE job_id=?",job.id);
      stage(lead.id,'CONTACTED','mensagem inicial confirmada');
     }
+    if(String(job.key||'').startsWith('recontact:'))rememberOutreach(lead.id,'recontact');
     const t=getThread(lead.id,result.jid);
     addMessage({threadId:t.id,providerId:result.ack?.key?.id||null,direction:'out',type:job.type==='message'?'text':job.type,body:job.text,mediaId:job.media_id,status:'sent'});
     if(job.execution_id){run("UPDATE executions SET state='ACTIVE',updated_at=? WHERE id=?",now(),job.execution_id);drive(job.execution_id);}

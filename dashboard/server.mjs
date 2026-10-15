@@ -6,6 +6,8 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {one,all,run,tx,id,now,addLead,stage,getThread,getSetting,setSetting,audit,phone} from './db.mjs';
 import {providerStatus,scoreLead,recordOrigin,discoverProfiles,verifyWebsiteCandidate} from './discovery.mjs';
+import {setSalesCampaign} from './sales-campaign.mjs';
+import {eligibleRecontacts,scheduleApprovedRecontact} from './contact-cadence.mjs';
 import {discoverLocal,dailyLocalDiscovery,LOCATIONS,SEGMENTS} from './osm-discovery.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
@@ -181,6 +183,15 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+  if(req.method==='GET'&&pathname==='/api/recontacts')return respond(res,200,eligibleRecontacts());
+  if(req.method==='POST'&&pathname==='/api/recontacts/approve'){
+   const v=await json(req),result=scheduleApprovedRecontact(v.lead_id,v.text);
+   notify();return respond(res,202,result);
+  }
+  if(req.method==='POST'&&pathname==='/api/campaign/configure'){
+   const v=await json(req),result=setSalesCampaign(v);
+   notify();return respond(res,200,result);
+  }
   if(req.method==='GET'&&pathname==='/api/diagnostics'){
    const last=one('SELECT query,found,status,at FROM discoveries ORDER BY at DESC LIMIT 1');
    const totals=all('SELECT status,COUNT(*) AS total FROM jobs GROUP BY status');
@@ -283,7 +294,11 @@ async function handler(req,res){
   }
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/permission')){
    const leadId=pathname.split('/')[3],v=await json(req);
-   run('UPDATE leads SET contact_permission=? WHERE id=?',v.value?1:0,leadId);notify();return respond(res,200,{ok:true});
+   if(v.value===true&&!one('SELECT id FROM leads WHERE id=?',leadId))throw Error('Lead não encontrado');
+   if(v.value===true&&!String(v.proof||'').trim())throw Error('Registre como a pessoa autorizou mensagens pelo WhatsApp');
+   run('UPDATE leads SET contact_permission=? WHERE id=?',v.value?1:0,leadId);
+   audit('CONSENT_UPDATED',leadId,{permitted:v.value===true,evidence:String(v.proof||'').slice(0,150)});
+   notify();return respond(res,200,{ok:true});
   }
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/messages')){
    const leadId=pathname.split('/')[3],v=await json(req);return respond(res,202,{jobId:manualJob(leadId,v.text||'',v.type||'message',v.media_id||null)});
