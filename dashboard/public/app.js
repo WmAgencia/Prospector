@@ -5,7 +5,7 @@ const labelStage={DISCOVERED:'Encontrado',CONTACTED:'Em abordagem',REPLIED:'Resp
 const websiteLabel={UNCERTAIN:'Verificação inconclusiva',NOT_FOUND_AFTER_CHECK:'Site não encontrado na pesquisa',NO_WEBSITE:'Sem site após revisão humana',HAS_WEBSITE:'Site próprio confirmado',SOCIAL_ONLY:'Somente redes sociais',LINK_AGGREGATOR_ONLY:'Página agregadora',BROKEN_WEBSITE:'Site indisponível'};
 const stages=[['DISCOVERED','Encontrados','blue'],['CONTACTED','Em abordagem','blue'],['REPLIED','Responderam','yellow'],['INTERESTED','Interessados','green'],['NO_INTEREST','Sem interesse','red'],['CLOSED_WON','Fechados','green']];
 let state=null,page=location.hash.split('/')[1]||'overview',selectedThread=location.hash.split('/')[2]||null,mediaTab='video',workflowId='default',editing=null,dirty=false,loading=false,chatSearch='',kanbanSearch='';
-let toastTimer=null,kanbanStage='ALL';
+let toastTimer=null;
 const icons={video:'▣',audio:'♫',image:'▧',message:'✉',wait_reply:'◌',delay:'◷',end:'✓'};
 function showToast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),4200);}
 async function request(path,data,method='POST'){
@@ -16,7 +16,7 @@ async function request(path,data,method='POST'){
 }
 async function load(shouldDraw=true){
  if(loading)return;loading=true;
- try{const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw Error('API indisponível');state=await r.json();if(shouldDraw)draw();else window.dispatchEvent(new CustomEvent('prospector:data',{detail:{page,state}}));}
+ try{const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw Error('API indisponível');state=await r.json();if(shouldDraw)draw();}
  catch(e){$('#sync-status').textContent='Offline';if(!state)$('#screen').innerHTML='<div class="empty"><strong>Não foi possível conectar ao backend</strong><p>'+esc(e.message)+'</p></div>';}
  finally{loading=false;}
 }
@@ -24,7 +24,7 @@ function navigate(to,thread=null){
  page=to;selectedThread=thread||null;location.hash='/'+to+(thread?'/'+thread:'');
  draw();
 }
-const titles={radar:['Radar de prospecção','Buscas e limites reais, atualizados pelo backend'],overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Automações','Crie fluxos por segmento e defina o caminho após cada resposta'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],production:['Produção','Pedidos de exemplo e entregas'],studio:['Site Studio','Propostas visuais exclusivas para apresentar aos clientes'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção'],campaign:['Campanha R$350','Mensagem, áudio, vídeo e prazo da oferta'],recontacts:['Recontatos','Histórico e revisão após 90 dias']};
+const titles={radar:['Radar de prospecção','Buscas e limites reais, atualizados pelo backend'],overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Automações','Acompanhe e selecione suas campanhas'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],production:['Produção','Pedidos de exemplo e entregas'],studio:['Site Studio','Propostas visuais exclusivas para apresentar aos clientes'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção'],campaign:['Campanha R$350','Mensagem, áudio, vídeo e prazo da oferta'],recontacts:['Recontatos','Histórico e revisão após 90 dias']};
 function draw(){
  if(!state)return;
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===page));
@@ -39,12 +39,13 @@ function draw(){
  const quick=$('#wa-pill');
  if(quick){quick.className='top-wa '+(connected?'online':'offline');quick.innerHTML='<span class="live-dot"></span>'+esc(connected?'WhatsApp conectado':state.connection.status==='QR_READY'?'QR aguardando leitura':'WhatsApp desconectado');}
  const pa=$('#pause-btn');if(pa)pa.classList.toggle('is-running',!state.settings.paused);
- const views={overview,radar:radarPage,conversations,prospects,workflows,discovery,production,studio,connections,campaign:campaignPage,recontacts,settings};
+ const views={overview,radar:radarPage,conversations,prospects,workflows:location.hash.includes('/classic')?workflows:()=>'<div id="campaign-app"></div>',discovery,production,studio,connections,campaign:campaignPage,recontacts,settings};
  $('#screen').innerHTML=(views[page]||overview)();
  if(page==='conversations'&&selectedThread)loadMessages();
- if(page==='workflows')bindWorkflowInputs();
+ if(page==='workflows'&&location.hash.includes('/classic'))bindWorkflowInputs();
  if(page==='studio')loadStudio();
  if(page==='production'&&selectedThread){const id=selectedThread;selectedThread=null;prodModal(id);}
+ window.dispatchEvent(new CustomEvent('prospector:draw',{detail:{page,state}}));
 }
 
 function radarView(){
@@ -73,46 +74,45 @@ function radarPage(){
 }
 
 function overview(){
- const stats=state.stats||{},c=state.connection||{},s=state.settings||{};
- const wa=c.status==='CONNECTED';
- const queue=state.jobs.filter(x=>x.status==='PENDING').length;
- const unknown=state.jobs.filter(x=>x.status==='UNKNOWN').length;
- const qualified=state.leads.filter(x=>x.contact_permission===1&&x.phone).length;
- const sent=Number(stats.contacted||0);
- const steps=[
-  {ok:stats.found>0,title:'Empresas descobertas',detail:(stats.found||0)+' oportunidades registradas',to:'discovery'},
-  {ok:wa,title:'WhatsApp autenticado',detail:wa?'Conexão ativa':'Novo pareamento necessário',to:'connections'},
-  {ok:qualified>0,title:'Contatos autorizados',detail:qualified+' lead(s) com permissão registrada',to:'prospects'},
-  {ok:!s.paused&&wa,title:'Operação habilitada',detail:s.paused?'Prospecção pausada':'Prospecção habilitada',to:'settings'}
+ const stats=state.stats||{},s=state.settings||{},c=state.connection||{};
+ const wa=c.status==='CONNECTED',active=state.activeCampaign||null;
+ const running=!s.paused&&wa&&s.auto_initial&&!!active;
+ const pending=state.jobs.filter(x=>x.status==='PENDING').length;
+ const uncertain=state.jobs.filter(x=>x.status==='UNKNOWN').length;
+ const interested=state.leads.filter(x=>x.stage==='INTERESTED').length;
+ const counts=[
+  ['◎','Encontrados',stats.found||0,'prospects'],
+  ['↗','Abordagens',stats.contacted||0,'conversations'],
+  ['◉','Respostas',stats.responded||0,'conversations'],
+  ['✳','Interessados',interested,'prospects']
  ];
- const metric=(icon,label,value,hint,to)=>'<button type="button" class="stat-tile" data-action="route" data-to="'+to+'"><span class="stat-icon">'+icon+'</span><span class="stat-label">'+label+'</span><strong>'+Number(value||0).toLocaleString('pt-BR')+'</strong><span class="stat-hint">'+hint+' <span>↗</span></span></button>';
  const latest=state.leads.slice(0,5);
- return '<div class="hero"><div class="hero-main"><div class="hero-kicker"><span class="live-dot"></span>CENTRAL COMERCIAL · VISÃO EM TEMPO REAL</div><h2>Sua operação, <em>sem complicação.</em></h2><p>Acompanhe oportunidades, conversas e próximos passos em um só lugar. Cada indicador vem diretamente do banco do Prospector.</p><div class="hero-actions"><button class="btn" data-action="route" data-to="discovery">⌕ &nbsp;Encontrar empresas</button><button class="btn hero-outline" data-action="route" data-to="connections">◎ &nbsp;Conectar WhatsApp</button></div></div><div class="hero-side"><span class="hero-side-label">PRÓXIMA AÇÃO</span><strong>'+(!wa?'Concluir pareamento':s.paused?'Revisar início das automações':'Revisar oportunidades')+'</strong><p>'+(!wa?'A sessão WhatsApp precisa de um QR novo antes de enviar qualquer mensagem.':s.paused?'Os envios estão pausados. Ative apenas com contatos autorizados.':'Confira respostas e propostas pendentes.')+'</p><button class="text-link" data-action="route" data-to="'+(!wa?'connections':s.paused?'settings':'prospects')+'">Resolver agora →</button></div></div>'+
- radarView()+'<div class="stat-grid">'+metric('⌕','Empresas encontradas',stats.found,'Banco de oportunidades','prospects')+metric('✳','Qualificados',stats.qualified,'Contatos para revisão','prospects')+metric('↗','Abordagens confirmadas',sent,'Mensagens iniciais enviadas','conversations')+metric('◉','Respostas recebidas',stats.responded,'Conversas identificadas','conversations')+'</div>'+
- '<div class="dashboard-grid"><section class="panel progress-panel"><div class="between"><div><div class="panel-eyebrow">PROGRESSO</div><h3>Checklist da operação</h3></div><span class="tag">'+steps.filter(x=>x.ok).length+' de 4 etapas</span></div><div class="progress-track"><span style="width:'+(steps.filter(x=>x.ok).length*25)+'%"></span></div><div class="checklist">'+steps.map((step,i)=>'<button class="check-row" data-action="route" data-to="'+step.to+'"><span class="check-marker '+(step.ok?'done':'')+'">'+(step.ok?'✓':i+1)+'</span><span class="check-body"><strong>'+esc(step.title)+'</strong><small>'+esc(step.detail)+'</small></span><span class="check-arrow">→</span></button>').join('')+'</div></section>'+
- '<section class="panel pulse-panel"><div class="panel-eyebrow">AGORA</div><h3>Saúde da operação</h3>'+
- '<div class="status-line"><span><span class="live-dot '+(wa?'':'muted')+'"></span> WhatsApp</span><strong class="'+(wa?'text-good':'text-warn')+'">'+esc(c.status||'Indefinido')+'</strong></div>'+
- '<div class="status-line"><span>Descoberta de empresas</span><strong>OpenStreetMap</strong></div>'+
- '<div class="status-line"><span>Fila aguardando</span><strong>'+queue+'</strong></div>'+
- '<div class="status-line"><span>Entregas para revisar</span><strong class="'+(unknown?'text-warn':'')+'">'+unknown+'</strong></div>'+
- '<div class="status-line"><span>Automações</span><strong>'+(!s.paused?'Ativas':'Pausadas')+'</strong></div>'+
- '<p class="helper-text">Leads coletados não recebem mensagens sem autorização explícita.</p><button class="btn secondary panel-action" data-action="route" data-to="settings">Gerenciar controles →</button></section></div>'+
- '<section class="panel recent-panel"><div class="between"><div><div class="panel-eyebrow">PIPELINE</div><h3>Oportunidades recentes</h3></div><button class="btn small secondary" data-action="route" data-to="prospects">Abrir Kanban ↗</button></div>'+
- (latest.length?'<div class="recent-list">'+latest.map(l=>'<div class="recent-item"><span class="recent-avatar">'+esc((l.business||'E').slice(0,1).toUpperCase())+'</span><div class="recent-info"><strong>'+esc(l.business)+'</strong><small>'+esc(l.city||'Cidade não informada')+' · '+esc(l.segment||'Segmento não identificado')+'</small></div><span class="tag '+(l.stage==='INTERESTED'?'green':'')+'">'+esc(labelStage[l.stage]||l.stage)+'</span></div>').join('')+'</div>':'<div class="empty"><div class="symbol">⌕</div><strong>Nenhuma empresa encontrada ainda</strong><p>Comece pela descoberta e acompanhe seus leads aqui.</p><button class="btn small" data-action="route" data-to="discovery">Iniciar descoberta</button></div>')+'</section>';
+ return '<section class="simple-hero"><div><span class="simple-kicker">VISÃO GERAL · CONSECOM</span><h2>Tudo sob controle.</h2><p>Veja a descoberta, a campanha selecionada e o que precisa da sua atenção — sem configurações desnecessárias.</p><div class="simple-hero-actions"><button class="btn" data-action="route" data-to="prospects">Ver oportunidades ↗</button><button class="btn secondary" data-action="route" data-to="discovery">Buscar empresas</button></div></div>'+
+ '<div class="simple-hero-side"><span class="simple-kicker">CAMPANHA SELECIONADA</span><strong>'+esc(active?.name||'Nenhuma campanha escolhida')+'</strong><p>'+esc(!active?'Selecione uma campanha para novas abordagens.':running?'Operação habilitada · contatos autorizados':s.paused?'Campanha preparada · operação pausada':!wa?'Aguardando conexão com WhatsApp':'Aguardando início automático')+'</p><button class="simple-link" data-action="route" data-to="workflows">Gerenciar campanhas →</button></div></section>'+
+ '<div class="simple-stats">'+counts.map(([icon,label,count,to])=>'<button class="simple-stat" data-action="route" data-to="'+to+'"><span>'+icon+' '+label+'</span><strong>'+Number(count).toLocaleString('pt-BR')+'</strong><span class="simple-stat-arrow">↗</span></button>').join('')+'</div>'+
+ radarView()+
+ '<div class="simple-overview-grid"><section class="panel simple-health"><div class="between"><div><span class="simple-kicker">AGORA</span><h3>Operação</h3></div><button class="btn small secondary" data-action="route" data-to="settings">Configurar</button></div>'+
+ '<div class="status-line"><span>WhatsApp</span><strong class="'+(wa?'text-good':'text-warn')+'">'+(wa?'Conectado':'Verificar conexão')+'</strong></div>'+
+ '<div class="status-line"><span>Prospecção</span><strong>'+(!s.paused?'Habilitada':'Pausada')+'</strong></div>'+
+ '<div class="status-line"><span>Campanha</span><strong>'+esc(active?'Selecionada':'Não selecionada')+'</strong></div>'+
+ '<div class="status-line"><span>Fila de mensagens</span><strong>'+pending+'</strong></div>'+
+ '<div class="status-line"><span>Entregas incertas</span><strong class="'+(uncertain?'text-warn':'')+'">'+uncertain+'</strong></div>'+
+ '<p class="helper-text">A prospecção não autoriza automaticamente contatos descobertos na internet.</p></section>'+
+ '<section class="panel simple-recent"><div class="between"><div><span class="simple-kicker">ACOMPANHAMENTO</span><h3>Oportunidades recentes</h3></div><button class="btn small secondary" data-action="route" data-to="prospects">Abrir Kanban ↗</button></div>'+
+ (latest.length?latest.map(l=>'<div class="simple-lead"><div class="simple-lead-avatar">'+esc((l.business||'E')[0].toUpperCase())+'</div><div><strong>'+esc(l.business)+'</strong><small>'+esc(l.city||'Cidade não informada')+' · '+esc(labelStage[l.stage]||l.stage)+'</small></div></div>').join(''):'<div class="cm-empty">As empresas encontradas aparecerão aqui. Inicie pela Descoberta.</div>')+'</section></div>';
 }
 function prospects(){
  const filtered=state.leads.filter(l=>!kanbanSearch||[l.business,l.name,l.phone,l.instagram].some(x=>String(x||'').toLowerCase().includes(kanbanSearch)));
- let markup='<div class="between section-head"><div><h2>Suas oportunidades</h2><p>Encontre, acompanhe e converse com os profissionais selecionados.</p></div><div class="actionsrow"><button class="btn secondary" data-action="route" data-to="discovery">⌕ Buscar empresas</button><button class="btn" data-action="new-lead">+ Adicionar</button></div></div>';
- markup+='<div class="toolbar"><input class="searchbox" placeholder="Buscar empresa, telefone ou Instagram..." id="kanban-search" value="'+esc(kanbanSearch)+'"></div>';
- markup+='<div class="simple-stage-tabs">'+[['ALL','Todas'],...stages.map(x=>[x[0],x[1]])].map(([key,title])=>'<button class="simple-stage-tab '+(kanbanStage===key?'selected':'')+'" data-action="kanban-filter" data-stage="'+key+'">'+esc(title)+' <span>'+filtered.filter(x=>key==='ALL'||x.stage===key).length+'</span></button>').join('')+'</div>';
- markup+='<div class="board '+(kanbanStage==='ALL'?'':'simple-board-focus')+'">'+stages.filter(x=>kanbanStage==='ALL'||x[0]===kanbanStage).map(([stage,title,color])=>{
+ let markup='<div class="between section-head"><div><h2>Pipeline comercial</h2><p>Clique em um card para abrir a conversa, ou altere a etapa.</p></div><div class="actionsrow"><button class="btn secondary" data-action="import">Importar JSON</button><button class="btn" data-action="new-lead">+ Adicionar lead</button></div></div>';
+ markup+='<div class="toolbar"><input class="searchbox" placeholder="Buscar por empresa, telefone ou Instagram..." id="kanban-search" value="'+esc(kanbanSearch)+'"></div>';
+ markup+='<div class="board">'+stages.map(([stage,title,color])=>{
   const arr=filtered.filter(l=>l.stage===stage);
   return '<div class="column" data-dropstage="'+stage+'"><div class="column-header"><strong>'+title+'</strong><span class="count">'+arr.length+'</span></div>'+
   (arr.length?arr.map(l=>'<div class="leadcard" draggable="true" data-dragid="'+l.id+'" data-action="open-lead" data-lead="'+l.id+'"><strong>'+esc(l.name||l.business)+'</strong><div class="phone">'+esc(l.phone||'WhatsApp não identificado')+'</div><footer><small>'+esc(l.business)+' · '+(l.score??0)+' pts</small><span class="tag '+color+'">'+esc(labelStage[stage])+'</span></footer><div class="actionsrow" style="margin-top:10px"><button class="btn small secondary" data-action="review-lead" data-lead="'+l.id+'">Revisar</button>'+(stage==='DISCOVERED'?'<button class="btn small" data-action="start-lead" data-lead="'+l.id+'">Iniciar</button>':'')+'</div></div>').join(''):'<div class="empty" style="padding:25px 4px;font-size:12px">Nenhum lead</div>')+'</div>';
  }).join('')+'</div>';
  const fresh=filtered.filter(l=>l.stage==='DISCOVERED');
- markup+='<details class="panel simple-lead-extras" style="margin-top:12px"><summary>Lista de encontrados para revisão ('+fresh.length+')</summary><div class="between"><h3>Novos leads para qualificação ('+fresh.length+')</h3><span class="tag">Não abordados</span></div>'+
- (fresh.length?fresh.slice(0,80).map(l=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(l.business)+'</strong><small>'+esc(l.instagram?'@'+l.instagram:'')+' · '+esc(l.city||'Cidade não informada')+' · '+esc(websiteLabel[l.website_status]||l.website_status)+'</small></div><button class="btn small secondary" data-action="review-lead" data-lead="'+l.id+'">Detalhes</button><button class="btn small" data-action="start-lead" data-lead="'+l.id+'">Iniciar fluxo</button></div>').join('') :'<div class="empty">Sem leads novos</div>')+'</details>';
+ markup+='<section class="panel" style="margin-top:12px"><div class="between"><h3>Novos leads para qualificação ('+fresh.length+')</h3><span class="tag">Não abordados</span></div>'+
+ (fresh.length?fresh.slice(0,80).map(l=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(l.business)+'</strong><small>'+esc(l.instagram?'@'+l.instagram:'')+' · '+esc(l.city||'Cidade não informada')+' · '+esc(websiteLabel[l.website_status]||l.website_status)+'</small></div><button class="btn small secondary" data-action="review-lead" data-lead="'+l.id+'">Detalhes</button><button class="btn small" data-action="start-lead" data-lead="'+l.id+'">Iniciar fluxo</button></div>').join(''):'<div class="empty">Sem leads novos</div>')+'</section>';
  return markup;
 }
 function conversations(){
@@ -257,14 +257,12 @@ function discovery(){
  '<p class="subtle" style="line-height:1.6;font-size:12px;margin-top:15px">A consulta pode levar até 40 segundos. Apenas informações publicadas na fonte são importadas; não presume que uma empresa não possui site ou autorizou mensagens.</p>'+
  '<p class="subtle" style="font-size:11px"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors · ODbL</a></p></section>'+
  '<section class="panel"><h3>Últimas pesquisas</h3>'+(state.discoveries.length?state.discoveries.slice(0,7).map(d=>'<div class="activity"><span class="dotmini">⌕</span><div><strong>'+esc(d.query)+'</strong><small>'+d.found+' novo(s) · '+fmtDate(d.at)+' · '+esc(d.status)+'</small></div></div>').join(''):'<div class="empty">Nenhuma pesquisa registrada.</div>')+'</section></div>'+
- '<details class="simple-discovery-extra"><summary>Outras fontes e importações <span aria-hidden="true">⌄</span></summary>'+ 
  '<section class="panel" style="margin-top:18px"><div class="between"><h3>Busca web complementar (Brave)</h3><span class="tag">'+(state.searchConfigured?'Configurada':'Opcional')+'</span></div>'+
  '<div class="two"><div class="field"><label>Consulta livre</label><input id="discover-query" placeholder="Ex.: psicóloga Sorocaba ou clínica Campinas"></div><button class="btn secondary" data-action="discover" '+(!state.searchConfigured?'disabled':'')+'>Pesquisar perfis indexados</button></div>'+
  '<p class="subtle">Brave requer chave válida do provedor. Bibliotecas no GitHub não fornecem chaves de serviços externos.</p></section>'+
  '<section class="panel" style="margin-top:18px"><div class="between"><h3>Diretórios empresariais complementares</h3><span class="tag">APIs oficiais</span></div><p class="subtle">Google Places e Foursquare oferecem informações adicionais de sites e empresas quando você configura suas próprias chaves na Railway. Podem existir custos e limitações de armazenamento. Resultados são exibidos para revisão e não são copiados automaticamente ao banco.</p><div class="two"><div class="field"><label>Fonte</label><select id="external-provider"><option value="google_places">Google Places</option><option value="foursquare">Foursquare Places</option></select></div><div class="field"><label>Segmento</label><input id="external-query" placeholder="Ex.: clínica odontológica"></div></div><div class="two"><div class="field"><label>Cidade</label><input id="external-city" value="Sorocaba"></div><button class="btn secondary" data-action="external-search">Pesquisar nesta fonte</button></div></section>'+
  '<section class="panel" style="margin-top:18px"><h3>Importar CNPJ / CNES · fontes oficiais</h3><p class="subtle">Use um arquivo CSV ou JSON obtido legitimamente na fonte original. O sistema registra a procedência, cruza duplicados e cria oportunidades sem permissão de contato. O download massivo dessas bases não é realizado pelo servidor.</p><div class="two"><div class="field"><label>Fonte</label><select id="official-source"><option value="cnpj">CNPJ / Receita Federal</option><option value="cnes">CNES / Ministério da Saúde</option></select></div><div class="field"><label>Arquivo (até 200 registros)</label><input type="file" id="official-file" accept=".csv,.json"></div></div><div class="actionsrow"><button class="btn secondary" data-action="import-official">Importar lote verificado</button><span class="tag">Sem envio de mensagens</span></div><small class="subtle">CSV com colunas cnpj ou cnes, nome_fantasia ou nome, municipio, telefone (opcional). CNES e CNPJ devem conter seus códigos completos.</small></section>'+
  '<section class="panel" style="margin-top:18px"><h3>Provedores de prospecção</h3>'+providers.map(p=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(p.label)+'</strong><small>'+esc(p.note)+'</small></div><span class="tag '+(p.status==='READY'?'green':p.status==='NEEDS_API_KEY'?'yellow':'')+'">'+esc(p.status==='READY'?'Pronto':p.status==='NEEDS_API_KEY'?'Sem chave':p.status==='IMPORT_READY'?'Importação pronta':'Não integrado')+'</span></div>').join('')+'</section>'+
- '</details>'+ 
  '<section class="panel" style="margin-top:18px"><h3>Segurança das abordagens</h3><p class="subtle">Empresas descobertas entram com contato não autorizado. A plataforma não envia campanhas para números coletados sem permissão. Fonte pública não equivale a autorização para WhatsApp. Empresas sem tag de site continuam como site incerto.</p></section>';
 }
 function connections(){
@@ -301,24 +299,31 @@ function recontacts(){
  '<p class="helper-text">Somente contatos que continuam autorizados e não solicitaram interrupção. Cada recontato requer revisão e aprovação.</p></section>';
 }
 function settings(){
- const s=state.settings;
- return '<div class="narrow"><section class="panel"><h3>Controle de automação</h3>'+[
- ['paused','Prospecção pausada','Quando ativo, novas abordagens de workflow não são enviadas.',true],
- ['automation_enabled','Continuação de workflows','Permite avançar blocos após respostas recebidas.',true],
- ['auto_initial','Contato inicial automático','Somente leads com permissão explícita e automação iniciada.',true],
- ['discovery_auto_enabled','Pesquisa local diária','Uma consulta ao dia à base pública OpenStreetMap, sem envio de mensagens.',true]
- ].map(([key,title,description])=>'<div class="switchrow"><div><strong>'+title+'</strong><small>'+description+'</small></div><input type="checkbox" data-setting="'+key+'" '+(s[key]?'checked':'')+'></div>').join('')+
- '<div class="spacer"></div><h3>Fontes de descoberta</h3>'+
- (state.providers||[]).map(p=>'<div class="switchrow"><div><strong>'+esc(p.label)+'</strong><small>'+esc(p.status==='NOT_IMPLEMENTED'?'Ainda não integrado — não poderá executar buscas':p.note)+'</small></div><input type="checkbox" data-source="'+p.id+'" '+(((s.discovery_sources||{})[p.id]??(['cnpj','cnes'].includes(p.id)))?'checked':'')+' '+(p.status==='NOT_IMPLEMENTED'?'disabled':'')+'></div>').join('')+
- '<div class="spacer"></div><h3>Prioridade</h3><div class="field"><label>Busca prioritária</label><select id="discovery-priority">'+
- ['no_website','ads_only','selected_segments'].map((v,i)=>'<option value="'+v+'" '+(s.discovery_priority===v?'selected':'')+'>'+['Qualquer empresa sem site','Apenas anunciantes (fonte pendente)','Somente segmentos selecionados'][i]+'</option>').join('')+'</select></div>'+
- '<div class="switchrow"><div><strong>Brasil inteiro</strong><small>Permitir resultados fora das cidades selecionadas quando a fonte permitir.</small></div><input type="checkbox" id="discovery-brazil" '+(s.discovery_brazil_wide?'checked':'')+'></div>'+
- '<h3 style="margin-top:22px">Pontuação dos leads</h3><div class="score-grid">'+
- Object.entries(s.score_weights||{}).map(([k,v])=>'<label class="score-weight"><span>'+esc(({noWebsite:'Sem site',activeAd:'Anúncio confirmado',publicWhatsapp:'WhatsApp comercial',activeBusiness:'Perfil comercial',prioritySegment:'Segmento prioritário',location:'Localização',businessName:'Nome comercial'})[k]||k)+'</span><input type="number" min="0" max="30" data-weight="'+k+'" value="'+Number(v)+'"></label>').join('')+'</div>'+
- '<div class="spacer"></div><h3>Notificações no seu WhatsApp</h3><p class="subtle">Avisa no outro número conectado. Relatório diário às 20h.</p><div class="two"><div class="field"><label>Número A (com DDD)</label><input id="owner-a" placeholder="5515999999999" value="'+esc(s.owner_phone_a||'')+'"></div><div class="field"><label>Número B (com DDD)</label><input id="owner-b" placeholder="5515999999999" value="'+esc(s.owner_phone_b||'')+'"></div></div><div class="switchrow"><div><strong>Ativar avisos e relatórios</strong><small>Não habilita a prospecção.</small></div><input type="checkbox" id="owner-notices" '+(s.owner_notifications_enabled?'checked':'')+'></div><div class="spacer"></div><div class="two"><div class="field"><label>Intervalo entre primeiras abordagens (segundos)</label><input type="number" data-setting-number="initial_interval_seconds" min="108" max="3600" value="'+esc(s.initial_interval_seconds||108)+'"></div><div class="field"><label>Máximo por dia</label><input type="number" data-setting-number="daily_limit" min="1" max="200" value="'+esc(s.daily_limit)+'"></div></div>'+
- '<div class="two"><div class="field"><label>Horário inicial (Brasília)</label><input type="number" data-setting-number="business_start" min="0" max="23" value="'+esc(s.business_start)+'"></div><div class="field"><label>Horário final (Brasília)</label><input type="number" data-setting-number="business_end" min="1" max="24" value="'+esc(s.business_end)+'"></div></div>'+
- '<div class="two"><div class="field"><label>Segmentos de pesquisa</label><textarea data-setting-text="segments">'+esc(s.segments||'')+'</textarea></div><div class="field"><label>Cidades</label><textarea data-setting-text="cities">'+esc(s.cities||'')+'</textarea></div></div><button class="btn" data-action="save-settings">Salvar configurações</button></section>'+
- '<section class="panel" style="margin-top:18px"><h3>Proteção de dados</h3><p class="subtle" style="line-height:1.8">O backend funciona na Railway com sessão e banco em volume persistente protegido. Nunca coloque contatos, sessões e tokens no GitHub. Resultados de envio desconhecidos não são reenviados automaticamente.</p></section></div>';
+ const s=state.settings||{},providers=state.providers||[];
+ const checked=x=>x?' checked':'';
+ const toggle=(key,title,help)=>'<label class="simple-switch"><span><strong>'+title+'</strong><small>'+help+'</small></span><input type="checkbox" data-setting="'+key+'"'+checked(s[key])+'></label>';
+ const num=(key,label,min,max,fallback)=>'<div class="field"><label>'+label+'</label><input type="number" min="'+min+'" max="'+max+'" data-setting-number="'+key+'" value="'+esc(s[key]??fallback)+'"></div>';
+ return '<div class="simple-settings"><section class="panel"><span class="simple-kicker">CONTROLE</span><h2>Configurações essenciais</h2><p class="simple-intro">O básico para operar. Configurações técnicas ficam recolhidas abaixo.</p>'+
+ toggle('paused','Operação pausada','Quando ligado, não são iniciadas novas abordagens.')+
+ toggle('automation_enabled','Continuar respostas automaticamente','Avança a campanha após respostas reconhecidas.')+
+ toggle('auto_initial','Iniciar campanha com contatos autorizados','Requer campanha selecionada e autorização registrada.')+
+ toggle('discovery_auto_enabled','Buscar empresas automaticamente','Pesquisa progressiva, respeitando a meta e as cotas das fontes.')+
+ '<h3 class="simple-subheading">Limites e horários</h3><div class="simple-fields-grid">'+
+ num('daily_limit','Máximo de abordagens por dia',1,150,150)+
+ num('discovery_target_daily','Meta de novas empresas por dia',1,150,150)+
+ num('initial_interval_seconds','Intervalo entre abordagens (segundos)',144,3600,240)+
+ num('business_start','Início (hora de Brasília)',0,23,8)+
+ num('business_end','Término (hora de Brasília)',1,24,18)+'</div>'+
+ '<div class="cm-actions"><button class="btn" data-action="save-settings">Salvar alterações</button></div></section>'+
+ '<details class="panel simple-settings-extra"><summary>Locais e fontes de descoberta <span aria-hidden="true">⌄</span></summary><div class="simple-settings-inner">'+
+ '<div class="simple-fields-grid"><div class="field"><label>Segmentos</label><textarea data-setting-text="segments">'+esc(s.segments||'')+'</textarea></div><div class="field"><label>Cidades</label><textarea data-setting-text="cities">'+esc(s.cities||'')+'</textarea></div></div>'+
+ '<div class="field"><label>Prioridade</label><select id="discovery-priority">'+[['no_website','Empresas sem site confirmado'],['ads_only','Anunciantes (fonte opcional)'],['selected_segments','Segmentos selecionados']].map(([k,v])=>'<option value="'+k+'"'+(s.discovery_priority===k?' selected':'')+'>'+v+'</option>').join('')+'</select></div>'+
+ '<label class="simple-switch"><span><strong>Permitir buscas no Brasil todo</strong><small>Depende da disponibilidade do provedor.</small></span><input id="discovery-brazil" type="checkbox"'+checked(s.discovery_brazil_wide)+'></label>'+
+ '<h3>Fontes disponíveis</h3>'+providers.map(p=>'<label class="simple-switch"><span><strong>'+esc(p.label)+'</strong><small>'+esc(p.note||p.status)+'</small></span><input type="checkbox" data-source="'+esc(p.id)+'"'+checked((s.discovery_sources||{})[p.id]??['cnpj','cnes'].includes(p.id))+(p.status==='NOT_IMPLEMENTED'?' disabled':'')+'></label>').join('')+
+ '</div></details>'+
+ '<details class="panel simple-settings-extra"><summary>Notificações e critérios avançados <span aria-hidden="true">⌄</span></summary><div class="simple-settings-inner"><h3>Notificações no seu WhatsApp</h3><div class="simple-fields-grid"><div class="field"><label>Número A</label><input id="owner-a" value="'+esc(s.owner_phone_a||'')+'" placeholder="5515999999999"></div><div class="field"><label>Número B</label><input id="owner-b" value="'+esc(s.owner_phone_b||'')+'" placeholder="5515999999999"></div></div><label class="simple-switch"><span><strong>Ativar avisos</strong><small>Notificações e resumo diário, sem habilitar prospecção.</small></span><input id="owner-notices" type="checkbox"'+checked(s.owner_notifications_enabled)+'></label>'+
+ '<h3>Pontuação de oportunidades</h3><div class="score-grid">'+Object.entries(s.score_weights||{}).map(([k,v])=>'<label class="score-weight"><span>'+esc(({noWebsite:'Sem site',activeAd:'Anúncio confirmado',publicWhatsapp:'WhatsApp comercial',activeBusiness:'Perfil comercial',prioritySegment:'Segmento prioritário',location:'Localização',businessName:'Nome comercial'})[k]||k)+'</span><input data-weight="'+k+'" type="number" min="0" max="30" value="'+Number(v)+'"></label>').join('')+'</div>'+
+ '<p class="helper-text">Credenciais, leads e sessões continuam protegidos no servidor. Dados públicos não significam permissão de contato.</p></div></details></div>';
 }
 function modal(html){$('#modal').innerHTML='<div class="modal">'+html+'</div>';$('#modal').classList.remove('hidden');}
 function closeModal(){$('#modal').classList.add('hidden');$('#modal').innerHTML='';}
@@ -340,7 +345,6 @@ document.addEventListener('click',async event=>{
  const action=el.dataset.action;
  try{
   if(action==='route')return navigate(el.dataset.to);
-  if(action==='kanban-filter'){kanbanStage=el.dataset.stage||'ALL';draw();return;}
   if(action==='prod-open')return navigate('production',el.dataset.lead);
   if(action==='prod-copy'){await prodCopy(el.dataset.lead);return;}
   if(action==='prod-move'){await request('/api/production/move',{lead_id:el.dataset.lead,status:el.dataset.status,site_url:$('#prod-url')?.value});closeModal();await load();return;}

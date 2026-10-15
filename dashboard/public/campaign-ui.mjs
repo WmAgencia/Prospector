@@ -1,137 +1,202 @@
-// Interface de campanhas enxuta. Mídias precisam ser enviadas pelo operador.
-// Não cria autorizações nem inicia disparos ao carregar.
-const q=s=>document.querySelector(s);
+import {campaignStatus,campaignPreview} from './campaign-ui-state.mjs';
+// Editor compacto. Os dados vêm do /api/state e a escolha de campanha só muda
+// depois de uma validação atômica em /api/workflows/activate.
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const root=()=>document.getElementById('campaign-app');
 const uuid=()=>crypto.randomUUID();
-let snapshot=null,selected=null,draft=null,loading=false,notice='';
-const endpoint=async(path,data)=>{
- const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
- const value=await r.json();if(!r.ok)throw Error(value.error||'Operação indisponível');return value;
+const request=async(path,data)=>{
+ const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+ const result=await response.json();
+ if(!response.ok)throw Error(result.error||'Não foi possível concluir a operação');
+ return result;
 };
-const list=()=>snapshot?.workflows||[];
-const isCampaign=x=>x&&x.steps?.some(s=>s.type==='audio')&&x.steps?.some(s=>s.type==='video')&&x.steps?.some(s=>s.type==='decision');
-function newCampaign(){
- return {id:null,name:'Nova campanha · Sites profissionais',enabled:false,segments:[],steps:[
- {id:uuid(),type:'message',text:'{{greeting}} A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?'},
- {id:uuid(),type:'wait_reply'},
- {id:uuid(),type:'delay',seconds:45},
- {id:uuid(),type:'audio',media_id:'',description:'Descreva com fidelidade o áudio gravado e o objetivo da apresentação.'},
- {id:uuid(),type:'delay',seconds:10},
- {id:uuid(),type:'video',media_id:'',caption:'O que achou? Gostaria de ter um assim também?'},
- {id:uuid(),type:'wait_reply'},
- {id:uuid(),type:'decision',context:'website_interest',context_description:'Após o vídeo, o cliente responde se gostaria de ter um site assim.',yes_type:'message',yes_text:'',yes_action:'handover',no_type:'message',no_text:'Sem problemas, muito obrigado pelo retorno, ficamos à disposição.',no_action:'end'},
- {id:uuid(),type:'end'}
+let snapshot=null,selectedId=null,mode='view',draft=null,busy=false,notice='',showBridge=false;
+const workflows=()=>snapshot?.workflows||[];
+const selectedCampaign=()=>workflows().find(w=>w.id===selectedId)||null;
+const activeCampaign=()=>workflows().find(w=>w.id===snapshot?.settings?.autonomous_campaign_id&&w.enabled)||null;
+function freshDraft(){
+ return {id:null,name:'Nova campanha de sites',enabled:false,segments:[],steps:[
+  {id:uuid(),type:'message',text:'{{greeting}} A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?'},
+  {id:uuid(),type:'wait_reply'},
+  {id:uuid(),type:'delay',seconds:45},
+  {id:uuid(),type:'audio',media_id:'',description:'Áudio de apresentação da proposta e condições da oferta.'},
+  {id:uuid(),type:'delay',seconds:10},
+  {id:uuid(),type:'video',media_id:'',caption:'O que achou? Gostaria de ter um assim também?'},
+  {id:uuid(),type:'wait_reply'},
+  {id:uuid(),type:'decision',context:'website_interest',context_description:'Após assistir ao vídeo, o destinatário confirma se deseja um site.',yes_type:'message',yes_text:'',yes_action:'handover',no_type:'message',no_text:'Sem problemas, muito obrigado pelo retorno, ficamos à disposição.',no_action:'end'},
+  {id:uuid(),type:'end'}
  ]};
 }
+const previewRows=s=>{
+ const p=campaignPreview(s);
+ return '<div class="cm-steps-compact">'+[
+  ['01','Abordagem',p.initial||'Não configurada'],
+  ['02','Aguardar resposta','Permissão para continuar'],
+  ['03','Apresentação',p.waitBeforeAudio+' segundos → áudio '+(p.hasAudio?'anexado':'pendente')],
+  ['04','Portfólio',p.waitBeforeVideo+' segundos → vídeo '+(p.hasVideo?'anexado':'pendente')],
+  ['05','Decisão','Interessados → atendimento humano · Recusa → despedida']
+ ].map(x=>'<div class="cm-step-row"><span class="cm-step-index">'+x[0]+'</span><div><strong>'+esc(x[1])+'</strong><small>'+esc(x[2])+'</small></div></div>').join('')+'</div>';
+};
+function renderActive(){
+ const active=activeCampaign(),id=active?.id;
+ if(!active)return '<section class="cm-active cm-active-empty"><span class="cm-overline">CAMPANHA EM USO</span><h3>Nenhuma campanha selecionada</h3><p>Escolha uma campanha salva na esquerda e clique em <strong>Ativar campanha</strong>. Sem uma seleção válida, a operação não envia mensagens de campanha.</p></section>';
+ const status=campaignStatus({workflow:active,activeId:id,settings:snapshot.settings,connection:snapshot.connection});
+ const p=campaignPreview(active.steps);
+ return '<section class="cm-active" aria-label="Campanha selecionada"><div class="cm-active-head"><div class="cm-active-icon">↗</div><span class="cm-overline">CAMPANHA SELECIONADA</span><span class="cm-state '+(status.running?'cm-green':'cm-muted')+'">'+(status.running?'● ':'')+esc(status.label)+'</span></div>'+
+ '<h3>'+esc(active.name)+'</h3><p>Fluxo salvo e protegido contra alterações acidentais. '+(snapshot.settings.paused?'Os envios permanecem pausados.':'Somente contatos autorizados podem receber abordagens.')+'</p>'+
+ '<div class="cm-mini-stats"><span>◷ Espera '+p.waitBeforeAudio+'s + '+p.waitBeforeVideo+'s</span><span>♫ Áudio '+(p.hasAudio?'pronto':'pendente')+'</span><span>▣ Vídeo '+(p.hasVideo?'pronto':'pendente')+'</span></div>'+
+ '<details class="cm-disclosure"><summary>Ver etapas da campanha <span aria-hidden="true">⌄</span></summary>'+previewRows(active.steps)+'</details></section>';
+}
+function renderList(){
+ const activeId=activeCampaign()?.id||null;
+ const cards=workflows().filter(w=>w.id!=='default'||w.id===activeId).map(w=>{
+  const status=campaignStatus({workflow:w,activeId,settings:snapshot.settings,connection:snapshot.connection});
+  return '<button type="button" data-cm="select" data-id="'+esc(w.id)+'" class="cm-library-item '+(w.id===selectedId?'cm-selected':'')+'" aria-pressed="'+(w.id===selectedId?'true':'false')+'"><span class="cm-library-title">'+esc(w.name)+'</span><span class="cm-library-meta"><span class="cm-indicator '+(status.active?'cm-dot-active':'')+'"></span>'+esc(status.active?'Selecionada':status.label)+'</span></button>';
+ }).join('');
+ return '<aside class="cm-library"><div class="cm-library-head"><div><span class="cm-overline">BIBLIOTECA</span><h3>Suas campanhas</h3></div><span class="cm-count">'+workflows().filter(w=>w.id!=='default'||w.id===activeId).length+'</span></div><div class="cm-list">'+(cards||'<p class="cm-empty">Sua primeira campanha aparecerá aqui.</p>')+'</div>'+
+ '<button type="button" data-cm="new" class="btn cm-new-btn">＋ Criar campanha</button><p class="cm-help">Selecione um card para visualizar ou ativar. A campanha em uso não pode ser editada.</p></aside>';
+}
+function renderDetail(){
+ const chosen=selectedCampaign();
+ if(!chosen)return '<section class="cm-detail cm-muted-panel"><span class="cm-overline">SELECIONE UMA CAMPANHA</span><h3>Escolha um card à esquerda</h3><p>Veja as etapas, ative outra campanha ou crie uma nova.</p></section>';
+ const activeId=activeCampaign()?.id,status=campaignStatus({workflow:chosen,activeId,settings:snapshot.settings,connection:snapshot.connection});
+ if(status.active)return '<section class="cm-detail cm-detail-small"><div class="cm-detail-icon">✓</div><div><strong>Esta é a campanha selecionada.</strong><p>Para trocar, escolha outro card na esquerda. Para alterar esse roteiro, crie uma cópia como nova campanha.</p><button class="btn secondary small" data-cm="duplicate" data-id="'+esc(chosen.id)+'">Criar uma cópia editável</button></div></section>';
+ const p=campaignPreview(chosen.steps);
+ return '<section class="cm-detail"><div class="cm-detail-head"><div><span class="cm-overline">CAMPANHA SALVA</span><h3>'+esc(chosen.name)+'</h3><p>Revise o resumo antes de selecionar esta campanha.</p></div><span class="cm-state">'+esc(status.label)+'</span></div>'+
+ '<div class="cm-brief-grid"><span><strong>'+p.steps+'</strong> etapas</span><span><strong>'+p.waitBeforeAudio+'s</strong> antes do áudio</span><span><strong>'+p.waitBeforeVideo+'s</strong> antes do vídeo</span></div>'+
+ '<details class="cm-disclosure" open><summary>Etapas configuradas <span aria-hidden="true">⌄</span></summary>'+previewRows(chosen.steps)+'</details>'+
+ '<div class="cm-actions">'+(status.canActivate?'<button class="btn" data-cm="activate" data-id="'+esc(chosen.id)+'">✓ Ativar esta campanha</button>':'<span class="cm-warning">Para ativar, anexe áudio e vídeo.</span>')+
+ (!chosen.enabled?'<button class="btn secondary" data-cm="edit" data-id="'+esc(chosen.id)+'">Editar rascunho</button>':'<button class="btn secondary" data-cm="duplicate" data-id="'+esc(chosen.id)+'">Duplicar para editar</button>')+'</div></section>';
+}
+const opt=(kind,value)=>'<option value="">Selecione '+(kind==='audio'?'um áudio':'um vídeo')+'</option>'+(snapshot.media||[]).filter(x=>x.kind===kind).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===value?'selected':'')+'>'+esc(x.name)+'</option>').join('');
+function renderEditor(){
+ if(!draft)return '';
+ const steps=draft.steps;
+ const message=steps.find(x=>x.type==='message'),delays=steps.filter(x=>x.type==='delay'),audio=steps.find(x=>x.type==='audio'),video=steps.find(x=>x.type==='video'),decision=steps.find(x=>x.type==='decision');
+ if(!message||delays.length<2||!audio||!video||!decision)return '<section class="cm-detail"><h3>Roteiro avançado</h3><p>Esta campanha usa um formato diferente. Faça uma cópia com o modelo simplificado.</p><button class="btn secondary" data-cm="cancel">Voltar</button></section>';
+ return '<section class="cm-editor"><div class="cm-detail-head"><div><span class="cm-overline">EDITOR DE CAMPANHAS</span><h3>'+esc(draft.id?'Editar rascunho':'Criar campanha')+'</h3><p>Configure uma vez, salve e depois ative pelo card.</p></div><button class="btn secondary small" data-cm="cancel">Cancelar</button></div>'+
+ '<div class="cm-field"><label for="cm-name">Nome da campanha</label><input id="cm-name" data-cm-field="name" value="'+esc(draft.name)+'" maxlength="100"></div>'+
+ '<div class="cm-field"><label for="cm-message">1 · Mensagem inicial</label><textarea id="cm-message" data-cm-field="message" rows="3">'+esc(message.text)+'</textarea><small>O sistema substitui {{greeting}} pelo primeiro nome, quando disponível.</small></div>'+
+ '<div class="cm-inline-fields"><div class="cm-field"><label for="cm-before">2 · Espera após a resposta (segundos)</label><input id="cm-before" data-cm-field="before" type="number" min="1" max="86400" value="'+Number(delays[0].seconds)+'"></div><div class="cm-field"><label for="cm-after">3 · Espera entre áudio e vídeo (segundos)</label><input id="cm-after" data-cm-field="after" type="number" min="1" max="86400" value="'+Number(delays[1].seconds)+'"></div></div>'+
+ '<div class="cm-inline-fields"><div class="cm-field"><label for="cm-audio">4 · Áudio de apresentação</label><select id="cm-audio" data-cm-field="audio">'+opt('audio',audio.media_id)+'</select><label class="cm-upload-label">Enviar novo áudio<input data-cm-upload="audio" type="file" accept=".ogg,.opus,.mp3,.m4a,audio/*"></label></div>'+
+ '<div class="cm-field"><label for="cm-video">5 · Vídeo da campanha</label><select id="cm-video" data-cm-field="video">'+opt('video',video.media_id)+'</select><label class="cm-upload-label">Enviar novo vídeo<input data-cm-upload="video" type="file" accept=".mp4,video/mp4"></label></div></div>'+
+ '<div class="cm-field"><label for="cm-description">Descrição do áudio</label><textarea id="cm-description" data-cm-field="description" rows="2">'+esc(audio.description||'')+'</textarea></div>'+
+ '<div class="cm-field"><label for="cm-caption">6 · Legenda do vídeo (sem adicionar som ao arquivo)</label><textarea id="cm-caption" data-cm-field="caption" rows="2">'+esc(video.caption||'')+'</textarea></div>'+
+ '<div class="cm-field"><label for="cm-farewell">7 · Mensagem para quem não tem interesse</label><textarea id="cm-farewell" data-cm-field="farewell" rows="2">'+esc(decision.no_text||'')+'</textarea><small>Quem confirmar interesse vai direto ao Kanban. Respostas incertas precisam de revisão.</small></div>'+
+ '<div class="cm-actions"><button type="button" class="btn" data-cm="save">Salvar campanha</button><button type="button" class="btn secondary" data-cm="cancel">Cancelar</button></div><p class="cm-help">Salvar cria um rascunho, sem iniciar envios. Depois, selecione o card para ativá-lo.</p></section>';
+}
+function renderBridge(){
+ const bridge=snapshot?.bridge||{},state=bridge.state||'NOT_SYNCED';
+ return '<details class="cm-advanced" '+(showBridge?'open':'')+'><summary>Ferramentas avançadas e importação <span aria-hidden="true">⌄</span></summary><div class="cm-advanced-body"><p>A ponte permite sincronizar uma campanha do GitHub; não inicia abordagens e mantém a permissão de contato obrigatória.</p><div class="cm-bridge-info"><span>Sincronização: <strong>'+esc(state)+'</strong></span><span>Áudio: '+(bridge.audio?.present?'disponível':'não verificado')+'</span><span>Vídeo: '+(bridge.video?.present?'disponível':'não verificado')+'</span></div><div class="cm-actions"><button class="btn secondary small" data-cm="bridge-sync">Sincronizar ponte de IA</button><label class="btn secondary small cm-zip-label">Importar ZIP<input data-cm-import type="file" accept=".zip,application/zip" hidden></label></div></div></details>';
+}
 function render(){
- if(!location.hash.startsWith('#/workflows')||location.hash.includes('/classic'))return;
- const screen=q('#screen');if(!screen)return;
- if(!snapshot){screen.innerHTML='<div class="loader">Carregando campanhas…</div>';return;}
- if(!draft)draft=newCampaign();
- const steps=draft.steps,initial=steps.find(x=>x.type==='message'),delay=steps.find(x=>x.type==='delay'),videoDelay=steps.filter(x=>x.type==='delay')[1]||{seconds:10},audio=steps.find(x=>x.type==='audio'),video=steps.find(x=>x.type==='video'),decision=steps.find(x=>x.type==='decision');
- if(!initial||!delay||!audio||!video||!decision){screen.innerHTML='<div class="panel"><h3>Fluxo avançado</h3><p>Esta automação utiliza blocos de formato antigo. Use o editor clássico para alterá-la.</p><button class="btn secondary" data-campaign="classic">Abrir editor clássico</button><button class="btn" data-campaign="new">Criar nova campanha</button></div>';return;}
- const options=(kind,current)=>'<option value="">Selecione um '+kind+'…</option>'+(snapshot.media||[]).filter(m=>m.kind===kind).map(m=>'<option value="'+esc(m.id)+'" '+(m.id===current?'selected':'')+'>'+esc(m.name)+'</option>').join('');
- const bridge=snapshot.bridge||{state:'NOT_SYNCED'};
- const bridgeLabel={READY:'Campanha sincronizada',WAITING_MEDIA:'Aguardando áudio e vídeo',NOT_SYNCED:'Aguardando primeira sincronização',SYNC_ERROR:'Falha na sincronização',PAUSED_REQUIRED:'Pause a operação para atualizar'}[bridge.state]||bridge.state;
- const bridgeHtml='<div class="cp-bridge"><div class="between"><div><strong>✧ Ponte para IA</strong><p>Campanha e roteiro recebidos pelo GitHub. Os arquivos de áudio e vídeo só ficam prontos depois de enviados à biblioteca privada.</p></div><span class="tag '+(bridge.ready?'green':'yellow')+'">'+esc(bridgeLabel)+'</span></div><div class="cp-bridge-grid"><span>Áudio: <strong>'+(bridge.audio?.present?'Importado':'Pendente')+'</strong></span><span>Vídeo mudo: <strong>'+(bridge.video?.present?'Importado':'Pendente')+'</strong></span><span>Revisão: <strong>'+Number(bridge.revision||0)+'</strong></span></div><div class="actionsrow"><button class="btn small secondary" data-campaign="bridge-sync">Sincronizar com IA</button><a href="https://github.com/WmAgencia/Prospector/blob/main/bridge/campaigns/consecom-350.json" target="_blank" rel="noopener noreferrer" class="btn small secondary">Ver configurações no GitHub ↗</a></div></div>';
- const available=list().map(w=>'<button class="cp-item '+(w.id===draft.id?'cp-selected':'')+'" data-campaign="select" data-id="'+esc(w.id)+'"><strong>'+esc(w.name)+'</strong><small>'+((snapshot.settings?.autonomous_campaign_id===w.id)?'Em uso automático · ':'')+(w.enabled?'Ativa':'Rascunho')+'</small></button>').join('');
- screen.innerHTML='<div class="cp-head"><div><div class="panel-eyebrow">CONSECOM / AUTOMAÇÕES</div><h2>Campanhas de prospecção</h2><p>Configure o fluxo uma vez. O motor começa com os contatos que realmente autorizaram mensagens.</p></div><div class="actionsrow"><label class="btn secondary cp-import-label">⬆ Importar campanha pronta<input data-campaign-import type="file" accept=".zip,application/zip" style="display:none"></label><button class="btn secondary" data-campaign="new">+ Nova campanha</button><button class="btn secondary" data-campaign="classic">Editor clássico ↗</button></div></div>'+
- bridgeHtml+
- '<div class="cp-import-hint">Já tem o áudio e o vídeo da campanha Consecom? Importe o pacote ZIP completo: o sistema instala os dois arquivos, cria o fluxo, define a campanha ativa e mantém o estado de pausa atual.</div><div class="cp-layout"><aside class="panel cp-library"><div class="between"><h3>Suas campanhas</h3><span class="tag">'+list().length+'</span></div>'+available+'</aside><section class="panel cp-editor"><div class="between"><h3>Configuração do fluxo</h3><span class="tag '+(draft.enabled?'green':'yellow')+'">'+(draft.enabled?'Ativada':'Rascunho')+'</span></div>'+
- '<div class="field"><label>Nome</label><input data-cp-field="name" value="'+esc(draft.name)+'" placeholder="Campanha de sites"></div><div class="field"><label>Segmentos (opcional, separados por vírgula)</label><input data-cp-field="segments" value="'+esc((draft.segments||[]).join(', '))+'" placeholder="Psicólogo, Nutricionista…"></div>'+
- '<div class="cp-steps">'+
- '<div class="cp-step"><span class="cp-number">01</span><div class="cp-step-content"><h4>Mensagem de abordagem</h4><p>Primeira mensagem. Aguarda uma autorização clara para continuar com a apresentação.</p><textarea data-cp-field="message" rows="3">'+esc(initial.text)+'</textarea></div></div>'+
- '<div class="cp-step"><span class="cp-number">02</span><div class="cp-step-content"><h4>Aguardar resposta</h4><p>O áudio só é liberado quando o contato permite continuar. Respostas incertas vão para revisão.</p></div></div>'+
- '<div class="cp-step"><span class="cp-number">03</span><div class="cp-step-content"><h4>Espera antes da apresentação</h4><div class="row"><input data-cp-field="delay" type="number" min="1" max="86400" value="'+Number(delay.seconds||45)+'"><span class="subtle">segundos</span></div></div></div>'+
- '<div class="cp-step"><span class="cp-number">04</span><div class="cp-step-content"><h4>Enviar áudio</h4><select data-cp-field="audio">'+options('áudio',audio.media_id)+'</select><input type="file" data-cp-upload="audio" accept=".ogg,.mp3,.m4a,.opus,audio/*"><label>Resumo fiel do áudio</label><textarea data-cp-field="audio-description" rows="2">'+esc(audio.description)+'</textarea></div></div>'+
- '<div class="cp-step"><span class="cp-number">05</span><div class="cp-step-content"><h4>Esperar após o áudio</h4><div class="row"><input data-cp-field="video-delay" type="number" min="1" max="86400" value="'+Number(videoDelay.seconds||10)+'"><span class="subtle">segundos</span></div></div></div>'+ 
- '<div class="cp-step"><span class="cp-number">06</span><div class="cp-step-content"><h4>Enviar vídeo</h4><select data-cp-field="video">'+options('vídeo',video.media_id)+'</select><input type="file" data-cp-upload="video" accept="video/mp4,.mp4"><p>MP4, no máximo 60 segundos. O texto vai como legenda do vídeo, sem alterar a imagem nem adicionar som.</p><label>Legenda da mensagem de vídeo</label><textarea data-cp-field="video-caption" rows="2">'+esc(video.caption||'')+'</textarea></div></div>'+
- '<div class="cp-step"><span class="cp-number">07</span><div class="cp-step-content"><h4>Aguardar decisão</h4><p>SIM: vai para Interessados, com atendimento humano. NÃO: mensagem de despedida e Sem interesse. Dúvidas: revisão.</p><label>Mensagem após recusa</label><textarea data-cp-field="farewell" rows="2">'+esc(decision.no_text||'Sem problemas! Obrigado pelo retorno.')+'</textarea></div></div></div>'+
- '<div class="cp-actions"><button class="btn secondary" data-campaign="save">Salvar rascunho</button><button class="btn" data-campaign="activate">Salvar e ativar campanha</button></div><p class="helper-text">Ativar define esta campanha como padrão para novos contatos autorizados, sem iniciar mensagens enquanto a operação estiver pausada. Cadência máxima: 150/dia, 08h–18h.</p></section></div>'+
- (notice?'<p class="cp-notice" role="status">'+esc(notice)+'</p>':'');
+ const target=root();
+ if(!target||!snapshot||!location.hash.startsWith('#/workflows')||location.hash.includes('/classic'))return;
+ const active=activeCampaign();
+ if(selectedId&&!workflows().some(x=>x.id===selectedId))selectedId=null;
+ if(!selectedId&&mode!=='edit')selectedId=active?.id||workflows().find(x=>x.id!=='default')?.id||null;
+ target.innerHTML='<div class="cm-page"><div class="cm-title"><div><span class="cm-overline">AUTOMAÇÕES</span><h2>Suas campanhas, em um só lugar.</h2><p>Uma campanha por vez. Crie, salve e selecione quando quiser mudar a operação.</p></div><span class="cm-count">'+workflows().filter(x=>x.id!=='default').length+' salva(s)</span></div>'+
+ '<div class="cm-layout">'+renderList()+'<div class="cm-main">'+renderActive()+(mode==='edit'?renderEditor():renderDetail())+renderBridge()+'</div></div>'+
+ (notice?'<div role="status" class="cm-notice">'+esc(notice)+'</div>':'')+'</div>';
 }
-async function load(){
- if(loading)return;loading=true;
- try{let r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw Error('Acesso à sessão indisponível');snapshot=await r.json();
-  if(selected&&!draft)draft=structuredClone(list().find(w=>w.id===selected)||newCampaign());
-  render();
- }catch(e){notice=e.message;render();}finally{loading=false;}
-}
-function updateField(name,value){
+function editField(field,value){
  if(!draft)return;
- const st=draft.steps;
- if(name==='name')draft.name=value;
- if(name==='segments')draft.segments=value.split(',').map(x=>x.trim()).filter(Boolean);
- if(name==='message')st.find(x=>x.type==='message').text=value;
- if(name==='delay')st.find(x=>x.type==='delay').seconds=Number(value);
- if(name==='video-delay'){let second=st.filter(x=>x.type==='delay')[1];if(!second){second={id:uuid(),type:'delay',seconds:10};st.splice(st.findIndex(x=>x.type==='video'),0,second);}second.seconds=Number(value);}
- if(name==='audio')st.find(x=>x.type==='audio').media_id=value;
- if(name==='video')st.find(x=>x.type==='video').media_id=value;
- if(name==='video-caption')st.find(x=>x.type==='video').caption=value;
- if(name==='audio-description')st.find(x=>x.type==='audio').description=value;
- if(name==='farewell')st.find(x=>x.type==='decision').no_text=value;
+ const s=draft.steps;
+ if(field==='name')draft.name=value;
+ if(field==='message')s.find(x=>x.type==='message').text=value;
+ if(field==='before')s.filter(x=>x.type==='delay')[0].seconds=Number(value);
+ if(field==='after')s.filter(x=>x.type==='delay')[1].seconds=Number(value);
+ if(field==='audio')s.find(x=>x.type==='audio').media_id=value;
+ if(field==='video')s.find(x=>x.type==='video').media_id=value;
+ if(field==='description')s.find(x=>x.type==='audio').description=value;
+ if(field==='caption')s.find(x=>x.type==='video').caption=value;
+ if(field==='farewell')s.find(x=>x.type==='decision').no_text=value;
 }
-document.addEventListener('input',e=>{const el=e.target.closest('[data-cp-field]');if(el)updateField(el.dataset.cpField,el.value);});
-document.addEventListener('change',async e=>{
- const pack=e.target.closest('[data-campaign-import]');
- if(pack){
-  const file=pack.files?.[0];if(!file)return;
-  try{
-   if(!file.name.toLowerCase().endsWith('.zip')||file.size>38*1024*1024)throw Error('Escolha o ZIP completo da campanha Consecom (até 38 MB).');
-   notice='Importando vídeo, áudio e campanha…';render();
-   const response=await fetch('/api/campaign/import-package',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
-   const result=await response.json();if(!response.ok)throw Error(result.error||'Falha ao importar campanha');
-   selected=result.workflowId;draft=null;
-   notice=result.alreadyInstalled?'Campanha já instalada. Nenhum envio foi reiniciado.':result.paused?'Campanha instalada com áudio e vídeo sem som. A prospecção continua pausada.':'Campanha instalada e pronta para contatos com autorização registrada.';
-   await load();
-  }catch(error){notice=error.message;render();}
-  return;
- }
- const el=e.target.closest('[data-cp-upload]');if(!el||!el.files?.[0])return;
- const kind=el.dataset.cpUpload,file=el.files[0];
+async function refresh(){
+ const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw Error('Não foi possível atualizar o painel');
+ snapshot=await r.json();render();
+}
+async function execute(action,button){
+ if(busy)return;
+ busy=true;
  try{
-  if(kind==='video'&&!file.name.toLowerCase().endsWith('.mp4'))throw Error('Escolha vídeo MP4');
-  if(file.size>(kind==='video'?65:25)*1024*1024)throw Error('Arquivo muito grande');
-  const r=await fetch('/api/media?kind='+kind+'&name='+encodeURIComponent(file.name),{method:'POST',headers:{'Content-Type':file.type||(kind==='video'?'video/mp4':'audio/mpeg')},body:file});
-  const value=await r.json();if(!r.ok)throw Error(value.error||'Falha ao enviar mídia');
-  updateField(kind,value.id);notice=kind==='video'?'Vídeo anexado':'Áudio anexado';
-  await load();
- }catch(error){notice=error.message;render();}
-});
-document.addEventListener('click',async e=>{
- const el=e.target.closest('[data-campaign]');if(!el)return;e.preventDefault();
- const action=el.dataset.campaign;
- try{
+  if(action==='new'){draft=freshDraft();mode='edit';notice='';render();return;}
+  if(action==='cancel'){draft=null;mode='view';notice='';render();return;}
+  if(action==='select'){selectedId=button.dataset.id;mode='view';draft=null;notice='';render();return;}
+  const chosen=workflows().find(w=>w.id===button.dataset.id);
+  if(action==='duplicate'||action==='edit'){
+   if(!chosen)throw Error('Campanha não encontrada');
+   if(action==='edit'&&chosen.id===activeCampaign()?.id)throw Error('Duplique a campanha em uso para editá-la.');
+   draft=structuredClone(chosen);if(action==='duplicate'){draft.id=null;draft.name='Cópia de '+draft.name;}
+   draft.enabled=false;mode='edit';notice='';render();return;
+  }
+  if(action==='activate'){
+   if(!chosen)throw Error('Selecione uma campanha válida');
+   const res=await request('/api/workflows/activate',{id:chosen.id});
+   selectedId=res.id;mode='view';draft=null;
+   notice=res.paused?'Campanha selecionada! Os envios continuam pausados.':'Campanha selecionada para novos contatos autorizados.';
+   await refresh();return;
+  }
+  if(action==='save'){
+   if(!draft||!draft.name.trim())throw Error('Informe o nome da campanha');
+   if(draft.name.trim().length>100)throw Error('Use um nome de até 100 caracteres.');
+   const data={id:draft.id||undefined,name:draft.name.trim(),enabled:false,segments:draft.segments||[],steps:draft.steps};
+   const result=await request('/api/workflows',data);
+   selectedId=result.id;mode='view';draft=null;notice='Campanha salva como rascunho. Para usá-la, clique em Ativar campanha.';
+   await refresh();return;
+  }
   if(action==='bridge-sync'){
-   notice='Consultando o manifesto da IA no GitHub…';render();
-   const result=await endpoint('/api/agent-bridge/sync',{});
-   notice=result.message||'Sincronização concluída.';
-   await load();return;
+   notice='Sincronizando com o GitHub…';render();
+   const out=await request('/api/agent-bridge/sync',{});
+   notice=out.message||'Sincronização solicitada.';await refresh();return;
   }
-  if(action==='classic'){location.hash='/workflows/classic';return;}
-  if(action==='new'){selected=null;draft=newCampaign();notice='Rascunho novo. Selecione áudio e vídeo antes de ativar.';render();return;}
-  if(action==='select'){selected=el.dataset.id;draft=structuredClone(list().find(w=>w.id===selected));notice='';render();return;}
-  if(!draft)throw Error('Escolha uma campanha');
-  if(action==='save'||action==='activate'){
-   const active=action==='activate';
-   if(active&&(!draft.steps.find(s=>s.type==='audio')?.media_id||!draft.steps.find(s=>s.type==='video')?.media_id))throw Error('Inclua áudio e vídeo antes de ativar.');
-   const out=await endpoint('/api/workflows',{id:draft.id||undefined,name:draft.name,enabled:active,segments:draft.segments||[],steps:draft.steps});
-   selected=out.id;
-   if(active)await endpoint('/api/workflows/default',{id:out.id});
-   draft=null;notice=active?'Campanha ativada. A execução depende de operação retomada e autorização de contato.':'Rascunho salvo.';
-   await load();return;
+ }catch(error){notice=error.message;render();}finally{busy=false;}
+}
+document.addEventListener('click',e=>{
+ if(!e.target.closest('#campaign-app'))return;
+ const b=e.target.closest('[data-cm]');
+ if(b){e.preventDefault();execute(b.dataset.cm,b);}
+});
+document.addEventListener('input',e=>{
+ if(!e.target.closest('#campaign-app'))return;
+ const node=e.target.closest('[data-cm-field]');
+ if(node)editField(node.dataset.cmField,node.value);
+});
+document.addEventListener('change',async e=>{
+ if(!e.target.closest('#campaign-app'))return;
+ const field=e.target.closest('[data-cm-field]');
+ if(field)editField(field.dataset.cmField,field.value);
+ const upload=e.target.closest('[data-cm-upload]');
+ const importing=e.target.closest('[data-cm-import]');
+ if(!upload&&!importing)return;
+ const file=e.target.files?.[0];if(!file)return;
+ try{
+  if(busy)return;busy=true;
+  if(importing){
+   if(!file.name.toLowerCase().endsWith('.zip')||file.size>38*1024*1024)throw Error('Use um pacote ZIP de até 38 MB');
+   const r=await fetch('/api/campaign/import-package',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
+   const x=await r.json();if(!r.ok)throw Error(x.error||'Pacote inválido');
+   selectedId=x.workflowId;mode='view';draft=null;notice='Pacote importado. Campanha disponível na biblioteca.';
+  }else{
+   const type=upload.dataset.cmUpload;
+   if(type==='video'&&!file.name.toLowerCase().endsWith('.mp4'))throw Error('O vídeo precisa estar em MP4');
+   if(file.size>(type==='video'?65:25)*1024*1024)throw Error('Arquivo acima do tamanho permitido');
+   const mime=file.type||(type==='video'?'video/mp4':'audio/ogg');
+   const r=await fetch('/api/media?kind='+type+'&name='+encodeURIComponent(file.name),{method:'POST',headers:{'Content-Type':mime},body:file});
+   const x=await r.json();if(!r.ok)throw Error(x.error||'Falha ao enviar arquivo');
+   editField(type,x.id);notice='Mídia enviada. Agora salve o rascunho.';
   }
- }catch(error){notice=error.message;render();}
+  await refresh();
+ }catch(error){notice=error.message;render();}finally{busy=false;}
 });
-const observer=new MutationObserver(()=>{
- if(!location.hash.startsWith('#/workflows')||location.hash.includes('/classic'))return;
- const screen=q('#screen');if(!screen||screen.querySelector('.cp-head')||screen.querySelector('.loader'))return;
- if(screen.querySelector('.section-head')||screen.querySelector('.workflow-layout'))load();
-});
-observer.observe(document.body,{childList:true,subtree:true});
-window.addEventListener('prospector:data',e=>{
- if(e.detail?.page!=='workflows'||mode==='edit')return;
+document.addEventListener('toggle',e=>{
+ if(e.target.matches('.cm-advanced'))showBridge=e.target.open;
+},true);
+window.addEventListener('prospector:draw',e=>{
+ if(e.detail?.page!=='workflows'||location.hash.includes('/classic'))return;
  snapshot=e.detail.state;render();
 });
-window.addEventListener('hashchange',()=>{if(location.hash.startsWith('#/workflows')&&!location.hash.includes('/classic'))load();});
-if(location.hash.startsWith('#/workflows')&&!location.hash.includes('/classic'))load();
+window.addEventListener('hashchange',()=>{
+ if(location.hash.startsWith('#/workflows')&&!location.hash.includes('/classic')&&!snapshot)refresh().catch(()=>{});
+});
+if(location.hash.startsWith('#/workflows')&&!location.hash.includes('/classic'))refresh().catch(()=>{});
