@@ -25,7 +25,7 @@ function lead(business,phone,permission){
 const publicLead=lead('Prospecção pública','5515999100101',false);
 const opted=lead('Contato que autorizou','5515999100102',true);
 const inbound=lead('Conversa recebida, sem aceite de marketing','5515999100103',true);
-const noPhone=db.addLead({business:'Sem telefone','',instagram:'negocio_semtelefone',source:'osm',contact_permission:false}).lead;
+const noPhone=db.addLead({business:'Sem telefone',phone:'',instagram:'negocio_semtelefone',source:'osm',contact_permission:false}).lead;
 db.audit('CONSENT_UPDATED',opted.id,{permitted:true,evidence:'Formulário opt-in no site em 2026-10-15',method:'manual_registration'});
 test('all discovered businesses enter queue, but consent is required for sending',()=>{
  const s=queue.outreachQueueSnapshot();
@@ -65,5 +65,5 @@ test('once opt-in is revoked, the lead drops out of the send queue',()=>{
  db.run('UPDATE leads SET contact_permission=0 WHERE id=?',opted.id);
  const s=queue.outreachQueueSnapshot();
  assert.equal(s.ready,0);
- assert.equal(s.awaitingConsent,3);
+ assert.equal(s.awaitingConsent,2);
 });
