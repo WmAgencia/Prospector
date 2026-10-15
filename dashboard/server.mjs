@@ -15,6 +15,7 @@ import {radarSnapshot} from './radar.mjs';
 import {importCampaignPackage} from './campaign-package.mjs';
 import {bridgeStatus,bridgeSpec,syncAgentBridge} from './agent-bridge.mjs';
 import {restorePrivateCampaign,privateRestoreStatus} from './private-restore.mjs';
+import {activateCampaign,selectedCampaign,rejectActiveCampaignEdit} from './campaign-selection.mjs';
 import {importOfficial} from './official-import.mjs';
 import {siteAudit} from './site-audit.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
@@ -127,7 +128,7 @@ function snapshot(){
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
  const stats={profiles_analyzed:all('SELECT details FROM discoveries').reduce((total,row)=>{try{return total+(JSON.parse(row.details||'{}').examined||0);}catch{return total;}},0),qualified:leads.filter(l=>l.website_status==='NO_WEBSITE'&&l.phone).length,meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:leads.length,contacted:one("SELECT COUNT(*) AS total FROM initial_contacts WHERE status='SENT'")?.total||0,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
- return {radar:radarSnapshot(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
+ return {radar:radarSnapshot(),activeCampaign:selectedCampaign(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
 }
 async function upload(req,url,res){
  const kind=url.searchParams.get('kind'),name=String(url.searchParams.get('name')||'mídia').slice(0,100);
@@ -274,7 +275,12 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/discover'){const out=await discoverProfiles(await json(req));notify();return respond(res,200,out);}
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/verify-site')){const leadId=pathname.split('/')[3];return respond(res,200,await verifyWebsiteCandidate(leadId));}
   if(req.method==='POST'&&pathname==='/api/workflows'){
-   const workflowId=saveWorkflow(await json(req));notify();return respond(res,200,{id:workflowId});
+   const payload=await json(req);rejectActiveCampaignEdit(payload);
+   const workflowId=saveWorkflow(payload);notify();return respond(res,200,{id:workflowId});
+  }
+  if(req.method==='POST'&&pathname==='/api/workflows/activate'){
+   const payload=await json(req),result=activateCampaign(payload.id);
+   notify();return respond(res,200,result);
   }
   if(req.method==='POST'&&pathname==='/api/automations/test'){
    const v=await json(req);if(!['sample_offer','general_interest','website_interest'].includes(v.context))throw Error('Contexto inválido');
@@ -282,16 +288,8 @@ async function handler(req,res){
    return respond(res,200,evaluateDecision(v.text,v.context));
   }
   if(req.method==='POST'&&pathname==='/api/workflows/default'){
-   const v=await json(req);
-   const workflow=one('SELECT id,steps,enabled FROM workflows WHERE id=?',v.id);
-   if(!workflow||!workflow.enabled)throw Error('Ative a campanha antes de usá-la automaticamente');
-   const steps=JSON.parse(workflow.steps);
-   if(!steps.some(x=>x.type==='wait_reply')||!steps.some(x=>x.type==='decision'))throw Error('Campanha exige espera de resposta e decisão final');
-   const medias=steps.filter(x=>['audio','video'].includes(x.type));
-   if(!medias.some(x=>x.type==='audio')||!medias.some(x=>x.type==='video')||medias.some(x=>!one('SELECT id FROM media WHERE id=? AND kind=?',x.media_id||'',x.type)))throw Error('Inclua áudio e vídeo reais na campanha antes de ativar');
-   setDefaultWorkflow(v.id);setSetting('autonomous_campaign_id',v.id);setSetting('auto_initial',true);
-   audit('AUTONOMOUS_CAMPAIGN_SELECTED',null,{workflowId:v.id});
-   notify();return respond(res,200,{ok:true});
+   const payload=await json(req),result=activateCampaign(payload.id);
+   notify();return respond(res,200,result);
   }
   if(req.method==='POST'&&pathname==='/api/production/sync'){const result=await syncPublishedSamples();notify();return respond(res,200,result);}
   if(req.method==='GET'&&pathname==='/api/production')return respond(res,200,productionList());
