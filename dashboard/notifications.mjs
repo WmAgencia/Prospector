@@ -7,9 +7,10 @@ const valid=s=>{const p=phone(s);return p&&p.startsWith('55')&&p.length>=12&&p.l
 export function targetNumber(connectedId) {
  const a=valid(getSetting('owner_phone_a','')),b=valid(getSetting('owner_phone_b',''));
  const active=valid(String(connectedId||'').split(':')[0].split('@')[0]);
- if(!a||!b||a===b||!active)return null;
- if(active===a)return b;
- if(active===b)return a;
+ if(!active)return null;
+ if(a&&a!==active&&(!b||b===active))return a;
+ if(b&&b!==active&&(!a||a===active))return b;
+ if(a&&b&&a!==b){if(active===a)return b;if(active===b)return a;}
  return null;
 }
 export function queueNotice(key,kind,message,leadId=null){

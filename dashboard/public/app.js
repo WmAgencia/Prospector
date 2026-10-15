@@ -23,7 +23,7 @@ function navigate(to,thread=null){
  page=to;selectedThread=thread||null;location.hash='/'+to+(thread?'/'+thread:'');
  draw();
 }
-const titles={overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Automações','Crie fluxos por segmento e defina o caminho após cada resposta'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],production:['Produção','Pedidos de exemplo e entregas'],studio:['Site Studio','Propostas visuais exclusivas para apresentar aos clientes'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção']};
+const titles={overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Automações','Crie fluxos por segmento e defina o caminho após cada resposta'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],production:['Produção','Pedidos de exemplo e entregas'],studio:['Site Studio','Propostas visuais exclusivas para apresentar aos clientes'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção'],campaign:['Campanha R$350','Mensagem, áudio, vídeo e prazo da oferta'],recontacts:['Recontatos','Histórico e revisão após 90 dias']};
 function draw(){
  if(!state)return;
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===page));
@@ -38,7 +38,7 @@ function draw(){
  const quick=$('#wa-pill');
  if(quick){quick.className='top-wa '+(connected?'online':'offline');quick.innerHTML='<span class="live-dot"></span>'+esc(connected?'WhatsApp conectado':state.connection.status==='QR_READY'?'QR aguardando leitura':'WhatsApp desconectado');}
  const pa=$('#pause-btn');if(pa)pa.classList.toggle('is-running',!state.settings.paused);
- const views={overview,conversations,prospects,workflows,discovery,production,studio,connections,settings};
+ const views={overview,conversations,prospects,workflows,discovery,production,studio,connections,campaign:campaignPage,recontacts,settings};
  $('#screen').innerHTML=(views[page]||overview)();
  if(page==='conversations'&&selectedThread)loadMessages();
  if(page==='workflows')bindWorkflowInputs();
@@ -249,6 +249,25 @@ function connections(){
  '<section class="connection-guide"><div class="panel"><div class="panel-eyebrow">COMECE AQUI</div><h3>Como conectar</h3><ol class="guide-steps"><li><span>01</span><div><strong>Abra o WhatsApp no celular</strong><small>Use o aparelho que administra o número.</small></div></li><li><span>02</span><div><strong>Entre em Aparelhos conectados</strong><small>Toque em “Conectar aparelho”.</small></div></li><li><span>03</span><div><strong>Leia o QR Code ao lado</strong><small>Aguarde o status mudar para “Conectado”.</small></div></li></ol></div>'+
  '<div class="panel"><div class="panel-eyebrow">OUTRAS INTEGRAÇÕES</div><h3>Descoberta comercial</h3><div class="status-line"><span>OpenStreetMap</span><strong class="text-good">Disponível</strong></div><div class="status-line"><span>Brave Search</span><strong>'+(state.searchConfigured?'Configurado':'Opcional')+'</strong></div><p class="helper-text">Pesquisar empresas é independente da conexão WhatsApp. Nenhuma fonte de dados concede permissão automática para envio de mensagens.</p><button class="btn secondary panel-action" data-action="route" data-to="discovery">Ver fontes →</button></div></section></div>';
 }
+function campaignPage(){
+ const media=state.media||[],s=state.settings||{};
+ const select=(kind)=>'<option value="">Selecione '+kind+'…</option>'+media.filter(x=>x.kind===kind).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('');
+ return '<div class="section-head"><h2>Campanha de site · R$350</h2><p>O funil começa apenas com contatos autorizados. O cliente responde, aguarda 60 segundos, recebe o áudio e depois o vídeo.</p></div>'+
+ '<section class="panel"><h3>Montar campanha automática</h3><p class="subtle">Grave o áudio explicando a oferta de R$350 e a entrega em até três dias. Faça upload do áudio e do vídeo pela biblioteca na página Automações.</p>'+
+ '<div class="two"><div class="field"><label>Áudio gravado da campanha</label><select id="offer-audio">'+select('audio')+'</select></div><div class="field"><label>Vídeo demonstrativo</label><select id="offer-video">'+select('video')+'</select></div></div>'+
+ '<div class="field"><label>Primeira mensagem</label><textarea id="offer-intro" rows="3">Olá, {{business_name}}! Posso te apresentar uma proposta de criação de site da Consecom? Se não quiser receber mensagens, é só avisar.</textarea></div>'+
+ '<div class="two"><div class="field"><label>Preço anunciado</label><input readonly value="R$ 350"></div><div class="field"><label>Data final real da promoção</label><input type="date" id="offer-expiry" value="'+esc(s.campaign_offer_expiry||'')+'"></div></div>'+
+ '<label class="campaign-confirm"><input id="offer-confirm" type="checkbox"> Confirmo que preço, validade da promoção e entrega em até 3 dias são reais.</label>'+
+ '<div class="actionsrow"><button class="btn" data-action="campaign-save">Salvar e definir fluxo padrão</button><button class="btn secondary" data-action="route" data-to="workflows">Abrir biblioteca de mídia ↗</button></div><p class="helper-text">Salvar não despausa envios. Promoções vencidas não iniciam novas abordagens. Recusas e opt-outs são respeitados.</p></section>'+
+ '<section class="panel" style="margin-top:18px"><h3>Fluxo configurado</h3><div class="campaign-steps">① Mensagem inicial &nbsp; → &nbsp; ② Cliente responde &nbsp; → &nbsp; ③ Espera 60 s &nbsp; → &nbsp; ④ Áudio &nbsp; → &nbsp; ⑤ Vídeo &nbsp; → &nbsp; ⑥ Interesse → Kanban + aviso</div></section>';
+}
+function recontacts(){
+ const rows=state.recontacts||[];
+ return '<div class="section-head"><h2>Recontatos em 90 dias</h2><p>Um registro enxuto por telefone, com data da última abordagem e data elegível. Leads não precisam ser pesquisados novamente.</p></div>'+
+ '<section class="panel"><h3>Disponíveis para revisão · '+rows.length+'</h3>'+
+ (rows.length?rows.map(x=>'<div class="activity"><span class="dotmini">↺</span><div style="flex:1"><strong>'+esc(x.business)+'</strong><small>'+esc(x.phone)+' · Último contato '+fmtDate(x.last_contact_at)+'</small></div><button class="btn small secondary" data-action="recontact-open" data-lead="'+esc(x.lead_id)+'">Revisar →</button></div>').join(''):'<div class="empty">Nenhum lead elegível neste momento.</div>')+
+ '<p class="helper-text">Somente contatos que continuam autorizados e não solicitaram interrupção. Cada recontato requer revisão e aprovação.</p></section>';
+}
 function settings(){
  const s=state.settings;
  return '<div class="narrow"><section class="panel"><h3>Controle de automação</h3>'+[
@@ -334,6 +353,17 @@ document.addEventListener('click',async event=>{
    dirty=true;draw();return;
   }
   if(action==='decision-test'){const i=Number(el.dataset.index),wf=getCurrentWorkflow(),v=$('#test-reply-'+i)?.value||'';const r=await request('/api/automations/test',{text:v,context:wf.steps[i].context});showToast(r.decision==='YES'?'SIM — seguir caminho de aceite':r.decision==='NO'?'NÃO — seguir caminho de recusa':'INDEFINIDO — revisão humana');return;}
+  if(action==='campaign-save'){
+    const r=await request('/api/campaign/configure',{audio_id:$('#offer-audio').value,video_id:$('#offer-video').value,intro:$('#offer-intro').value,price:350,expires_on:$('#offer-expiry').value,confirm_offer:$('#offer-confirm').checked});
+    editing=null;workflowId=r.workflowId;dirty=false;await load();showToast('Campanha salva. Prospecção permanece pausada até autorização.');return;
+  }
+  if(action==='recontact-open'){
+    const lead=(state.recontacts||[]).find(x=>x.lead_id===el.dataset.lead);if(!lead)return;
+    modal('<h2>Recontato de 90 dias</h2><p>Verifique se o consentimento de '+esc(lead.business)+' continua válido.</p><textarea rows="4" id="recontact-message">Olá! Já conversamos sobre a possibilidade de criar um site para sua empresa. Gostaria de saber se ainda faz sentido conversarmos. Caso prefira, não enviaremos novas mensagens.</textarea><div class="footer"><button class="btn secondary" data-action="close-modal">Cancelar</button><button class="btn" data-action="recontact-send" data-lead="'+esc(lead.lead_id)+'">Aprovar mensagem</button></div>');return;
+  }
+  if(action==='recontact-send'){
+    await request('/api/recontacts/approve',{lead_id:el.dataset.lead,text:$('#recontact-message').value});closeModal();await load();showToast('Recontato enfileirado após aprovação.');return;
+  }
   if(action==='save-workflow'){const wf=getCurrentWorkflow();const r=await request('/api/workflows',{id:wf.id||undefined,name:wf.name,steps:wf.steps,segments:wf.segments||[],enabled:wf.enabled!==false});editing=null;workflowId=r.id;dirty=false;await load();showToast('Automação salva e versionada.');return;}
   if(action==='default-workflow'){await request('/api/workflows/default',{id:getCurrentWorkflow().id});await load();showToast('Automação padrão atualizada.');return;}
   if(action==='save-settings'){
