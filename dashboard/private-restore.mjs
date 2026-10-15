@@ -5,7 +5,7 @@ import {gunzipSync} from 'node:zlib';
 import {getSetting,setSetting,audit} from './db.mjs';
 import {importCampaignPackage} from './campaign-package.mjs';
 const MAX_TRANSFER=30*1024*1024,MAX_TAR=40*1024*1024;
-function parseTarArchive(gzipData){
+export function parseTarArchive(gzipData){
  const raw=gunzipSync(gzipData,{maxOutputLength:MAX_TAR});
  for(let at=0;at+512<=raw.length;){
   const h=raw.subarray(at,at+512),name=h.subarray(0,100).toString('utf8').split('\0')[0];
