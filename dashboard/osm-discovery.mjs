@@ -8,7 +8,21 @@ export const LOCATIONS={
   sorocaba:{label:'Sorocaba',lat:-23.5015,lon:-47.4526,radius:9500},
   votorantim:{label:'Votorantim',lat:-23.5448,lon:-47.4388,radius:7000},
   campinas:{label:'Campinas',lat:-22.9056,lon:-47.0608,radius:10000},
-  'sao paulo':{label:'São Paulo',lat:-23.5505,lon:-46.6333,radius:8500}
+  'sao paulo':{label:'São Paulo',lat:-23.5505,lon:-46.6333,radius:8500},
+  itu:{label:'Itu',lat:-23.2642,lon:-47.2993,radius:7500},
+  salto:{label:'Salto',lat:-23.2008,lon:-47.2866,radius:6000},
+  boituva:{label:'Boituva',lat:-23.2839,lon:-47.6725,radius:6500},
+  tatui:{label:'Tatuí',lat:-23.3485,lon:-47.8480,radius:7200},
+  'sao roque':{label:'São Roque',lat:-23.5303,lon:-47.1366,radius:7600},
+  indaiatuba:{label:'Indaiatuba',lat:-23.0901,lon:-47.2186,radius:8700},
+  jundiai:{label:'Jundiaí',lat:-23.1896,lon:-46.8842,radius:9500},
+  itapetininga:{label:'Itapetininga',lat:-23.5917,lon:-48.0531,radius:7600},
+  piracicaba:{label:'Piracicaba',lat:-22.7253,lon:-47.6492,radius:8500},
+  santos:{label:'Santos',lat:-23.9608,lon:-46.3336,radius:7800},
+  barueri:{label:'Barueri',lat:-23.5118,lon:-46.8766,radius:7300},
+  osasco:{label:'Osasco',lat:-23.5325,lon:-46.7917,radius:8500},
+  guarulhos:{label:'Guarulhos',lat:-23.4543,lon:-46.5333,radius:8500},
+  'ribeirao preto':{label:'Ribeirão Preto',lat:-21.1775,lon:-47.8103,radius:9500}
 };
 export const SEGMENTS={
   dentista:{label:'Dentistas',filter:'amenity',value:'dentist'},
@@ -21,7 +35,27 @@ export const SEGMENTS={
   marceneiro:{label:'Marcenarias',filter:'craft',value:'carpenter'},
   academia:{label:'Academias',filter:'leisure',value:'fitness_centre'},
   restaurante:{label:'Restaurantes',filter:'amenity',value:'restaurant'},
-  oficina:{label:'Oficinas',filter:'shop',value:'car_repair'}
+  oficina:{label:'Oficinas',filter:'shop',value:'car_repair'},
+  veterinario:{label:'Veterinárias',filter:'amenity',value:'veterinary'},
+  petshop:{label:'Pet shops',filter:'shop',value:'pet'},
+  farmacia:{label:'Farmácias',filter:'amenity',value:'pharmacy'},
+  otica:{label:'Óticas',filter:'shop',value:'optician'},
+  imobiliaria:{label:'Imobiliárias',filter:'office',value:'estate_agent'},
+  contabilidade:{label:'Contabilidades',filter:'office',value:'accountant'},
+  fisioterapia:{label:'Fisioterapia',filter:'healthcare',value:'physiotherapist'},
+  lavanderia:{label:'Lavanderias',filter:'shop',value:'laundry'},
+  padaria:{label:'Padarias',filter:'shop',value:'bakery'},
+  confeitaria:{label:'Confeitarias',filter:'shop',value:'pastry'},
+  moda:{label:'Lojas de roupas',filter:'shop',value:'clothes'},
+  floricultura:{label:'Floriculturas',filter:'shop',value:'florist'},
+  construcao:{label:'Materiais de construção',filter:'shop',value:'doityourself'},
+  hotel:{label:'Hotéis',filter:'tourism',value:'hotel'},
+  bar:{label:'Bares',filter:'amenity',value:'bar'},
+  cafeteria:{label:'Cafeterias',filter:'amenity',value:'cafe'},
+  idioma:{label:'Escolas de idiomas',filter:'amenity',value:'language_school'},
+  joalheria:{label:'Joalherias',filter:'shop',value:'jewelry'},
+  papelaria:{label:'Papelarias',filter:'shop',value:'stationery'},
+  hamburgueria:{label:'Fast food',filter:'amenity',value:'fast_food'}
 };
 const base='https://overpass-api.de/api/interpreter';
 const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
@@ -100,7 +134,7 @@ export async function discoverLocal(payload={},automatic=false){
   }
   run('UPDATE discoveries SET status=?,found=?,details=? WHERE id=?','COMPLETE',added,JSON.stringify({examined,withPhone,automatic,matchedTotal:data.elements.length}),attemptId);
   audit('DISCOVER_OSM',null,{city:location.label,segment:segment.label,examined,added,withPhone,automatic});
-  return {source:'osm',city:location.label,segment:segment.label,examined,added,withPhone,
+  return {source:'osm',city:location.label,segment:segment.label,examined,added,withPhone,withoutWebsiteListed:examined-data.elements.slice(0,70).filter(x=>Boolean(x.tags?.website||x.tags?.['contact:website'])).length,
    info:'Contatos públicos sem autorização de envio; a ausência de site no cadastro não comprova que a empresa não tem site.',
    attribution:'© OpenStreetMap contributors, ODbL',url:'https://www.openstreetmap.org/copyright'};
  }catch(error){
