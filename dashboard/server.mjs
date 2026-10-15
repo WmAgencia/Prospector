@@ -14,6 +14,7 @@ import {discoverLocal,dailyLocalDiscovery,LOCATIONS,SEGMENTS} from './osm-discov
 import {radarSnapshot} from './radar.mjs';
 import {importCampaignPackage} from './campaign-package.mjs';
 import {bridgeStatus,bridgeSpec,syncAgentBridge} from './agent-bridge.mjs';
+import {restorePrivateCampaign,privateRestoreStatus} from './private-restore.mjs';
 import {importOfficial} from './official-import.mjs';
 import {siteAudit} from './site-audit.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
@@ -194,7 +195,7 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
-  if(req.method==='GET'&&pathname==='/api/agent-bridge/status')return respond(res,200,bridgeStatus());
+  if(req.method==='GET'&&pathname==='/api/agent-bridge/status')return respond(res,200,{...bridgeStatus(),privateMediaRestore:privateRestoreStatus()});
   if(req.method==='GET'&&pathname==='/api/agent-bridge/spec')return respond(res,200,bridgeSpec());
   if(req.method==='POST'&&pathname==='/api/agent-bridge/sync'){
    const result=await syncAgentBridge();notify();return respond(res,result.state==='SYNC_ERROR'?502:200,result);
@@ -382,6 +383,7 @@ const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
 const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)),2500);
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
+setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
 setTimeout(()=>syncAgentBridge().then(()=>notify()).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
 const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),5*60*1000);
 setTimeout(()=>dailyLocalDiscovery().then(x=>{if(x?.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),120000).unref();

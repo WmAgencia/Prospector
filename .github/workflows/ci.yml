@@ -36,6 +36,7 @@ jobs:
           node --check dashboard/campaign-package.mjs
           node --check dashboard/consecom-flow.mjs
           node --check dashboard/agent-bridge.mjs
+          node --check dashboard/private-restore.mjs
           node --check dashboard/import-legacy.mjs
           node --check preview/server.mjs
       - name: Start local API and verify JSON
