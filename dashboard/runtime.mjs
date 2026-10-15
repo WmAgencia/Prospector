@@ -7,6 +7,7 @@ import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs'
 import {scheduleReport,flushNotices} from './notifications.mjs';
 
 let sock=null,connecting=false,waStatus='DISCONNECTED',qrData=null,lastError=null,waUser=null;
+let reconnectTimer=null,retries=0,lastQrAt=0;
 let notifier=()=>{};
 let locked=false;
 export function setNotifier(fn){notifier=fn;}
@@ -28,6 +29,10 @@ export async function connectWhatsApp(){
   const B=await import('@whiskeysockets/baileys');
   const Q=await import('qrcode');
   const dir=path.resolve(process.env.PROSPECTOR_SESSION_DIR||path.join(process.env.PROSPECTOR_DATA_DIR||'data','wa-session'));fs.mkdirSync(dir,{recursive:true});
+  if(waStatus==='LOGGED_OUT'&&fs.existsSync(path.join(dir,'creds.json'))){
+   const target=dir+'.previous-'+Date.now();fs.renameSync(dir,target);fs.mkdirSync(dir,{recursive:true});
+   audit('WHATSAPP_SESSION_ARCHIVED',null,{reason:'re-pairing',directory:path.basename(target)});
+  }
   const {state,saveCreds}=await B.useMultiFileAuthState(dir);
   const {version}=await B.fetchLatestBaileysVersion();
   const socket=B.default({version,auth:state,printQRInTerminal:false,
@@ -35,13 +40,17 @@ export async function connectWhatsApp(){
   sock=socket;
   socket.ev.on('creds.update',saveCreds);
   socket.ev.on('connection.update',async u=>{
-   if(u.qr){try{qrData=await Q.default.toDataURL(u.qr,{width:320,margin:2});waStatus='QR_READY';}catch(e){lastError=e.message;}publish();}
-   if(u.connection==='open'){waStatus='CONNECTED';qrData=null;waUser=socket.user?.id||null;connecting=false;publish();}
+   if(sock!==socket)return;
+   if(u.qr){try{qrData=await Q.default.toDataURL(u.qr,{width:320,margin:2});waStatus='QR_READY';lastQrAt=Date.now();lastError=null;}catch(e){lastError=e.message;}publish();}
+   if(u.connection==='open'){waStatus='CONNECTED';qrData=null;waUser=socket.user?.id||null;connecting=false;retries=0;lastError=null;publish();}
    if(u.connection==='close'){
     const reason=u.lastDisconnect?.error?.output?.statusCode;
-    waStatus=reason===B.DisconnectReason.loggedOut?'LOGGED_OUT':'DISCONNECTED';
+    const invalid=reason===B.DisconnectReason.loggedOut;
+    waStatus=invalid?'LOGGED_OUT':'DISCONNECTED';
     lastError=String(u.lastDisconnect?.error?.message||reason||'conexão fechada');
-    connecting=false;sock=null;qrData=null;publish();
+    connecting=false;sock=null;qrData=null;waUser=null;publish();
+    // Só reconecta em erros temporários; logout requer pareamento novo pelo usuário.
+    if(!invalid&&retries<3){retries++;clearTimeout(reconnectTimer);reconnectTimer=setTimeout(()=>connectWhatsApp().catch(e=>audit('WHATSAPP_RECONNECT_ERROR',null,{error:e.message})),15000*retries);reconnectTimer.unref();}
    }
   });
   socket.ev.on('messages.upsert',async event=>{
@@ -54,8 +63,10 @@ export async function connectWhatsApp(){
  return connection();
 }
 export async function disconnectWhatsApp(){
- if(sock){try{sock.end(new Error('Desconectado pelo painel'));}catch{}}
- sock=null;connecting=false;waStatus='DISCONNECTED';qrData=null;publish();return connection();
+ clearTimeout(reconnectTimer);retries=3;
+ const old=sock;sock=null;
+ if(old){try{old.end(new Error('Desconectado pelo painel'));}catch{}}
+ connecting=false;waStatus='DISCONNECTED';qrData=null;waUser=null;publish();return connection();
 }
 function formMessage(m){
  const x=m.message||{};
@@ -299,6 +310,11 @@ export async function tick(){
   if(waStatus!=='CONNECTED')return;
   await flushNotices(sock);
   if(getSetting('paused',true))return;
+  // Partida automática SOMENTE para contatos que receberam permissão explícita.
+  if(getSetting('auto_initial',false)&&canInitial()&&!one("SELECT id FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('PENDING','SENDING') LIMIT 1")){
+   const candidate=one("SELECT l.id FROM leads l WHERE l.contact_permission=1 AND l.phone IS NOT NULL AND l.stage='DISCOVERED' AND NOT EXISTS (SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id OR ic.phone=l.phone) AND NOT EXISTS (SELECT 1 FROM executions ex WHERE ex.lead_id=l.id) AND NOT EXISTS (SELECT 1 FROM suppressions sup WHERE sup.phone=l.phone) ORDER BY l.created_at LIMIT 1");
+   if(candidate){try{const rid=startWorkflow(candidate.id);drive(rid);}catch(err){audit('AUTO_START_REVIEW',candidate.id,{error:err.message});}}
+  }
   const jobs=all("SELECT * FROM jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10");
   for(const job of jobs){
    const lead=one('SELECT * FROM leads WHERE id=?',job.lead_id);if(!lead||suppressed(lead.phone)){run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);continue;}

@@ -2,6 +2,7 @@
 import {one,all,run,id,now,getSetting,audit,addLead} from './db.mjs';
 
 export const providerDefinitions=[
+ {id:'osm',label:'Empresas locais · OpenStreetMap',supportsSearch:true,note:'Pesquisa pública local sem chave. © OpenStreetMap contributors (ODbL); não confirma inexistência de site nem autorização para contato.'},
  {id:'meta_ads',label:'Biblioteca de Anúncios',supportsSearch:false,note:'Pesquisa comercial ampla não disponibilizada por esta integração. Requer conector oficial autorizado.'},
  {id:'instagram_search',label:'Pesquisa direta no Instagram',supportsSearch:false,note:'Instagram não fornece uma busca geral irrestrita de contas comerciais nesta integração.'},
  {id:'instagram_hashtags',label:'Hashtags',supportsSearch:false,note:'Depende de permissões oficiais e contas profissionais elegíveis.'},
@@ -11,8 +12,8 @@ export const providerDefinitions=[
 export const weightsDefault={noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusiness:2,prioritySegment:2,location:1,businessName:1};
 export function providerStatus(){
  const key=!!process.env.BRAVE_SEARCH_API_KEY;
- const enabled=getSetting('discovery_sources',{web_search:true})||{};
- return providerDefinitions.map(p=>({...p,enabled:!!enabled[p.id],status:p.id==='web_search'?(key?'READY':'NEEDS_API_KEY'):'NOT_IMPLEMENTED',
+ const enabled=getSetting('discovery_sources',{osm:true,web_search:true})||{};
+ return providerDefinitions.map(p=>({...p,enabled:!!enabled[p.id],status:p.id==='osm'?'READY':p.id==='web_search'?(key?'READY':'NEEDS_API_KEY'):'NOT_IMPLEMENTED',
   last_run:one('SELECT at,found,status,details FROM discoveries WHERE query LIKE ? ORDER BY at DESC LIMIT 1',p.id+':%')||null
  }));
 }
