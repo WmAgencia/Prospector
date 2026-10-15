@@ -2,25 +2,29 @@
 // Fuso America/Sao_Paulo: não usa UTC como substituto do dia local.
 import {all,one,getSetting} from './db.mjs';
 const ZONE='America/Sao_Paulo';
-export const MAX_APPROACHES=200;
-export const WINDOW_START=12;
+export const MAX_APPROACHES=150;
+export const WINDOW_START=8;
 export const WINDOW_END=18;
-export const TARGET_INTERVAL_SECONDS=108;
+export const TARGET_INTERVAL_SECONDS=240;
 export function daySP(input=new Date()){
  const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:ZONE,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(input).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
  return p.year+'-'+p.month+'-'+p.day;
 }
 export function hourSP(input=new Date()){return Number(new Intl.DateTimeFormat('en-GB',{timeZone:ZONE,hour:'2-digit',hourCycle:'h23'}).format(input));}
-export function budgetConfig(){
- return {limit:Math.min(MAX_APPROACHES,Math.max(1,Number(getSetting('daily_limit',MAX_APPROACHES))||MAX_APPROACHES)),
- start:Number(getSetting('business_start',WINDOW_START)),end:Number(getSetting('business_end',WINDOW_END)),
- intervalSeconds:Math.max(1,Number(getSetting('initial_interval_seconds',TARGET_INTERVAL_SECONDS))||TARGET_INTERVAL_SECONDS)};
+export function budgetConfig(input=new Date()){
+ const limit=Math.min(MAX_APPROACHES,Math.max(1,Number(getSetting('daily_limit',MAX_APPROACHES))||MAX_APPROACHES));
+ const configuredStart=Number(getSetting('business_start',WINDOW_START)),end=Number(getSetting('business_end',WINDOW_END));
+ const override=getSetting('today_start_override',null);
+ const start=override?.day===daySP(input)?Math.max(configuredStart,Number(override.hour)||0):configuredStart;
+ const minimumSeconds=Math.ceil(Math.max(1,end-start)*3600/limit);
+ const normalSeconds=Math.max(1,Number(getSetting('initial_interval_seconds',TARGET_INTERVAL_SECONDS))||TARGET_INTERVAL_SECONDS);
+ return {limit,start,end,intervalSeconds:override?.day===daySP(input)?Math.max(minimumSeconds,144):Math.max(minimumSeconds,normalSeconds)};
 }
 export function initialEvents(){
  return all("SELECT status,updated_at FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('SENT','UNKNOWN','SENDING') AND updated_at>=?",new Date(Date.now()-48*3600000).toISOString());
 }
 export function initialBudget(input=new Date(),events=null,config=null){
- const settings=config||budgetConfig(),day=daySP(input);
+ const settings=config||budgetConfig(input),day=daySP(input);
  const today=(events||initialEvents()).filter(j=>Number.isFinite(Date.parse(j.updated_at))&&daySP(new Date(j.updated_at))===day);
  const confirmed=today.filter(x=>x.status==='SENT').length;
  const uncertain=today.filter(x=>x.status==='UNKNOWN').length;
@@ -53,8 +57,12 @@ export function radarSnapshot(input=new Date()){
  const history=all('SELECT query,found,status,at,details FROM discoveries WHERE at>=? ORDER BY at DESC LIMIT 100',threshold);
  const todayRuns=history.filter(x=>daySP(new Date(x.at))===budget.day);
  const examined=todayRuns.reduce((v,r)=>{try{return v+(Number(JSON.parse(r.details||'{}').examined)||0);}catch{return v;}},0);
- const scanned=history.some(x=>x.status==='RUNNING');
- return {asOf:input.toISOString(),pilot,...budget,foundToday:foundToday.length,foundTotal:one('SELECT COUNT(*) AS n FROM leads')?.n||0,
+ const scanned=todayRuns.some(x=>x.status==='RUNNING'&&Date.now()-Date.parse(x.at)<60000);
+ const discoveryTarget=Math.min(150,Math.max(1,Number(getSetting('discovery_target_daily',150))||150));
+ const scanningEnabled=!getSetting('paused',true)&&getSetting('discovery_auto_enabled',true)!==false;
+ const scanHour=hourSP(input);
+ const discoveryReason=!scanningEnabled?'PAUSED':foundToday.length>=discoveryTarget?'TARGET_REACHED':scanHour<budget.start||scanHour>=budget.end?'OUTSIDE_HOURS':'RUNNING_OR_WAITING_FOR_PROVIDER';
+ return {asOf:input.toISOString(),pilot,...budget,discoveryTarget,discoveryReason,foundToday:foundToday.length,foundTotal:one('SELECT COUNT(*) AS n FROM leads')?.n||0,
   examinedToday:examined,searchesToday:todayRuns.length,searchInProgress:scanned,
   lastSearch:history[0]?{query:history[0].query,status:history[0].status,at:history[0].at}:null,
   recentFinds:foundToday.slice(0,28).map(x=>({id:x.id,name:x.business,source:x.source,segment:x.segment,city:x.city})),

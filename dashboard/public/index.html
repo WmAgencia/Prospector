@@ -2,7 +2,7 @@
 <html lang="pt-BR"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#112d29"><meta name="description" content="Prospector Consecom — central de prospecção comercial">
-<title>Prospector • Consecom</title><link rel="stylesheet" href="/style.css">
+<title>Prospector • Consecom</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/campaign-ui.css">
 </head><body>
 <div id="shell">
  <aside class="sidebar">
@@ -11,12 +11,10 @@
   <nav id="navigation">
    <button data-route="overview" class="navitem"><span>◫</span> Visão geral</button>
    <button data-route="conversations" class="navitem"><span>◉</span> Conversas <span id="nav-unread"></span></button>
-   <button data-route="radar" class="navitem"><span>◎</span> Radar de clientes</button>
    <button data-route="prospects" class="navitem"><span>▦</span> Prospecção</button>
-   <button data-route="workflows" class="navitem"><span>⌁</span> Automações</button><button data-route="campaign" class="navitem"><span>◇</span> Campanha R$350</button><button data-route="recontacts" class="navitem"><span>↺</span> Recontatos 90 dias</button>
+   <button data-route="workflows" class="navitem"><span>⌁</span> Automações</button>
    <button data-route="discovery" class="navitem"><span>⌕</span> Descoberta</button>
    <button data-route="production" class="navitem"><span>▤</span> Produção</button>
-   <button data-route="studio" class="navitem"><span>◈</span> Site Studio</button>
   </nav>
   <div class="navlabel">SISTEMA</div>
   <nav><button data-route="connections" class="navitem"><span>☷</span> Conexões</button><button data-route="settings" class="navitem"><span>⚙</span> Configurações</button></nav>
@@ -30,4 +28,5 @@
 <div id="toast" role="status"></div>
 <div id="modal" class="modal-backdrop hidden" role="dialog" aria-modal="true"></div>
 <script type="module" src="/app.js"></script>
+<script type="module" src="/campaign-ui.js"></script><script type="module" src="/radar-ui.js"></script>
 </body></html>

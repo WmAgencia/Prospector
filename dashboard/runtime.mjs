@@ -166,12 +166,18 @@ export function handleDecision(leadId,text,isText=true){
   const mediaId=choice[prefix+'_media_id']||null;
   const lead=one('SELECT * FROM leads WHERE id=?',leadId);
   if(!lead||!lead.contact_permission||suppressed(lead.phone))throw Error('Lead não autorizado');
-  if(response||type==='audio'){
+  if(action!=='handover'&&(response||type==='audio')){
    const jid=id(),key='decision:'+exec.id+':'+exec.next_step+':'+prefix;
    run("INSERT OR IGNORE INTO jobs(id,lead_id,type,text,media_id,key,status,created_at,updated_at) VALUES(?,?,?,?,? ,?,'PENDING',?,?)",
      jid,leadId,type,response,mediaId,key,now(),now());
   }
-  if(accepted&&action==='request_sample'){
+  if(accepted&&action==='handover'){
+   run("UPDATE executions SET state='COMPLETE',next_step=next_step+1,updated_at=? WHERE id=?",now(),exec.id);
+   stage(leadId,'INTERESTED','Interesse confirmado na decisão da campanha');
+   const thread=getThread(leadId);
+   run('UPDATE threads SET manual_takeover=1 WHERE id=?',thread.id);
+   audit('INTERESTED_HANDOVER',leadId,{executionId:exec.id});
+  }else if(accepted&&action==='request_sample'){
    run("UPDATE executions SET state='COMPLETE',next_step=next_step+1,updated_at=? WHERE id=?",now(),exec.id);
    requestFromAutomation(leadId,exec.workflow_id);
   }else if(action==='continue'){
@@ -220,7 +226,12 @@ export async function incoming(m) {
  if(result.intent==='OPT_OUT'){
   stopLead(lead.id,result.intent);cancelForOptOut(lead.id);publish();return;
  }
- if(result.intent==='INTERESTED'){
+ // Decisão final do fluxo tem prioridade sobre o classificador genérico.
+ // No primeiro aceite, apenas autorizações explícitas podem liberar mídia.
+ const waiting=one("SELECT * FROM executions WHERE lead_id=? AND state='WAIT_REPLY'",lead.id);
+ let next=null;
+ if(waiting){try{next=JSON.parse(waiting.steps)[waiting.next_step];}catch{}}
+ if(result.intent==='INTERESTED'&&next?.type!=='decision'&&next?.type!=='delay'){
   handoverInterest(lead,'Interesse comercial declarado');publish();return;
  }
  const manualChoice=!!one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover;
@@ -272,19 +283,19 @@ export function saveWorkflow(input){
    if(!String(s.context_description||'').trim())throw Error('Descreva a pergunta usada para interpretar a resposta');
    for(const side of ['yes','no']){
     if(!['message','audio'].includes(s[side+'_type']||'message'))throw Error('Resposta deve ser texto ou áudio');
-    if(!['end','continue','request_sample'].includes(s[side+'_action']))throw Error('Ação inválida na decisão');
-    if(side==='no'&&s.no_action==='request_sample')throw Error('Recusa não pode solicitar site');
+    if(!['end','continue','request_sample','handover'].includes(s[side+'_action']))throw Error('Ação inválida na decisão');
+    if(side==='no'&&['request_sample','handover'].includes(s.no_action))throw Error('Recusa não pode solicitar site');
     if(s[side+'_action']==='request_sample'&&s.context!=='sample_offer')throw Error('Solicitação de site exige contexto oferta de exemplo');
     if(s[side+'_type']==='audio'){
      if(!String(s[side+'_audio_description']||'').trim())throw Error('Descreva o áudio da resposta '+side);
      const media=one('SELECT * FROM media WHERE id=?',s[side+'_media_id']||'');
      if(media?.kind!=='audio')throw Error('Escolha o áudio da resposta '+side);
-    }else if(!String(s[side+'_text']||'').trim())throw Error('Escreva a resposta '+side);
+    }else if(s[side+'_action']!=='handover'&&!String(s[side+'_text']||'').trim())throw Error('Escreva a resposta '+side);
    }
   }
   if(['video','audio','image'].includes(s.type)){
    const asset=one('SELECT * FROM media WHERE id=?',s.media_id||'');
-   if(!asset||asset.kind!==s.type)throw Error('Mídia indisponível para o bloco '+s.type);
+   if((!asset||asset.kind!==s.type)&&input.enabled!==false)throw Error('Envie a mídia antes de ativar a automação: '+s.type);
    if(s.type==='audio'&&!String(s.description||'').trim())throw Error('Preencha a descrição do áudio para orientar a classificação contextual');
   }
  }
@@ -411,14 +422,16 @@ export async function tick(){
   await flushNotices(sock);
   if(getSetting('paused',true))return;
   // Partida automática SOMENTE para contatos que receberam permissão explícita.
-  if(getSetting('auto_initial',false)&&getSetting('campaign_offer_expiry','')&&isOfferActive(getSetting('campaign_offer_expiry',''))&&canInitial()&&!one("SELECT id FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('PENDING','SENDING') LIMIT 1")){
+  const campaign=one('SELECT id,enabled FROM workflows WHERE id=? AND enabled=1',String(getSetting('autonomous_campaign_id','')));
+  if(getSetting('auto_initial',false)&&campaign&&canInitial()&&!one("SELECT id FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('PENDING','SENDING') LIMIT 1")){
    const candidate=one("SELECT l.id FROM leads l WHERE l.contact_permission=1 AND l.phone IS NOT NULL AND l.stage='DISCOVERED' AND NOT EXISTS (SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id OR ic.phone=l.phone) AND NOT EXISTS (SELECT 1 FROM executions ex WHERE ex.lead_id=l.id) AND NOT EXISTS (SELECT 1 FROM suppressions sup WHERE sup.phone=l.phone) ORDER BY l.created_at LIMIT 1");
-   if(candidate){try{const rid=startWorkflow(candidate.id);drive(rid);}catch(err){audit('AUTO_START_REVIEW',candidate.id,{error:err.message});}}
+   if(candidate){try{const rid=startWorkflow(candidate.id,campaign.id);drive(rid);}catch(err){audit('AUTO_START_REVIEW',candidate.id,{error:err.message});}}
   }
   const jobs=all("SELECT * FROM jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10");
   for(const job of jobs){
    const lead=one('SELECT * FROM leads WHERE id=?',job.lead_id);
-   if(!lead||!lead.contact_permission||['NO_INTEREST','CLOSED_WON'].includes(lead.stage)||suppressed(lead.phone)){
+   const declineFarewell=lead?.stage==='NO_INTEREST'&&/^decision:[^:]+:\d+:no$/.test(String(job.key||''));
+   if(!lead||!lead.contact_permission||(lead.stage==='NO_INTEREST'&&!declineFarewell)||lead.stage==='CLOSED_WON'||suppressed(lead.phone)){
     run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);
     audit('DELIVERY_BLOCKED',job.lead_id,{jobId:job.id,reason:'permission_or_stage'});continue;
    }
@@ -431,7 +444,7 @@ export async function tick(){
     const execution=one('SELECT * FROM executions WHERE id=?',job.execution_id);
     const thread=one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id);
     if(execution?.state!=='SENDING'||thread?.manual_takeover){run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);continue;}
-    if(job.step_index===0&&(!canInitial()||(getSetting('campaign_offer_expiry','')&&!isOfferActive(getSetting('campaign_offer_expiry','')))))continue;
+    if(job.step_index===0&&!canInitial())continue;
    }
    // UNKNOWN nunca será reenviado automaticamente: rede pode ter aceitado a mensagem.
    run("UPDATE jobs SET status='SENDING',updated_at=? WHERE id=?",now(),job.id);
