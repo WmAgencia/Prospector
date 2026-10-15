@@ -51,7 +51,10 @@ export function importCampaignPackage(buf){
  if(!intro||intro.length>600||!name||name.length>140||!description||description.length>1500||!farewell||farewell.length>400||!Number.isInteger(delay_seconds)||delay_seconds<1||delay_seconds>3600)throw Error('Dados de campanha inválidos');
  if(sha(buf)===getSetting('campaign_bundle_hash','')&&one('SELECT id FROM workflows WHERE id=?',getSetting('campaign_bundle_workflow','')))return {ok:true,alreadyInstalled:true,workflowId:getSetting('campaign_bundle_workflow',''),paused:getSetting('paused',true)};
  fs.mkdirSync(mediaDir,{recursive:true});
- const audioId=id(),videoId=id(),workflowId=id();
+ const audioId=id(),videoId=id();
+ const seededId=getSetting('consecom_campaign_seed_id','');
+ const seed=seededId?one('SELECT id,enabled FROM workflows WHERE id=?',seededId):null;
+ const workflowId=seed?.enabled===0?seed.id:id();
  const audioPath=path.join(mediaDir,audioId+'.ogg'),videoPath=path.join(mediaDir,videoId+'.mp4');
  let audioWritten=false,videoWritten=false;
  try{
@@ -65,7 +68,11 @@ export function importCampaignPackage(buf){
   tx(()=>{
    run('INSERT INTO media VALUES(?,?,?,?,?,?,?,?)',audioId,String(m.audio_name||'Áudio de apresentação').slice(0,100),'audio','audio/ogg',audioId+'.ogg',audioDuration,audio.length,now());
    run('INSERT INTO media VALUES(?,?,?,?,?,?,?,?)',videoId,String(m.video_name||'Vídeo sem som').slice(0,100),'video','video/mp4',videoId+'.mp4',videoDuration,video.length,now());
-   run('INSERT INTO workflows(id,name,is_default,version,steps,created_at,updated_at,segments_json,enabled) VALUES(?,?,?,?,?,?,?,?,?)',workflowId,name,0,1,JSON.stringify(steps),now(),now(),'[]',1);
+   if(seed?.enabled===0){
+    run('UPDATE workflows SET name=?,steps=?,version=version+1,enabled=1,updated_at=? WHERE id=?',name,JSON.stringify(steps),now(),workflowId);
+   }else{
+    run('INSERT INTO workflows(id,name,is_default,version,steps,created_at,updated_at,segments_json,enabled) VALUES(?,?,?,?,?,?,?,?,?)',workflowId,name,0,1,JSON.stringify(steps),now(),now(),'[]',1);
+   }
    run('UPDATE workflows SET is_default=0');
    run('UPDATE workflows SET is_default=1 WHERE id=?',workflowId);
    setSetting('autonomous_campaign_id',workflowId);setSetting('auto_initial',true);
