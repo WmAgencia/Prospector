@@ -1,0 +1,40 @@
+{
+  "schema": "consecom.prospector.ai-bridge/v1",
+  "task_id": "consecom-campanha-sites-350",
+  "revision": 1,
+  "mode": "upsert_campaign_draft",
+  "campaign": {
+    "name": "Consecom | Site profissional R$ 350 | Áudio + vídeo",
+    "initial_message": "{{greeting}} A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?",
+    "wait_for_first_reply": true,
+    "delay_before_audio_seconds": 45,
+    "delay_after_audio_seconds": 10,
+    "video_caption": "O que achou? Gostaria de ter um assim também?",
+    "wait_for_final_reply": true,
+    "interested_action": "handover_to_kanban",
+    "not_interested_action": "farewell_to_no_interest",
+    "farewell_message": "Sem problemas, muito obrigado pelo retorno, ficamos à disposição.",
+    "audio_description": "Áudio original gravado pelo Wesley, da Consecom. Apresenta a agência de sites em Sorocaba, seleção de empresas, proposta de site completo por R$ 350 com 80% de desconto, portfólio mediante permissão e entrega em até três dias; pede para ver vídeo e informar se tem interesse."
+  },
+  "media": {
+    "audio": {
+      "name": "Wesley - apresentação da Consecom.ogg",
+      "mime": "audio/ogg",
+      "sha256": "9e0b22e2c1aeb6707099488f3ae961cc9e2dcf30c9f8c73b300dbe832783f091"
+    },
+    "video": {
+      "name": "Consecom - portfólio sem áudio.mp4",
+      "mime": "video/mp4",
+      "sha256": "7cae04a471ffc9ca41bda234e33759a5663f4ff9f6c25d492afbfcf2bafd091b",
+      "muted": true,
+      "max_duration_seconds": 60
+    }
+  },
+  "safeguards": {
+    "requires_contact_permission": true,
+    "preserve_paused_state": true,
+    "never_start_sending_during_sync": true,
+    "daily_initial_cap": 150,
+    "no_automatic_example_sites": true
+  }
+}
