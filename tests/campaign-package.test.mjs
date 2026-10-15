@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {extractStoredZip,buildCampaignSteps} from '../dashboard/campaign-package.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-campaign-test-'));
+const {extractStoredZip,buildCampaignSteps}=await import('../dashboard/campaign-package.mjs');
 // Pequeno ZIP local não compactado, somente para teste do parser sem mídias reais.
 function stored(name,data){
  const body=Buffer.from(data),file=Buffer.from(name);
