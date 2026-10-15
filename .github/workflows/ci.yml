@@ -52,6 +52,7 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3030/campaign-ui-state.mjs >/dev/null
           curl --fail --silent --show-error http://127.0.0.1:3030/campaign-ui.css >/dev/null
           curl --fail --silent --show-error http://127.0.0.1:3030/api/agent-bridge/status | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!x.state)process.exit(1)})"
+          curl --silent --show-error -X POST -H 'Content-Type: application/json' -d '{"id":"default"}' http://127.0.0.1:3030/api/workflows/activate | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!/mídia|áudio|vídeo|Campanha/.test(x.error||''))process.exit(1);console.log('Activation guard smoke passed')})"
           curl --fail --silent --show-error http://127.0.0.1:3030/api/state | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!Array.isArray(x.leads)||!Array.isArray(x.workflows)||!('activeCampaign' in x))process.exit(1);console.log('API smoke passed')})"
       - name: Show server output on failure
         if: failure()
