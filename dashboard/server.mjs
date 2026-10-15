@@ -16,6 +16,8 @@ import {importCampaignPackage} from './campaign-package.mjs';
 import {bridgeStatus,bridgeSpec,syncAgentBridge} from './agent-bridge.mjs';
 import {restorePrivateCampaign,privateRestoreStatus} from './private-restore.mjs';
 import {activateCampaign,selectedCampaign,rejectActiveCampaignEdit} from './campaign-selection.mjs';
+import {outreachQueueSnapshot} from './outreach-queue.mjs';
+import {enableAuthorizedOutreach} from './authorized-outreach.mjs';
 import {importOfficial} from './official-import.mjs';
 import {siteAudit} from './site-audit.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
@@ -128,7 +130,7 @@ function snapshot(){
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
  const stats={profiles_analyzed:all('SELECT details FROM discoveries').reduce((total,row)=>{try{return total+(JSON.parse(row.details||'{}').examined||0);}catch{return total;}},0),qualified:leads.filter(l=>l.website_status==='NO_WEBSITE'&&l.phone).length,meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:leads.length,contacted:one("SELECT COUNT(*) AS total FROM initial_contacts WHERE status='SENT'")?.total||0,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
- return {radar:radarSnapshot(),activeCampaign:selectedCampaign(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
+ return {radar:radarSnapshot(),outreachQueue:outreachQueueSnapshot(),activeCampaign:selectedCampaign(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
 }
 async function upload(req,url,res){
  const kind=url.searchParams.get('kind'),name=String(url.searchParams.get('name')||'mídia').slice(0,100);
@@ -202,6 +204,7 @@ async function handler(req,res){
    const result=await syncAgentBridge();notify();return respond(res,result.state==='SYNC_ERROR'?502:200,result);
   }
   if(req.method==='GET'&&pathname==='/api/radar')return respond(res,200,radarSnapshot());
+  if(req.method==='GET'&&pathname==='/api/outreach-queue')return respond(res,200,outreachQueueSnapshot());
   if(req.method==='GET'&&pathname==='/api/recontacts')return respond(res,200,eligibleRecontacts());
   if(req.method==='POST'&&pathname==='/api/recontacts/approve'){
    const v=await json(req),result=scheduleApprovedRecontact(v.lead_id,v.text);
@@ -380,10 +383,12 @@ async function handler(req,res){
 }
 const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
+const activation=enableAuthorizedOutreach();
+console.log('[authorized outreach]',activation.status,'ready='+activation.ready,'waiting='+activation.awaitingConsent);
 const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)),2500);
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
 setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
-setTimeout(()=>syncAgentBridge().then(()=>notify()).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
+setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
 const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),60*1000);
 setTimeout(()=>dailyLocalDiscovery().then(x=>{if(x?.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),120000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);

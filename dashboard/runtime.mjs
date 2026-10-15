@@ -5,6 +5,7 @@ import {classify,renderTemplate} from './classifier.mjs';
 import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
 import {evaluateDecision,selectAutomationForLead,permitsPresentation} from './automation-router.mjs';
 import {scheduleReport,flushNotices,queueNotice} from './notifications.mjs';
+import {autoOutreachCandidateSql,documentedOptIn} from './outreach-queue.mjs';
 import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
 import {canSendInitial} from './radar.mjs';
 import {isOfferActive} from './campaign-rules.mjs';
@@ -332,7 +333,7 @@ export function startWorkflow(leadId,selectedAutomationId=null){
   if(!lead)throw Error('Lead não encontrado');
   if(!lead.phone)throw Error('Lead sem WhatsApp');
   if(lead.stage==='NO_INTEREST'||lead.stage==='CLOSED_WON')throw Error('Lead recusou contato ou negociação concluída');
-  if(!lead.contact_permission)throw Error('Canal não autorizado: marque contato permitido para esse lead');
+  if(!lead.contact_permission||!documentedOptIn(lead.id))throw Error('Primeira abordagem exige autorização comercial comprovada');
   if(suppressed(lead.phone))throw Error('Contato bloqueado/opt-out');
   if(one('SELECT lead_id FROM initial_contacts WHERE phone=? OR lead_id=?',lead.phone,leadId))throw Error('Primeira abordagem já registrada');
   if(one('SELECT id FROM executions WHERE lead_id=?',leadId))throw Error('Lead já possui workflow iniciado');
@@ -431,14 +432,14 @@ export async function tick(){
   // Partida automática SOMENTE para contatos que receberam permissão explícita.
   const campaign=one('SELECT id,enabled FROM workflows WHERE id=? AND enabled=1',String(getSetting('autonomous_campaign_id','')));
   if(getSetting('auto_initial',false)&&campaign&&canInitial()&&!one("SELECT id FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('PENDING','SENDING') LIMIT 1")){
-   const candidate=one("SELECT l.id FROM leads l WHERE l.contact_permission=1 AND l.phone IS NOT NULL AND l.stage='DISCOVERED' AND NOT EXISTS (SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id OR ic.phone=l.phone) AND NOT EXISTS (SELECT 1 FROM executions ex WHERE ex.lead_id=l.id) AND NOT EXISTS (SELECT 1 FROM suppressions sup WHERE sup.phone=l.phone) ORDER BY l.created_at LIMIT 1");
+   const candidate=one(autoOutreachCandidateSql);
    if(candidate){try{const rid=startWorkflow(candidate.id,campaign.id);drive(rid);}catch(err){audit('AUTO_START_REVIEW',candidate.id,{error:err.message});}}
   }
   const jobs=all("SELECT * FROM jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10");
   for(const job of jobs){
    const lead=one('SELECT * FROM leads WHERE id=?',job.lead_id);
    const declineFarewell=lead?.stage==='NO_INTEREST'&&/^decision:[^:]+:\d+:no$/.test(String(job.key||''));
-   if(!lead||!lead.contact_permission||(lead.stage==='NO_INTEREST'&&!declineFarewell)||lead.stage==='CLOSED_WON'||suppressed(lead.phone)){
+   if(!lead||!lead.contact_permission||(job.step_index===0&&job.execution_id&&!documentedOptIn(lead.id))||(lead.stage==='NO_INTEREST'&&!declineFarewell)||lead.stage==='CLOSED_WON'||suppressed(lead.phone)){
     run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);
     audit('DELIVERY_BLOCKED',job.lead_id,{jobId:job.id,reason:'permission_or_stage'});continue;
    }
