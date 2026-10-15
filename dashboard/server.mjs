@@ -12,6 +12,7 @@ import {evidence,STATUSES} from './website-review.mjs';
 import {eligibleRecontacts,scheduleApprovedRecontact} from './contact-cadence.mjs';
 import {discoverLocal,dailyLocalDiscovery,LOCATIONS,SEGMENTS} from './osm-discovery.mjs';
 import {radarSnapshot} from './radar.mjs';
+import {importCampaignPackage} from './campaign-package.mjs';
 import {importOfficial} from './official-import.mjs';
 import {siteAudit} from './site-audit.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
@@ -344,6 +345,12 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/messages')){
    const leadId=pathname.split('/')[3],v=await json(req);return respond(res,202,{jobId:manualJob(leadId,v.text||'',v.type||'message',v.media_id||null)});
   }
+  if(req.method==='POST'&&pathname==='/api/campaign/import-package'){
+   const mime=String(req.headers['content-type']||'').split(';')[0];
+   if(!['application/zip','application/octet-stream'].includes(mime))throw Error('Envie o arquivo ZIP de campanha');
+   const result=importCampaignPackage(await body(req,38*1024*1024));
+   notify();return respond(res,200,result);
+  }
   if(req.method==='POST'&&pathname==='/api/media')return upload(req,url,res);
   if(req.method==='GET'&&pathname.startsWith('/api/media/')){
    const media=one('SELECT * FROM media WHERE id=?',pathname.split('/')[3]);if(!media)return respond(res,404,{error:'Arquivo não encontrado'});
@@ -359,7 +366,7 @@ async function handler(req,res){
   }
   if(req.method!=='GET')return respond(res,404,{error:'Rota inexistente'});
   const target=pathname==='/'?'index.html':pathname.slice(1);
-  if(!['index.html','app.js','style.css'].includes(target))return respond(res,404,{error:'Arquivo inexistente'});
+  if(!['index.html','app.js','style.css','campaign-ui.js','campaign-ui.css','radar-ui.js'].includes(target))return respond(res,404,{error:'Arquivo inexistente'});
   const f=path.join(root,target),ext=path.extname(f);
   res.writeHead(200,{'Content-Type':web[ext]||'text/plain','Cache-Control':'no-cache'});fs.createReadStream(f).pipe(res);
  }catch(e){console.error('[API]',e?.message);error(res,e);}

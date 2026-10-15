@@ -31,8 +31,8 @@ function render(){
  if(!initial||!delay||!audio||!video||!decision){screen.innerHTML='<div class="panel"><h3>Fluxo avançado</h3><p>Esta automação utiliza blocos de formato antigo. Use o editor clássico para alterá-la.</p><button class="btn secondary" data-campaign="classic">Abrir editor clássico</button><button class="btn" data-campaign="new">Criar nova campanha</button></div>';return;}
  const options=(kind,current)=>'<option value="">Selecione um '+kind+'…</option>'+(snapshot.media||[]).filter(m=>m.kind===kind).map(m=>'<option value="'+esc(m.id)+'" '+(m.id===current?'selected':'')+'>'+esc(m.name)+'</option>').join('');
  const available=list().map(w=>'<button class="cp-item '+(w.id===draft.id?'cp-selected':'')+'" data-campaign="select" data-id="'+esc(w.id)+'"><strong>'+esc(w.name)+'</strong><small>'+((snapshot.settings?.autonomous_campaign_id===w.id)?'Em uso automático · ':'')+(w.enabled?'Ativa':'Rascunho')+'</small></button>').join('');
- screen.innerHTML='<div class="cp-head"><div><div class="panel-eyebrow">CONSECOM / AUTOMAÇÕES</div><h2>Campanhas de prospecção</h2><p>Configure o fluxo uma vez. O motor começa com os contatos que realmente autorizaram mensagens.</p></div><div class="actionsrow"><button class="btn secondary" data-campaign="new">+ Nova campanha</button><button class="btn secondary" data-campaign="classic">Editor clássico ↗</button></div></div>'+
- '<div class="cp-layout"><aside class="panel cp-library"><div class="between"><h3>Suas campanhas</h3><span class="tag">'+list().length+'</span></div>'+available+'</aside><section class="panel cp-editor"><div class="between"><h3>Configuração do fluxo</h3><span class="tag '+(draft.enabled?'green':'yellow')+'">'+(draft.enabled?'Ativada':'Rascunho')+'</span></div>'+
+ screen.innerHTML='<div class="cp-head"><div><div class="panel-eyebrow">CONSECOM / AUTOMAÇÕES</div><h2>Campanhas de prospecção</h2><p>Configure o fluxo uma vez. O motor começa com os contatos que realmente autorizaram mensagens.</p></div><div class="actionsrow"><label class="btn secondary cp-import-label">⬆ Importar campanha pronta<input data-campaign-import type="file" accept=".zip,application/zip" style="display:none"></label><button class="btn secondary" data-campaign="new">+ Nova campanha</button><button class="btn secondary" data-campaign="classic">Editor clássico ↗</button></div></div>'+
+ '<div class="cp-import-hint">Já tem o áudio e o vídeo da campanha Consecom? Importe o pacote ZIP completo: o sistema instala os dois arquivos, cria o fluxo, define a campanha ativa e mantém o estado de pausa atual.</div><div class="cp-layout"><aside class="panel cp-library"><div class="between"><h3>Suas campanhas</h3><span class="tag">'+list().length+'</span></div>'+available+'</aside><section class="panel cp-editor"><div class="between"><h3>Configuração do fluxo</h3><span class="tag '+(draft.enabled?'green':'yellow')+'">'+(draft.enabled?'Ativada':'Rascunho')+'</span></div>'+
  '<div class="field"><label>Nome</label><input data-cp-field="name" value="'+esc(draft.name)+'" placeholder="Campanha de sites"></div><div class="field"><label>Segmentos (opcional, separados por vírgula)</label><input data-cp-field="segments" value="'+esc((draft.segments||[]).join(', '))+'" placeholder="Psicólogo, Nutricionista…"></div>'+
  '<div class="cp-steps">'+
  '<div class="cp-step"><span class="cp-number">01</span><div class="cp-step-content"><h4>Mensagem de abordagem</h4><p>Primeira mensagem. Aguarda uma autorização clara para continuar com a apresentação.</p><textarea data-cp-field="message" rows="3">'+esc(initial.text)+'</textarea></div></div>'+
@@ -65,6 +65,20 @@ function updateField(name,value){
 }
 document.addEventListener('input',e=>{const el=e.target.closest('[data-cp-field]');if(el)updateField(el.dataset.cpField,el.value);});
 document.addEventListener('change',async e=>{
+ const pack=e.target.closest('[data-campaign-import]');
+ if(pack){
+  const file=pack.files?.[0];if(!file)return;
+  try{
+   if(!file.name.toLowerCase().endsWith('.zip')||file.size>38*1024*1024)throw Error('Escolha o ZIP completo da campanha Consecom (até 38 MB).');
+   notice='Importando vídeo, áudio e campanha…';render();
+   const response=await fetch('/api/campaign/import-package',{method:'POST',headers:{'Content-Type':'application/zip'},body:file});
+   const result=await response.json();if(!response.ok)throw Error(result.error||'Falha ao importar campanha');
+   selected=result.workflowId;draft=null;
+   notice=result.alreadyInstalled?'Campanha já instalada. Nenhum envio foi reiniciado.':result.paused?'Campanha instalada com áudio e vídeo sem som. A prospecção continua pausada.':'Campanha instalada e pronta para contatos com autorização registrada.';
+   await load();
+  }catch(error){notice=error.message;render();}
+  return;
+ }
  const el=e.target.closest('[data-cp-upload]');if(!el||!el.files?.[0])return;
  const kind=el.dataset.cpUpload,file=el.files[0];
  try{

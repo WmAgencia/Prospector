@@ -30,3 +30,5 @@
 .radar-discovery-meter h3 span{font-size:12px;font-weight:500}
 @media(max-width:1050px){.cp-layout{grid-template-columns:1fr}.cp-library{position:static}.cp-library .cp-item{display:inline-flex;vertical-align:top;width:240px;margin-right:6px}}
 @media(max-width:600px){.cp-head{flex-direction:column}.cp-editor{padding:16px}.cp-step{padding:12px}}
+
+.cp-import-label{cursor:pointer;display:inline-flex;align-items:center;gap:8px}.cp-import-hint{background:#eff8f2;border:1px solid #d4eadd;border-radius:12px;color:#376350;font-size:12px;line-height:1.6;padding:12px 16px;margin:0 0 18px}
