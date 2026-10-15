@@ -196,6 +196,10 @@ window.addEventListener('prospector:draw',e=>{
  if(e.detail?.page!=='workflows'||location.hash.includes('/classic'))return;
  snapshot=e.detail.state;render();
 });
+window.addEventListener('prospector:data',e=>{
+ if(e.detail?.page!=='workflows'||mode==='edit')return;
+ snapshot=e.detail.state;render();
+});
 window.addEventListener('hashchange',()=>{
  if(location.hash.startsWith('#/workflows')&&!location.hash.includes('/classic')&&!snapshot)refresh().catch(()=>{});
 });
