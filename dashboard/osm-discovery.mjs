@@ -134,7 +134,7 @@ export async function discoverLocal(payload={},automatic=false){
    const website=String(tags['contact:website']||tags.website||'').trim().slice(0,500);
    let safeWebsite=null;
    try{const u=new URL(website);if(['http:','https:'].includes(u.protocol))safeWebsite=u.href;}catch{}
-   const result=addLead({business,phone:p,instagram,osm_id:url,source:'osm',segment:segment.label,city:location.label,
+   const result=addLead({business,name:tags['contact:person']||null,phone:p,instagram,osm_id:url,source:'osm',segment:segment.label,city:location.label,
     website:safeWebsite,website_status:safeWebsite?'HAS_WEBSITE':'UNCERTAIN',contact_permission:false,
     notes:'Fonte: © OpenStreetMap contributors (ODbL). Cadastro público não autoriza mensagens. '+url});
    recordOrigin(result.lead.id,'osm',{url,city:location.label,segment:segment.label,phonePublished:!!p,hasWebsiteTag:!!safeWebsite});

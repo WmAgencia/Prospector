@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {one,all,run,tx,id,now,phone,getSetting,addLead,getThread,addMessage,stage,audit,stopLead,suppressed} from './db.mjs';
-import {classify,renderTemplate} from './classifier.mjs';
+import {classify,renderTemplate,personalName} from './classifier.mjs';
 import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
 import {evaluateDecision,evaluatePresentationReply,selectAutomationForLead,permitsPresentation} from './automation-router.mjs';
 import {scheduleReport,flushNotices,queueNotice} from './notifications.mjs';
@@ -11,7 +11,7 @@ import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
 import {canSendInitial} from './radar.mjs';
 import {isOfferActive} from './campaign-rules.mjs';
 import {rememberMessage,retryMessage,recordDeliveryReceipt,createRetryCache,recoveryRepository} from './whatsapp-recovery.mjs';
-import {resolveLead,registerPeerAlias,verifiedDeliveryAddress} from './whatsapp-identities.mjs';
+import {resolveLead,registerPeerAlias,verifiedDeliveryAddress,captureContactNames,applyKnownContactName,refreshInitialGreeting} from './whatsapp-identities.mjs';
 import {currentWebVersion,classifyDisconnect,retryDelay,isPairingRestart} from './whatsapp-reliability.mjs';
 
 const msgRetryCounterCache=createRetryCache();
@@ -97,6 +97,9 @@ export async function connectWhatsApp(options={}){
   };
   sock=socket;
   socket.ev.on('creds.update',saveCreds);
+  const contactUpdate=contacts=>{if(sock!==socket)return;try{captureContactNames(contacts);}catch(error){audit('WHATSAPP_CONTACT_NAME_ERROR',null,{error:error.message});}};
+  socket.ev.on('contacts.upsert',contactUpdate);
+  socket.ev.on('contacts.update',contactUpdate);
   socket.ev.on('messages.update',updates=>{
    if(sock!==socket)return;
    for(const item of updates||[]){
@@ -280,10 +283,12 @@ export async function incoming(m) {
  let thread=one('SELECT * FROM threads WHERE jid=?',from)||one('SELECT * FROM threads WHERE jid=?',alt);
  let lead=identity.lead||(thread?one('SELECT * FROM leads WHERE id=?',thread.lead_id):null);
  if(!lead&&ph){
-  lead=addLead({business:m.pushName||ph,phone:ph,source:'WHATSAPP_INBOUND',contact_permission:true}).lead;
+  lead=addLead({business:m.pushName||ph,name:personalName(m.pushName),phone:ph,source:'WHATSAPP_INBOUND',contact_permission:true}).lead;
   stage(lead.id,'REPLIED','mensagem iniciada pelo contato');
  }
  if(!lead){audit('UNRESOLVED_INCOMING',null,{jid:from,alt,providerId:m.key?.id});return;}
+ if(m.pushName)captureContactNames([{id:from,jid:ph?ph+'@s.whatsapp.net':undefined,notify:m.pushName}]);
+ lead=applyKnownContactName(lead.id)||lead;
  thread=getThread(lead.id,from);
  const payload=formMessage(m);
  const saved=addMessage({threadId:thread.id,providerId:m.key.id||null,direction:'in',type:payload.type,body:payload.body,status:'received'});
@@ -428,7 +433,7 @@ function promotionExpired(runId){
 export function drive(runId){
  for(let i=0;i<50;i++){
   const r=one('SELECT * FROM executions WHERE id=?',runId);if(!r||r.state!=='ACTIVE')return;
-  const lead=one('SELECT * FROM leads WHERE id=?',r.lead_id);
+  const lead=applyKnownContactName(r.lead_id);
   if(!lead||suppressed(lead.phone))return;
   const takeover=one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id);
   if(takeover?.manual_takeover)return;
@@ -477,6 +482,8 @@ export function takeover(threadId,value){
 function canInitial(){return canSendInitial();}
 async function send(job,lead){
  if(waStatus!=='CONNECTED'||!sock)throw Error('WhatsApp desconectado');
+ if(job.step_index===0&&job.execution_id&&!await bindLeadPeer(lead.id))throw Error('O WhatsApp não confirmou o destinatário');
+ lead=refreshInitialGreeting(job,lead);
  const jid=jidFor(lead);if(!jid)throw Error('JID não encontrado');
  let payload={text:job.text};
  if(job.type!=='message'){

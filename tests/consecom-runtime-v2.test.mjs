@@ -65,5 +65,5 @@ test('no-person-name greeting does not invent business contact name',()=>{
  const execution=runtime.startWorkflow(lead.id,workflowId);
  runtime.drive(execution);
  const first=db.one('SELECT text FROM jobs WHERE lead_id=? AND type=?',lead.id,'message');
- assert.ok(first.text.startsWith('Olá, como vai?'));
+ assert.ok(first.text.startsWith('Olá, equipe da Empresa sem nome pessoal, como vai?'));
 });

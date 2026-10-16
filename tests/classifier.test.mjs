@@ -16,3 +16,9 @@ test('personalização não inventa dados',()=>{
  const x=renderTemplate('Oi {{first_name}} de {{business_name}}!',{name:'Ana Paula',business:'Clínica Souza'});
  assert.match(x,/Ana/);assert.ok(!x.includes('{{'));assert.equal(normalize('NÃO quero'),'nao quero');
 });
+test('greeting distinguishes personal names from company and generic profile labels',()=>{
+ assert.equal(renderTemplate('{{greeting}}',{name:'Dra. Beatriz Souza',business:'Studio 27'}),'Olá, Beatriz, como vai?');
+ assert.equal(renderTemplate('{{greeting}}',{name:'Atendimento',business:'Studio 27'}),'Olá, equipe da Studio 27, como vai?');
+ assert.equal(renderTemplate('{{greeting}}',{name:'Agência Consecom',business:'Consecom'}),'Olá, equipe da Consecom, como vai?');
+ assert.equal(renderTemplate('{{greeting}}',{source:'OPERATOR_TEST',business:'Teste de campanha solicitado pelo operador'}),'Olá, como vai?');
+});

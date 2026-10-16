@@ -79,4 +79,22 @@ test('LID reply uses provider phone identity and wrapped text, then stays dedupl
  assert.equal(db.one("SELECT COUNT(*) n FROM messages WHERE provider_id='lid-acceptance'").n,1);
  assert.equal(runtime.isRelevantBufferedReply({...message,key:{...message.key,fromMe:true}}),false);
 });
+test('known contact name personalizes a queued initial message and preserves operator-provided names',async()=>{
+ const identities=await import('../dashboard/whatsapp-identities.mjs');
+ const lead=db.addLead({business:'Clínica Sol',phone:'5515999551166',source:'osm'}).lead;
+ const execution=runtime.startWorkflow(lead.id,workflow);runtime.drive(execution);
+ const job=db.one('SELECT * FROM jobs WHERE execution_id=?',execution);
+ assert.match(job.text,/Olá, equipe da Clínica Sol, como vai/);
+ identities.captureContactNames([{id:lead.phone+'@s.whatsapp.net',name:'Dra. Juliana Silva'}]);
+ identities.refreshInitialGreeting(job,lead);
+ assert.match(job.text,/Olá, Juliana, como vai/);
+ assert.equal(db.one('SELECT text FROM jobs WHERE id=?',job.id).text,job.text);
+ identities.captureContactNames([{id:lead.phone+'@s.whatsapp.net',notify:'Atendimento da Clínica'}]);
+ assert.equal(identities.applyKnownContactName(lead.id).name,'Dra. Juliana Silva');
+ db.run('UPDATE leads SET name=? WHERE id=?','Mariana',lead.id);
+ assert.equal(identities.applyKnownContactName(lead.id).name,'Mariana');
+ const imported=db.addLead({business:'Clínica Norte',phone:'5515999551177',source:'osm'}).lead;
+ const enriched=db.addLead({business:'Clínica Norte',phone:imported.phone,name:'Beatriz',source:'MANUAL'});
+ assert.equal(enriched.created,false);assert.equal(enriched.lead.name,'Beatriz');
+});
 test.after(()=>{db.db.close();fs.rmSync(directory,{recursive:true,force:true});});

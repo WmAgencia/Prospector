@@ -49,7 +49,7 @@ export function importOfficial(payload){
    const city=field(v,['municipio','cidade','cidade_nome','nome_municipio','no_municipio']).slice(0,90);
    const identifier=source+':'+digits;
    examined++;
-   const lead=addLead({business,city,segment:field(v,['atividade','cnae_descricao','tipo_estabelecimento','segmento']).slice(0,90),
+   const lead=addLead({business,city,name:field(v,['nome_contato','contato_nome','nome_responsavel','pessoa_contato']),segment:field(v,['atividade','cnae_descricao','tipo_estabelecimento','segmento']).slice(0,90),
     phone:field(v,['telefone','whatsapp','telefone_1','nu_telefone']),instagram:field(v,['instagram']),
     source,official_id:identifier,contact_permission:false,website_status:'UNCERTAIN',
     notes:'Registro importado de arquivo oficial fornecido pelo operador ('+source.toUpperCase()+'). Verificação e autorização pendentes.'});

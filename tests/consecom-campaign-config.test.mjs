@@ -7,8 +7,8 @@ const steps=buildConsecomSteps();
 test('personalized first contact uses only known personal name, with safe fallback',()=>{
  assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Maria Fernandes',business:'Clínica'}),'Olá, Maria, como vai? Eu sou da agência Consecom. Demos uma olhada no seu perfil e gostaríamos de te apresentar uma proposta. Posso te enviar um áudio com os detalhes?');
  assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Dra. Juliana',business:'Consultório de Juliana'}).startsWith('Olá, Juliana, como vai?'),true);
- assert.equal(renderTemplate(CAMPAIGN_INTRO,{business:'Empresa sem nome pessoal'}).startsWith('Olá, como vai?'),true);
- assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Contato',business:'Empresa'}).startsWith('Olá, como vai?'),true);
+ assert.equal(renderTemplate(CAMPAIGN_INTRO,{business:'Empresa sem nome pessoal'}).startsWith('Olá, equipe da Empresa sem nome pessoal, como vai?'),true);
+ assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Contato',business:'Empresa'}).startsWith('Olá, equipe da Empresa, como vai?'),true);
 });
 test('recognizes explicit first-stage permissions across natural variants',()=>{
  assert.equal(classify('Pode enviar').intent,'UNCERTAIN');

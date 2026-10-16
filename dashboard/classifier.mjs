@@ -16,12 +16,22 @@ export function safeName(s){
  const v=String(s||'').split(/[|•\n]/)[0].trim().replace(/\s+(?:24h|whatsapp|online|sorocaba|campinas).*$/i,'').trim();
  return v.length>1&&v.length<55&&!/\d/.test(v)&&!/^(clinica|consultorio|atendimento|psicologia)$/i.test(v)?v:null;
 }
+export function personalName(value,business=''){
+ const raw=safeName(value);if(!raw)return null;
+ const normalized=normalize(raw);
+ if(business&&normalized===normalize(business))return null;
+ if(/\b(?:clinica|consultorio|equipe|agencia|consecom|empresa|loja|atendimento|recepcao|contato|responsavel|cliente|administrador|profissional|studio|estudio|salao|barbearia|restaurante|farmacia|imobiliaria|academia|ltda|eireli|oficina|contabilidade|suporte|teste)\b/.test(normalized))return null;
+ const clean=raw.replace(/[^\p{L}\p{M}\s.'’\-]/gu,' ').replace(/\s+/g,' ').trim();
+ return clean.length>=2?clean:null;
+}
 export function renderTemplate(template,lead){
- const rawName=safeName(lead.name)||'';
+ const rawName=personalName(lead.name)||'';
  const person=rawName.replace(/^(?:dr\.?|dra\.?|sr\.?|sra\.?|prof\.?|professor(?:a)?\.?)\s+/i,'').trim();
  const firstCandidate=person.split(/\s+/)[0]||'';
  const firstName=/^(?:contato|responsavel|atendimento|cliente|administrador|profissional)$/i.test(firstCandidate)?'':firstCandidate;
- const greeting=firstName?'Olá, '+firstName+', como vai?':'Olá, como vai?';
+ const label=String(lead.business||'').replace(/\s+/g,' ').trim();
+ const business=lead.source==='OPERATOR_TEST'||!label||label.length>120||/^\+?[\d\s()-]+$/.test(label)?'':label;
+ const greeting=firstName?'Olá, '+firstName+', como vai?':business?'Olá, equipe da '+business+', como vai?':'Olá, como vai?';
  const values={greeting,first_name:firstName,person_name:rawName,business_name:safeName(lead.business)||'',city:lead.city||'',segment:lead.segment||'',instagram_username:lead.instagram||''};
  return String(template||'').replace(/\{\{(\w+)\}\}/g,(_,k)=>values[k]||'').replace(/\s+([,.!?])/g,'$1').replace(/\s{2,}/g,' ').trim();
 }

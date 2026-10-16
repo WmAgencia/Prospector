@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {CAMPAIGN_NAME,CAMPAIGN_INTRO,buildConsecomSteps} from './consecom-flow.mjs';
+import {personalName} from './classifier.mjs';
 import {DatabaseSync} from 'node:sqlite';
 const dir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data');
 fs.mkdirSync(dir,{recursive:true});
@@ -123,9 +124,16 @@ export function addLead(item){
  const p=phone(item.phone||item.whatsapp), ig=instagram(item.instagram||item.instagram_username);
  if(!p&&!ig&&!(String(item.source)==='osm'&&String(item.osm_id||'').startsWith('https://www.openstreetmap.org/'))&&!(['cnpj','cnes'].includes(String(item.source))&&String(item.official_id||'').startsWith(String(item.source)+':')))throw Error('Informe Instagram ou WhatsApp válido');
  const existing=(p?one('SELECT * FROM leads WHERE phone=?',p):null)||(ig?one('SELECT * FROM leads WHERE instagram=?',ig):null)||(item.osm_id?one("SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source='osm' AND o.identity=?",item.osm_id):null)||(item.official_id?one('SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source=? AND o.identity=?',String(item.source),String(item.official_id)):null);
- if(existing){run('UPDATE leads SET last_seen_at=? WHERE id=?',now(),existing.id);return {lead:existing,created:false};}
+ if(existing){
+  const suppliedName=personalName(item.name||item.contato_nome||item.contact_name);
+  if(!personalName(existing.name)&&suppliedName){
+   run('UPDATE leads SET name=?,last_seen_at=? WHERE id=?',suppliedName,now(),existing.id);
+   audit('LEAD_NAME_IDENTIFIED',existing.id,{source:String(item.source||'MANUAL')});
+  }else run('UPDATE leads SET last_seen_at=? WHERE id=?',now(),existing.id);
+  return {lead:one('SELECT * FROM leads WHERE id=?',existing.id),created:false};
+ }
  const leadId=id();
- run('INSERT INTO leads(id,name,business,instagram,phone,segment,city,website,website_status,source,contact_permission,created_at,last_seen_at,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',leadId,item.name||item.contato_nome||null,String(item.business||item.empresa||item.business_name||ig||p).trim(),ig,p,item.segment||item.segmento||null,item.city||item.cidade||null,item.website||item.site||null,item.website_status||item.status_site||'UNCERTAIN',item.source||item.origem||'MANUAL',item.contact_permission===true?1:0,now(),now(),item.notes||item.observ||'');
+ run('INSERT INTO leads(id,name,business,instagram,phone,segment,city,website,website_status,source,contact_permission,created_at,last_seen_at,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',leadId,item.name||item.contato_nome||item.contact_name||null,String(item.business||item.empresa||item.business_name||ig||p).trim(),ig,p,item.segment||item.segmento||null,item.city||item.cidade||null,item.website||item.site||null,item.website_status||item.status_site||'UNCERTAIN',item.source||item.origem||'MANUAL',item.contact_permission===true?1:0,now(),now(),item.notes||item.observ||'');
  audit('LEAD_CREATED',leadId,{source:item.source||'MANUAL'});
  return {lead:one('SELECT * FROM leads WHERE id=?',leadId),created:true};
 }
