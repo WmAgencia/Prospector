@@ -66,3 +66,8 @@ test('user-defined initial approach window stays between 08 and 18, with 150 cap
  assert.equal(conf.end,18);
  assert.equal(conf.intervalSeconds,240);
 });
+
+test('limite de consultas públicas expandido sem eliminar o espaçamento',()=>{
+ assert.equal(osm.OSM_DAILY_MAX_SEARCHES,12);
+ assert.equal(osm.OSM_COOLDOWN_MS,45*60000);
+});

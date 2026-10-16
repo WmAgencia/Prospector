@@ -435,9 +435,16 @@ setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media res
 setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
 const interruptedSearches=reconcileInterruptedSearches();
 if(interruptedSearches.recovered)console.info('[osm discovery] Recuperadas '+interruptedSearches.recovered+' consultas interrompidas; mantidas na cota diária');
-const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),60*1000);
+function checkOSMDiscovery(){
+ return dailyLocalDiscovery().then(x=>{
+  if(x?.source==='osm'&&x.added)notify();
+  if(x?.source==='osm'||x?.status==='SOURCE_ERROR'||x?.status==='PROVIDER_LIMIT')
+   console.info('[osm discovery]',JSON.stringify({status:x.status||'COMPLETE',city:x.city,segment:x.segment,examined:x.examined,added:x.added,withPhone:x.withPhone,foundToday:x.foundToday,reason:x.error}));
+ }).catch(err=>console.error('[osm discovery]',err.message));
+}
+const osmTimer=setInterval(checkOSMDiscovery,60*1000);
 // Somente OSM executa pesquisas automáticas. Google Places permanece inativo.
-setTimeout(()=>dailyLocalDiscovery().then(x=>{if(x?.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),120000).unref();
+setTimeout(checkOSMDiscovery,12000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));});
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(agentBridgeTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
