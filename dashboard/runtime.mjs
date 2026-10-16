@@ -91,13 +91,16 @@ export async function connectWhatsApp(options={}){
    for(const item of updates||[]){
     const status=Number(item.update?.status),providerId=item.key?.id;
     if(!providerId||!Number.isInteger(status)||status<3||status>5)continue;
-    const existing=one('SELECT id,status FROM messages WHERE provider_id=? AND direction="out"',providerId);
+    const existing=one('SELECT id,status,type,thread_id FROM messages WHERE provider_id=? AND direction="out"',providerId);
     if(!existing)continue;
     const next=status>=4?'read':'delivered';
     if(existing.status==='read'||existing.status===next)continue;
     run('UPDATE messages SET status=? WHERE id=?',next,existing.id);
     audit('WHATSAPP_DELIVERY_CONFIRMED',null,{providerId,status:next});
-    console.info('[whatsapp] Entrega confirmada pelo destinatário: '+next);publish();
+    console.info('[whatsapp] Entrega confirmada pelo destinatário: '+next);
+    const testThread=one('SELECT lead_id FROM threads WHERE id=?',existing.thread_id);
+    if(testThread?.lead_id===getSetting('operator_test_lead_id',''))console.info('[campaign test]',JSON.stringify({status:next.toUpperCase(),type:existing.type}));
+    publish();
    }
   });
   socket.ev.on('connection.update',async update=>{
@@ -255,6 +258,7 @@ export async function incoming(m) {
  const payload=formMessage(m);
  const saved=addMessage({threadId:thread.id,providerId:m.key.id||null,direction:'in',type:payload.type,body:payload.body,status:'received'});
  if(!saved)return; // webhook duplicado
+ if(lead.id===getSetting('operator_test_lead_id',''))console.info('[campaign test]',JSON.stringify({status:'REPLY_RECEIVED',type:payload.type}));
  const result=payload.type==='text'?classify(payload.body):{intent:'UNCERTAIN',confidence:0,matched_rules:['MEDIA'],requires_human:true,allow_media:false};
  audit('INTENT_CLASSIFIED',lead.id,{intent:result.intent,matched_rules:result.matched_rules,confidence:result.confidence});
  if(result.intent==='OPT_OUT'){
@@ -473,7 +477,8 @@ export async function tick(){
    const candidate=one(automaticCandidateSql());
    if(candidate){try{const rid=startWorkflow(candidate.id,campaign.id);drive(rid);}catch(err){audit('AUTO_START_REVIEW',candidate.id,{error:err.message});}}
   }
-  const jobs=all("SELECT * FROM jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10");
+  const testJobId=Date.parse(getSetting('operator_test_expires_at',''))>Date.now()?getSetting('operator_test_job_id',''):'';
+  const jobs=all("SELECT * FROM jobs WHERE status='PENDING' ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END,created_at LIMIT 10",testJobId);
   for(const job of jobs){
    const lead=one('SELECT * FROM leads WHERE id=?',job.lead_id);
    const declineFarewell=lead?.stage==='NO_INTEREST'&&/^decision:[^:]+:\d+:no$/.test(String(job.key||''));
@@ -491,7 +496,7 @@ export async function tick(){
     const execution=one('SELECT * FROM executions WHERE id=?',job.execution_id);
     const thread=one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id);
     if(execution?.state!=='SENDING'||thread?.manual_takeover){run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);continue;}
-    if(job.step_index===0&&!canInitial())continue;
+    if(job.step_index===0&&job.id!==testJobId&&!canInitial())continue;
    }
    // UNKNOWN nunca será reenviado automaticamente: rede pode ter aceitado a mensagem.
    run("UPDATE jobs SET status='SENDING',updated_at=? WHERE id=?",now(),job.id);
@@ -508,6 +513,7 @@ export async function tick(){
     const t=getThread(lead.id,result.jid);
     addMessage({threadId:t.id,providerId:result.ack?.key?.id||null,direction:'out',type:job.type==='message'?'text':job.type,body:job.text,mediaId:job.media_id,status:'sent'});
     if(job.execution_id){run("UPDATE executions SET state='ACTIVE',updated_at=? WHERE id=?",now(),job.execution_id);drive(job.execution_id);}
+    if(lead.id===getSetting('operator_test_lead_id',''))console.info('[campaign test]',JSON.stringify({status:'PROVIDER_ACCEPTED',type:job.type,step:job.step_index}));
     onSent(job.id);
     publish();
    }catch(e){
