@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import {one,all,getSetting,setSetting,addLead,phone,audit} from './db.mjs';
 import {connection,startWorkflow,drive,bindLeadPeer,requestStoredReply,incoming,isRelevantBufferedReply} from './runtime.mjs';
 import {validateCampaignForActivation} from './campaign-selection.mjs';
@@ -65,6 +66,17 @@ export async function refreshOperatorReplies(){
    if(metadata?.key?.fromMe===false&&isRelevantBufferedReply(envelope)){await incoming(envelope);continue;}
    if(metadata?.key?.fromMe===true)continue;
    const text=message.conversation||message.extendedTextMessage?.text||'';
+   let recoveryInstruction=null;
+   try{recoveryInstruction=JSON.parse(process.env.PROSPECTOR_TEST_REPLY_RECOVERY||'null');}catch{}
+   if(!metadata&&identityBound&&text&&recoveryInstruction?.requestId===getSetting('operator_test_request_id','')
+    &&Date.parse(recoveryInstruction.expiresAt)>Date.now()
+    &&recoveryInstruction.replyHash===crypto.createHash('sha256').update(text).digest('hex')){
+    // Explicit operator recovery of the exact stored reply identified for this test.
+    // Missing provider metadata is not treated as general automatic authorization.
+    audit('OPERATOR_RECOVERED_TEST_REPLY',leadId,{providerId:row.message_id,requestId:recoveryInstruction.requestId,replyHash:recoveryInstruction.replyHash,identityVerifiedBy:'whatsapp_contact_lookup'});
+    await incoming({key:{remoteJid:row.jid,id:row.message_id},message});
+    continue;
+   }
    if(text)unlinked.push({text:text.slice(0,500),senderMetadataKnown:!!metadata});
    // Recover old buffered messages through the provider; never infer who sent them.
    if(!metadata&&!requestedResends.has(row.message_id)&&requestedResends.size<5){
