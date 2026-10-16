@@ -83,7 +83,21 @@ export function extractInstagram(tags){
  return match?match[1].toLowerCase():null;
 }
 export function makeQuery(location,segment){
- return '[out:json][timeout:24];(nwr["'+segment.filter+'"="'+segment.value+'"]["name"](around:'+location.radius+','+location.lat+','+location.lon+'););out center 70;';
+ return '[out:json][timeout:24];(nwr["'+segment.filter+'"="'+segment.value+'"]["name"](around:'+location.radius+','+location.lat+','+location.lon+'););out center 200;';
+}
+// Prioriza registros com telefone publicado, sem inventar informações nem omitir
+// empresas sem telefone. A amostra por consulta continua limitada para proteger
+// o Overpass comunitário; a meta diária é contada apenas em leads únicos.
+export function prioritizeOSMResults(elements=[]){
+ return [...elements].sort((a,b)=>{
+  const ta=a.tags||{},tb=b.tags||{};
+  const pa=extractPhone(ta)?1:0,pb=extractPhone(tb)?1:0;
+  if(pa!==pb)return pb-pa;
+  const ia=extractInstagram(ta)?1:0,ib=extractInstagram(tb)?1:0;
+  if(ia!==ib)return ib-ia;
+  const wa=!!(ta['contact:website']||ta.website)?1:0,wb=!!(tb['contact:website']||tb.website)?1:0;
+  return wb-wa;
+ });
 }
 let busy=false;
 export async function discoverLocal(payload={},automatic=false){
@@ -121,7 +135,8 @@ export async function discoverLocal(payload={},automatic=false){
   if(!Array.isArray(data.elements))throw Error('A fonte não retornou uma lista válida');
   let added=0,examined=0,withPhone=0;
   const quota=automatic?Math.max(0,Math.min(150,Number(getSetting('discovery_target_daily',150))||150)-radarSnapshot().foundToday):70;
-  for(const item of data.elements.slice(0,70)){
+  const candidates=prioritizeOSMResults(data.elements.slice(0,200));
+  for(const item of candidates){
    if(added>=quota)break;
    const tags=item.tags||{};
    const business=String(tags.name||'').trim().slice(0,120);
@@ -142,9 +157,9 @@ export async function discoverLocal(payload={},automatic=false){
    upsertBusinessMeta(result.lead.id,{businessType:segment.filter});
    if(result.created)added++;
   }
-  run('UPDATE discoveries SET status=?,found=?,details=? WHERE id=?','COMPLETE',added,JSON.stringify({examined,withPhone,automatic,matchedTotal:data.elements.length}),attemptId);
+  run('UPDATE discoveries SET status=?,found=?,details=? WHERE id=?','COMPLETE',added,JSON.stringify({examined,withPhone,automatic,matchedTotal:data.elements.length,selectedWithPhoneFirst:true}),attemptId);
   audit('DISCOVER_OSM',null,{city:location.label,segment:segment.label,examined,added,withPhone,automatic});
-  return {source:'osm',city:location.label,segment:segment.label,examined,added,withPhone,withoutWebsiteListed:examined-data.elements.slice(0,70).filter(x=>Boolean(x.tags?.website||x.tags?.['contact:website'])).length,
+  return {source:'osm',city:location.label,segment:segment.label,examined,added,withPhone,withoutWebsiteListed:Math.max(0,examined-candidates.filter(x=>Boolean(x.tags?.website||x.tags?.['contact:website'])).length),
    info:'Contatos públicos sem autorização de envio; a ausência de site no cadastro não comprova que a empresa não tem site.',
    attribution:'© OpenStreetMap contributors, ODbL',url:'https://www.openstreetmap.org/copyright'};
  }catch(error){

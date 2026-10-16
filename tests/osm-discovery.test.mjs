@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveLocation,resolveSegment,extractPhone,extractInstagram,makeQuery} from '../dashboard/osm-discovery.mjs';
+import {resolveLocation,resolveSegment,extractPhone,extractInstagram,makeQuery,prioritizeOSMResults} from '../dashboard/osm-discovery.mjs';
 test('cidades, acentos e segmentos suportados',()=>{
  assert.equal(resolveLocation('São Paulo').label,'São Paulo');
  assert.equal(resolveLocation('Votorantim').label,'Votorantim');
@@ -14,5 +14,18 @@ test('fontes públicas não inventam telefone, site ou permissões',()=>{
  assert.equal(extractInstagram({'contact:instagram':'https://instagram.com/empresa.oficial'}),'empresa.oficial');
  const q=makeQuery(resolveLocation('Sorocaba'),resolveSegment('dentista'));
  assert.match(q,/nwr\["amenity"="dentist"\]\["name"\]/);
- assert.match(q,/out center 70/);
+ assert.match(q,/out center 200/);
+});
+
+test('prioritiza telefone publicado sem descartar registros sem contato',()=>{
+ const items=[
+  {type:'node',id:1,tags:{name:'Empresa A'}},
+  {type:'node',id:2,tags:{name:'Empresa B',phone:'+55 (15) 99999-0000'}},
+  {type:'node',id:3,tags:{name:'Empresa C',website:'https://example.org'}},
+  {type:'node',id:4,tags:{name:'Empresa D','contact:instagram':'https://instagram.com/teste.loja'}}
+ ];
+ const ordered=prioritizeOSMResults(items);
+ assert.deepEqual(ordered.map(x=>x.id),[2,4,3,1]);
+ assert.deepEqual(items.map(x=>x.id),[1,2,3,4]);
+ assert.equal(ordered.length,4);
 });
