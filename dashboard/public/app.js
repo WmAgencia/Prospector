@@ -5,7 +5,7 @@ const labelStage={DISCOVERED:'Encontrado',CONTACTED:'Em abordagem',REPLIED:'Resp
 const websiteLabel={UNCERTAIN:'Verificação inconclusiva',NOT_FOUND_AFTER_CHECK:'Site não encontrado na pesquisa',NO_WEBSITE:'Sem site após revisão humana',HAS_WEBSITE:'Site próprio confirmado',SOCIAL_ONLY:'Somente redes sociais',LINK_AGGREGATOR_ONLY:'Página agregadora',BROKEN_WEBSITE:'Site indisponível'};
 const stages=[['DISCOVERED','Encontrados','blue'],['CONTACTED','Em abordagem','blue'],['REPLIED','Responderam','yellow'],['INTERESTED','Interessados','green'],['NO_INTEREST','Sem interesse','red'],['CLOSED_WON','Fechados','green']];
 let state=null,page=location.hash.split('/')[1]||'overview',selectedThread=location.hash.split('/')[2]||null,mediaTab='video',workflowId='default',editing=null,dirty=false,loading=false,chatSearch='',kanbanSearch='';
-let toastTimer=null,kanbanStage='ALL';
+let toastTimer=null,kanbanStage='ALL',catalogFilters={},catalogOffset=0;
 const icons={video:'▣',audio:'♫',image:'▧',message:'✉',wait_reply:'◌',delay:'◷',end:'✓'};
 function showToast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),4200);}
 async function request(path,data,method='POST'){
@@ -13,6 +13,17 @@ async function request(path,data,method='POST'){
  const text=await r.text();let parsed;try{parsed=JSON.parse(text);}catch{throw Error('Resposta inválida do servidor');}
  if(!r.ok)throw Error(parsed.error||'Falha de comunicação');
  return parsed;
+}
+async function showCatalog(offset=0){
+ const query=new URLSearchParams({...catalogFilters,limit:'60',offset:String(Math.max(0,offset))});
+ const response=await fetch('/api/catalog?'+query.toString(),{cache:'no-store'});
+ if(!response.ok)throw Error('Não foi possível consultar a base de empresas');
+ const data=await response.json();catalogOffset=data.offset;
+ const rows=data.leads.map(l=>'<tr><td><strong>'+esc(l.business)+'</strong><small>'+esc(l.phone||'Sem telefone')+'</small></td><td>'+esc(l.city||'—')+'</td><td>'+esc(l.segment||'—')+'</td><td>'+esc(l.businessType||'—')+'</td><td><span class="tag '+(l.quality==='A'?'green':l.quality==='B'?'yellow':'')+'">'+esc(l.quality)+' · '+Number(l.qualityScore)+'</span></td></tr>').join('');
+ modal('<h2>Base de empresas</h2><p class="subtle">'+data.total.toLocaleString('pt-BR')+' registros · '+(data.offset+1)+'–'+Math.min(data.total,data.offset+data.leads.length)+'</p>'+
+ '<div style="overflow:auto;max-height:55vh"><table class="catalog-table"><thead><tr><th>Empresa</th><th>Cidade</th><th>Nicho</th><th>Tipo</th><th>Qualidade</th></tr></thead><tbody>'+rows+'</tbody></table>'+(rows?'':'<p class="empty">Nenhum registro neste filtro.</p>')+'</div>'+
+ '<p class="helper-text">A: oportunidade de site, telefone, cidade e nicho; B: empresa com telefone; C: cadastro incompleto. O score é indicativo, não afirma ausência de site.</p>'+
+ '<div class="footer"><button class="btn secondary" data-action="catalog-prev" '+(data.offset===0?'disabled':'')+'>← Anterior</button><button class="btn secondary" data-action="catalog-next" '+(data.nextOffset===null?'disabled':'')+'>Próxima →</button><button class="btn" data-action="close-modal">Fechar</button></div>');
 }
 async function load(shouldDraw=true){
  if(loading)return;loading=true;
@@ -251,7 +262,17 @@ async function loadStudio(){
 function discovery(){
  const providers=state.providers||[];
  const local=state.localDiscovery||{cities:['Sorocaba','Votorantim','Campinas'],segments:[{id:'dentista',label:'Dentistas'}]};
- return '<div class="section-head"><h2>Descoberta de empresas</h2><p>Encontre empresas locais com dados públicos e qualifique as oportunidades sem depender de serviços pagos.</p></div>'+
+ return '<div class="section-head"><h2>Descoberta de empresas</h2><p>Encontre empresas de vários nichos e cidades e acompanhe uma base própria de milhares de registros.</p></div>'+
+ '<section class="panel"><div class="between"><div><span class="panel-eyebrow">BASE DE EMPRESAS · CRM PRÓPRIO</span><h3>'+Number(state.catalog?.total||0).toLocaleString('pt-BR')+' empresas catalogadas</h3><p class="subtle">'+Number(state.catalog?.withPhone||0)+' com telefone, em diferentes cidades e nichos. Listagem paginada e filtrável.</p></div><span class="tag green">Catálogo B2B</span></div>'+
+ '<div class="catalog-filters"><input id="catalog-text" placeholder="Nome da empresa">'+
+ '<select id="catalog-city"><option value="">Todas as cidades</option>'+((state.catalog?.cities||[]).map(x=>'<option value="'+esc(x.label)+'">'+esc(x.label)+' ('+x.count+')</option>').join(''))+'</select>'+
+ '<select id="catalog-niche"><option value="">Todos os nichos</option>'+((state.catalog?.niches||[]).map(x=>'<option value="'+esc(x.label)+'">'+esc(x.label)+' ('+x.count+')</option>').join(''))+'</select>'+
+ '<select id="catalog-type"><option value="">Todos os tipos</option>'+((state.catalog?.types||[]).map(x=>'<option value="'+esc(x.label)+'">'+esc(x.label)+'</option>').join(''))+'</select>'+
+ '<select id="catalog-quality"><option value="">Qualidade A/B/C</option><option value="A">A · Prioritária</option><option value="B">B · Com telefone</option><option value="C">C · Incompleta</option></select>'+
+ '<button class="btn" data-action="catalog-search">Filtrar base →</button></div></section>'+
+ '<section class="panel"><h3>Google Maps · Pesquisa automática de cidades e nichos</h3><p class="subtle">A integração Places API New pesquisa empresas e armazena somente os IDs dos locais, separados do CRM. Dados completos são consultados temporariamente na API oficial.</p>'+
+ '<div class="simple-autoqueue-numbers"><span><strong>'+Number(state.googleIndex?.placeIdsIndexed||0)+'</strong> IDs indexados</span><span><strong>'+Number(state.googleIndex?.queriesToday||0)+'</strong> pesquisas hoje</span><span><strong>'+Number(state.googleIndex?.dailyQueryCap||6)+'</strong> limite por dia</span></div>'+
+ '<p class="helper-text">'+(state.googleIndex?.keyConfigured?'Chave Google configurada. A pesquisa progride automaticamente, respeitando a cota diária.':'Pesquisa Google aguardando GOOGLE_PLACES_API_KEY na Railway e faturamento habilitado no Google Cloud.')+'</p></section>'+
  '<div class="cards"><section class="panel"><h3>Buscar empresas locais · OpenStreetMap</h3><p class="subtle">Consulta real a empresas cadastradas publicamente, sem chave de API. Os resultados entram no Kanban para revisão.</p>'+
  '<div class="two"><div class="field"><label>Cidade</label><select id="local-city">'+local.cities.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select></div>'+
  '<div class="field"><label>Segmento</label><select id="local-segment">'+local.segments.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.label)+'</option>').join('')+'</select></div></div>'+
@@ -264,7 +285,7 @@ function discovery(){
  '<div class="two"><div class="field"><label>Consulta livre</label><input id="discover-query" placeholder="Ex.: psicóloga Sorocaba ou clínica Campinas"></div><button class="btn secondary" data-action="discover" '+(!state.searchConfigured?'disabled':'')+'>Pesquisar perfis indexados</button></div>'+
  '<p class="subtle">Brave requer chave válida do provedor. Bibliotecas no GitHub não fornecem chaves de serviços externos.</p></section>'+
  '<section class="panel" style="margin-top:18px"><div class="between"><h3>Diretórios empresariais complementares</h3><span class="tag">APIs oficiais</span></div><p class="subtle">Google Places e Foursquare oferecem informações adicionais de sites e empresas quando você configura suas próprias chaves na Railway. Podem existir custos e limitações de armazenamento. Resultados são exibidos para revisão e não são copiados automaticamente ao banco.</p><div class="two"><div class="field"><label>Fonte</label><select id="external-provider"><option value="google_places">Google Places</option><option value="foursquare">Foursquare Places</option></select></div><div class="field"><label>Segmento</label><input id="external-query" placeholder="Ex.: clínica odontológica"></div></div><div class="two"><div class="field"><label>Cidade</label><input id="external-city" value="Sorocaba"></div><button class="btn secondary" data-action="external-search">Pesquisar nesta fonte</button></div></section>'+
- '<section class="panel" style="margin-top:18px"><h3>Importar CNPJ / CNES · fontes oficiais</h3><p class="subtle">Use um arquivo CSV ou JSON obtido legitimamente na fonte original. O sistema registra a procedência, cruza duplicados e cria oportunidades sem permissão de contato. O download massivo dessas bases não é realizado pelo servidor.</p><div class="two"><div class="field"><label>Fonte</label><select id="official-source"><option value="cnpj">CNPJ / Receita Federal</option><option value="cnes">CNES / Ministério da Saúde</option></select></div><div class="field"><label>Arquivo (até 200 registros)</label><input type="file" id="official-file" accept=".csv,.json"></div></div><div class="actionsrow"><button class="btn secondary" data-action="import-official">Importar lote verificado</button><span class="tag">Sem envio de mensagens</span></div><small class="subtle">CSV com colunas cnpj ou cnes, nome_fantasia ou nome, municipio, telefone (opcional). CNES e CNPJ devem conter seus códigos completos.</small></section>'+
+ '<section class="panel" style="margin-top:18px"><h3>Importar CNPJ / CNES · fontes oficiais</h3><p class="subtle">Use CSV ou JSON oficial em lotes de até 5.000 empresas para alimentar a base permanente. O sistema registra a procedência, cruza duplicados e cria oportunidades sem permissão de contato. O download massivo dessas bases não é realizado pelo servidor.</p><div class="two"><div class="field"><label>Fonte</label><select id="official-source"><option value="cnpj">CNPJ / Receita Federal</option><option value="cnes">CNES / Ministério da Saúde</option></select></div><div class="field"><label>Arquivo (até 5.000 registros)</label><input type="file" id="official-file" accept=".csv,.json"></div></div><div class="actionsrow"><button class="btn secondary" data-action="import-official">Importar lote verificado</button><span class="tag">Sem envio de mensagens</span></div><small class="subtle">CSV com colunas cnpj ou cnes, nome_fantasia ou nome, municipio, telefone (opcional). CNES e CNPJ devem conter seus códigos completos.</small></section>'+
  '<section class="panel" style="margin-top:18px"><h3>Provedores de prospecção</h3>'+providers.map(p=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(p.label)+'</strong><small>'+esc(p.note)+'</small></div><span class="tag '+(p.status==='READY'?'green':p.status==='NEEDS_API_KEY'?'yellow':'')+'">'+esc(p.status==='READY'?'Pronto':p.status==='NEEDS_API_KEY'?'Sem chave':p.status==='IMPORT_READY'?'Importação pronta':'Não integrado')+'</span></div>').join('')+'</section>'+
  '</details>'+ 
  '<section class="panel" style="margin-top:18px"><h3>Segurança das abordagens</h3><p class="subtle">Empresas descobertas entram com contato não autorizado. A plataforma não envia campanhas para números coletados sem permissão. Fonte pública não equivale a autorização para WhatsApp. Empresas sem tag de site continuam como site incerto.</p></section>';
@@ -429,12 +450,15 @@ document.addEventListener('click',async event=>{
     try{
      const result=await request('/api/research/external',{provider:$('#external-provider').value,query:$('#external-query').value,city:$('#external-city').value});
      const html=result.results.length?result.results.map(x=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(x.name)+'</strong><small>'+esc(x.address||'')+'</small><small>'+esc(x.website||'Site não informado no provedor (não comprovado)')+'</small></div>'+(x.website?'<a target="_blank" rel="noopener noreferrer" href="'+esc(x.website)+'">Site ↗</a>':'')+'</div>').join(''):'<div class="empty">Nenhum registro retornado por esta fonte.</div>';
-     modal('<h2>Pesquisa em '+esc(result.source)+'</h2><p class="subtle">Resultados para revisão, não importados automaticamente. Confirme os termos do provedor e o site da empresa.</p>'+html+'<div class="footer"><button class="btn secondary" data-action="close-modal">Fechar</button></div>');
+     modal('<h2>Pesquisa em '+esc(result.source)+'</h2>'+(result.source==='google_places'?'<p class="helper-text" translate="no"><a href="https://maps.google.com/" target="_blank" rel="noopener noreferrer">Google Maps</a> · Fonte dos resultados abaixo</p>':'')+'<p class="subtle">Resultados para revisão, não importados automaticamente. Confirme os termos do provedor e o site da empresa.</p>'+html+'<div class="footer"><button class="btn secondary" data-action="close-modal">Fechar</button></div>');
     }finally{el.disabled=false;}return;
   }
+  if(action==='catalog-search'){catalogFilters={search:$('#catalog-text')?.value||'',city:$('#catalog-city')?.value||'',segment:$('#catalog-niche')?.value||'',businessType:$('#catalog-type')?.value||'',quality:$('#catalog-quality')?.value||''};return showCatalog(0);}
+  if(action==='catalog-next')return showCatalog(catalogOffset+60);
+  if(action==='catalog-prev')return showCatalog(Math.max(0,catalogOffset-60));
   if(action==='import-official'){
     const file=$('#official-file')?.files?.[0];if(!file)throw Error('Selecione um CSV ou JSON oficial');
-    if(file.size>800000)throw Error('Máximo de 800 KB por arquivo');
+    if(file.size>6*1024*1024)throw Error('Máximo de 6 MB por arquivo');
     const source=$('#official-source').value;const text=await file.text();
     let payload={source,csv:text};if(file.name.toLowerCase().endsWith('.json')){const parsed=JSON.parse(text);payload={source,records:Array.isArray(parsed)?parsed:parsed.records};}
     el.disabled=true;try{const r=await request('/api/discover/official',payload);await load();showToast(r.added+' adicionados · '+r.duplicates+' duplicados · '+r.invalid+' inválidos');}finally{el.disabled=false;}
