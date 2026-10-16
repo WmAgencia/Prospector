@@ -19,3 +19,8 @@ export function registerPeerAlias(leadId,jid){
  run('INSERT OR REPLACE INTO whatsapp_peer_aliases VALUES(?,?,?)',jid,leadId,new Date().toISOString());
  return true;
 }
+
+export function verifiedDeliveryAddress(lead){
+ const lid=one("SELECT jid FROM whatsapp_peer_aliases WHERE lead_id=? AND jid LIKE '%@lid' ORDER BY verified_at DESC LIMIT 1",lead.id);
+ return lid?.jid||(lead.phone?lead.phone+'@s.whatsapp.net':null);
+}

@@ -1,6 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {execFileSync} from 'node:child_process';
 import crypto from 'node:crypto';
-import {one,all,getSetting,setSetting,addLead,phone,audit} from './db.mjs';
-import {connection,startWorkflow,drive,bindLeadPeer,requestStoredReply,incoming,isRelevantBufferedReply} from './runtime.mjs';
+import {one,all,tx,getSetting,setSetting,addLead,phone,audit} from './db.mjs';
+import {connection,startWorkflow,drive,manualJob,prepareLeadDelivery,bindLeadPeer,requestStoredReply,incoming,isRelevantBufferedReply} from './runtime.mjs';
 import {validateCampaignForActivation} from './campaign-selection.mjs';
 import {retryMessage} from './whatsapp-recovery.mjs';
 import {isInvitationWorkflow} from './permission-invitation.mjs';
@@ -42,7 +45,7 @@ let refreshing=false,lastRefresh=0,identityBound=false,lastReport='';
 const requestedResends=new Set();
 export async function refreshOperatorReplies(){
  if(refreshing||Date.now()-lastRefresh<15000||connection().status!=='CONNECTED')return;
- if(Date.parse(getSetting('operator_test_expires_at',''))<=Date.now())return;
+ if(Math.max(Date.parse(getSetting('operator_test_expires_at',''))||0,Date.parse(process.env.PROSPECTOR_TEST_DIAGNOSTICS_UNTIL||'')||0)<=Date.now())return;
  const leadId=getSetting('operator_test_lead_id','');if(!leadId)return;
  refreshing=true;lastRefresh=Date.now();
  try{
@@ -85,7 +88,48 @@ export async function refreshOperatorReplies(){
   }
   const messages=all("SELECT m.body,m.type,m.at FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='in' ORDER BY m.at DESC LIMIT 5",leadId);
   const execution=one('SELECT state,next_step FROM executions WHERE lead_id=?',leadId);
-  const report=JSON.stringify({status:'REPLY_DIAGNOSTIC',identityBound,execution,replies:messages.map(m=>({text:m.body.slice(0,500),type:m.type,at:m.at})),unlinked});
+  const outgoing=all("SELECT m.type,m.status,m.at FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' ORDER BY m.at DESC LIMIT 6",leadId);
+  const report=JSON.stringify({status:'REPLY_DIAGNOSTIC',identityBound,execution,outgoing,replies:messages.map(m=>({text:m.body.slice(0,500),type:m.type,at:m.at})),unlinked});
   if(report!==lastReport){lastReport=report;console.info('[campaign test]',report);}
  }finally{refreshing=false;}
+}
+
+let retrying=false,lastRetryReport='';
+export async function runOperatorDeliveryRetry(){
+ if(retrying||connection().status!=='CONNECTED')return;
+ let config;try{config=JSON.parse(process.env.PROSPECTOR_TEST_DELIVERY_RETRY||'null');}catch{return;}
+ if(!config?.requestId||Date.parse(config.expiresAt)<=Date.now())return;
+ const leadId=getSetting('operator_test_lead_id',''),lead=one('SELECT * FROM leads WHERE id=?',leadId);
+ const sender=String(connection().user||'').split(':')[0].split('@')[0];
+ if(!sender.endsWith(config.senderSuffix)||!lead?.phone.endsWith(config.targetSuffix)||!lead.contact_permission)throw Error('Remetente, destinatário ou aceite do teste não conferem');
+ retrying=true;
+ try{
+  let state=getSetting('operator_delivery_retry_state',null);
+  if(!state||state.requestId!==config.requestId){
+   const execution=one('SELECT steps FROM executions WHERE lead_id=?',leadId),steps=JSON.parse(execution?.steps||'[]');
+   const audio=steps.find(s=>s.type==='audio'),video=steps.find(s=>s.type==='video');
+   if(!audio?.media_id||!video?.media_id)throw Error('Mídias do teste não encontradas');
+   const mediaInfo=[];
+   for(const step of [audio,video]){
+    const media=one('SELECT * FROM media WHERE id=?',step.media_id);
+    const file=path.join(process.env.PROSPECTOR_DATA_DIR||'data','media',media.filename);
+    const info=JSON.parse(execFileSync('ffprobe',['-v','error','-show_entries','format=duration,size:stream=codec_type,codec_name,channels,pix_fmt','-of','json',file],{timeout:15000,encoding:'utf8'}));
+    mediaInfo.push({type:step.type,mime:media.mime,bytes:fs.statSync(file).size,format:info.format,streams:info.streams});
+   }
+   const route=await prepareLeadDelivery(leadId);
+   state=tx(()=>{
+    const audioJob=manualJob(leadId,'','audio',audio.media_id);
+    const next={requestId:config.requestId,audioJob,videoMediaId:video.media_id,caption:video.caption||'',phase:'AUDIO_QUEUED',route,mediaInfo};
+    setSetting('operator_delivery_retry_state',next);audit('OPERATOR_MEDIA_RETRY',leadId,{requestId:config.requestId,route});return next;
+   });
+  }
+  const audioJob=one('SELECT status,updated_at FROM jobs WHERE id=?',state.audioJob);
+  const audioMessage=one("SELECT m.status FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.type='audio' AND m.direction='out' AND m.at>=(SELECT created_at FROM jobs WHERE id=?) ORDER BY m.at DESC LIMIT 1",leadId,state.audioJob);
+  if(!state.videoJob&&['delivered','read'].includes(audioMessage?.status)&&Date.now()-Date.parse(audioJob.updated_at)>=10000){
+   state=tx(()=>{const videoJob=manualJob(leadId,state.caption,'video',state.videoMediaId);const next={...state,videoJob,phase:'VIDEO_QUEUED'};setSetting('operator_delivery_retry_state',next);return next;});
+  }
+  const videoMessage=state.videoJob?one("SELECT m.status FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.type='video' AND m.direction='out' AND m.at>=(SELECT created_at FROM jobs WHERE id=?) ORDER BY m.at DESC LIMIT 1",leadId,state.videoJob):null;
+  const report=JSON.stringify({status:'MEDIA_RETRY_PROGRESS',phase:videoMessage&&['delivered','read'].includes(videoMessage.status)?'DELIVERY_CONFIRMED':state.phase,audioJob:audioJob?.status,audioReceipt:audioMessage?.status||null,videoReceipt:videoMessage?.status||null,route:state.route,mediaInfo:state.mediaInfo});
+  if(report!==lastRetryReport){lastRetryReport=report;console.info('[campaign test]',report);}
+ }finally{retrying=false;}
 }

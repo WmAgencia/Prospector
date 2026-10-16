@@ -11,7 +11,7 @@ import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
 import {canSendInitial} from './radar.mjs';
 import {isOfferActive} from './campaign-rules.mjs';
 import {rememberMessage,retryMessage,recordDeliveryReceipt,createRetryCache,recoveryRepository} from './whatsapp-recovery.mjs';
-import {resolveLead,registerPeerAlias} from './whatsapp-identities.mjs';
+import {resolveLead,registerPeerAlias,verifiedDeliveryAddress} from './whatsapp-identities.mjs';
 import {currentWebVersion,classifyDisconnect,retryDelay,isPairingRestart} from './whatsapp-reliability.mjs';
 
 const msgRetryCounterCache=createRetryCache();
@@ -37,9 +37,19 @@ export async function restoreWhatsAppSession(){
  return {restored:true,status:await connectWhatsApp({restore:true})};
 }
 function jidFor(lead) {
- const thread=one('SELECT jid FROM threads WHERE lead_id=?',lead.id);
- return thread?.jid&&thread.jid.endsWith('@lid')?thread.jid:(lead.phone?lead.phone+'@s.whatsapp.net':thread?.jid);
+ return verifiedDeliveryAddress(lead)||one('SELECT jid FROM threads WHERE lead_id=?',lead.id)?.jid;
 }
+export async function prepareLeadDelivery(leadId){
+ if(!await bindLeadPeer(leadId))throw Error('O WhatsApp não confirmou o destinatário');
+ const lead=one('SELECT * FROM leads WHERE id=?',leadId),jid=jidFor(lead);
+ const B=await import('@whiskeysockets/baileys');
+ const devices=await sock.getUSyncDevices([jid],false,false);
+ const server=jid.endsWith('@lid')?'lid':'s.whatsapp.net';
+ const recipients=[...new Set([jid,...devices.map(d=>B.jidEncode(d.user,server,d.device))])];
+ await sock.assertSessions(recipients,true);
+ return {addressing:server,deviceCount:devices.length};
+}
+
 function queueReconnect(){
  if(retries>=5)return;
  retries++;
@@ -473,10 +483,10 @@ async function send(job,lead){
   const media=one('SELECT * FROM media WHERE id=?',job.media_id);if(!media)throw Error('Mídia inexistente');
   const buf=fs.readFileSync(path.join(process.env.PROSPECTOR_DATA_DIR||'data','media',media.filename));
   if(job.type==='video')payload={video:buf,mimetype:media.mime,...(job.text?{caption:job.text}:{})};
-  else if(job.type==='audio')payload={audio:buf,mimetype:media.mime,ptt:/opus|ogg/.test(media.mime)};
+  else if(job.type==='audio')payload={audio:buf,mimetype:/ogg|opus/.test(media.mime)?'audio/ogg; codecs=opus':media.mime,ptt:/opus|ogg/.test(media.mime)};
   else if(job.type==='image')payload={image:buf,mimetype:media.mime};
  }
- const ack=await sock.sendMessage(jid,payload);
+ const ack=await sock.sendMessage(jid,payload,{useUserDevicesCache:false});
  if(!ack?.key?.id)throw Error('Envio sem identificador de confirmação do WhatsApp');
  return {ack,jid};
 }

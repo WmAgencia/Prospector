@@ -73,6 +73,8 @@ test('LID reply uses provider phone identity and wrapped text, then stays dedupl
  assert.equal(queue.documentedOptIn(lead.id),true);
  const identities=await import('../dashboard/whatsapp-identities.mjs');
  assert.equal(identities.resolveLead({key:{remoteJid:'9000012345678@lid'}}).lead.id,lead.id);
+ assert.equal(identities.verifiedDeliveryAddress(lead),'9000012345678@lid');
+ assert.throws(()=>identities.registerPeerAlias('different-lead','9000012345678@lid'),/outro contato/);
  await runtime.incoming(message);
  assert.equal(db.one("SELECT COUNT(*) n FROM messages WHERE provider_id='lid-acceptance'").n,1);
  assert.equal(runtime.isRelevantBufferedReply({...message,key:{...message.key,fromMe:true}}),false);

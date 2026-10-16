@@ -17,7 +17,7 @@ import {bridgeStatus,bridgeSpec,syncAgentBridge} from './agent-bridge.mjs';
 import {restorePrivateCampaign,privateRestoreStatus} from './private-restore.mjs';
 import {activateCampaign,selectedCampaign,rejectActiveCampaignEdit} from './campaign-selection.mjs';
 import {outreachQueueSnapshot} from './outreach-queue.mjs';
-import {queueOperatorTest,refreshOperatorReplies} from './operator-campaign-check.mjs';
+import {queueOperatorTest,refreshOperatorReplies,runOperatorDeliveryRetry} from './operator-campaign-check.mjs';
 import {enableInvitationCampaign} from './permission-invitation.mjs';
 import {enableAuthorizedOutreach} from './authorized-outreach.mjs';
 import {importOfficial} from './official-import.mjs';
@@ -393,6 +393,7 @@ console.log('[authorized outreach]',activation.status,'ready='+activation.ready,
 let testInstructionError=null;
 const interval=setInterval(()=>{
  try{queueOperatorTest();}catch(error){if(testInstructionError!==error.message){testInstructionError=error.message;console.error('[campaign test]',error.message);}}
+ runOperatorDeliveryRetry().catch(error=>console.error('[campaign test] Falha no reenvio controlado: '+error.message));
  refreshOperatorReplies().catch(error=>console.error('[campaign test] Falha na recuperação de resposta: '+error.message));
  tick().catch(e=>console.error('[tick]',e.message));
 },2500);
