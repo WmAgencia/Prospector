@@ -36,7 +36,7 @@ export function decideMessage(text,context='general_interest',{modelPrediction=n
  if(objectionPrice.test(s))return result('PRICE_OBJECTION','REVIEW',0.96,'price_objection',ctx,true);
  if(objectionTiming.test(s))return result('TIMING_OBJECTION','REVIEW',0.96,'timing_objection',ctx,true);
  if(ctx==='website_interest'){
-  if(sitePositive.test(s)||smallYes.test(s))return result('INTERESTED','YES',0.97,'explicit_site_interest',ctx);
+  if(sitePositive.test(s)||/^(?:sim|sim quero|sim tenho interesse|quero|quero sim|claro|com certeza|quero um|quero um assim|gostaria sim|tenho interesse)[!?. ]*$/.test(s))return result('INTERESTED','YES',0.97,'explicit_site_interest',ctx);
   if(question.test(s)||s.endsWith('?'))return result('QUESTION','REVIEW',0.95,'sales_question',ctx,true);
   return result('AMBIGUOUS','REVIEW',0.78,'site_interest_not_confirmed',ctx,true);
  }
