@@ -74,6 +74,14 @@ if(!getSetting('discovery_5am_outreach_8am_v1',false)){
  }))setSetting(key,value);
  setSetting('discovery_5am_outreach_8am_v1',true);
 }
+// Pesquisa Google Places usa apenas Place IDs persistentes e fica limitada a 6 consultas diárias por padrão.
+if(!one("SELECT key FROM settings WHERE key='google_places_auto_enabled'"))setSetting('google_places_auto_enabled',true);
+if(!one("SELECT key FROM settings WHERE key='google_daily_queries'"))setSetting('google_daily_queries',6);
+if(!getSetting('google_source_initialised_v1',false)){
+ const providers=getSetting('discovery_sources',{})||{};
+ if(!Object.prototype.hasOwnProperty.call(providers,'google_places'))setSetting('discovery_sources',{...providers,google_places:true});
+ setSetting('google_source_initialised_v1',true);
+}
 // Rascunho persistente da campanha Consecom; não cria mídias nem inicia envios.
 if(!getSetting('consecom_350_seeded_v1',false)){
  const existing=one('SELECT id FROM workflows WHERE name=? ORDER BY updated_at DESC LIMIT 1','Consecom | Site profissional R$ 350 | Áudio + vídeo');

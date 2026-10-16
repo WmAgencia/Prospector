@@ -3,6 +3,7 @@
 // Buscas diárias graduais até a meta, respeitando as cotas da fonte comunitária.
 import {one,all,run,id,now,phone,addLead,getSetting,audit} from './db.mjs';
 import {recordOrigin} from './discovery.mjs';
+import {upsertBusinessMeta} from './lead-catalog.mjs';
 import {daySP,hourSP,radarSnapshot} from './radar.mjs';
 
 export const LOCATIONS={
@@ -138,6 +139,7 @@ export async function discoverLocal(payload={},automatic=false){
     website:safeWebsite,website_status:safeWebsite?'HAS_WEBSITE':'UNCERTAIN',contact_permission:false,
     notes:'Fonte: © OpenStreetMap contributors (ODbL). Cadastro público não autoriza mensagens. '+url});
    recordOrigin(result.lead.id,'osm',{url,city:location.label,segment:segment.label,phonePublished:!!p,hasWebsiteTag:!!safeWebsite});
+   upsertBusinessMeta(result.lead.id,{businessType:segment.filter});
    if(result.created)added++;
   }
   run('UPDATE discoveries SET status=?,found=?,details=? WHERE id=?','COMPLETE',added,JSON.stringify({examined,withPhone,automatic,matchedTotal:data.elements.length}),attemptId);

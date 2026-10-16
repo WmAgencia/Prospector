@@ -74,10 +74,10 @@ export async function googleResearchTick(at=new Date(),options={}){
   const result=await searchGoogleIds(next.city,next.segment,options);
   let added=0;
   for(const placeId of result.ids){
-   const r=run("INSERT INTO google_place_index(place_id,city_query,segment_query,first_seen,last_seen) VALUES(?,?,?,?,?) ON CONFLICT(place_id) DO UPDATE SET last_seen=excluded.last_seen",placeId,next.city,next.segment,now(),now());
-   if(r.changes&&r.lastInsertRowid)added++;
+   const r=run('INSERT OR IGNORE INTO google_place_index(place_id,city_query,segment_query,first_seen,last_seen) VALUES(?,?,?,?,?)',placeId,next.city,next.segment,now(),now());
+   if(r.changes)added++;
+   else run('UPDATE google_place_index SET last_seen=? WHERE place_id=?',now(),placeId);
   }
-  // updated count is advisory; use differences of unique IDs for exact totals.
   run("UPDATE google_research_runs SET status='COMPLETE',found=?,added=?,requests=? WHERE id=?",result.ids.length,added,result.requests,runId);
   audit('GOOGLE_IDS_RESEARCH',null,{city:next.city,segment:next.segment,found:result.ids.length,added,requests:result.requests});
   return {status:'COMPLETE',city:next.city,segment:next.segment,found:result.ids.length,added,requests:result.requests};
