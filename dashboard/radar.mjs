@@ -62,7 +62,7 @@ export function radarSnapshot(input=new Date()){
  const scanningEnabled=getSetting('discovery_auto_enabled',true)!==false&&(getSetting('discovery_sources',{}).osm!==false);
  const scanHour=hourSP(input),discoveryStartHour=Number(getSetting('discovery_start_hour',5));
  const osmSearchesToday=todayRuns.filter(x=>x.query.startsWith('osm:')).length;
- const discoveryReason=!scanningEnabled?'DISABLED':foundToday.length>=discoveryTarget?'TARGET_REACHED':scanHour<discoveryStartHour?'BEFORE_START':osmSearchesToday>=8?'PROVIDER_LIMIT':'RUNNING_OR_WAITING_FOR_PROVIDER';
+ const discoveryReason=!scanningEnabled?'DISABLED':foundToday.length>=discoveryTarget?'TARGET_REACHED':scanHour<discoveryStartHour?'BEFORE_START':osmSearchesToday>=12?'PROVIDER_LIMIT':'RUNNING_OR_WAITING_FOR_PROVIDER';
  const campaignId=String(getSetting('autonomous_campaign_id',''));
  const campaignReady=!!(campaignId&&one('SELECT id FROM workflows WHERE id=? AND enabled=1',campaignId));
  return {asOf:input.toISOString(),pilot,...budget,campaignReady,discoveryTarget,discoveryStartHour,discoveryReason,osmSearchesToday,foundToday:foundToday.length,foundTotal:one('SELECT COUNT(*) AS n FROM leads')?.n||0,
