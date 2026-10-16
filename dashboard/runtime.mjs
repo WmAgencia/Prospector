@@ -261,7 +261,7 @@ export function handleDecision(leadId,text,isText=true){
    run("UPDATE executions SET state='COMPLETE',next_step=next_step+1,updated_at=? WHERE id=?",now(),exec.id);
    stage(leadId,accepted?'INTERESTED':'NO_INTEREST','Automação finalizada por resposta');
   }
-  audit('AUTOMATION_DECISION',leadId,{workflowId:exec.workflow_id,decision:outcome.decision,context:choice.context,action});
+  audit('AUTOMATION_DECISION',leadId,{workflowId:exec.workflow_id,decision:outcome.decision,confidence:outcome.confidence||null,reason:outcome.reason,engine:outcome.engine||'legacy',context:choice.context,action});
   return {...outcome,action,shouldContinue:action==='continue',executionId:exec.id};
  });
 }
