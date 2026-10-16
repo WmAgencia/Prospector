@@ -20,7 +20,7 @@ export function googleIndexStatus(at=new Date()){
  const key=!!process.env.GOOGLE_PLACES_API_KEY;
  const day=daySP(at),runs=all('SELECT status,at,requests,found,added FROM google_research_runs WHERE at>=? ORDER BY at DESC LIMIT 150',new Date(at.getTime()-48*3600000).toISOString()).filter(x=>daySP(new Date(x.at))===day);
  const requests=runs.reduce((sum,x)=>sum+Number(x.requests||0),0);
- return {enabled:getSetting('google_places_auto_enabled',true)!==false,keyConfigured:key,
+ return {enabled:getSetting('google_places_auto_enabled',true)!==false&&getSetting('discovery_sources',{}).google_places!==false,keyConfigured:key,
   placeIdsIndexed:one('SELECT COUNT(*) n FROM google_place_index').n,queriesToday:runs.length,requestsToday:requests,
   dailyQueryCap:Math.max(1,Math.min(MAX_QUERIES,Number(getSetting('google_daily_queries',6))||6)),
   citiesAvailable:selectedCities().length,nichesAvailable:selectedSegments().length,
