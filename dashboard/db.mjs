@@ -82,6 +82,22 @@ if(!getSetting('google_source_initialised_v1',false)){
  if(!Object.prototype.hasOwnProperty.call(providers,'google_places'))setSetting('discovery_sources',{...providers,google_places:true});
  setSetting('google_source_initialised_v1',true);
 }
+// OSM é a fonte automática definida pelo operador. O Google permanece
+// desativado mesmo que uma chave seja adicionada futuramente.
+if(!getSetting('osm_only_decision_engine_v2_applied',false)){
+ const src=getSetting('discovery_sources',{})||{};
+ setSetting('discovery_sources',{...src,osm:true,google_places:false,web_search:false});
+ setSetting('google_places_auto_enabled',false);
+ setSetting('decision_engine_enabled',true);
+ setSetting('decision_learning_enabled',false);
+ // Mantém os destinos anteriores e amplia para nichos/cidades suportados.
+ const allCities='Sorocaba,Votorantim,Campinas,São Paulo,Itu,Salto,Boituva,Tatuí,São Roque,Indaiatuba,Jundiaí,Itapetininga,Piracicaba,Santos,Barueri,Osasco,Guarulhos,Ribeirão Preto';
+ const allSegments='dentista,nutricionista,massoterapeuta,quiropraxista,esteticista,personal,psicologo,clinica,cabeleireiro,advogado,arquiteto,marceneiro,academia,restaurante,oficina,veterinario,petshop,farmacia,otica,imobiliaria,contabilidade,fisioterapia,lavanderia,padaria,confeitaria,moda,floricultura,construcao,hotel,bar,cafeteria,idioma,joalheria,papelaria,hamburgueria';
+ setSetting('cities',allCities);
+ setSetting('segments',allSegments);
+ setSetting('osm_only_decision_engine_v2_applied',true);
+ audit('OSM_ONLY_ENGINE_V2_CONFIGURED',null,{cityCount:18,nicheCount:35});
+}
 // Rascunho persistente da campanha Consecom; não cria mídias nem inicia envios.
 if(!getSetting('consecom_350_seeded_v1',false)){
  const existing=one('SELECT id FROM workflows WHERE name=? ORDER BY updated_at DESC LIMIT 1','Consecom | Site profissional R$ 350 | Áudio + vídeo');

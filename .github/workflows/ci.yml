@@ -43,6 +43,8 @@ jobs:
           node --check dashboard/authorized-outreach.mjs
           node --check dashboard/queue-health.mjs
           node --check dashboard/lead-catalog.mjs
+          node --check dashboard/decision-intelligence/engine.mjs
+          node --check dashboard/decision-intelligence/learning.mjs
           node --check dashboard/google-places-index.mjs
           node --check dashboard/operation-timeouts.mjs
           node --check dashboard/private-restore.mjs
@@ -60,6 +62,8 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3030/api/agent-bridge/status | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!x.state)process.exit(1)})"
           curl --silent --show-error -X POST -H 'Content-Type: application/json' -d '{"id":"default"}' http://127.0.0.1:3030/api/workflows/activate | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!/mídia|áudio|vídeo|Campanha/.test(x.error||''))process.exit(1);console.log('Activation guard smoke passed')})"
           curl --fail --silent --show-error http://127.0.0.1:3030/api/outreach-queue | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{let a=JSON.parse(s);if(!('ready' in a)&&!('awaitingConsent' in a))process.exit(1)})"
+          curl --silent --show-error -X POST -H 'Content-Type: application/json' -d '{"text":"sim, pode mandar","context":"presentation_permission"}' http://127.0.0.1:3030/api/intelligence/test | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const a=JSON.parse(s);if(a.decision!=='YES'||!a.engine)process.exit(1)})"
+          curl --fail --silent --show-error http://127.0.0.1:3030/api/intelligence/status | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const a=JSON.parse(s);if(!Array.isArray(a.models))process.exit(1)})"
           curl --fail --silent --show-error http://127.0.0.1:3030/api/catalog/summary | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const a=JSON.parse(s);if(!('total' in a)||!Array.isArray(a.cities))process.exit(1)})"
           curl --fail --silent --show-error http://127.0.0.1:3030/api/catalog?limit=10 | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const a=JSON.parse(s);if(!Array.isArray(a.leads))process.exit(1)})"
           curl --fail --silent --show-error http://127.0.0.1:3030/api/research/google-index | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const a=JSON.parse(s);if(!('keyConfigured' in a))process.exit(1)})"

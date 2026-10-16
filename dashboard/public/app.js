@@ -5,7 +5,7 @@ const labelStage={DISCOVERED:'Encontrado',CONTACTED:'Em abordagem',REPLIED:'Resp
 const websiteLabel={UNCERTAIN:'Verificação inconclusiva',NOT_FOUND_AFTER_CHECK:'Site não encontrado na pesquisa',NO_WEBSITE:'Sem site após revisão humana',HAS_WEBSITE:'Site próprio confirmado',SOCIAL_ONLY:'Somente redes sociais',LINK_AGGREGATOR_ONLY:'Página agregadora',BROKEN_WEBSITE:'Site indisponível'};
 const stages=[['DISCOVERED','Encontrados','blue'],['CONTACTED','Em abordagem','blue'],['REPLIED','Responderam','yellow'],['INTERESTED','Interessados','green'],['NO_INTEREST','Sem interesse','red'],['CLOSED_WON','Fechados','green']];
 let state=null,page=location.hash.split('/')[1]||'overview',selectedThread=location.hash.split('/')[2]||null,mediaTab='video',workflowId='default',editing=null,dirty=false,loading=false,chatSearch='',kanbanSearch='';
-let toastTimer=null,kanbanStage='ALL',catalogFilters={},catalogOffset=0;
+let toastTimer=null,kanbanStage='ALL',catalogFilters={},catalogOffset=0,lastDecisionExample=null;
 const icons={video:'▣',audio:'♫',image:'▧',message:'✉',wait_reply:'◌',delay:'◷',end:'✓'};
 function showToast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),4200);}
 async function request(path,data,method='POST'){
@@ -121,7 +121,7 @@ function prospects(){
  markup+='<div class="board '+(kanbanStage==='ALL'?'':'simple-board-focus')+'">'+stages.filter(x=>kanbanStage==='ALL'||x[0]===kanbanStage).map(([stage,title,color])=>{
   const arr=filtered.filter(l=>l.stage===stage);
   return '<div class="column" data-dropstage="'+stage+'"><div class="column-header"><strong>'+title+'</strong><span class="count">'+arr.length+'</span></div>'+
-  (arr.length?arr.map(l=>'<div class="leadcard" draggable="true" data-dragid="'+l.id+'" data-action="open-lead" data-lead="'+l.id+'"><strong>'+esc(l.name||l.business)+'</strong><div class="phone">'+esc(l.phone||'WhatsApp não identificado')+'</div><footer><small>'+esc(l.business)+' · '+(l.score??0)+' pts</small><span class="tag '+color+'">'+esc(labelStage[stage])+'</span></footer><div class="actionsrow" style="margin-top:10px"><button class="btn small secondary" data-action="review-lead" data-lead="'+l.id+'">Revisar</button>'+(stage==='DISCOVERED'?'<button class="btn small" data-action="start-lead" data-lead="'+l.id+'">Iniciar</button>':'')+'</div></div>').join(''):'<div class="empty" style="padding:25px 4px;font-size:12px">Nenhum lead</div>')+'</div>';
+  (arr.length?arr.map(l=>'<div class="leadcard" draggable="true" data-dragid="'+l.id+'" data-action="open-lead" data-lead="'+l.id+'"><strong>'+esc(l.name||l.business)+'</strong><div class="phone">'+esc(l.phone||'WhatsApp não identificado')+'</div><footer><small>'+esc(l.business)+' · '+(l.intelligence?.score??l.score??0)+' pts</small><span class="tag '+color+'">'+esc(labelStage[stage])+'</span></footer><div class="actionsrow" style="margin-top:10px"><button class="btn small secondary" data-action="review-lead" data-lead="'+l.id+'">Revisar</button>'+(stage==='DISCOVERED'?'<button class="btn small" data-action="start-lead" data-lead="'+l.id+'">Iniciar</button>':'')+'</div></div>').join(''):'<div class="empty" style="padding:25px 4px;font-size:12px">Nenhum lead</div>')+'</div>';
  }).join('')+'</div>';
  const fresh=filtered.filter(l=>l.stage==='DISCOVERED');
  markup+='<details class="panel simple-lead-extras" style="margin-top:12px"><summary>Lista de encontrados para revisão ('+fresh.length+')</summary><div class="between"><h3>Novos leads para qualificação ('+fresh.length+')</h3><span class="tag">Não abordados</span></div>'+
@@ -260,7 +260,7 @@ async function loadStudio(){
 }
 
 function discovery(){
- const providers=state.providers||[];
+ const providers=(state.providers||[]).filter(p=>p.id==='osm'||p.id==='cnpj'||p.id==='cnes');
  const local=state.localDiscovery||{cities:['Sorocaba','Votorantim','Campinas'],segments:[{id:'dentista',label:'Dentistas'}]};
  return '<div class="section-head"><h2>Descoberta de empresas</h2><p>Encontre empresas de vários nichos e cidades e acompanhe uma base própria de milhares de registros.</p></div>'+
  '<section class="panel"><div class="between"><div><span class="panel-eyebrow">BASE DE EMPRESAS · CRM PRÓPRIO</span><h3>'+Number(state.catalog?.total||0).toLocaleString('pt-BR')+' empresas catalogadas</h3><p class="subtle">'+Number(state.catalog?.withPhone||0)+' com telefone, em diferentes cidades e nichos. Listagem paginada e filtrável.</p></div><span class="tag green">Catálogo B2B</span></div>'+
@@ -270,9 +270,10 @@ function discovery(){
  '<select id="catalog-type"><option value="">Todos os tipos</option>'+((state.catalog?.types||[]).map(x=>'<option value="'+esc(x.label)+'">'+esc(x.label)+'</option>').join(''))+'</select>'+
  '<select id="catalog-quality"><option value="">Qualidade A/B/C</option><option value="A">A · Prioritária</option><option value="B">B · Com telefone</option><option value="C">C · Incompleta</option></select>'+
  '<button class="btn" data-action="catalog-search">Filtrar base →</button></div></section>'+
- '<section class="panel"><h3>Google Maps · Pesquisa automática de cidades e nichos</h3><p class="subtle">A integração Places API New pesquisa empresas e armazena somente os IDs dos locais, separados do CRM. Dados completos são consultados temporariamente na API oficial.</p>'+
- '<div class="simple-autoqueue-numbers"><span><strong>'+Number(state.googleIndex?.placeIdsIndexed||0)+'</strong> IDs indexados</span><span><strong>'+Number(state.googleIndex?.queriesToday||0)+'</strong> pesquisas hoje</span><span><strong>'+Number(state.googleIndex?.dailyQueryCap||6)+'</strong> limite por dia</span></div>'+
- '<p class="helper-text">'+(state.googleIndex?.keyConfigured?'Chave Google configurada. A pesquisa progride automaticamente, respeitando a cota diária.':'Pesquisa Google aguardando GOOGLE_PLACES_API_KEY na Railway e faturamento habilitado no Google Cloud.')+'</p></section>'+
+ '<section class="panel"><span class="panel-eyebrow">INTELIGÊNCIA COMERCIAL · CONSECOM</span><h3>Motor de decisão contextual</h3><p class="subtle">Analise respostas com Choice (intenção), Score (prioridade) e Noul (decisão). O teste não envia mensagens.</p>'+
+ '<div class="two"><div class="field"><label>Resposta de exemplo</label><input id="decision-example" placeholder="Ex.: Sim, pode mandar o áudio"></div><div class="field"><label>Contexto da mensagem anterior</label><select id="decision-context"><option value="presentation_permission">Autorização para apresentação</option><option value="website_interest">Interesse no site após o vídeo</option><option value="general_interest">Interesse geral</option><option value="sample_offer">Pedido de exemplo</option></select></div></div>'+
+ '<div class="actionsrow"><button class="btn" data-action="intelligence-test">Analisar resposta</button><span class="tag green">Decisão explicável</span></div>'+
+ '<p class="helper-text">Frases ambíguas e objeções são encaminhadas à revisão. Aprendizado apenas com exemplos confirmados.</p></section>'+
  '<div class="cards"><section class="panel"><h3>Buscar empresas locais · OpenStreetMap</h3><p class="subtle">Consulta real a empresas cadastradas publicamente, sem chave de API. Os resultados entram no Kanban para revisão.</p>'+
  '<div class="two"><div class="field"><label>Cidade</label><select id="local-city">'+local.cities.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select></div>'+
  '<div class="field"><label>Segmento</label><select id="local-segment">'+local.segments.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.label)+'</option>').join('')+'</select></div></div>'+
@@ -284,7 +285,7 @@ function discovery(){
  '<section class="panel" style="margin-top:18px"><div class="between"><h3>Busca web complementar (Brave)</h3><span class="tag">'+(state.searchConfigured?'Configurada':'Opcional')+'</span></div>'+
  '<div class="two"><div class="field"><label>Consulta livre</label><input id="discover-query" placeholder="Ex.: psicóloga Sorocaba ou clínica Campinas"></div><button class="btn secondary" data-action="discover" '+(!state.searchConfigured?'disabled':'')+'>Pesquisar perfis indexados</button></div>'+
  '<p class="subtle">Brave requer chave válida do provedor. Bibliotecas no GitHub não fornecem chaves de serviços externos.</p></section>'+
- '<section class="panel" style="margin-top:18px"><div class="between"><h3>Diretórios empresariais complementares</h3><span class="tag">APIs oficiais</span></div><p class="subtle">Google Places e Foursquare oferecem informações adicionais de sites e empresas quando você configura suas próprias chaves na Railway. Podem existir custos e limitações de armazenamento. Resultados são exibidos para revisão e não são copiados automaticamente ao banco.</p><div class="two"><div class="field"><label>Fonte</label><select id="external-provider"><option value="google_places">Google Places</option><option value="foursquare">Foursquare Places</option></select></div><div class="field"><label>Segmento</label><input id="external-query" placeholder="Ex.: clínica odontológica"></div></div><div class="two"><div class="field"><label>Cidade</label><input id="external-city" value="Sorocaba"></div><button class="btn secondary" data-action="external-search">Pesquisar nesta fonte</button></div></section>'+
+ '<section class="panel" style="margin-top:18px"><div class="between"><h3>Diretórios empresariais complementares</h3><span class="tag">APIs oficiais</span></div><p class="subtle">Google Places e Foursquare oferecem informações adicionais de sites e empresas quando você configura suas próprias chaves na Railway. Podem existir custos e limitações de armazenamento. Resultados são exibidos para revisão e não são copiados automaticamente ao banco.</p><div class="two"><div class="field"><label>Fonte</label><select id="external-provider"><option value="foursquare">Foursquare Places</option></select></div><div class="field"><label>Segmento</label><input id="external-query" placeholder="Ex.: clínica odontológica"></div></div><div class="two"><div class="field"><label>Cidade</label><input id="external-city" value="Sorocaba"></div><button class="btn secondary" data-action="external-search">Pesquisar nesta fonte</button></div></section>'+
  '<section class="panel" style="margin-top:18px"><h3>Importar CNPJ / CNES · fontes oficiais</h3><p class="subtle">Use CSV ou JSON oficial em lotes de até 5.000 empresas para alimentar a base permanente. O sistema registra a procedência, cruza duplicados e cria oportunidades sem permissão de contato. O download massivo dessas bases não é realizado pelo servidor.</p><div class="two"><div class="field"><label>Fonte</label><select id="official-source"><option value="cnpj">CNPJ / Receita Federal</option><option value="cnes">CNES / Ministério da Saúde</option></select></div><div class="field"><label>Arquivo (até 5.000 registros)</label><input type="file" id="official-file" accept=".csv,.json"></div></div><div class="actionsrow"><button class="btn secondary" data-action="import-official">Importar lote verificado</button><span class="tag">Sem envio de mensagens</span></div><small class="subtle">CSV com colunas cnpj ou cnes, nome_fantasia ou nome, municipio, telefone (opcional). CNES e CNPJ devem conter seus códigos completos.</small></section>'+
  '<section class="panel" style="margin-top:18px"><h3>Provedores de prospecção</h3>'+providers.map(p=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(p.label)+'</strong><small>'+esc(p.note)+'</small></div><span class="tag '+(p.status==='READY'?'green':p.status==='NEEDS_API_KEY'?'yellow':'')+'">'+esc(p.status==='READY'?'Pronto':p.status==='NEEDS_API_KEY'?'Sem chave':p.status==='IMPORT_READY'?'Importação pronta':'Não integrado')+'</span></div>').join('')+'</section>'+
  '</details>'+ 
@@ -332,7 +333,9 @@ function settings(){
  toggle('paused','Operação pausada','Quando ligado, não são iniciadas novas abordagens.')+
  toggle('automation_enabled','Continuar respostas automaticamente','Avança a campanha após respostas reconhecidas.')+
  toggle('auto_initial','Abordagens automáticas','Clientes com autorização documentada entram na rotina automaticamente, sem aprovação individual.')+
- toggle('discovery_auto_enabled','Buscar empresas automaticamente','Começa às 05h, mesmo com as abordagens pausadas; tenta chegar a 150 empresas novas.')+
+ toggle('decision_engine_enabled','Inteligência contextual das respostas','Classifica aceite, interesse, objeção, recusa e mensagens para revisão.')+
+ toggle('decision_learning_enabled','Aprendizado com exemplos confirmados','Treina com exemplos rotulados por você; previsões nunca liberam mídia por conta própria.')+
+ toggle('discovery_auto_enabled','Buscar empresas automaticamente','Pesquisa exclusiva no OpenStreetMap a partir das 05h em múltiplos nichos e cidades.')+
  '<h3 class="simple-subheading">Limites e horários</h3><div class="simple-fields-grid">'+
  num('daily_limit','Máximo de abordagens por dia',1,150,150)+
  num('discovery_target_daily','Meta de novas empresas por dia',1,150,150)+
@@ -452,6 +455,21 @@ document.addEventListener('click',async event=>{
      const html=result.results.length?result.results.map(x=>'<div class="activity"><span class="dotmini">⌕</span><div style="flex:1"><strong>'+esc(x.name)+'</strong><small>'+esc(x.address||'')+'</small><small>'+esc(x.website||'Site não informado no provedor (não comprovado)')+'</small></div>'+(x.website?'<a target="_blank" rel="noopener noreferrer" href="'+esc(x.website)+'">Site ↗</a>':'')+'</div>').join(''):'<div class="empty">Nenhum registro retornado por esta fonte.</div>';
      modal('<h2>Pesquisa em '+esc(result.source)+'</h2>'+(result.source==='google_places'?'<p class="helper-text" translate="no"><a href="https://maps.google.com/" target="_blank" rel="noopener noreferrer">Google Maps</a> · Fonte dos resultados abaixo</p>':'')+'<p class="subtle">Resultados para revisão, não importados automaticamente. Confirme os termos do provedor e o site da empresa.</p>'+html+'<div class="footer"><button class="btn secondary" data-action="close-modal">Fechar</button></div>');
     }finally{el.disabled=false;}return;
+  }
+  if(action==='intelligence-test'){
+   const message=$('#decision-example')?.value||'',context=$('#decision-context')?.value||'general_interest';
+   if(!message.trim())throw Error('Digite uma resposta para análise.');
+   const result=await request('/api/intelligence/test',{text:message,context});
+   lastDecisionExample={text:message,context};
+   const label=result.decision==='YES'?'Aceite explícito':result.decision==='NO'?'Recusa':'Revisão humana';
+   modal('<h2>Decisão contextual: '+esc(label)+'</h2><p><strong>Intenção:</strong> '+esc(result.intent)+'</p><p><strong>Confiança da regra:</strong> '+Math.round(Number(result.confidence||0)*100)+'%</p><p><strong>Motivo:</strong> '+esc(result.reason)+'</p><p class="helper-text">Confiança da regra não é taxa estatística de acerto. Só confirme exemplos que você revisou.</p><div class="footer"><button class="btn secondary" data-action="intelligence-label" data-label="YES">Rotular como aceite</button><button class="btn secondary" data-action="intelligence-label" data-label="NO">Rotular como recusa</button><button class="btn secondary" data-action="intelligence-label" data-label="REVIEW">Rotular como revisão</button><button class="btn" data-action="close-modal">Fechar</button></div>');
+   return;
+  }
+  if(action==='intelligence-label'){
+   if(!lastDecisionExample)throw Error('Faça uma análise primeiro.');
+   const result=await request('/api/intelligence/label',{...lastDecisionExample,label:el.dataset.label});
+   showToast(result.created?'Exemplo incluído no treinamento.':'Esse exemplo já foi classificado.');
+   lastDecisionExample=null;closeModal();return;
   }
   if(action==='catalog-search'){catalogFilters={search:$('#catalog-text')?.value||'',city:$('#catalog-city')?.value||'',segment:$('#catalog-niche')?.value||'',businessType:$('#catalog-type')?.value||'',quality:$('#catalog-quality')?.value||''};return showCatalog(0);}
   if(action==='catalog-next')return showCatalog(catalogOffset+60);

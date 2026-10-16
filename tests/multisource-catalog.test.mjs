@@ -45,6 +45,10 @@ test('CSV parser allows large datasets and rejects malformed headers',()=>{
 test('Google Places requires its own key and never stores Google listing details in CRM',async()=>{
  const old=process.env.GOOGLE_PLACES_API_KEY;
  delete process.env.GOOGLE_PLACES_API_KEY;
+ // OSM é a única fonte automática; o adaptador Google continua testável isoladamente.
+ assert.equal((await googleResearchTick()).status,'DISABLED');
+ db.setSetting('google_places_auto_enabled',true);
+ db.setSetting('discovery_sources',{osm:true,google_places:true,cnpj:true});
  assert.equal((await googleResearchTick()).status,'NEEDS_API_KEY');
  const leadTotal=catalogSummary().total;
  process.env.GOOGLE_PLACES_API_KEY='fake-test-key';

@@ -9,7 +9,9 @@ import {providerStatus,scoreLead,recordOrigin,discoverProfiles,verifyWebsiteCand
 import {setSalesCampaign} from './sales-campaign.mjs';
 import {searchDirectory} from './external-research.mjs';
 import {catalogQuery,catalogSummary} from './lead-catalog.mjs';
-import {googleIndexStatus,googleResearchTick} from './google-places-index.mjs';
+import {googleIndexStatus} from './google-places-index.mjs';
+import {decideMessage,scoreOpportunity,contexts} from './decision-intelligence/engine.mjs';
+import {modelPredict,modelStatistics,labelExample} from './decision-intelligence/learning.mjs';
 import {evidence,STATUSES} from './website-review.mjs';
 import {eligibleRecontacts,scheduleApprovedRecontact} from './contact-cadence.mjs';
 import {discoverLocal,dailyLocalDiscovery,reconcileInterruptedSearches,LOCATIONS,SEGMENTS} from './osm-discovery.mjs';
@@ -122,7 +124,7 @@ async function body(req,limit=3*1024*1024){
  return Buffer.concat(parts);
 }
 async function json(req){const b=await body(req);return b.length?JSON.parse(b.toString('utf8')):{};}
-const allowedSettings=new Set(['google_places_auto_enabled','google_daily_queries','paused','auto_initial','min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
+const allowedSettings=new Set(['decision_learning_enabled','decision_engine_enabled','paused','auto_initial','min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
 function snapshot(){
  const leadOrigins=all('SELECT o.lead_id,o.source,o.verified FROM lead_origins o WHERE o.lead_id IN (SELECT id FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000) ORDER BY o.at DESC');
   const originsByLead=new Map();for(const origin of leadOrigins){if(!originsByLead.has(origin.lead_id))originsByLead.set(origin.lead_id,[]);originsByLead.get(origin.lead_id).push(origin);}
@@ -281,6 +283,17 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/catalog')return respond(res,200,catalogQuery(Object.fromEntries(url.searchParams)));
    if(req.method==='GET'&&pathname==='/api/catalog/summary')return respond(res,200,catalogSummary());
    if(req.method==='GET'&&pathname==='/api/research/google-index')return respond(res,200,googleIndexStatus());
+  if(req.method==='GET'&&pathname==='/api/intelligence/status')return respond(res,200,{enabled:getSetting('decision_engine_enabled',true),learningEnabled:getSetting('decision_learning_enabled',false),models:contexts.map(modelStatistics),mode:'contextual_rules_plus_optional_review_only_classifier',leadScoreVersion:'consecom-lead-score-v2'});
+  if(req.method==='POST'&&pathname==='/api/intelligence/test'){
+   const input=await json(req);if(typeof input.text!=='string'||input.text.length>1500)throw Error('Mensagem inválida');
+   const context=String(input.context||'general_interest');
+   if(!contexts.includes(context))throw Error('Contexto inválido');
+   const model=getSetting('decision_learning_enabled',false)?modelPredict(input.text,context):null;
+   return respond(res,200,{...decideMessage(input.text,context,{modelPrediction:model}),statisticalModel:model});
+  }
+  if(req.method==='POST'&&pathname==='/api/intelligence/label'){
+   const input=await json(req);const out=labelExample(input);notify();return respond(res,200,out);
+  }
    if(req.method==='POST'&&pathname==='/api/research/external'){const result=await searchDirectory(await json(req));return respond(res,200,result);}
   if(req.method==='POST'&&pathname==='/api/discover/official'){const raw=await body(req,8*1024*1024);const out=importOfficial(JSON.parse(raw.toString('utf8')));notify();return respond(res,200,out);}
   if(req.method==='POST'&&pathname.startsWith('/api/leads/')&&pathname.endsWith('/site-audit')){return respond(res,200,await siteAudit(pathname.split('/')[3]));}
@@ -319,7 +332,8 @@ async function handler(req,res){
     if(!allowedSettings.has(k))throw Error('Configuração desconhecida: '+k);
     if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
     if(k==='daily_limit'&&Number(value)>150)throw Error('O teto diário é 150 primeiras abordagens');
-     if(k==='google_daily_queries'&&(!Number.isInteger(Number(value))||Number(value)<1||Number(value)>20))throw Error('Limite diário Google deve ser de 1 a 20 pesquisas');
+     // Controles do motor de decisão são booleanos (sem alterar campanha/horários).
+     if(['decision_engine_enabled','decision_learning_enabled'].includes(k)&&typeof value!=='boolean')throw Error('Use verdadeiro ou falso para o motor de decisão');
     if(k==='discovery_target_daily'&&(Number(value)<1||Number(value)>150))throw Error('A meta de descoberta deve ser de 1 a 150');
     if(k==='discovery_start_hour'&&(Number(value)<0||Number(value)>23))throw Error('O início da descoberta deve ficar entre 0h e 23h');
     if(k==='initial_interval_seconds'&&Number(value)<144)throw Error('Intervalo mínimo é 144 segundos');
@@ -422,9 +436,8 @@ setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if
 const interruptedSearches=reconcileInterruptedSearches();
 if(interruptedSearches.recovered)console.info('[osm discovery] Recuperadas '+interruptedSearches.recovered+' consultas interrompidas; mantidas na cota diária');
 const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),60*1000);
-const googleTimer=setInterval(()=>googleResearchTick().then(x=>{if(x.status==='COMPLETE'){console.info('[google research]',JSON.stringify(x));notify();}}).catch(e=>console.error('[google research]',e.message)),5*60000);
-setTimeout(()=>googleResearchTick().then(x=>console.info('[google research]',x.status)).catch(e=>console.error('[google research]',e.message)),45000).unref();
+// Somente OSM executa pesquisas automáticas. Google Places permanece inativo.
 setTimeout(()=>dailyLocalDiscovery().then(x=>{if(x?.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),120000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));});
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(googleTimer);clearInterval(agentBridgeTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(agentBridgeTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
