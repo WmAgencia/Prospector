@@ -34,6 +34,12 @@ test('the queue diagnosis exposes why sends do not progress, without contact ide
  assert.equal(s.invalidPending,1);
  assert.equal(JSON.stringify(s).includes(lead.phone),false);
  assert.equal(s.initialToday.limit,150);
+ assert.equal(s.inventory.total,1);
+ assert.equal(s.inventory.discoveredWithPhone,1);
+ assert.equal(s.queue.total,0);
+ assert.equal(s.discovery.target,150);
+ assert.ok(s.uncertainReasons);
+ assert.equal(JSON.stringify(s).includes('Empresa de diagnóstico'),false);
 });
 test('only definitely orphaned PENDING jobs are canceled; current or uncertain delivery is untouched',()=>{
  const result=reconcileOrphanPending({at});

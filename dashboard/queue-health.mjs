@@ -1,8 +1,8 @@
 // Diagnóstico da fila, sem PII, sem executar nem reenviar mensagens.
 // Nunca reprocessar UNKNOWN ou SENDING: o provedor pode ter aceitado o envio.
 import {all,one,run,audit,now,getSetting} from './db.mjs';
-import {initialBudget,hourSP,canSendInitial} from './radar.mjs';
-import {automaticCandidateSql} from './outreach-queue.mjs';
+import {initialBudget,hourSP,radarSnapshot} from './radar.mjs';
+import {automaticCandidateSql,outreachQueueSnapshot} from './outreach-queue.mjs';
 
 export const INITIAL_PENDING_MAX_AGE_MINUTES=8;
 export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={}){
@@ -15,6 +15,26 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={
  const firstPending=pending[0]||null;
  const pendingAge=firstPending?Math.max(0,Math.floor((at.getTime()-(Date.parse(firstPending.created_at)||at.getTime()))/60000)):null;
  const eligible=one(automaticCandidateSql());
+ const inventory=one(`SELECT COUNT(*) AS total,
+ COALESCE(SUM(CASE WHEN l.stage='DISCOVERED' THEN 1 ELSE 0 END),0) AS discovered,
+ COALESCE(SUM(CASE WHEN l.stage='DISCOVERED' AND l.phone IS NOT NULL THEN 1 ELSE 0 END),0) AS discoveredWithPhone,
+ COALESCE(SUM(CASE WHEN l.stage='DISCOVERED' AND l.phone IS NULL THEN 1 ELSE 0 END),0) AS discoveredWithoutPhone,
+ COALESCE(SUM(CASE WHEN l.stage='DISCOVERED' AND (EXISTS (SELECT 1 FROM initial_contacts ic WHERE ic.phone=l.phone OR ic.lead_id=l.id) OR EXISTS (SELECT 1 FROM executions e WHERE e.lead_id=l.id)) THEN 1 ELSE 0 END),0) AS alreadyAttempted,
+ COALESCE(SUM(CASE WHEN l.stage='DISCOVERED' AND l.phone IS NOT NULL AND EXISTS (SELECT 1 FROM suppressions s WHERE s.phone=l.phone) THEN 1 ELSE 0 END),0) AS suppressed,
+ COALESCE(SUM(CASE WHEN l.stage='CONTACTED' THEN 1 ELSE 0 END),0) AS contacted,
+ COALESCE(SUM(CASE WHEN l.stage='REPLIED' THEN 1 ELSE 0 END),0) AS replied,
+ COALESCE(SUM(CASE WHEN l.stage='INTERESTED' THEN 1 ELSE 0 END),0) AS interested
+ FROM leads l`);
+ const invitationQueue=outreachQueueSnapshot(),discovery=radarSnapshot(at);
+ const unknownErrors=all("SELECT error FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status='UNKNOWN' ORDER BY updated_at DESC LIMIT 30");
+ const uncertainReasons={timeout:0,processInterrupted:0,providerError:0,other:0};
+ for(const record of unknownErrors){
+  const m=String(record.error||'');
+  if(/excedeu|timeout|timed out/i.test(m))uncertainReasons.timeout++;
+  else if(/interrompido|reinic/i.test(m))uncertainReasons.processInterrupted++;
+  else if(/whatsapp|socket|session|network|connection|connect|provider/i.test(m))uncertainReasons.providerError++;
+  else uncertainReasons.other++;
+ }
  const last=one("SELECT MAX(updated_at) at FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status='SENT'");
  const lastConfirmedInitialAt=last?.at||null;
  const lastConfirmedMinutes=lastConfirmedInitialAt?Math.max(0,Math.floor((at.getTime()-Date.parse(lastConfirmedInitialAt))/60000)):null;
@@ -39,7 +59,8 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={
   eligibleWaiting:!!eligible,initialPending:pending.length,oldestPendingMinutes:pendingAge,
   invalidPending:invalidPending.length,unknownInitial:initial.filter(x=>x.status==='UNKNOWN').length,
   lastConfirmedInitialAt,lastConfirmedMinutes,
-  jobs:jobStates,
+  jobs:jobStates,inventory,queue:{total:invitationQueue.total,ready:invitationQueue.ready,awaitingConsent:invitationQueue.awaitingConsent,noWhatsapp:invitationQueue.missingWhatsapp,suppressed:invitationQueue.suppressed},
+  discovery:{foundToday:discovery.foundToday,target:discovery.discoveryTarget,reason:discovery.discoveryReason,searchesToday:discovery.searchesToday,lastSearchStatus:discovery.lastSearch?.status||null},uncertainReasons,
   decryptionNote:'Erros de descriptografia não autorizam reenvio automático nem recriação da sessão'
  };
 }

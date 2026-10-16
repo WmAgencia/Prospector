@@ -397,7 +397,7 @@ let lastQueueReason=null,lastQueueLogAt=0;
 function reportQueueHealth(){
  const snapshot=queueHealth({waStatus:connection().status,busy:tickStatus().locked});
  if(snapshot.reason!==lastQueueReason||Date.now()-lastQueueLogAt>=15*60000||snapshot.alert){
-  console.info('[queue health]',JSON.stringify({reason:snapshot.reason,alert:snapshot.alert,ready:snapshot.eligibleWaiting,pending:snapshot.initialPending,oldestPendingMinutes:snapshot.oldestPendingMinutes,unknown:snapshot.unknownInitial,sentToday:snapshot.initialToday.sent,counted:snapshot.initialToday.counted,limit:snapshot.initialToday.limit,nextAt:snapshot.initialToday.nextAt,lastAccepted:snapshot.lastConfirmedInitialAt,tick:tickStatus()}));
+  console.info('[queue health]',JSON.stringify({reason:snapshot.reason,alert:snapshot.alert,ready:snapshot.eligibleWaiting,pending:snapshot.initialPending,oldestPendingMinutes:snapshot.oldestPendingMinutes,unknown:snapshot.unknownInitial,sentToday:snapshot.initialToday.sent,counted:snapshot.initialToday.counted,limit:snapshot.initialToday.limit,nextAt:snapshot.initialToday.nextAt,lastAccepted:snapshot.lastConfirmedInitialAt,inventory:snapshot.inventory,queue:snapshot.queue,discovery:snapshot.discovery,uncertainReasons:snapshot.uncertainReasons,tick:tickStatus()}));
   lastQueueReason=snapshot.reason;lastQueueLogAt=Date.now();
  }
 }
