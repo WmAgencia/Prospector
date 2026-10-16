@@ -24,6 +24,17 @@ export function retryMessage(key,codec){
  if(!row||row.at<Date.now()-RETENTION)return undefined;
  return codec.decode(Buffer.from(row.payload,'base64'));
 }
+export function recordDeliveryReceipt(item){
+ const status=Number(item.update?.status),providerId=item.key?.id;
+ if(!providerId||!Number.isInteger(status)||status<3||status>5)return null;
+ const existing=one('SELECT id,status,type,thread_id FROM messages WHERE provider_id=? AND direction=?',providerId,'out');
+ if(!existing)return null;
+ const next=status>=4?'read':'delivered';
+ if(existing.status==='read'||existing.status===next)return null;
+ run('UPDATE messages SET status=? WHERE id=?',next,existing.id);
+ audit('WHATSAPP_DELIVERY_CONFIRMED',null,{providerId,status:next});
+ return {existing,next};
+}
 export function createRetryCache(clock=Date.now){
  const data=new Map(),ttl=3600000;
  return {

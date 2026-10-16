@@ -40,4 +40,17 @@ test('unrelated errors and identity failures never reset a session',async()=>{
  const repo=recovery.recoveryRepository(()=>({decryptMessage:async()=>{throw Error('Untrusted identity key');}}),{folder:directory})({keys:{set:async()=>changes++}});
  await assert.rejects(()=>repo.decryptMessage({jid:'peer'}),/Untrusted/);assert.equal(changes,0);
 });
+test('delivery receipts update only outgoing messages, remain monotonic and tolerate other updates',async()=>{
+ const db=await import('../dashboard/db.mjs');
+ const lead=db.addLead({phone:'5515999008877',business:'Receipt regression test',source:'TEST'}).lead;
+ const thread=db.getThread(lead.id);
+ const message=db.addMessage({threadId:thread.id,providerId:'receipt-test',direction:'out',type:'text',body:'Teste',status:'sent'});
+ assert.equal(recovery.recordDeliveryReceipt({key:{id:'receipt-test'},update:{}}),null);
+ assert.equal(recovery.recordDeliveryReceipt({key:{id:'receipt-test'},update:{status:3}}).next,'delivered');
+ assert.equal(recovery.recordDeliveryReceipt({key:{id:'receipt-test'},update:{status:4}}).next,'read');
+ assert.equal(recovery.recordDeliveryReceipt({key:{id:'receipt-test'},update:{status:3}}),null);
+ assert.equal(db.one('SELECT status FROM messages WHERE id=?',message.id).status,'read');
+ db.addMessage({threadId:thread.id,providerId:'inbound-receipt',direction:'in',body:'Oi'});
+ assert.equal(recovery.recordDeliveryReceipt({key:{id:'inbound-receipt'},update:{status:3}}),null);
+});
 test.after(async()=>{const {db}=await import('../dashboard/db.mjs');db.close();fs.rmSync(directory,{recursive:true,force:true});});

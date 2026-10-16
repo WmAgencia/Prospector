@@ -10,7 +10,7 @@ import {isInvitationWorkflow,isInvitationJob,acceptPresentation} from './permiss
 import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
 import {canSendInitial} from './radar.mjs';
 import {isOfferActive} from './campaign-rules.mjs';
-import {rememberMessage,retryMessage,createRetryCache,recoveryRepository} from './whatsapp-recovery.mjs';
+import {rememberMessage,retryMessage,recordDeliveryReceipt,createRetryCache,recoveryRepository} from './whatsapp-recovery.mjs';
 import {currentWebVersion,classifyDisconnect,retryDelay,isPairingRestart} from './whatsapp-reliability.mjs';
 
 const msgRetryCounterCache=createRetryCache();
@@ -89,18 +89,14 @@ export async function connectWhatsApp(options={}){
   socket.ev.on('messages.update',updates=>{
    if(sock!==socket)return;
    for(const item of updates||[]){
-    const status=Number(item.update?.status),providerId=item.key?.id;
-    if(!providerId||!Number.isInteger(status)||status<3||status>5)continue;
-    const existing=one('SELECT id,status,type,thread_id FROM messages WHERE provider_id=? AND direction="out"',providerId);
-    if(!existing)continue;
-    const next=status>=4?'read':'delivered';
-    if(existing.status==='read'||existing.status===next)continue;
-    run('UPDATE messages SET status=? WHERE id=?',next,existing.id);
-    audit('WHATSAPP_DELIVERY_CONFIRMED',null,{providerId,status:next});
-    console.info('[whatsapp] Entrega confirmada pelo destinatário: '+next);
-    const testThread=one('SELECT lead_id FROM threads WHERE id=?',existing.thread_id);
-    if(testThread?.lead_id===getSetting('operator_test_lead_id',''))console.info('[campaign test]',JSON.stringify({status:next.toUpperCase(),type:existing.type}));
-    publish();
+    try{
+     const receipt=recordDeliveryReceipt(item);if(!receipt)continue;
+     const {existing,next}=receipt;
+     console.info('[whatsapp] Entrega confirmada pelo destinatário: '+next);
+     const testThread=one('SELECT lead_id FROM threads WHERE id=?',existing.thread_id);
+     if(testThread?.lead_id===getSetting('operator_test_lead_id',''))console.info('[campaign test]',JSON.stringify({status:next.toUpperCase(),type:existing.type}));
+     publish();
+    }catch(error){console.error('[whatsapp] Falha ao registrar confirmação de entrega: '+error.message);}
    }
   });
   socket.ev.on('connection.update',async update=>{
