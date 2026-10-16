@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 
 export const CAMPAIGN_NAME='Consecom | Site profissional R$ 350 | Áudio + vídeo';
-export const CAMPAIGN_INTRO='{{greeting}} A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?';
+export const CAMPAIGN_INTRO='{{greeting}} Eu sou da agência Consecom. Demos uma olhada no seu perfil e gostaríamos de te apresentar uma proposta. Posso te enviar um áudio com os detalhes?';
 export const CAMPAIGN_VIDEO_CAPTION='O que achou? Gostaria de ter um assim também?';
 export const CAMPAIGN_FAREWELL='Sem problemas, muito obrigado pelo retorno, ficamos à disposição.';
 export const CAMPAIGN_AUDIO_DESCRIPTION='Áudio original gravado pelo Wesley, da Consecom. Apresenta a agência de sites em Sorocaba, seleção de empresas, proposta de site completo por R$ 350 com 80% de desconto, portfólio mediante permissão e entrega em até três dias; pede para ver vídeo e informar se tem interesse.';

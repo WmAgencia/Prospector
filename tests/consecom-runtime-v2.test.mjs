@@ -26,7 +26,7 @@ test('cadence and personalized caption are persisted in real workflow jobs',asyn
  const execution=runtime.startWorkflow(lead.id,workflowId);
  runtime.drive(execution);
  const initial=deliverAndAdvance(lead.id,execution,'message');
- assert.equal(initial.text,'Olá, Mariana, como vai? A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?');
+ assert.equal(initial.text,'Olá, Mariana, como vai? Eu sou da agência Consecom. Demos uma olhada no seu perfil e gostaríamos de te apresentar uma proposta. Posso te enviar um áudio com os detalhes?');
  assert.equal(db.one('SELECT state FROM executions WHERE id=?',execution).state,'WAIT_REPLY');
  await runtime.incoming({key:{remoteJid:'5515999771133@s.whatsapp.net',id:'permission-test'},message:{conversation:'Sim, pode enviar'}});
  let waiting=db.one('SELECT state,wake_at FROM executions WHERE id=?',execution);

@@ -1,11 +1,11 @@
 {
   "schema": "consecom.prospector.ai-bridge/v1",
   "task_id": "consecom-campanha-sites-350",
-  "revision": 2,
+  "revision": 3,
   "mode": "upsert_campaign_draft",
   "campaign": {
     "name": "Consecom | Site profissional R$ 350 | Áudio + vídeo",
-    "initial_message": "{{greeting}} A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?",
+    "initial_message": "{{greeting}} Eu sou da agência Consecom. Demos uma olhada no seu perfil e gostaríamos de te apresentar uma proposta. Posso te enviar um áudio com os detalhes?",
     "wait_for_first_reply": true,
     "delay_before_audio_seconds": 45,
     "delay_after_audio_seconds": 10,

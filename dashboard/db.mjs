@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {CAMPAIGN_NAME,buildConsecomSteps} from './consecom-flow.mjs';
+import {CAMPAIGN_NAME,CAMPAIGN_INTRO,buildConsecomSteps} from './consecom-flow.mjs';
 import {DatabaseSync} from 'node:sqlite';
 const dir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data');
 fs.mkdirSync(dir,{recursive:true});
@@ -101,6 +101,22 @@ if(!getSetting('consecom_350_flow_v2',false)){
   setSetting('consecom_campaign_seed_id',workflow.id);
  }
  setSetting('consecom_350_flow_v2',true);
+}
+// V3: altera apenas a abordagem de novas execuções da campanha Consecom.
+// Preserva mídias, tempos, seleção, pausa e snapshots das conversas já abertas.
+if(!getSetting('consecom_350_intro_v3',false)){
+ tx(()=>{
+  const candidates=[getSetting('autonomous_campaign_id',''),getSetting('campaign_bundle_workflow',''),getSetting('consecom_campaign_seed_id','')].filter(Boolean);
+  let workflow=candidates.map(candidate=>one('SELECT * FROM workflows WHERE id=?',candidate)).find(item=>item?.name===CAMPAIGN_NAME);
+  if(!workflow)workflow=one('SELECT * FROM workflows WHERE name=? ORDER BY enabled DESC,updated_at DESC LIMIT 1',CAMPAIGN_NAME);
+  if(workflow){
+   const steps=JSON.parse(workflow.steps);
+   if(steps[0]?.type!=='message')throw Error('Campanha Consecom sem mensagem inicial');
+   steps[0].text=CAMPAIGN_INTRO;
+   run('UPDATE workflows SET steps=?,version=version+1,updated_at=? WHERE id=?',JSON.stringify(steps),now(),workflow.id);
+  }
+  setSetting('consecom_350_intro_v3',true);
+ });
 }
 export function audit(action,lead_id=null,detail={}){run('INSERT INTO audit VALUES(?,?,?,?,?)',id(),now(),action,lead_id,JSON.stringify(detail));}
 export function addLead(item){

@@ -5,7 +5,7 @@ import {evaluateDecision,permitsPresentation} from '../dashboard/automation-rout
 import {buildConsecomSteps,CAMPAIGN_INTRO,CAMPAIGN_VIDEO_CAPTION,CAMPAIGN_FAREWELL} from '../dashboard/consecom-flow.mjs';
 const steps=buildConsecomSteps();
 test('personalized first contact uses only known personal name, with safe fallback',()=>{
- assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Maria Fernandes',business:'Clínica'}),'Olá, Maria, como vai? A gente conheceu o trabalho de vocês e gostaríamos de apresentar uma proposta. Posso te enviar um áudio explicando tudo certinho?');
+ assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Maria Fernandes',business:'Clínica'}),'Olá, Maria, como vai? Eu sou da agência Consecom. Demos uma olhada no seu perfil e gostaríamos de te apresentar uma proposta. Posso te enviar um áudio com os detalhes?');
  assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Dra. Juliana',business:'Consultório de Juliana'}).startsWith('Olá, Juliana, como vai?'),true);
  assert.equal(renderTemplate(CAMPAIGN_INTRO,{business:'Empresa sem nome pessoal'}).startsWith('Olá, como vai?'),true);
  assert.equal(renderTemplate(CAMPAIGN_INTRO,{name:'Contato',business:'Empresa'}).startsWith('Olá, como vai?'),true);
@@ -17,7 +17,7 @@ test('recognizes explicit first-stage permissions across natural variants',()=>{
  assert.equal(permitsPresentation(steps,7,'Pode enviar'),false);
 });
 test('first-stage declines and ambiguous replies never release media',()=>{
- for(const msg of ['Não quero','Prefiro não','Agora não','Talvez depois','Quem é?','Quanto fica?','Não sei','Vou pensar'])
+ for(const msg of ['Olá','Bom dia','Tudo bem','Qual proposta?','Não quero','Prefiro não','Agora não','Talvez depois','Quem é?','Quanto fica?','Não sei','Vou pensar'])
   assert.equal(permitsPresentation(steps,2,msg),false,'Aprovação indevida: '+msg);
  assert.equal(evaluateDecision('Não, pode enviar').decision,'NO');
 });
