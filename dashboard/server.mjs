@@ -26,7 +26,8 @@ import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} 
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
 import {dailyReport,reportText,targetNumber} from './notifications.mjs';
 import {syncPublishedSamples} from './studio-sync.mjs';
-import {connection,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
+import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
+import {queueHealth} from './queue-health.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
@@ -216,10 +217,11 @@ async function handler(req,res){
    const v=await json(req),result=setSalesCampaign(v);
    notify();return respond(res,200,result);
   }
+  if(req.method==='GET'&&pathname==='/api/queue-health')return respond(res,200,{...queueHealth({waStatus:connection().status,busy:tickStatus().locked}),worker:tickStatus()});
   if(req.method==='GET'&&pathname==='/api/diagnostics'){
    const last=one('SELECT query,found,status,at FROM discoveries ORDER BY at DESC LIMIT 1');
    const totals=all('SELECT status,COUNT(*) AS total FROM jobs GROUP BY status');
-   const data={at:now(),uptimeSeconds:Math.round(process.uptime()),connection:connection(),discovery:{osmEnabled:getSetting('discovery_sources',{}).osm!==false,braveConfigured:!!process.env.BRAVE_SEARCH_API_KEY,last},leadCount:one('SELECT COUNT(*) AS n FROM leads')?.n||0,queue:Object.fromEntries(totals.map(x=>[x.status,x.total])),settings:{paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}};
+   const data={at:now(),uptimeSeconds:Math.round(process.uptime()),connection:connection(),queueHealth:queueHealth({waStatus:connection().status,busy:tickStatus().locked}),worker:tickStatus(),discovery:{osmEnabled:getSetting('discovery_sources',{}).osm!==false,braveConfigured:!!process.env.BRAVE_SEARCH_API_KEY,last},leadCount:one('SELECT COUNT(*) AS n FROM leads')?.n||0,queue:Object.fromEntries(totals.map(x=>[x.status,x.total])),settings:{paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}};
    // QR image, phone number and session identifiers never appear in diagnostics.
    data.connection={decryption:data.connection.decryption,status:data.connection.status,error:data.connection.error,closeCode:data.connection.closeCode,lastEventAt:data.connection.lastEventAt,hasQr:Boolean(data.connection.qr)};
    return respond(res,200,data);
@@ -391,6 +393,16 @@ const invitationQueue=outreachQueueSnapshot();
 console.log('[invitation campaign]',JSON.stringify({...invitationActivation,ready:invitationQueue.ready,waiting:invitationQueue.awaitingConsent,paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}));
 console.log('[authorized outreach]',activation.status,'ready='+activation.ready,'waiting='+activation.awaitingConsent);
 let testInstructionError=null;
+let lastQueueReason=null,lastQueueLogAt=0;
+function reportQueueHealth(){
+ const snapshot=queueHealth({waStatus:connection().status,busy:tickStatus().locked});
+ if(snapshot.reason!==lastQueueReason||Date.now()-lastQueueLogAt>=15*60000||snapshot.alert){
+  console.info('[queue health]',JSON.stringify({reason:snapshot.reason,alert:snapshot.alert,ready:snapshot.eligibleWaiting,pending:snapshot.initialPending,oldestPendingMinutes:snapshot.oldestPendingMinutes,unknown:snapshot.unknownInitial,sentToday:snapshot.initialToday.sent,counted:snapshot.initialToday.counted,limit:snapshot.initialToday.limit,nextAt:snapshot.initialToday.nextAt,lastAccepted:snapshot.lastConfirmedInitialAt,tick:tickStatus()}));
+  lastQueueReason=snapshot.reason;lastQueueLogAt=Date.now();
+ }
+}
+const healthTimer=setInterval(()=>{try{reportQueueHealth();}catch(e){console.error('[queue health]',e.message);}},3*60000);
+setTimeout(()=>{try{reportQueueHealth();}catch(e){console.error('[queue health]',e.message);}},5000).unref();
 const interval=setInterval(()=>{
  try{queueOperatorTest();}catch(error){if(testInstructionError!==error.message){testInstructionError=error.message;console.error('[campaign test]',error.message);}}
  runOperatorDeliveryRetry().catch(error=>console.error('[campaign test] Falha no reenvio controlado: '+error.message));
@@ -404,4 +416,4 @@ const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='os
 setTimeout(()=>dailyLocalDiscovery().then(x=>{if(x?.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),120000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));});
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(agentBridgeTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(agentBridgeTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
