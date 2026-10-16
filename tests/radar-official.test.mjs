@@ -1,8 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {daySP,initialBudget,MAX_APPROACHES,TARGET_INTERVAL_SECONDS} from '../dashboard/radar.mjs';
-import {parseCSV} from '../dashboard/official-import.mjs';
-import {safePublicWebsite} from '../dashboard/site-audit.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const testDataDir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-isolated-'));
+process.env.PROSPECTOR_DATA_DIR=testDataDir;
+
+const {daySP,initialBudget,MAX_APPROACHES,TARGET_INTERVAL_SECONDS}=await import('../dashboard/radar.mjs');
+const {parseCSV}=await import('../dashboard/official-import.mjs');
+const {safePublicWebsite}=await import('../dashboard/site-audit.mjs');
 test('pacing target 200 in six hours and quota exact',()=>{
  assert.equal(MAX_APPROACHES,150);assert.equal(TARGET_INTERVAL_SECONDS,240);
  assert.equal(150*TARGET_INTERVAL_SECONDS,10*3600);
@@ -23,3 +29,5 @@ test('site audit refuses private and file schemes',()=>{
  assert.throws(()=>safePublicWebsite('http://localhost:8080/'),/público|privado/);
  assert.throws(()=>safePublicWebsite('file:///etc/passwd'),/público/);
 });
+
+test.after(async()=>{const {db}=await import('../dashboard/db.mjs');db.close();fs.rmSync(testDataDir,{recursive:true,force:true});});

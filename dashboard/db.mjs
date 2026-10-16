@@ -6,7 +6,7 @@ import {DatabaseSync} from 'node:sqlite';
 const dir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data');
 fs.mkdirSync(dir,{recursive:true});
 export const db=new DatabaseSync(path.join(dir,'prospector.sqlite'));
-db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
+db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
 export const id=()=>crypto.randomUUID();
 export const now=()=>new Date().toISOString();
 export const all=(sql,...p)=>db.prepare(sql).all(...p);
