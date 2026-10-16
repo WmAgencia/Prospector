@@ -10,7 +10,7 @@ import {setSalesCampaign} from './sales-campaign.mjs';
 import {searchDirectory} from './external-research.mjs';
 import {evidence,STATUSES} from './website-review.mjs';
 import {eligibleRecontacts,scheduleApprovedRecontact} from './contact-cadence.mjs';
-import {discoverLocal,dailyLocalDiscovery,LOCATIONS,SEGMENTS} from './osm-discovery.mjs';
+import {discoverLocal,dailyLocalDiscovery,reconcileInterruptedSearches,LOCATIONS,SEGMENTS} from './osm-discovery.mjs';
 import {radarSnapshot} from './radar.mjs';
 import {importCampaignPackage} from './campaign-package.mjs';
 import {bridgeStatus,bridgeSpec,syncAgentBridge} from './agent-bridge.mjs';
@@ -412,6 +412,8 @@ const interval=setInterval(()=>{
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
 setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
 setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
+const interruptedSearches=reconcileInterruptedSearches();
+if(interruptedSearches.recovered)console.info('[osm discovery] Recuperadas '+interruptedSearches.recovered+' consultas interrompidas; mantidas na cota diária');
 const osmTimer=setInterval(()=>dailyLocalDiscovery().then(x=>{if(x?.source==='osm'&&x.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),60*1000);
 setTimeout(()=>dailyLocalDiscovery().then(x=>{if(x?.added)notify();}).catch(err=>console.error('[osm discovery]',err.message)),120000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);

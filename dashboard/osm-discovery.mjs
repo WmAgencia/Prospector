@@ -155,6 +155,18 @@ let autoBusy=false;
 export const DISCOVERY_START_HOUR=5;
 export const OSM_DAILY_MAX_SEARCHES=8;
 export const OSM_COOLDOWN_MS=45*60000;
+export function reconcileInterruptedSearches({at=new Date(),minAgeMs=90000}={}){
+ const cutoff=new Date(at.getTime()-minAgeMs).toISOString();
+ const stale=all("SELECT id,query,at,details FROM discoveries WHERE query LIKE 'osm:%' AND status='RUNNING' AND at<? ORDER BY at LIMIT 100",cutoff);
+ let recovered=0;
+ for(const item of stale){
+  let prior={};try{prior=JSON.parse(item.details||'{}');}catch{}
+  const details={...prior,interrupted:true,reason:'Processo ou requisição encerrada antes de concluir',originalStartedAt:item.at};
+  const result=run("UPDATE discoveries SET status='INTERRUPTED',details=? WHERE id=? AND status='RUNNING'",JSON.stringify(details),item.id);
+  if(result.changes){audit('OSM_INTERRUPTED_SEARCH',null,{searchId:item.id,startedAt:item.at});recovered++;}
+ }
+ return {recovered,examined:stale.length};
+}
 export function discoveryWindow(input=new Date(),startHour=DISCOVERY_START_HOUR){
  const hour=hourSP(input),start=Number(startHour);
  return {hour,start,allowed:Number.isInteger(start)&&start>=0&&start<=23&&hour>=start};
