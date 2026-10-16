@@ -28,6 +28,19 @@ export function evaluateDecision(text, context='general_interest'){
  if(positive)return {decision:'YES',reason:sample?'explicit_sample':'affirmative_in_context'};
  return {decision:'REVIEW',reason:'ambiguous'};
 }
+export function evaluatePresentationReply(text){
+ const raw=String(text||'').trim(),normalized=normalize(raw);
+ if(/\b(?:talvez|vou pensar|preciso pensar|depois eu vejo|nao sei|nao tenho certeza)\b/.test(normalized))return {decision:'REVIEW',reason:'uncertain'};
+ const existing=evaluateDecision(raw,'general_interest');
+ if(existing.decision==='NO')return existing;
+ const clauses=raw.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean);
+ const last=clauses[clauses.length-1]||raw;
+ if(last.endsWith('?'))return {decision:'REVIEW',reason:'question_not_permission'};
+ if(existing.decision==='YES')return existing;
+ const s=normalize(last).replace(/[!?]/g,' ').trim();
+ if(/\b(?:pode (?:me )?(?:mandar|enviar|falar|explicar|apresentar)|manda (?:ai|a proposta|o audio|pra mim|para mim)|me (?:manda|envia|explica)|quero (?:receber|ouvir|conhecer)|pode sim)\b/.test(s))return {decision:'YES',reason:'explicit_presentation_permission'};
+ return existing;
+}
 export function normalizeSegment(value){return normalize(value).replace(/[?!]/g,'').trim();}
 export function selectAutomationForLead(lead,workflows,preferredId=null){
  const enabled=workflows.filter(w=>w.enabled!==0);
@@ -46,5 +59,5 @@ export function selectAutomationForLead(lead,workflows,preferredId=null){
 }
 
 export function permitsPresentation(steps,nextStep,text){
- return steps?.[nextStep]?.type==='delay'&&steps?.[nextStep+1]?.type==='audio'&&evaluateDecision(text,'general_interest').decision==='YES';
+ return steps?.[nextStep]?.type==='delay'&&steps?.[nextStep+1]?.type==='audio'&&evaluatePresentationReply(text).decision==='YES';
 }

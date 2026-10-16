@@ -62,4 +62,19 @@ test('invitation permission does not allow arbitrary campaigns or media as first
  assert.equal(invitation.enableInvitationCampaign().status,'CONFIGURED');
  assert.equal(db.getSetting('paused'),true);
 });
+test('LID reply uses provider phone identity and wrapped text, then stays deduplicated',async()=>{
+ const lead=db.addLead({business:'Teste Identidade',phone:'5515999551155',source:'osm'}).lead;
+ const execution=runtime.startWorkflow(lead.id,workflow);runtime.drive(execution);
+ db.run("UPDATE jobs SET status='SENT' WHERE lead_id=?",lead.id);
+ db.run("UPDATE executions SET state='ACTIVE' WHERE id=?",execution);runtime.drive(execution);
+ const message={key:{remoteJid:'9000012345678@lid',senderPn:lead.phone+'@s.whatsapp.net',id:'lid-acceptance',fromMe:false},message:{ephemeralMessage:{message:{extendedTextMessage:{text:'Bom dia! Tudo bem, pode me enviar a proposta sim.'}}}}};
+ await runtime.incoming(message);
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',execution).state,'WAIT_DELAY');
+ assert.equal(queue.documentedOptIn(lead.id),true);
+ const identities=await import('../dashboard/whatsapp-identities.mjs');
+ assert.equal(identities.resolveLead({key:{remoteJid:'9000012345678@lid'}}).lead.id,lead.id);
+ await runtime.incoming(message);
+ assert.equal(db.one("SELECT COUNT(*) n FROM messages WHERE provider_id='lid-acceptance'").n,1);
+ assert.equal(runtime.isRelevantBufferedReply({...message,key:{...message.key,fromMe:true}}),false);
+});
 test.after(()=>{db.db.close();fs.rmSync(directory,{recursive:true,force:true});});

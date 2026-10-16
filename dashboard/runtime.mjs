@@ -3,7 +3,7 @@ import path from 'node:path';
 import {one,all,run,tx,id,now,phone,getSetting,addLead,getThread,addMessage,stage,audit,stopLead,suppressed} from './db.mjs';
 import {classify,renderTemplate} from './classifier.mjs';
 import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
-import {evaluateDecision,selectAutomationForLead,permitsPresentation} from './automation-router.mjs';
+import {evaluateDecision,evaluatePresentationReply,selectAutomationForLead,permitsPresentation} from './automation-router.mjs';
 import {scheduleReport,flushNotices,queueNotice} from './notifications.mjs';
 import {automaticCandidateSql,documentedOptIn} from './outreach-queue.mjs';
 import {isInvitationWorkflow,isInvitationJob,acceptPresentation} from './permission-invitation.mjs';
@@ -11,6 +11,7 @@ import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
 import {canSendInitial} from './radar.mjs';
 import {isOfferActive} from './campaign-rules.mjs';
 import {rememberMessage,retryMessage,recordDeliveryReceipt,createRetryCache,recoveryRepository} from './whatsapp-recovery.mjs';
+import {resolveLead,registerPeerAlias} from './whatsapp-identities.mjs';
 import {currentWebVersion,classifyDisconnect,retryDelay,isPairingRestart} from './whatsapp-reliability.mjs';
 
 const msgRetryCounterCache=createRetryCache();
@@ -153,7 +154,7 @@ export async function connectWhatsApp(options={}){
    if(sock!==socket)return;
    for(const m of event.messages||[]){
     try{rememberMessage(m,B.proto.Message);}catch(error){audit('WHATSAPP_RETRY_STORE_ERROR',null,{error:error.message});}
-    if(event.type!=='notify')continue;
+    if(event.type!=='notify'&&!isRelevantBufferedReply(m))continue;
     try{await incoming(m);}catch(e){audit('INBOUND_ERROR',null,{error:e.message});}
    }
   });
@@ -164,6 +165,28 @@ export async function connectWhatsApp(options={}){
  }
  return connection();
 }
+export async function bindLeadPeer(leadId){
+ if(!sock||waStatus!=='CONNECTED')return false;
+ const lead=one('SELECT * FROM leads WHERE id=?',leadId);if(!lead?.phone)return false;
+ const result=await sock.onWhatsApp(lead.phone);
+ const matching=(result||[]).find(item=>item.exists&&phone(String(item.jid||'').split('@')[0])===lead.phone);
+ if(!matching)return false;
+ registerPeerAlias(lead.id,matching.jid);
+ if(matching.lid)registerPeerAlias(lead.id,matching.lid);
+ return true;
+}
+export async function requestStoredReply(key){
+ if(!sock||waStatus!=='CONNECTED')return false;
+ await sock.requestPlaceholderResend(key);return true;
+}
+export function isRelevantBufferedReply(message){
+ if(message.key?.fromMe!==false||!message.message)return false;
+ const lead=resolveLead(message).lead;if(!lead)return false;
+ const execution=one("SELECT updated_at FROM executions WHERE lead_id=? AND state='WAIT_REPLY'",lead.id);
+ if(!execution)return false;
+ const timestamp=Number(message.messageTimestamp?.toNumber?.()||message.messageTimestamp||0)*1000;
+ return timestamp>0&&timestamp>=Date.parse(execution.updated_at)-1000;
+}
 export async function disconnectWhatsApp(){
  clearTimeout(reconnectTimer);reconnectTimer=null;nextRetryAt=null;retries=5;
  const old=sock;sock=null;
@@ -172,7 +195,8 @@ export async function disconnectWhatsApp(){
  return connection();
 }
 function formMessage(m){
- const x=m.message||{};
+ let x=m.message||{};
+ for(let i=0;i<5;i++){const nested=x.ephemeralMessage?.message||x.viewOnceMessage?.message||x.viewOnceMessageV2?.message||x.documentWithCaptionMessage?.message;if(!nested)break;x=nested;}
  const body=x.conversation||x.extendedTextMessage?.text||x.imageMessage?.caption||x.videoMessage?.caption||x.documentMessage?.caption||'';
  const type=x.audioMessage?'audio':x.videoMessage?'video':x.imageMessage?'image':x.documentMessage?'file':'text';
  return {body,type};
@@ -240,11 +264,11 @@ function handoverInterest(lead,reason){
 export async function incoming(m) {
  const from=m.key?.remoteJid||'',alt=m.key?.remoteJidAlt||'';
  if(!m.message||m.key?.fromMe||from.endsWith('@g.us')||from.endsWith('@newsletter')||from==='status@broadcast')return;
- const jid=alt.endsWith('@s.whatsapp.net')?alt:from;
- const ph=jid.endsWith('@s.whatsapp.net')?phone(jid):null;
+ const identity=resolveLead(m);
+ if(identity.conflict){audit('INCOMING_IDENTITY_CONFLICT',null,{providerId:m.key?.id});return;}
+ const ph=identity.number;
  let thread=one('SELECT * FROM threads WHERE jid=?',from)||one('SELECT * FROM threads WHERE jid=?',alt);
- let lead=thread?one('SELECT * FROM leads WHERE id=?',thread.lead_id):null;
- if(!lead&&ph)lead=one('SELECT * FROM leads WHERE phone=?',ph);
+ let lead=identity.lead||(thread?one('SELECT * FROM leads WHERE id=?',thread.lead_id):null);
  if(!lead&&ph){
   lead=addLead({business:m.pushName||ph,phone:ph,source:'WHATSAPP_INBOUND',contact_permission:true}).lead;
   stage(lead.id,'REPLIED','mensagem iniciada pelo contato');
@@ -302,7 +326,7 @@ export async function incoming(m) {
    const steps=JSON.parse(execution.steps),upcoming=steps[execution.next_step],after=steps[execution.next_step+1];
    // Cumprimento isolado nao libera audio comercial.
    if(upcoming?.type==='delay'&&after?.type==='audio'){
-    const decision=payload.type==='text'?evaluateDecision(payload.body,'general_interest').decision:'REVIEW';
+    const decision=payload.type==='text'?evaluatePresentationReply(payload.body).decision:'REVIEW';
     if(decision!=='YES'){
      run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE id=?",now(),execution.id);
      audit('PROMOTIONAL_REPLY_REVIEW',lead.id,{decision,reason:'no_explicit_go_ahead'});

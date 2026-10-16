@@ -17,7 +17,7 @@ import {bridgeStatus,bridgeSpec,syncAgentBridge} from './agent-bridge.mjs';
 import {restorePrivateCampaign,privateRestoreStatus} from './private-restore.mjs';
 import {activateCampaign,selectedCampaign,rejectActiveCampaignEdit} from './campaign-selection.mjs';
 import {outreachQueueSnapshot} from './outreach-queue.mjs';
-import {queueOperatorTest} from './operator-campaign-check.mjs';
+import {queueOperatorTest,refreshOperatorReplies} from './operator-campaign-check.mjs';
 import {enableInvitationCampaign} from './permission-invitation.mjs';
 import {enableAuthorizedOutreach} from './authorized-outreach.mjs';
 import {importOfficial} from './official-import.mjs';
@@ -393,6 +393,7 @@ console.log('[authorized outreach]',activation.status,'ready='+activation.ready,
 let testInstructionError=null;
 const interval=setInterval(()=>{
  try{queueOperatorTest();}catch(error){if(testInstructionError!==error.message){testInstructionError=error.message;console.error('[campaign test]',error.message);}}
+ refreshOperatorReplies().catch(error=>console.error('[campaign test] Falha na recuperação de resposta: '+error.message));
  tick().catch(e=>console.error('[tick]',e.message));
 },2500);
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);

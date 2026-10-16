@@ -21,6 +21,12 @@ test('first-stage declines and ambiguous replies never release media',()=>{
   assert.equal(permitsPresentation(steps,2,msg),false,'Aprovação indevida: '+msg);
  assert.equal(evaluateDecision('Não, pode enviar').decision,'NO');
 });
+test('presentation acceptance supports conversational variants without accepting questions or hesitation',()=>{
+ for(const msg of ['Bom dia! Tudo bem, pode me enviar a proposta sim.','Olá, pode apresentar','Sim, pode me mandar o áudio, obrigado!','Manda a proposta pra mim','Tudo bem e você? Pode explicar sim.','Claro! Pode falar!'])
+  assert.equal(permitsPresentation(steps,2,msg),true,msg);
+ for(const msg of ['Pode mandar?','Você pode me enviar um orçamento?','Talvez, pode enviar depois','Vou pensar, pode mandar depois','Qual proposta?','Oi, tudo bem?'])
+  assert.equal(permitsPresentation(steps,2,msg),false,msg);
+});
 test('video question classifies real purchase interest conservatively',()=>{
  for(const msg of ['Sim','Tenho interesse','Quero um assim','Gostaria de ter um site','Vamos fechar','Quero um desse','Pode começar','Quero fazer um site','Sim, tenho interesse'])
   assert.equal(evaluateDecision(msg,'website_interest').decision,'YES','Não confirmou: '+msg);

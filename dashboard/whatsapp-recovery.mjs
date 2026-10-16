@@ -1,17 +1,22 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {db,run,one,audit} from './db.mjs';
+import {db,run,one,all,audit} from './db.mjs';
 
 db.exec('CREATE TABLE IF NOT EXISTS whatsapp_retry_messages(jid TEXT NOT NULL,message_id TEXT NOT NULL,payload TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(jid,message_id))');
+if(!all('PRAGMA table_info(whatsapp_retry_messages)').some(column=>column.name==='key_json'))db.exec('ALTER TABLE whatsapp_retry_messages ADD COLUMN key_json TEXT');
 const RETENTION=7*86400000;
 let writes=0;
 export function rememberMessage(message,codec){
  const key=message?.key;
- if(!key?.id||!key.remoteJid||!message.message)return false;
+ if(!key?.id||!key.remoteJid)return false;
+ if(!message.message){
+  if(message.messageStubType!=null)run('INSERT OR IGNORE INTO whatsapp_retry_messages(jid,message_id,payload,at,key_json) VALUES(?,?,?,?,?)',key.remoteJid,key.id,'',Date.now(),JSON.stringify({key:message.key,timestamp:Number(message.messageTimestamp?.toNumber?.()||message.messageTimestamp||0)}));
+  return false;
+ }
  const encoded=Buffer.from(codec.encode(message.message).finish());
  if(encoded.length>4*1024*1024)return false;
- run('INSERT OR REPLACE INTO whatsapp_retry_messages VALUES(?,?,?,?)',key.remoteJid,key.id,encoded.toString('base64'),Date.now());
+ run('INSERT OR REPLACE INTO whatsapp_retry_messages(jid,message_id,payload,at,key_json) VALUES(?,?,?,?,?)',key.remoteJid,key.id,encoded.toString('base64'),Date.now(),JSON.stringify({key:message.key,timestamp:Number(message.messageTimestamp?.toNumber?.()||message.messageTimestamp||0)}));
  if(++writes%100===1){
   run('DELETE FROM whatsapp_retry_messages WHERE at<?',Date.now()-RETENTION);
   run('DELETE FROM whatsapp_retry_messages WHERE rowid IN (SELECT rowid FROM whatsapp_retry_messages ORDER BY at DESC LIMIT -1 OFFSET 5000)');
@@ -21,7 +26,7 @@ export function rememberMessage(message,codec){
 export function retryMessage(key,codec){
  if(!key?.remoteJid||!key.id)return undefined;
  const row=one('SELECT payload,at FROM whatsapp_retry_messages WHERE jid=? AND message_id=?',key.remoteJid,key.id);
- if(!row||row.at<Date.now()-RETENTION)return undefined;
+ if(!row||!row.payload||row.at<Date.now()-RETENTION)return undefined;
  return codec.decode(Buffer.from(row.payload,'base64'));
 }
 export function recordDeliveryReceipt(item){
