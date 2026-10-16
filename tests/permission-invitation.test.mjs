@@ -1,0 +1,65 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const directory=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-invitation-'));
+process.env.PROSPECTOR_DATA_DIR=directory;
+const db=await import('../dashboard/db.mjs');
+const runtime=await import('../dashboard/runtime.mjs');
+const invitation=await import('../dashboard/permission-invitation.mjs');
+const queue=await import('../dashboard/outreach-queue.mjs');
+const {CAMPAIGN_NAME,buildConsecomSteps}=await import('../dashboard/consecom-flow.mjs');
+const mediaDir=path.join(directory,'media');fs.mkdirSync(mediaDir);
+for(const [id,kind,ext,mime] of [['invite-a','audio','ogg','audio/ogg'],['invite-v','video','mp4','video/mp4']]){
+ fs.writeFileSync(path.join(mediaDir,id+'.'+ext),'test');
+ db.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)',id,id,kind,mime,id+'.'+ext,4,db.now());
+}
+const workflow=runtime.saveWorkflow({name:CAMPAIGN_NAME,enabled:true,steps:buildConsecomSteps({audioId:'invite-a',videoId:'invite-v'})});
+db.setSetting('autonomous_campaign_id',workflow);
+test('invitation starts once, waits through greeting, records real acceptance before audio',async()=>{
+ const lead=db.addLead({business:'Teste Convite',phone:'5515999551122',source:'osm'}).lead;
+ assert.equal(invitation.enableInvitationCampaign().status,'ENABLED');
+ assert.equal(queue.outreachQueueSnapshot().ready,1);
+ assert.equal(queue.documentedOptIn(lead.id),false);
+ const execution=runtime.startWorkflow(lead.id,workflow);runtime.drive(execution);
+ const first=db.one('SELECT * FROM jobs WHERE lead_id=?',lead.id);
+ assert.equal(invitation.isInvitationJob(first),true);
+ assert.equal(first.type,'message');
+ assert.equal(db.one('SELECT contact_permission FROM leads WHERE id=?',lead.id).contact_permission,0);
+ assert.throws(()=>runtime.startWorkflow(lead.id,workflow),/registrada|iniciado/);
+ db.run("UPDATE jobs SET status='SENT' WHERE id=?",first.id);
+ db.run("UPDATE executions SET state='ACTIVE' WHERE id=?",execution);runtime.drive(execution);
+ await runtime.incoming({key:{remoteJid:lead.phone+'@s.whatsapp.net',id:'invite-hi'},message:{conversation:'Olá'}});
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',execution).state,'WAIT_REPLY');
+ assert.equal(db.one("SELECT COUNT(*) n FROM jobs WHERE lead_id=? AND type IN ('audio','video')",lead.id).n,0);
+ assert.equal(queue.documentedOptIn(lead.id),false);
+ await runtime.incoming({key:{remoteJid:lead.phone+'@s.whatsapp.net',id:'invite-yes'},message:{conversation:'Sim, pode enviar'}});
+ assert.equal(queue.documentedOptIn(lead.id),true);
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',execution).state,'WAIT_DELAY');
+ const proof=db.one("SELECT detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED'",lead.id);
+ assert.equal(JSON.parse(proof.detail).messageId,'invite-yes');
+ db.run("UPDATE executions SET state='ACTIVE' WHERE id=?",execution);runtime.drive(execution);
+ assert.equal(db.one("SELECT COUNT(*) n FROM jobs WHERE lead_id=? AND type='audio'",lead.id).n,1);
+});
+test('refusal prevents media, suppresses contact and cannot be auto-enrolled again',async()=>{
+ const lead=db.addLead({business:'Teste Recusa',phone:'5515999551133',source:'osm'}).lead;
+ const execution=runtime.startWorkflow(lead.id,workflow);runtime.drive(execution);
+ db.run("UPDATE jobs SET status='SENT' WHERE lead_id=?",lead.id);
+ db.run("UPDATE executions SET state='ACTIVE' WHERE id=?",execution);runtime.drive(execution);
+ await runtime.incoming({key:{remoteJid:lead.phone+'@s.whatsapp.net',id:'invite-no'},message:{conversation:'Não quero'}});
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',execution).state,'CANCELLED');
+ assert.equal(db.one("SELECT COUNT(*) n FROM jobs WHERE lead_id=? AND type IN ('audio','video')",lead.id).n,0);
+ assert.equal(db.suppressed(lead.phone),true);
+ assert.equal(queue.outreachQueueSnapshot().ready,0);
+});
+test('invitation permission does not allow arbitrary campaigns or media as first contact',()=>{
+ const lead=db.addLead({business:'Teste Outra',phone:'5515999551144',source:'osm'}).lead;
+ const another=runtime.saveWorkflow({name:'Outra campanha',enabled:true,steps:buildConsecomSteps({audioId:'invite-a',videoId:'invite-v'})});
+ assert.throws(()=>runtime.startWorkflow(lead.id,another),/autorização comercial/);
+ assert.equal(invitation.isInvitationJob({type:'audio',step_index:0}),false);
+ db.setSetting('paused',true);
+ assert.equal(invitation.enableInvitationCampaign().status,'CONFIGURED');
+ assert.equal(db.getSetting('paused'),true);
+});
+test.after(()=>{db.db.close();fs.rmSync(directory,{recursive:true,force:true});});

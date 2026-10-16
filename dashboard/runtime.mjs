@@ -5,17 +5,22 @@ import {classify,renderTemplate} from './classifier.mjs';
 import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
 import {evaluateDecision,selectAutomationForLead,permitsPresentation} from './automation-router.mjs';
 import {scheduleReport,flushNotices,queueNotice} from './notifications.mjs';
-import {autoOutreachCandidateSql,documentedOptIn} from './outreach-queue.mjs';
+import {automaticCandidateSql,documentedOptIn} from './outreach-queue.mjs';
+import {isInvitationWorkflow,isInvitationJob,acceptPresentation} from './permission-invitation.mjs';
 import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
 import {canSendInitial} from './radar.mjs';
 import {isOfferActive} from './campaign-rules.mjs';
+import {rememberMessage,retryMessage,createRetryCache,recoveryRepository} from './whatsapp-recovery.mjs';
 import {currentWebVersion,classifyDisconnect,retryDelay,isPairingRestart} from './whatsapp-reliability.mjs';
 
+const msgRetryCounterCache=createRetryCache();
+const failedDecryptionPeers=new Set();
+let decryptionFailures=0,lastDecryptionFailureAt=null,lastDecryptionSuccessAt=null;
 let sock=null,connecting=false,waStatus='DISCONNECTED',qrData=null,lastError=null,waUser=null;
 let notifier=()=>{},locked=false,reconnectTimer=null,retries=0,closeCode=null,lastEventAt=null,lastQrAt=null,nextRetryAt=null,pairedRestartCount=0;
 export function setNotifier(fn){notifier=fn;}
 const publish=()=>{lastEventAt=new Date().toISOString();try{notifier();}catch{}};
-export function connection(){return {status:waStatus,qr:qrData,user:waUser,error:lastError,closeCode,lastEventAt,lastQrAt,nextRetryAt};}
+export function connection(){return {decryption:{unresolvedConversations:failedDecryptionPeers.size,failures:decryptionFailures,lastFailureAt:lastDecryptionFailureAt,lastSuccessAt:lastDecryptionSuccessAt},status:waStatus,qr:qrData,user:waUser,error:lastError,closeCode,lastEventAt,lastQrAt,nextRetryAt};}
 const authDir=()=>path.resolve(process.env.PROSPECTOR_SESSION_DIR||path.join(process.env.PROSPECTOR_DATA_DIR||'data','wa-session'));
 function backupSession(folder){
  if(!fs.existsSync(path.join(folder,'creds.json')))return false;
@@ -66,9 +71,35 @@ export async function connectWhatsApp(options={}){
   console.info('[whatsapp] Iniciando conexão com versão Web '+version.join('.')+(restore?' (restauração)':' (pareamento)'));
   const socket=B.default({version,auth:state,printQRInTerminal:false,
    browser:B.Browsers?.macOS?.('Chrome'),connectTimeoutMs:45000,markOnlineOnConnect:true,
+   msgRetryCounterCache,maxMsgRetryCount:5,
+   shouldIgnoreJid:jid=>jid?.endsWith('@g.us')||jid?.endsWith('@broadcast')||jid?.endsWith('@newsletter'),
+   getMessage:async key=>retryMessage(key,B.proto.Message),
+   makeSignalRepository:recoveryRepository(B.DEFAULT_CONNECTION_CONFIG.makeSignalRepository,{folder,
+    onFailure:jid=>{failedDecryptionPeers.add(jid);decryptionFailures++;lastDecryptionFailureAt=new Date().toISOString();},
+    onSuccess:jid=>{failedDecryptionPeers.delete(jid);lastDecryptionSuccessAt=new Date().toISOString();}}),
    logger:{level:'silent',child(){return this;},trace(){},debug(){},info(){},warn(){},error(){},fatal(){}}});
+  const providerSend=socket.sendMessage.bind(socket);
+  socket.sendMessage=async(...args)=>{
+   const result=await providerSend(...args);
+   try{rememberMessage(result,B.proto.Message);}catch(error){audit('WHATSAPP_RETRY_STORE_ERROR',null,{error:error.message});}
+   return result;
+  };
   sock=socket;
   socket.ev.on('creds.update',saveCreds);
+  socket.ev.on('messages.update',updates=>{
+   if(sock!==socket)return;
+   for(const item of updates||[]){
+    const status=Number(item.update?.status),providerId=item.key?.id;
+    if(!providerId||!Number.isInteger(status)||status<3||status>5)continue;
+    const existing=one('SELECT id,status FROM messages WHERE provider_id=? AND direction="out"',providerId);
+    if(!existing)continue;
+    const next=status>=4?'read':'delivered';
+    if(existing.status==='read'||existing.status===next)continue;
+    run('UPDATE messages SET status=? WHERE id=?',next,existing.id);
+    audit('WHATSAPP_DELIVERY_CONFIRMED',null,{providerId,status:next});
+    console.info('[whatsapp] Entrega confirmada pelo destinatário: '+next);publish();
+   }
+  });
   socket.ev.on('connection.update',async update=>{
    if(sock!==socket)return;
    if(update.qr){
@@ -120,8 +151,10 @@ export async function connectWhatsApp(options={}){
    }
   });
   socket.ev.on('messages.upsert',async event=>{
-   if(sock!==socket||event.type!=='notify')return;
+   if(sock!==socket)return;
    for(const m of event.messages||[]){
+    try{rememberMessage(m,B.proto.Message);}catch(error){audit('WHATSAPP_RETRY_STORE_ERROR',null,{error:error.message});}
+    if(event.type!=='notify')continue;
     try{await incoming(m);}catch(e){audit('INBOUND_ERROR',null,{error:e.message});}
    }
   });
@@ -241,6 +274,7 @@ export async function incoming(m) {
  if(result.intent==='INTERESTED'&&next?.type!=='decision'&&next?.type!=='delay'){
   handoverInterest(lead,'Interesse comercial declarado');publish();return;
  }
+ if(firstApproval){acceptPresentation(lead.id,m.key?.id,payload.body);lead=one('SELECT * FROM leads WHERE id=?',lead.id);}
  const manualChoice=!!one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover;
  const routing=!manualChoice&&getSetting('automation_enabled',true)?handleDecision(lead.id,payload.body,payload.type==='text'):null;
  if(routing){if(routing.shouldContinue)drive(routing.executionId);publish();return;}
@@ -250,6 +284,10 @@ export async function incoming(m) {
  const sampleReply=onReply(lead.id,payload.body,payload.type==='text');
  if(sampleReply){publish();return;}
  const manual=one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover;
+ if(waiting&&next?.type==='delay'&&!firstApproval&&result.intent!=='NOT_INTERESTED'){
+  stage(lead.id,'REPLIED','Aguardando aceite explícito da apresentação');
+  audit('PRESENTATION_ACCEPTANCE_PENDING',lead.id,{messageId:m.key?.id||null});publish();return;
+ }
  if(['QUESTION','UNCERTAIN'].includes(result.intent)&&!firstApproval){
   stage(lead.id,'REPLIED','Resposta sob análise: '+result.intent);
   if(result.intent==='QUESTION'||result.intent==='UNCERTAIN'){
@@ -333,12 +371,12 @@ export function startWorkflow(leadId,selectedAutomationId=null){
   if(!lead)throw Error('Lead não encontrado');
   if(!lead.phone)throw Error('Lead sem WhatsApp');
   if(lead.stage==='NO_INTEREST'||lead.stage==='CLOSED_WON')throw Error('Lead recusou contato ou negociação concluída');
-  if(!lead.contact_permission||!documentedOptIn(lead.id))throw Error('Primeira abordagem exige autorização comercial comprovada');
   if(suppressed(lead.phone))throw Error('Contato bloqueado/opt-out');
   if(one('SELECT lead_id FROM initial_contacts WHERE phone=? OR lead_id=?',lead.phone,leadId))throw Error('Primeira abordagem já registrada');
   if(one('SELECT id FROM executions WHERE lead_id=?',leadId))throw Error('Lead já possui workflow iniciado');
   const wf=selectAutomationForLead(lead,all('SELECT * FROM workflows'),selectedAutomationId);
   if(!wf)throw Error('Não existe automação ativa aplicável ao segmento');
+  if(!documentedOptIn(lead.id)&&!isInvitationWorkflow(wf))throw Error('Primeira abordagem exige autorização comercial comprovada');
   const runId=id();
   run("INSERT INTO executions(id,lead_id,workflow_id,version,steps,next_step,state,updated_at) VALUES(?,?,?,?,?,0,'ACTIVE',?)",runId,leadId,wf.id,wf.version,wf.steps,now());
   audit('WORKFLOW_STARTED',leadId,{workflowId:wf.id,version:wf.version});
@@ -377,7 +415,7 @@ export function drive(runId){
   const jobId=id(),key='workflow:'+runId+':'+r.next_step;
   const text=kind==='message'?renderTemplate(step.text,lead):kind==='video'?renderTemplate(step.caption||'',lead):'';
   if(initial){
-   if(!lead.contact_permission)throw Error('Sem autorização de contato');
+   if(!documentedOptIn(lead.id)&&!isInvitationWorkflow({id:r.workflow_id,steps:r.steps}))throw Error('Sem autorização de contato');
    try{run("INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,'RESERVED',?,?)",lead.id,lead.phone,jobId,now());}
    catch{run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE id=?",now(),runId);return;}
   }
@@ -429,17 +467,18 @@ export async function tick(){
   if(waStatus!=='CONNECTED')return;
   await flushNotices(sock);
   if(getSetting('paused',true))return;
-  // Partida automática SOMENTE para contatos que receberam permissão explícita.
+  // Convite inicial segue a campanha revisada; mídia exige aceite real do contato.
   const campaign=one('SELECT id,enabled FROM workflows WHERE id=? AND enabled=1',String(getSetting('autonomous_campaign_id','')));
   if(getSetting('auto_initial',false)&&campaign&&canInitial()&&!one("SELECT id FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('PENDING','SENDING') LIMIT 1")){
-   const candidate=one(autoOutreachCandidateSql);
+   const candidate=one(automaticCandidateSql());
    if(candidate){try{const rid=startWorkflow(candidate.id,campaign.id);drive(rid);}catch(err){audit('AUTO_START_REVIEW',candidate.id,{error:err.message});}}
   }
   const jobs=all("SELECT * FROM jobs WHERE status='PENDING' ORDER BY created_at LIMIT 10");
   for(const job of jobs){
    const lead=one('SELECT * FROM leads WHERE id=?',job.lead_id);
    const declineFarewell=lead?.stage==='NO_INTEREST'&&/^decision:[^:]+:\d+:no$/.test(String(job.key||''));
-   if(!lead||!lead.contact_permission||(job.step_index===0&&job.execution_id&&!documentedOptIn(lead.id))||(lead.stage==='NO_INTEREST'&&!declineFarewell)||lead.stage==='CLOSED_WON'||suppressed(lead.phone)){
+   const invitation=isInvitationJob(job);
+   if(!lead||(!lead.contact_permission&&!invitation)||(job.step_index===0&&job.execution_id&&!documentedOptIn(lead.id)&&!invitation)||(lead.stage==='NO_INTEREST'&&!declineFarewell)||lead.stage==='CLOSED_WON'||suppressed(lead.phone)){
     run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE id=?",now(),job.id);
     audit('DELIVERY_BLOCKED',job.lead_id,{jobId:job.id,reason:'permission_or_stage'});continue;
    }
@@ -463,6 +502,7 @@ export async function tick(){
      rememberOutreach(lead.id,'initial');
      run("UPDATE initial_contacts SET status='SENT' WHERE job_id=?",job.id);
      stage(lead.id,'CONTACTED','mensagem inicial confirmada');
+     console.info('[outreach] Convite inicial aceito pelo provedor; aguardando confirmação de entrega');
     }
     if(String(job.key||'').startsWith('recontact:'))rememberOutreach(lead.id,'recontact');
     const t=getThread(lead.id,result.jid);

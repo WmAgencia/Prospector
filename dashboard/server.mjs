@@ -17,6 +17,7 @@ import {bridgeStatus,bridgeSpec,syncAgentBridge} from './agent-bridge.mjs';
 import {restorePrivateCampaign,privateRestoreStatus} from './private-restore.mjs';
 import {activateCampaign,selectedCampaign,rejectActiveCampaignEdit} from './campaign-selection.mjs';
 import {outreachQueueSnapshot} from './outreach-queue.mjs';
+import {enableInvitationCampaign} from './permission-invitation.mjs';
 import {enableAuthorizedOutreach} from './authorized-outreach.mjs';
 import {importOfficial} from './official-import.mjs';
 import {siteAudit} from './site-audit.mjs';
@@ -219,7 +220,7 @@ async function handler(req,res){
    const totals=all('SELECT status,COUNT(*) AS total FROM jobs GROUP BY status');
    const data={at:now(),uptimeSeconds:Math.round(process.uptime()),connection:connection(),discovery:{osmEnabled:getSetting('discovery_sources',{}).osm!==false,braveConfigured:!!process.env.BRAVE_SEARCH_API_KEY,last},leadCount:one('SELECT COUNT(*) AS n FROM leads')?.n||0,queue:Object.fromEntries(totals.map(x=>[x.status,x.total])),settings:{paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}};
    // QR image, phone number and session identifiers never appear in diagnostics.
-   data.connection={status:data.connection.status,error:data.connection.error,closeCode:data.connection.closeCode,lastEventAt:data.connection.lastEventAt,hasQr:Boolean(data.connection.qr)};
+   data.connection={decryption:data.connection.decryption,status:data.connection.status,error:data.connection.error,closeCode:data.connection.closeCode,lastEventAt:data.connection.lastEventAt,hasQr:Boolean(data.connection.qr)};
    return respond(res,200,data);
   }
   if(req.method==='POST'&&pathname.startsWith('/api/threads/ensure/')){const leadId=pathname.split('/')[4];if(!one('SELECT id FROM leads WHERE id=?',leadId))throw Error('Lead não existe');const t=getThread(leadId);notify();return respond(res,200,t);}
@@ -384,6 +385,9 @@ async function handler(req,res){
 const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
 const activation=enableAuthorizedOutreach();
+const invitationActivation=enableInvitationCampaign();
+const invitationQueue=outreachQueueSnapshot();
+console.log('[invitation campaign]',JSON.stringify({...invitationActivation,ready:invitationQueue.ready,waiting:invitationQueue.awaitingConsent,paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}));
 console.log('[authorized outreach]',activation.status,'ready='+activation.ready,'waiting='+activation.awaitingConsent);
 const interval=setInterval(()=>tick().catch(e=>console.error('[tick]',e.message)),2500);
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);

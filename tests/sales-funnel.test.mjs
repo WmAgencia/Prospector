@@ -58,7 +58,7 @@ test('histórico de 90 dias e promoção não expirada',()=>{
  assert.equal(offer.isOfferActive('2026-10-18',Date.parse('2026-10-19T00:00:00-03:00')),false);
 });
 
-test('primeira resposta: cumprimento isolado exige revisão; autorização clara é aceita',async()=>{
+test('primeira resposta: cumprimento mantém espera; aceite posterior libera apresentação',async()=>{
  assert.equal(intent.classify('Oi, pode falar').intent,'NEUTRAL');
  assert.equal(routing.evaluateDecision('Oi, pode falar').decision,'YES');
  assert.equal(routing.evaluateDecision('Oi').decision,'REVIEW');
@@ -70,6 +70,8 @@ test('primeira resposta: cumprimento isolado exige revisão; autorização clara
  db.run("UPDATE executions SET state='ACTIVE' WHERE id=?",ex);runtime.drive(ex);
  assert.equal(db.one('SELECT state FROM executions WHERE id=?',ex).state,'WAIT_REPLY');
  await runtime.incoming({key:{remoteJid:'5515999889900@s.whatsapp.net',id:'isolated-hi'},message:{conversation:'Oi'}});
- assert.equal(db.one('SELECT state FROM executions WHERE id=?',ex).state,'NEEDS_REVIEW');
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',ex).state,'WAIT_REPLY');
  assert.equal(db.one("SELECT COUNT(*) n FROM jobs WHERE lead_id=? AND type='audio'",lead.id).n,0);
+ await runtime.incoming({key:{remoteJid:'5515999889900@s.whatsapp.net',id:'later-yes'},message:{conversation:'Pode mandar'}});
+ assert.equal(db.one('SELECT state FROM executions WHERE id=?',ex).state,'WAIT_DELAY');
 });
