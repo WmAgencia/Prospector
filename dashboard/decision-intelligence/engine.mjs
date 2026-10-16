@@ -31,7 +31,7 @@ export function decideMessage(text,context='general_interest',{modelPrediction=n
  if(optOut.test(s))return result('OPT_OUT','NO',1,'explicit_opt_out',ctx,true);
  if(refusal.test(s)||smallNo.test(s))return result('NOT_INTERESTED','NO',0.99,'explicit_refusal',ctx);
  // "não, pode sim" é contraditório e exige revisão, não uma decisão positiva.
- if(/^(?:nao|n)\s*,?\s*(?:pode|sim|claro)\b/.test(s))return result('CONTRADICTORY','REVIEW',0.99,'contradiction',ctx,true);
+ if(/^(?:nao|n)\s*,?\s*(?:pode|sim|claro)\b/.test(s))return result('CONTRADICTORY','NO',0.99,'contradictory_negative',ctx,true);
  if(uncertain.test(s))return result('UNDECIDED','REVIEW',0.96,'hesitation',ctx,true);
  if(objectionPrice.test(s))return result('PRICE_OBJECTION','REVIEW',0.96,'price_objection',ctx,true);
  if(objectionTiming.test(s))return result('TIMING_OBJECTION','REVIEW',0.96,'timing_objection',ctx,true);
@@ -46,7 +46,7 @@ export function decideMessage(text,context='general_interest',{modelPrediction=n
    return result('PERMISSION_GRANTED','YES',0.97,'explicit_permission_question',ctx);
   return result('QUESTION','REVIEW',0.97,'sales_question',ctx,true);
  }
- if(presentationPositive.test(s))return result('PERMISSION_GRANTED','YES',0.98,'explicit_presentation_permission',ctx);
+ if(presentationPositive.test(s)||/\b(?:quero ver|quero um exemplo|me manda uma previa|quero uma previa|me mostra um exemplo)\b/.test(s))return result('PERMISSION_GRANTED','YES',0.98,'explicit_presentation_permission',ctx);
  if(smallYes.test(s))return result('CONTEXT_YES','YES',0.93,'affirmative_in_context',ctx);
  if(plainGreeting.test(s))return result('GREETING','REVIEW',0.99,'greeting_only',ctx);
  // Bayesian learning is advisory: NEVER promote inferred text into sending

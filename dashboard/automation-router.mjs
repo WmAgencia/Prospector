@@ -1,6 +1,9 @@
 // Regras determinísticas contextualizadas pela pergunta anterior — sem modelo de IA.
 import {normalize} from './classifier.mjs';
-export function evaluateDecision(text, context='general_interest'){
+import {decideMessage} from './decision-intelligence/engine.mjs';
+import {modelPredict} from './decision-intelligence/learning.mjs';
+import {getSetting} from './db.mjs';
+function evaluateDecisionLegacy(text, context='general_interest'){
  const s=normalize(text);
  if(!s)return {decision:'REVIEW',reason:'empty'};
  // Resposta hesitante deve passar por revisão, sem decisão presumida.
@@ -27,6 +30,19 @@ export function evaluateDecision(text, context='general_interest'){
  const positive=strong.test(conversational)||sample||/\b(?:tenho interesse|gostaria de ver|tenho vontade de conhecer|quero saber mais|me interessa)\b/.test(s);
  if(positive)return {decision:'YES',reason:sample?'explicit_sample':'affirmative_in_context'};
  return {decision:'REVIEW',reason:'ambiguous'};
+}
+// Choice: o motor contextual tem precedência para regras explícitas.
+// A classificação estatística nunca libera apresentação ou fechamento.
+export function evaluateDecision(text,context='general_interest'){
+ const legacy=evaluateDecisionLegacy(text,context);
+ if(getSetting('decision_engine_enabled',true)===false)return legacy;
+ const prediction=getSetting('decision_learning_enabled',false)?modelPredict(text,context):null;
+ const next=decideMessage(text,context,{modelPrediction:prediction});
+ if(['OPT_OUT','NOT_INTERESTED','CONTRADICTORY'].includes(next.intent))return {...next,decision:'NO'};
+ if(legacy.decision==='NO')return {...next,decision:'NO',reason:'legacy_refusal'};
+ if(next.decision==='YES')return next;
+ if(legacy.decision==='YES'&&!['UNDECIDED','QUESTION','PRICE_OBJECTION','TIMING_OBJECTION','LONG_MESSAGE'].includes(next.intent))return {...next,decision:'YES',intent:'AFFIRMATIVE_LEGACY',confidence:0.91,reason:'legacy_explicit_acceptance',allow_media:context!=='website_interest',requires_human:false};
+ return next;
 }
 export function evaluatePresentationReply(text){
  const raw=String(text||'').trim(),normalized=normalize(raw);

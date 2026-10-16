@@ -1,5 +1,6 @@
 // Descoberta multi-fonte — somente provedores realmente disponíveis são executados.
 import {one,all,run,id,now,getSetting,audit,addLead} from './db.mjs';
+import {scoreOpportunity} from './decision-intelligence/engine.mjs';
 
 export const providerDefinitions=[
  {id:'osm',label:'Empresas locais · OpenStreetMap',supportsSearch:true,note:'Pesquisa pública local sem chave. © OpenStreetMap contributors (ODbL); não confirma inexistência de site nem autorização para contato.'},
@@ -36,7 +37,7 @@ export function scoreLead(lead,origins=[]){
  score+=add('prioritySegment',segments.some(x=>normalized.includes(x)),'Segmento prioritário');
  score+=add('location',!!lead.city,'Localização identificada');
  score+=add('businessName',!!lead.business,'Nome comercial identificado');
- return {score,reasons};
+ return {score,reasons,intelligence:scoreOpportunity(lead,origins)};
 }
 export function recordOrigin(leadId,source,details={},verified=false){
  if(!providerDefinitions.some(x=>x.id===source)&&!['MANUAL','LEGACY_IMPORT','WHATSAPP_INBOUND'].includes(source))throw Error('Fonte inválida');
