@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-queue-health-'));
+const db=await import('../dashboard/db.mjs');
+const {queueHealth,reconcileOrphanPending}=await import('../dashboard/queue-health.mjs');
+const {withDeadline}=await import('../dashboard/operation-timeouts.mjs');
+const {daySP}=await import('../dashboard/radar.mjs');
+const at=new Date(daySP()+'T14:00:00.000Z');
+const ago=new Date(at.getTime()-20*60000).toISOString();
+const lead=db.addLead({business:'Empresa de diagnóstico',phone:'5515999432876',source:'TEST'}).lead;
+db.setSetting('paused',false);
+db.setSetting('auto_initial',true);
+db.setSetting('business_start',8);
+db.setSetting('business_end',18);
+db.setSetting('daily_limit',150);
+const workflowId=db.id();
+db.run('INSERT INTO workflows(id,name,is_default,version,steps,created_at,updated_at,enabled,segments_json) VALUES(?,?,?,?,?,?,?,?,?)',workflowId,'Fluxo de teste',1,1,'[]',ago,ago,1,'[]');
+db.setSetting('autonomous_campaign_id',workflowId);
+const executionId=db.id(),orphanId=db.id(),validId=db.id(),unknownId=db.id();
+db.run("INSERT INTO executions(id,lead_id,workflow_id,version,steps,next_step,state,updated_at) VALUES(?,?,?,?,?,0,'SENDING',?)",executionId,lead.id,workflowId,1,'[]',ago);
+const addJob=(j,e,status)=>db.run('INSERT INTO jobs(id,lead_id,execution_id,step_index,type,key,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',j,lead.id,e,0,'message',j,status,ago,ago);
+addJob(orphanId,'missing-execution','PENDING');
+addJob(validId,executionId,'PENDING');
+addJob(unknownId,executionId,'UNKNOWN');
+test('the queue diagnosis exposes why sends do not progress, without contact identifiers',()=>{
+ const s=queueHealth({at,waStatus:'CONNECTED'});
+ assert.equal(s.reason,'INITIAL_JOB_PENDING');
+ assert.equal(s.alert,'STALE_INITIAL_PENDING');
+ assert.ok(s.oldestPendingMinutes>=20);
+ assert.equal(s.initialPending,2);
+ assert.equal(s.invalidPending,1);
+ assert.equal(JSON.stringify(s).includes(lead.phone),false);
+ assert.equal(s.initialToday.limit,150);
+});
+test('only definitely orphaned PENDING jobs are canceled; current or uncertain delivery is untouched',()=>{
+ const result=reconcileOrphanPending({at});
+ assert.equal(result.repaired,1);
+ assert.equal(db.one('SELECT status FROM jobs WHERE id=?',orphanId).status,'CANCELLED');
+ assert.equal(db.one('SELECT status FROM jobs WHERE id=?',validId).status,'PENDING');
+ assert.equal(db.one('SELECT status FROM jobs WHERE id=?',unknownId).status,'UNKNOWN');
+ assert.equal(db.one("SELECT COUNT(*) AS n FROM audit WHERE action='ORPHAN_PENDING_CANCELLED'").n,1);
+});
+test('diagnostics do not falsely report the system as ready when disconnected or paused',()=>{
+ assert.equal(queueHealth({at,waStatus:'DISCONNECTED'}).reason,'WHATSAPP_OFFLINE');
+ db.setSetting('paused',true);
+ assert.equal(queueHealth({at,waStatus:'CONNECTED'}).reason,'PAUSED');
+ db.setSetting('paused',false);
+});
+test('provider deadline always settles but does not initiate a retry',async()=>{
+ let calls=0;
+ await assert.rejects(()=>withDeadline(()=>{calls++;return new Promise(()=>{});},20,'Envio'),/requer revisão/);
+ assert.equal(calls,1);
+ assert.equal(await withDeadline(async()=>42,100,'Teste'),42);
+});
+test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

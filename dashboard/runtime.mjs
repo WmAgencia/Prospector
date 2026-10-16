@@ -5,6 +5,8 @@ import {classify,renderTemplate,personalName} from './classifier.mjs';
 import {onReply,cancelForOptOut,onSent,onUnknown,requestFromAutomation} from './production.mjs';
 import {evaluateDecision,evaluatePresentationReply,selectAutomationForLead,permitsPresentation} from './automation-router.mjs';
 import {scheduleReport,flushNotices,queueNotice} from './notifications.mjs';
+import {reconcileOrphanPending} from './queue-health.mjs';
+import {withDeadline} from './operation-timeouts.mjs';
 import {automaticCandidateSql,documentedOptIn} from './outreach-queue.mjs';
 import {isInvitationWorkflow,isInvitationJob,acceptPresentation} from './permission-invitation.mjs';
 import {rememberOutreach,eligibleRecontacts} from './contact-cadence.mjs';
@@ -18,9 +20,11 @@ const msgRetryCounterCache=createRetryCache();
 const failedDecryptionPeers=new Set();
 let decryptionFailures=0,lastDecryptionFailureAt=null,lastDecryptionSuccessAt=null;
 let sock=null,connecting=false,waStatus='DISCONNECTED',qrData=null,lastError=null,waUser=null;
+let currentTickStartedAt=null,lastTickCompletedAt=null,lastTickError=null;
 let notifier=()=>{},locked=false,reconnectTimer=null,retries=0,closeCode=null,lastEventAt=null,lastQrAt=null,nextRetryAt=null,pairedRestartCount=0;
 export function setNotifier(fn){notifier=fn;}
 const publish=()=>{lastEventAt=new Date().toISOString();try{notifier();}catch{}};
+export function tickStatus(){return {locked,startedAt:currentTickStartedAt,completedAt:lastTickCompletedAt,lastError};}
 export function connection(){return {decryption:{unresolvedConversations:failedDecryptionPeers.size,failures:decryptionFailures,lastFailureAt:lastDecryptionFailureAt,lastSuccessAt:lastDecryptionSuccessAt},status:waStatus,qr:qrData,user:waUser,error:lastError,closeCode,lastEventAt,lastQrAt,nextRetryAt};}
 const authDir=()=>path.resolve(process.env.PROSPECTOR_SESSION_DIR||path.join(process.env.PROSPECTOR_DATA_DIR||'data','wa-session'));
 function backupSession(folder){
@@ -498,15 +502,16 @@ async function send(job,lead){
  return {ack,jid};
 }
 export async function tick(){
- if(locked)return;locked=true;
+ if(locked)return;locked=true;currentTickStartedAt=now();
  try{
-  for(const r of all("SELECT id FROM executions WHERE state='ACTIVE'"))drive(r.id);
+  reconcileOrphanPending();
+   for(const r of all("SELECT id FROM executions WHERE state='ACTIVE'"))drive(r.id);
   for(const r of all("SELECT id FROM executions WHERE state='WAIT_DELAY' AND wake_at<=?",now())){
    run("UPDATE executions SET state='ACTIVE',updated_at=? WHERE id=?",now(),r.id);drive(r.id);
   }
   scheduleReport(new Date());
   if(waStatus!=='CONNECTED')return;
-  await flushNotices(sock);
+  await withDeadline(()=>flushNotices(sock),60000,'Notificações do responsável');
   if(getSetting('paused',true))return;
   // Convite inicial segue a campanha revisada; mídia exige aceite real do contato.
   const campaign=one('SELECT id,enabled FROM workflows WHERE id=? AND enabled=1',String(getSetting('autonomous_campaign_id','')));
@@ -538,7 +543,7 @@ export async function tick(){
    // UNKNOWN nunca será reenviado automaticamente: rede pode ter aceitado a mensagem.
    run("UPDATE jobs SET status='SENDING',updated_at=? WHERE id=?",now(),job.id);
    try{
-    const result=await send(job,lead);
+    const result=await withDeadline(()=>send(job,lead),60000,'WhatsApp');
     run("UPDATE jobs SET status='SENT',updated_at=? WHERE id=?",now(),job.id);
     if(job.step_index===0&&job.execution_id){
      rememberOutreach(lead.id,'initial');
@@ -559,7 +564,8 @@ export async function tick(){
     audit('DELIVERY_UNKNOWN',lead.id,{job:job.id,error:e.message});onUnknown(job.id);publish();
    }
   }
- }finally{locked=false;}
+ }catch(error){lastTickError=String(error.message||error).slice(0,180);throw error;}
+  finally{locked=false;lastTickCompletedAt=now();currentTickStartedAt=null;}
 }
 export function resume(leadId){
  const r=one('SELECT * FROM executions WHERE lead_id=?',leadId);

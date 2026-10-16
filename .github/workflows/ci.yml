@@ -41,6 +41,8 @@ jobs:
           node --check dashboard/campaign-selection.mjs
           node --check dashboard/outreach-queue.mjs
           node --check dashboard/authorized-outreach.mjs
+          node --check dashboard/queue-health.mjs
+          node --check dashboard/operation-timeouts.mjs
           node --check dashboard/private-restore.mjs
           node --check dashboard/import-legacy.mjs
           node --check preview/server.mjs
@@ -56,6 +58,7 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3030/api/agent-bridge/status | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!x.state)process.exit(1)})"
           curl --silent --show-error -X POST -H 'Content-Type: application/json' -d '{"id":"default"}' http://127.0.0.1:3030/api/workflows/activate | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!/mídia|áudio|vídeo|Campanha/.test(x.error||''))process.exit(1);console.log('Activation guard smoke passed')})"
           curl --fail --silent --show-error http://127.0.0.1:3030/api/outreach-queue | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{let a=JSON.parse(s);if(!('ready' in a)&&!('awaitingConsent' in a))process.exit(1)})"
+          curl --fail --silent --show-error http://127.0.0.1:3030/api/queue-health | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const a=JSON.parse(s);if(!a.reason||!a.initialToday||!('initialPending' in a))process.exit(1);console.log('Queue health smoke passed')})"
           curl --fail --silent --show-error http://127.0.0.1:3030/api/state | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!Array.isArray(x.leads)||!Array.isArray(x.workflows)||!('activeCampaign' in x))process.exit(1);console.log('API smoke passed')})"
       - name: Show server output on failure
         if: failure()
