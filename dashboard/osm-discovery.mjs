@@ -83,7 +83,7 @@ export function extractInstagram(tags){
  return match?match[1].toLowerCase():null;
 }
 export function makeQuery(location,segment){
- return '[out:json][timeout:24];(nwr["'+segment.filter+'"="'+segment.value+'"]["name"](around:'+location.radius+','+location.lat+','+location.lon+'););out center 200;';
+ return '[out:json][timeout:24];(nwr["'+segment.filter+'"="'+segment.value+'"]["name"](around:'+location.radius+','+location.lat+','+location.lon+'););out center 70;';
 }
 // Prioriza registros com telefone publicado, sem inventar informações nem omitir
 // empresas sem telefone. A amostra por consulta continua limitada para proteger
