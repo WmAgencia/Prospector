@@ -14,7 +14,7 @@ test('fontes públicas não inventam telefone, site ou permissões',()=>{
  assert.equal(extractInstagram({'contact:instagram':'https://instagram.com/empresa.oficial'}),'empresa.oficial');
  const q=makeQuery(resolveLocation('Sorocaba'),resolveSegment('dentista'));
  assert.match(q,/nwr\["amenity"="dentist"\]\["name"\]/);
- assert.match(q,/out center 200/);
+ assert.match(q,/out center 70/);
 });
 
 test('prioritiza telefone publicado sem descartar registros sem contato',()=>{
