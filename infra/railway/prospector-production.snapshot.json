@@ -1,0 +1,192 @@
+{
+  "backupType": "railway-configuration-only",
+  "snapshotDate": "2026-10-20",
+  "dataIncluded": false,
+  "secretsIncluded": false,
+  "source": "Railway connector inspection, values redacted",
+  "provenance": {
+    "railwayProjectName": "prospector-consecom",
+    "oldProjectId": "6eb40253-34a6-400e-982c-b5ab21904d88",
+    "oldEnvironmentId": "631b26d9-e7bf-4da5-b01e-47a373a970ce",
+    "environmentName": "production",
+    "oldWorkspaceName": "Gilberto Neves's Projects",
+    "githubRepository": "WmAgencia/Prospector",
+    "githubBranch": "main"
+  },
+  "services": [
+    {
+      "name": "prospector-operacional",
+      "originalId": "8b69a8e6-4e5c-4ec7-b322-2011e85e0495",
+      "configuration": {
+        "source": {
+          "repo": "WmAgencia/Prospector",
+          "branch": "main",
+          "checkSuites": false
+        },
+        "networking": {
+          "serviceDomains": {
+            "prospector-operacional-production.up.railway.app": {
+              "port": 3000
+            }
+          }
+        },
+        "build": {
+          "builder": "RAILPACK",
+          "buildEnvironment": "V3"
+        },
+        "deploy": {
+          "startCommand": "node dashboard/server.mjs",
+          "healthcheckPath": "/health",
+          "useLegacyStacker": false,
+          "ipv6EgressEnabled": false,
+          "runtime": "V2",
+          "multiRegionConfig": {
+            "sfo": {
+              "numReplicas": 1
+            }
+          }
+        },
+        "volumeMounts": {
+          "641a1ca8-1746-4461-8963-8dc48ce321e7": {
+            "mountPath": "/data"
+          }
+        }
+      },
+      "domains": {
+        "serviceDomains": [
+          {
+            "id": "0a79cd87-8770-4d09-9f52-622e38218175",
+            "domain": "prospector-operacional-production.up.railway.app",
+            "targetPort": 3000
+          }
+        ],
+        "customDomains": []
+      },
+      "volumes": [
+        {
+          "id": "641a1ca8-1746-4461-8963-8dc48ce321e7",
+          "name": "prospector-persistent-data",
+          "mountPath": "/data",
+          "sizeMB": 500,
+          "region": "sfo",
+          "state": "live"
+        }
+      ],
+      "environmentVariableNames": [
+        "ADMIN_ACCESS_TOKEN",
+        "ADMIN_PASSWORD",
+        "ADMIN_SESSION_SECRET",
+        "ADMIN_USERNAME",
+        "APP_BASE_URL",
+        "NODE_ENV",
+        "NODE_OPTIONS",
+        "OVERPASS_ENDPOINT",
+        "PORT",
+        "PROSPECTOR_CAMPAIGN_TEST",
+        "PROSPECTOR_DATA_DIR",
+        "PROSPECTOR_MEDIA_RESTORE_URL",
+        "PROSPECTOR_SESSION_DIR",
+        "PROSPECTOR_TEST_DELIVERY_RETRY",
+        "PROSPECTOR_TEST_DIAGNOSTICS_UNTIL",
+        "PROSPECTOR_TEST_REPLY_RECOVERY",
+        "STUDIO_SYNC_ENABLED"
+      ],
+      "environmentVariableValuesIncluded": false,
+      "sealedVariableNames": [],
+      "regions": [
+        "sfo"
+      ],
+      "replicas": 1,
+      "tracing": {
+        "tracingEnabled": false,
+        "autoInstrumentationEnabled": false,
+        "autoInstrumentationActive": false
+      }
+    },
+    {
+      "name": "prospector-ui",
+      "originalId": "7d4dbb2b-e680-408f-a7e9-568a71f80b3f",
+      "kind": "Railway Function",
+      "functionRuntime": "bun",
+      "functionVersion": "1.4.0",
+      "functionSource": "infra/railway/prospector-ui.ts",
+      "configuration": {
+        "source": {
+          "image": "ghcr.io/railwayapp/function-bun:1.4.0"
+        },
+        "networking": {
+          "serviceDomains": {
+            "prospector-ui-production.up.railway.app": {}
+          }
+        },
+        "build": {
+          "builder": "RAILPACK",
+          "buildEnvironment": "V3"
+        },
+        "deploy": {
+          "useLegacyStacker": false,
+          "ipv6EgressEnabled": false,
+          "runtime": "V2",
+          "multiRegionConfig": {
+            "sfo": {
+              "numReplicas": 1
+            }
+          },
+          "functionSource": "infra/railway/prospector-ui.ts",
+          "note": "Original startCommand from Railway was function bootstrapping; restore as Railway Function from source file, do not reuse encoded launch command."
+        }
+      },
+      "domains": {
+        "serviceDomains": [
+          {
+            "id": "180ff4df-8fee-407f-9a1a-f5e200ff5b6d",
+            "domain": "prospector-ui-production.up.railway.app",
+            "targetPort": null
+          }
+        ],
+        "customDomains": []
+      },
+      "volumes": [],
+      "environmentVariableNames": [
+        "ACCESS_LINK_TOKEN",
+        "ACCESS_SESSION_KEY",
+        "UPSTREAM_ACCESS_TOKEN",
+        "UPSTREAM_PASSWORD",
+        "UPSTREAM_URL",
+        "UPSTREAM_USERNAME"
+      ],
+      "environmentVariableValuesIncluded": false,
+      "sealedVariableNames": [],
+      "regions": [
+        "sfo"
+      ],
+      "replicas": 1,
+      "tracing": {
+        "tracingEnabled": false,
+        "autoInstrumentationEnabled": false,
+        "autoInstrumentationActive": false
+      }
+    }
+  ],
+  "storage": {
+    "volumes": [
+      {
+        "name": "prospector-persistent-data",
+        "sizeMB": 500,
+        "region": "sfo",
+        "mount": "/data",
+        "serviceName": "prospector-operacional",
+        "backupStatus": "NOT_EXPORTED"
+      }
+    ],
+    "buckets": []
+  },
+  "pendingPatch": null,
+  "restoreNotes": [
+    "Old service IDs and generated Railway domain names cannot be assumed reusable.",
+    "Variable values are redacted and require new secrets or a private backup.",
+    "Original persistent /data volume contents and SQLite, Baileys session and media are NOT included.",
+    "Do not resume messaging before restoring historical deduplication and consent evidence.",
+    "Refer to docs/railway-restauracao-2026-10-20.md for restoration workflow."
+  ]
+}
