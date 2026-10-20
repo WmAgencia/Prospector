@@ -1,0 +1,285 @@
+{
+  "snapshotVersion": 1,
+  "snapshotDate": "2026-10-20",
+  "source": "Railway connector and user-provided screenshots, sanitized",
+  "description": "Nonsecret infrastructure config ONLY; not a database, Redis, media, access token, or credential backup",
+  "project": {
+    "name": "thorough-youth",
+    "oldProjectId": "fc56d1b8-dceb-4ec9-aaa0-38f4715ffcb9",
+    "oldEnvironmentId": "ed84a42d-25c7-4256-9069-a53a4587a95f",
+    "environment": "production",
+    "workspace": "Gilberto Neves's Projects"
+  },
+  "services": [
+    {
+      "name": "Evolution API",
+      "oldServiceId": "7414baf7-a957-4f52-ba47-28102d8cf018",
+      "source": {
+        "image": "evoapicloud/evolution-api:v2.3.7",
+        "repo": null,
+        "branch": null
+      },
+      "regions": [
+        "sfo"
+      ],
+      "replicas": 1,
+      "config": {
+        "source": {
+          "image": "evoapicloud/evolution-api:v2.3.7"
+        },
+        "networking": {
+          "serviceDomains": {
+            "evolution-api-production-26f6.up.railway.app": {
+              "port": 8080
+            }
+          },
+          "privateNetworkEndpoint": "evolution-api"
+        },
+        "build": {
+          "builder": "RAILPACK",
+          "buildEnvironment": "V3"
+        },
+        "deploy": {
+          "useLegacyStacker": false,
+          "ipv6EgressEnabled": false,
+          "runtime": "V2",
+          "multiRegionConfig": {
+            "sfo": {
+              "numReplicas": 1
+            }
+          }
+        }
+      },
+      "domains": {
+        "serviceDomains": [
+          {
+            "id": "0cf108d2-bf63-48a2-ab86-653d3e173082",
+            "domain": "evolution-api-production-26f6.up.railway.app",
+            "targetPort": 8080
+          }
+        ],
+        "customDomains": []
+      },
+      "volumeMounts": [],
+      "variableNames": [
+        "AUTHENTICATION_API_KEY",
+        "CACHE_REDIS_ENABLED",
+        "CACHE_REDIS_URI",
+        "DATABASE_CONNECTION_URI",
+        "DATABASE_PROVIDER",
+        "PORT",
+        "SERVER_URL"
+      ],
+      "variableValues": "WITHHELD",
+      "secretsBackedUp": false
+    },
+    {
+      "name": "Redis",
+      "oldServiceId": "964484b8-4f6b-4a2f-ad6b-7d4a42a06971",
+      "source": {
+        "image": "redis:8.2.1",
+        "repo": null,
+        "branch": null
+      },
+      "regions": [
+        "sfo"
+      ],
+      "replicas": 1,
+      "config": {
+        "source": {
+          "image": "redis:8.2.1"
+        },
+        "networking": {
+          "tcpProxies": {
+            "6379": {}
+          },
+          "privateNetworkEndpoint": "redis"
+        },
+        "build": {
+          "builder": "RAILPACK",
+          "buildEnvironment": "V3"
+        },
+        "deploy": {
+          "startCommand": "/bin/sh -c \"rm -rf $RAILWAY_VOLUME_MOUNT_PATH/lost+found/ && exec docker-entrypoint.sh redis-server --requirepass $REDIS_PASSWORD --save 60 1 --dir $RAILWAY_VOLUME_MOUNT_PATH\"",
+          "useLegacyStacker": false,
+          "ipv6EgressEnabled": false,
+          "runtime": "V2",
+          "multiRegionConfig": {
+            "sfo": {
+              "numReplicas": 1
+            }
+          }
+        },
+        "volumeMounts": {
+          "01a14878-7d24-4078-9694-182fddbaf2a3": {
+            "mountPath": "/data"
+          }
+        }
+      },
+      "domains": {
+        "serviceDomains": [],
+        "customDomains": []
+      },
+      "volumeMounts": [
+        {
+          "volumeId": "01a14878-7d24-4078-9694-182fddbaf2a3",
+          "volumeName": "redis-volume",
+          "mountPath": "/data"
+        }
+      ],
+      "variableNames": [
+        "REDISHOST",
+        "REDISPASSWORD",
+        "REDISPORT",
+        "REDISUSER",
+        "REDIS_PASSWORD",
+        "REDIS_PUBLIC_URL",
+        "REDIS_URL"
+      ],
+      "variableValues": "WITHHELD",
+      "secretsBackedUp": false
+    },
+    {
+      "name": "Postgres",
+      "oldServiceId": "2b19243a-a92b-4a8a-b370-ddd318d0674c",
+      "source": {
+        "image": "ghcr.io/railwayapp-templates/postgres-ssl:18",
+        "repo": null,
+        "branch": null
+      },
+      "regions": [
+        "sfo"
+      ],
+      "replicas": 1,
+      "config": {
+        "source": {
+          "image": "ghcr.io/railwayapp-templates/postgres-ssl:18"
+        },
+        "networking": {
+          "tcpProxies": {
+            "5432": {}
+          },
+          "privateNetworkEndpoint": "postgres"
+        },
+        "build": {
+          "builder": "RAILPACK",
+          "buildEnvironment": "V3"
+        },
+        "deploy": {
+          "useLegacyStacker": false,
+          "ipv6EgressEnabled": false,
+          "runtime": "V2",
+          "multiRegionConfig": {
+            "sfo": {
+              "numReplicas": 1
+            }
+          },
+          "requiredMountPath": "/var/lib/postgresql/data"
+        },
+        "volumeMounts": {
+          "37e1eea9-5d48-4d98-957c-cb10101337c5": {
+            "mountPath": "/var/lib/postgresql/data"
+          }
+        }
+      },
+      "domains": {
+        "serviceDomains": [],
+        "customDomains": []
+      },
+      "volumeMounts": [
+        {
+          "volumeId": "37e1eea9-5d48-4d98-957c-cb10101337c5",
+          "volumeName": "postgres-volume",
+          "mountPath": "/var/lib/postgresql/data"
+        }
+      ],
+      "variableNames": [
+        "DATABASE_PUBLIC_URL",
+        "DATABASE_URL",
+        "PGDATA",
+        "PGDATABASE",
+        "PGHOST",
+        "PGPASSWORD",
+        "PGPORT",
+        "PGUSER",
+        "POSTGRES_DB",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_USER",
+        "SSL_CERT_DAYS"
+      ],
+      "variableValues": "WITHHELD",
+      "secretsBackedUp": false
+    }
+  ],
+  "volumes": [
+    {
+      "name": "postgres-volume",
+      "oldVolumeId": "37e1eea9-5d48-4d98-957c-cb10101337c5",
+      "sizeMB": 500,
+      "region": "sfo",
+      "mountPath": "/var/lib/postgresql/data",
+      "linkedService": "Postgres",
+      "contentExported": false
+    },
+    {
+      "name": "redis-volume",
+      "oldVolumeId": "01a14878-7d24-4078-9694-182fddbaf2a3",
+      "sizeMB": 500,
+      "region": "sfo",
+      "mountPath": "/data",
+      "linkedService": "Redis",
+      "contentExported": false
+    }
+  ],
+  "screenshotVerifiedNonsecretValues": {
+    "Evolution API": {
+      "CACHE_REDIS_ENABLED": "true",
+      "DATABASE_PROVIDER": "postgresql",
+      "PORT": "8080",
+      "SERVER_URL": "https://evolution-api-production-26f6.up.railway.app"
+    },
+    "Redis": {
+      "REDISHOST": "redis.railway.internal",
+      "REDISPORT": "6379",
+      "REDISUSER": "default"
+    },
+    "Postgres": {
+      "PGDATA": "/var/lib/postgresql/data/pgdata",
+      "PGDATABASE": "railway",
+      "PGHOST": "postgres.railway.internal",
+      "PGPORT": "5432",
+      "PGUSER": "postgres",
+      "POSTGRES_DB": "railway",
+      "POSTGRES_USER": "postgres",
+      "SSL_CERT_DAYS": "820",
+      "RAILWAY_DEPLOYMENT_DRAINING_SECONDS": "60"
+    }
+  },
+  "secretVariableNamesToRegenerate": {
+    "Evolution API": [
+      "AUTHENTICATION_API_KEY",
+      "CACHE_REDIS_URI",
+      "DATABASE_CONNECTION_URI"
+    ],
+    "Redis": [
+      "REDIS_PASSWORD",
+      "REDISPASSWORD",
+      "REDIS_URL",
+      "REDIS_PUBLIC_URL"
+    ],
+    "Postgres": [
+      "PGPASSWORD",
+      "POSTGRES_PASSWORD",
+      "DATABASE_URL",
+      "DATABASE_PUBLIC_URL"
+    ]
+  },
+  "restoreWarnings": [
+    "Never push values from screenshots to this public repository.",
+    "Screenshots include visible credentials and DB/Redis URLs with embedded passwords: rotate exposed credentials.",
+    "Old Railway-generated domains/internal networking and service IDs may change in the new project.",
+    "Export old Postgres and Redis persisted data before deleting project or account, otherwise data may be permanently lost.",
+    "Do not assume old credentials or old data are included in this configuration snapshot.",
+    "Keep Evolution API and Prospector as separate existing Railway projects unless intentionally consolidating them."
+  ]
+}
