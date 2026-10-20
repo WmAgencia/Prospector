@@ -69,12 +69,19 @@ const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
 export function resolveLocation(s){return LOCATIONS[normalize(s)]||null;}
 export function resolveSegment(s){
  const v=normalize(s);if(SEGMENTS[v])return SEGMENTS[v];
+ // Termos profissionais usados nas configurações existentes devem resolver
+ // para a categoria OSM correta, sem descartar nichos silenciosamente.
+ const aliases={fisioterapeuta:'fisioterapia',fisioterapeutas:'fisioterapia',psicologa:'psicologo',psicologas:'psicologo'};
+ if(aliases[v])return SEGMENTS[aliases[v]];
  const pair=Object.entries(SEGMENTS).find(([k])=>v.includes(k));
  return pair?.[1]||null;
 }
 export function extractPhone(tags){
- const raw=String(tags['contact:whatsapp']||tags['contact:phone']||tags.phone||tags['phone:mobile']||'');
- const hit=raw.split(/[;|,]/).map(x=>phone(x.trim())).find(x=>x&&x.startsWith('55')&&(x.length===12||x.length===13));
+ // Algumas fichas têm mais de um campo; o primeiro pode estar inválido.
+ // Tentar os demais evita descartar um telefone público válido.
+ const fields=['contact:whatsapp','contact:phone','phone','phone:mobile','contact:mobile','mobile'];
+ const hit=fields.flatMap(key=>String(tags?.[key]||'').split(/[;|,]/))
+  .map(x=>phone(x.trim())).find(x=>x&&x.startsWith('55')&&(x.length===12||x.length===13));
  return hit||null;
 }
 export function extractInstagram(tags){
@@ -133,7 +140,7 @@ export async function discoverLocal(payload={},automatic=false){
   let data;try{data=JSON.parse(raw);}catch{throw Error('A fonte pública não retornou JSON válido (HTTP '+response.status+')');}
   if(data.remark)throw Error('A API pública não concluiu a pesquisa: '+String(data.remark).slice(0,120));
   if(!Array.isArray(data.elements))throw Error('A fonte não retornou uma lista válida');
-  let added=0,examined=0,withPhone=0;
+  let added=0,examined=0,withPhone=0,withoutWebsiteListed=0;
   const quota=automatic?Math.max(0,Math.min(150,Number(getSetting('discovery_target_daily',150))||150)-radarSnapshot().foundToday):70;
   const candidates=prioritizeOSMResults(data.elements.slice(0,200));
   for(const item of candidates){
@@ -146,7 +153,6 @@ export async function discoverLocal(payload={},automatic=false){
    const existing=one("SELECT lead_id FROM lead_origins WHERE source='osm' AND identity=?",url);
    if(existing)continue;
    const p=extractPhone(tags),instagram=extractInstagram(tags);
-   if(p)withPhone++;
    const website=String(tags['contact:website']||tags.website||'').trim().slice(0,500);
    let safeWebsite=null;
    try{const u=new URL(website);if(['http:','https:'].includes(u.protocol))safeWebsite=u.href;}catch{}
@@ -155,11 +161,11 @@ export async function discoverLocal(payload={},automatic=false){
     notes:'Fonte: © OpenStreetMap contributors (ODbL). Cadastro público não autoriza mensagens. '+url});
    recordOrigin(result.lead.id,'osm',{url,city:location.label,segment:segment.label,phonePublished:!!p,hasWebsiteTag:!!safeWebsite});
    upsertBusinessMeta(result.lead.id,{businessType:segment.filter});
-   if(result.created)added++;
+   if(result.created){added++;if(p)withPhone++;if(!safeWebsite)withoutWebsiteListed++;}
   }
   run('UPDATE discoveries SET status=?,found=?,details=? WHERE id=?','COMPLETE',added,JSON.stringify({examined,withPhone,automatic,matchedTotal:data.elements.length,selectedWithPhoneFirst:true}),attemptId);
   audit('DISCOVER_OSM',null,{city:location.label,segment:segment.label,examined,added,withPhone,automatic});
-  return {source:'osm',city:location.label,segment:segment.label,examined,added,withPhone,withoutWebsiteListed:Math.max(0,examined-candidates.filter(x=>Boolean(x.tags?.website||x.tags?.['contact:website'])).length),
+  return {source:'osm',city:location.label,segment:segment.label,examined,added,withPhone,withoutWebsiteListed,
    info:'Contatos públicos sem autorização de envio; a ausência de site no cadastro não comprova que a empresa não tem site.',
    attribution:'© OpenStreetMap contributors, ODbL',url:'https://www.openstreetmap.org/copyright'};
  }catch(error){
