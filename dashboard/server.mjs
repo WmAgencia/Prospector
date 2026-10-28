@@ -277,7 +277,10 @@ async function handler(req,res){
    let created=0;const problems=[];
    for(const l of v.leads){try{
     if(l.contact_permission===true&&!String(l.permission_proof||'').trim())throw Error('Importação de contato autorizado exige comprovante');
-    const result=addLead(l);recordOrigin(result.lead.id,'MANUAL',{method:'import'});
+    const result=addLead(l);
+    if(l.source==='maps_extension'&&l.maps_id){
+     recordOrigin(result.lead.id,'maps_extension',{identity:String(l.maps_id).slice(0,600),method:'manual_csv_import',collected_at:l.collected_at||null});
+    }else recordOrigin(result.lead.id,'MANUAL',{method:'import'});
     if(l.contact_permission===true)audit('CONSENT_UPDATED',result.lead.id,{permitted:true,evidence:String(l.permission_proof).trim().slice(0,300),method:'import'});
     if(result.created)created++;
    }catch(e){problems.push(e.message);}}
