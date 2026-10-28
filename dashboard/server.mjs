@@ -33,6 +33,7 @@ import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
+import {gatewayStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved} from './waakg-bridge.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
@@ -200,6 +201,13 @@ async function handler(req,res){
   if(!sameOriginWrite(req,res))return;
   if(url.pathname==='/access'&&req.method==='GET')return showAccess(res);
   if(url.pathname==='/api/auth/exchange'&&req.method==='POST')return exchangeAccess(req,res);
+  // Only WA-AKG HMAC-signed events may bypass dashboard session authentication.
+  // Do not allow browser proxies or the public Vercel frontend to forge this header.
+  if(url.pathname==='/api/wa-akg/webhook'){
+   if(req.method!=='POST')return respond(res,405,{error:'Method not allowed'});
+   try{const output=await receiveWebhook(req);return respond(res,output.status,output.body);}
+   catch(err){return respond(res,400,{error:'Webhook inválido'});}
+  }
   if(!protectedAccess(req,res,url.pathname))return;
   const pathname=decodeURIComponent(url.pathname);
   if(pathname==='/api/events'){
@@ -207,6 +215,10 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+  if(req.method==='GET'&&pathname==='/api/wa-akg/status')return respond(res,200,gatewayStatus());
+  if(req.method==='GET'&&pathname==='/api/wa-akg/inbox')return respond(res,200,gatewayInbox());
+  if(req.method==='POST'&&pathname==='/api/wa-akg/draft'){const r=await draftInbox(await json(req));return respond(res,r.status,r.body);}
+  if(req.method==='POST'&&pathname==='/api/wa-akg/send-approved'){const r=await sendApproved(await json(req));return respond(res,r.status,r.body);}
   if(req.method==='GET'&&pathname==='/api/ai/status')return respond(res,200,aiStatus());
   if(req.method==='POST'&&pathname==='/api/ai/test'){
    const result=await aiDraft({text:"Responda somente OK."});
