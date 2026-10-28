@@ -37,6 +37,8 @@ import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox
 import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
+import {groqCatalog} from './groq-models.mjs';
+import {ownerStatus} from './groq-owner.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
@@ -245,6 +247,8 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/wa-akg/inbox')return respond(res,200,gatewayInbox());
   if(req.method==='POST'&&pathname==='/api/wa-akg/draft'){const r=await draftInbox(await json(req));return respond(res,r.status,r.body);}
   if(req.method==='POST'&&pathname==='/api/wa-akg/send-approved'){const r=await sendApproved(await json(req));return respond(res,r.status,r.body);}
+  if(req.method==='GET'&&pathname==='/api/groq/models')return respond(res,200,await groqCatalog());
+  if(req.method==='GET'&&pathname==='/api/groq/owner')return respond(res,200,ownerStatus());
   if(req.method==='GET'&&pathname==='/api/ai/status')return respond(res,200,aiStatus());
   if(req.method==='POST'&&pathname==='/api/ai/test'){
    const result=await aiDraft({text:"Responda somente OK."});
