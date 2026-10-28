@@ -37,7 +37,7 @@ function conversations(){
 function prospecting(){
  const d=prospects||{results:[],total:0,uncontacted:0,contacted:0},arr=d.results||[];
  return '<section class="panel searchpanel"><div class="heading"><div><span class="kicker">DESCOBERTA DE EMPRESAS</span><h2>Encontre seus próximos clientes.</h2><p>Escolha qualquer nicho e cidade brasileira. Veja quem ainda não foi contatado pelo Prospector.</p></div></div><form id="search-form" class="search-form"><label>Nicho ou tipo de empresa<input id="niche" class="field" value="'+esc(niche)+'" placeholder="Ex.: oficinas mecânicas" maxlength="85" required></label><label>Cidade / localização<input id="city" class="field" value="'+esc(city)+'" placeholder="Ex.: Sorocaba" maxlength="85" required></label><button class="primary" type="submit" '+(busy?"disabled":"")+'>'+(busy?"Pesquisando...":"Pesquisar empresas ↗")+'</button></form><div class="source-info">Fonte gratuita: OpenStreetMap/Overpass. A busca é limitada à cobertura da fonte, ao raio pesquisado e aos limites de uso. Não representa todas as empresas da cidade.</div></section>'+
- '<section class="panel results"><div class="heading"><div><h3>Resultados da prospecção</h3><p>'+esc(d.total)+' empresas identificadas para esses filtros</p></div><span class="hint">Dados sem envio automático</span></div><div class="filter-tabs"><button data-filter="uncontacted" class="'+(prospectFilter==="uncontacted"?"chosen":"")+'">Não contatadas <b>'+esc(d.uncontacted)+'</b></button><button data-filter="contacted" class="'+(prospectFilter==="contacted"?"chosen":"")+'">Já contatadas <b>'+esc(d.contacted)+'</b></button><button data-filter="all" class="'+(prospectFilter==="all"?"chosen":"")+'">Todas <b>'+esc(d.total)+'</b></button></div><div class="table-wrap"><table class="result-table"><thead><tr><th>Empresa</th><th>Nicho / cidade</th><th>Telefone</th><th>Situação</th></tr></thead><tbody>'+(arr.length?arr.map(p=>'<tr><td><strong>'+esc(p.business)+'</strong><small>'+esc(p.website||"Site não informado")+'</small></td><td>'+esc(p.segment||"—")+'<small>'+esc(p.city||"—")+'</small></td><td>'+esc(p.phone||"Não encontrado")+'</td><td><span class="tag '+(p.contacted?"muted":"green")+'">'+(p.contacted?"Já contatada":"Não contatada")+'</span></td></tr>').join(""):'<tr><td colspan="4"><div class="empty">Nenhuma empresa nessa categoria. Faça uma pesquisa acima ou ajuste seus filtros.</div></td></tr>')+'</tbody></table></div><p class="footnote">Não contatada = sem registro de envio neste sistema. A ferramenta não sabe se alguém já contatou a empresa fora do Prospector. Resultados podem ser parciais.</p></section>';
+ '<section class="panel results"><div class="heading"><div><h3>Resultados da prospecção</h3><p>'+esc(d.total)+' empresas identificadas para esses filtros</p></div><span class="hint">Dados sem envio automático</span></div><div class="filter-tabs"><button data-filter="uncontacted" class="'+(prospectFilter==="uncontacted"?"chosen":"")+'">Não contatadas <b>'+esc(d.uncontacted)+'</b></button><button data-filter="contacted" class="'+(prospectFilter==="contacted"?"chosen":"")+'">Já contatadas <b>'+esc(d.contacted)+'</b></button><button data-filter="all" class="'+(prospectFilter==="all"?"chosen":"")+'">Todas <b>'+esc(d.total)+'</b></button></div><div class="table-wrap"><table class="result-table"><thead><tr><th>Empresa</th><th>Nicho / cidade</th><th>Telefone</th><th>Situação</th></tr></thead><tbody>'+(arr.length?arr.map(p=>'<tr><td><strong>'+esc(p.business)+'</strong><small>'+esc(p.website||"Site não informado")+'</small></td><td>'+esc(p.segment||"—")+'<small>'+esc(p.city||"—")+'</small></td><td>'+esc(p.phone||"Não encontrado")+'</td><td><span class="tag '+(p.contacted?"muted":"green")+'">'+(p.contacted?"Já contatada":"Não contatada")+'</span></td></tr>').join(""):'<tr><td colspan="4"><div class="empty">Nenhuma empresa nessa categoria. Faça uma pesquisa acima ou ajuste seus filtros.</div></td></tr>')+'</tbody></table></div><p class="footnote">Não contatada = sem registro de envio neste sistema. A ferramenta não sabe se alguém já contatou a empresa fora do Prospector. Resultados podem ser parciais.</p></section><details class="panel csv-import"><summary>Importar empresas de um extrator open source (CSV)</summary><p>Também é possível usar o <a href="https://github.com/severoads3/apex-gmaps-extractor" rel="noopener noreferrer" target="_blank">Apex Leads Extractor no GitHub ↗</a> e importar os resultados aqui, sem chave paga. A importação não autoriza envio de mensagens.</p><div class="csv-inline"><input id="maps-csv" type="file" accept=".csv,text/csv" aria-label="Arquivo CSV de empresas"><button class="secondary" type="button" data-action="import-csv">Importar CSV</button></div></details>';
 }
 function connections(){
  const connected=!!wa?.connected,status=wa?.status||"DISCONNECTED",qr=qrResult?.qr;
@@ -68,6 +68,61 @@ async function loadChats(){
  try{const r=await api("/api/whatsapp/chats");remoteChats=Array.isArray(r.items)?r.items:[];if(view==="conversations")render();}
  catch(e){n("Não foi possível sincronizar o histórico do WhatsApp: "+e.message);}
 }
+function parseMapsCSV(source){
+ const text=String(source||"").replace(/^\uFEFF/,"");
+ const headerLine=text.split(/\r?\n/,1)[0]||"";
+ const delimiter=(headerLine.match(/;/g)||[]).length>=(headerLine.match(/,/g)||[]).length?";":",";
+ let rows=[],row=[],field="",quoted=false;
+ for(let i=0;i<text.length;i++){
+  const ch=text[i];
+  if(ch==='"'){
+   if(quoted&&text[i+1]==='"'){field+='"';i++;}else quoted=!quoted;
+  }else if(ch===delimiter&&!quoted){row.push(field);field="";}
+  else if((ch==='\n'||ch==='\r')&&!quoted){
+   if(ch==='\r'&&text[i+1]==='\n')i++;
+   row.push(field);if(row.some(x=>x.trim()))rows.push(row);row=[];field="";
+  }else field+=ch;
+  if(rows.length>10000)throw Error('Limite de 10 mil registros por arquivo');
+ }
+ if(quoted)throw Error('CSV contém aspas não fechadas');
+ row.push(field);if(row.some(x=>x.trim()))rows.push(row);
+ if(rows.length<2)throw Error('O arquivo não contém linhas de dados');
+ const headers=rows.shift().map(x=>x.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase());
+ const index=(name)=>headers.indexOf(name);
+ if(index('nome')<0)throw Error('Coluna Nome não encontrada');
+ const value=(row,name)=>index(name)>=0?String(row[index(name)]||"").trim():"";
+ const safeUrl=(str,scope)=>{try{const u=new URL(str);if(!['https:','http:'].includes(u.protocol))return "";if(scope==='maps'&&!(/(^|\.)google\.[a-z.]+$/i.test(u.hostname)||u.hostname==='maps.app.goo.gl'))return "";return u.href.slice(0,500);}catch{return ""}};
+ const results=[];let skipped=0;
+ for(const r of rows){
+  const name=value(r,'nome').slice(0,120);
+  const p=value(r,'telefonenormalizado')||value(r,'telefone');
+  const digits=p.replace(/\D/g,'');
+  const mapsUrl=safeUrl(value(r,'linkmaps'),'maps');
+  if(!name||(!([10,11,12,13,14,15].includes(digits.length))&&!mapsUrl)){skipped++;continue;}
+  const site=safeUrl(value(r,'site'),'website');
+  const address=value(r,'endereco').slice(0,250);
+  results.push({business:name,source:'maps_extension',maps_id:mapsUrl||undefined,phone:digits||undefined,website:site||undefined,website_status:'UNCERTAIN',city:value(r,'cidade').slice(0,80)||null,segment:value(r,'categoria').slice(0,120)||null,contact_permission:false,notes:['Endereço: '+address,'Termo: '+value(r,'termo'),'Google Maps: '+mapsUrl].filter(Boolean).join(' | ').slice(0,700),collected_at:value(r,'datacoleta')||null});
+ }
+ return {results,skipped,total:rows.length};
+}
+
+
+async function importMapsCSV(){
+ const file=q("#maps-csv")?.files?.[0];
+ if(!file)throw Error("Escolha um arquivo CSV primeiro");
+ if(file.size>3*1024*1024)throw Error("Arquivo maior que 3 MB. Divida a exportação");
+ const rows=parseMapsCSV(await file.text()).results;
+ if(rows.length===0)throw Error("O arquivo não contém empresas válidas");
+ if(!confirm("Importar "+rows.length+" empresas sem autorizar envios automáticos?"))return;
+ let created=0,errors=[];
+ for(let i=0;i<rows.length;i+=180){
+  const r=await post("/api/import",{leads:rows.slice(i,i+180)});
+  created+=r.created||0;errors.push(...(r.errors||[]));
+ }
+ n(created+" empresas novas importadas; "+(rows.length-created)+" duplicadas ou não aceitas.");
+ await loadProspects();
+}
+
 async function loadProspects(){
  try{
   const params=new URLSearchParams({niche,city,status:prospectFilter});
@@ -100,6 +155,7 @@ document.addEventListener("click",async ev=>{
  const action=el.dataset.action;
  try{
   if(action==="menu"){q("#side")?.classList.toggle("mobile-open");return;}
+  if(action==="import-csv"){await importMapsCSV();return;}
   if(action==="connect"){busy=true;render();await post("/api/whatsapp/connect",{});busy=false;await refreshWa();n("Sessão iniciada. Escaneie o QR Code para conectar.");return;}
   if(action==="disconnect"){if(!confirm("Desconectar a sessão de WhatsApp?"))return;busy=true;await post("/api/whatsapp/disconnect",{});busy=false;qrResult=null;await refreshWa();n("Sessão interrompida.");return;}
  }catch(e){busy=false;n(e.message);render();}
