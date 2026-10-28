@@ -475,4 +475,18 @@ const osmTimer=setInterval(checkOSMDiscovery,60*1000);
 setTimeout(checkOSMDiscovery,12000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));});
+
+if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
+ setTimeout(async()=>{
+  const payload=JSON.stringify({event:"test",sessionId:"test",timestamp:new Date().toISOString(),data:{message:"health-only"}});
+  const secret=process.env.WA_AKG_WEBHOOK_SECRET||"";
+  const sig="sha256="+crypto.createHmac("sha256",secret).update(payload).digest("hex");
+  try{
+   const response=await fetch("http://127.0.0.1:"+port+"/api/wa-akg/webhook",{method:"POST",headers:{"Content-Type":"application/json","X-Webhook-Signature":sig},body:payload,signal:AbortSignal.timeout(4000)});
+   const b=await response.json().catch(()=>({}));
+   console.info("[waakg-signed-smoke]",JSON.stringify({http:response.status,accepted:b.accepted===true,test:b.test===true}));
+  }catch(ex){console.error("[waakg-signed-smoke]",ex?.name||"NETWORK");}
+ },2500).unref();
+}
+
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(agentBridgeTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
