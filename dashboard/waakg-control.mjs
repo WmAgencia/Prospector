@@ -112,3 +112,14 @@ export async function waDisconnect(){
  await waRequest("/api/sessions/"+encodeURIComponent(sid)+"/stop",{method:"POST",data:{}});
  return {ok:true,connected:false};
 }
+
+export async function waIdentityStatus(){
+ const state=await waControlStatus();
+ if(!state.ok||!state.sessionId)return {connected:false,numberSuffix:null,sessionFound:false};
+ try{
+  const detail=await waRequest("/api/sessions/"+encodeURIComponent(state.sessionId));
+  const raw=String(detail.data?.me?.id||detail.data?.me?.jid||"");
+  const digits=raw.split("@")[0].split(":")[0].replace(/\\D/g,"");
+  return {connected:state.connected,numberSuffix:digits?digits.slice(-4):null,sessionFound:true};
+ }catch{return {connected:state.connected,numberSuffix:null,sessionFound:true};}
+}
