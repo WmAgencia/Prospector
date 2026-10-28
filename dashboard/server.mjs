@@ -32,6 +32,7 @@ import {dailyReport,reportText,targetNumber} from './notifications.mjs';
 import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
 import {queueHealth} from './queue-health.mjs';
+import {aiStatus,aiDraft} from './ai-groq.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
@@ -206,6 +207,18 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+  if(req.method==='GET'&&pathname==='/api/ai/status')return respond(res,200,aiStatus());
+  if(req.method==='POST'&&pathname==='/api/ai/test'){
+   const result=await aiDraft({text:"Responda somente OK."});
+   // Health-only output; never reveal provider text, credentials, or customer data.
+   return respond(res,result.ok?200:result.httpStatus||502,{ok:result.ok,provider:result.provider,model:result.model||null,code:result.code||null,autoSend:false});
+  }
+  if(req.method==='POST'&&pathname==='/api/ai/draft'){
+   const payload=await json(req);
+   const result=await aiDraft({text:payload.text,context:payload.context});
+   return respond(res,result.ok?200:result.httpStatus||502,result);
+  }
+
   if(req.method==='GET'&&pathname==='/api/agent-bridge/status')return respond(res,200,{...bridgeStatus(),privateMediaRestore:privateRestoreStatus()});
   if(req.method==='GET'&&pathname==='/api/agent-bridge/spec')return respond(res,200,bridgeSpec());
   if(req.method==='POST'&&pathname==='/api/agent-bridge/sync'){
