@@ -11,12 +11,12 @@ export async function remoteChats(){
  const items=(Array.isArray(result.data)?result.data:[]).slice(0,80).map(x=>({
   id:"wa:"+String(x.jid||""),jid:String(x.jid||""),name:String(x.name||x.notify||x.jid||"Contato").slice(0,80),business:String(x.name||x.notify||x.jid||"Contato").slice(0,80),
   phone:String(x.jid||"").split("@")[0],last_message_at:x.lastMessage?.timestamp||null,preview:String(x.lastMessage?.content||"").slice(0,180)
- })).filter(x=>/^[0-9]{10,15}@(s\.whatsapp\.net|lid)$/.test(x.jid));
+ })).filter(x=>/^[0-9]{10,15}@(s\.whatsapp\.net|lid|g\.us)$/.test(x.jid));
  return {connected:true,items};
 }
 export async function remoteMessages(jid){
  const s=await waControlStatus();if(!s.connected)throw Error("WhatsApp não conectado");
- if(!/^[0-9]{10,15}@(s\.whatsapp\.net|lid)$/.test(jid))throw Error("Conversa inválida");
+ if(!/^[0-9]{10,15}@(s\.whatsapp\.net|lid|g\.us)$/.test(jid))throw Error("Conversa inválida");
  const result=await waRequest("/api/chat/"+currentId()+"/"+encodeURIComponent(jid));
  const arr=Array.isArray(result.data)?result.data:[];
  return arr.slice(-100).map(x=>({id:x.id||x.keyId,direction:x.fromMe?"out":"in",body:typeof x.content==="string"?x.content:String(x.caption||"["+String(x.type||"Mídia")+"]"),at:x.timestamp||x.createdAt||null}));
