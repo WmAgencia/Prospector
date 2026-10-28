@@ -3,7 +3,7 @@
 import crypto from "node:crypto";
 import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
-import {ownerReceived} from "./grok-owner.mjs";
+import {ownerReceived} from "./groq-owner.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
