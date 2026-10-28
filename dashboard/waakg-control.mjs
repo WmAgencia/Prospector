@@ -83,7 +83,7 @@ export async function waConnect(){
   if(!safeId(sessionId))throw Error("WA-AKG não criou uma sessão válida");
   setSetting(sessionKey,sessionId);
  }
- if(!state.connected)await waRequest("/api/sessions/"+encodeURIComponent(sessionId)+"/start",{method:"POST",data:{}});
+ if(!state.connected&&!["SCAN_QR","CONNECTING","INITIALIZING"].includes(state.status))await waRequest("/api/sessions/"+encodeURIComponent(sessionId)+"/start",{method:"POST",data:{}});
  // Configure webhook once, without exposing the shared secret to the browser.
  const destination="https://prospector-operacional-production.up.railway.app/api/wa-akg/webhook";
  const hookSecret=process.env.WA_AKG_WEBHOOK_SECRET||"";
