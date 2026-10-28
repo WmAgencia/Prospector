@@ -34,6 +34,8 @@ import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsApp
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved} from './waakg-bridge.mjs';
+import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
+import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
@@ -218,6 +220,12 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
   if(req.method==='GET'&&pathname==='/api/google-places/status')return respond(res,200,placesStatus());
   if(req.method==='POST'&&pathname==='/api/google-places/search'){const result=await placesSearch(await json(req));return respond(res,result.status,result.body);}
+  if(req.method==='GET'&&pathname==='/api/whatsapp/status')return respond(res,200,await waControlStatus());
+  if(req.method==='GET'&&pathname==='/api/whatsapp/qr')return respond(res,200,await waGetQR());
+  if(req.method==='POST'&&pathname==='/api/whatsapp/connect'){try{return respond(res,200,await waConnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
+  if(req.method==='POST'&&pathname==='/api/whatsapp/disconnect'){try{return respond(res,200,await waDisconnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
+  if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,prospectingList({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',limit:500}));}
+  if(req.method==='POST'&&pathname==='/api/prospecting/search'){try{const result=await prospectingSearch(await json(req));notify();return respond(res,200,result);}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/wa-akg/status')return respond(res,200,await gatewayRemoteStatus());
   if(req.method==='GET'&&pathname==='/api/wa-akg/inbox')return respond(res,200,gatewayInbox());
   if(req.method==='POST'&&pathname==='/api/wa-akg/draft'){const r=await draftInbox(await json(req));return respond(res,r.status,r.body);}
