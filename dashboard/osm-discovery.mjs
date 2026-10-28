@@ -122,12 +122,24 @@ export async function discoverLocal(payload={},automatic=false){
  try{
   // Registre ANTES da requisição: também conta falhas e protege a API comunitária.
   const attemptId=id();run('INSERT INTO discoveries VALUES(?,?,?,?,?,?)',attemptId,searchKey,0,now(),'RUNNING',JSON.stringify({examined:0,automatic}));
-  const response=await fetch(process.env.OVERPASS_ENDPOINT||base,{
-   method:'POST',
-   headers:{'Content-Type':'application/x-www-form-urlencoded; charset=utf-8','User-Agent':'ConsecomProspector/1.2 (business research; contact: wmagenciasuporte@gmail.com)','Accept':'application/json'},
-   body:new URLSearchParams({data:makeQuery(location,segment)}),
-   signal:AbortSignal.timeout(38000)
-  });
+  // Evite tratar falha temporária de um endpoint comunitário como inexistência de empresas.
+  // Uma tentativa por provedor, até dois provedores no total, sem repetição em HTTP 429.
+  const endpoints=[process.env.OVERPASS_ENDPOINT||base,'https://overpass.kumi.systems/api/interpreter']
+   .filter((v,i,a)=>a.indexOf(v)===i);
+  let response=null;
+  for(const endpoint of endpoints.slice(0,2)){
+   try{
+    response=await fetch(endpoint,{
+     method:'POST',
+     headers:{'Content-Type':'application/x-www-form-urlencoded; charset=utf-8','User-Agent':'ConsecomProspector/1.2 (business research; contact: wmagenciasuporte@gmail.com)','Accept':'application/json'},
+     body:new URLSearchParams({data:makeQuery(location,segment)}),
+     signal:AbortSignal.timeout(31000)
+    });
+    if(response.ok||!([502,503,504].includes(response.status)))break;
+    console.warn('[osm discovery] Upstream temporarily unavailable:',response.status);
+   }catch(err){if(endpoint===endpoints[Math.min(endpoints.length,2)-1])throw err;response=null;}
+  }
+  if(!response)throw Error('Fontes comunitárias do Overpass indisponíveis');
   if(!response.ok)throw Error('Overpass respondeu HTTP '+response.status+(response.status===429?' (limite da API comunitária)':''));
   const raw=await response.text();
   let data;try{data=JSON.parse(raw);}catch{throw Error('A fonte pública não retornou JSON válido (HTTP '+response.status+')');}
