@@ -40,7 +40,7 @@ export function scoreLead(lead,origins=[]){
  return {score,reasons,intelligence:scoreOpportunity(lead,origins)};
 }
 export function recordOrigin(leadId,source,details={},verified=false){
- if(!providerDefinitions.some(x=>x.id===source)&&!['MANUAL','LEGACY_IMPORT','WHATSAPP_INBOUND'].includes(source))throw Error('Fonte inválida');
+ if(!providerDefinitions.some(x=>x.id===source)&&!['MANUAL','LEGACY_IMPORT','WHATSAPP_INBOUND','maps_extension'].includes(source))throw Error('Fonte inválida');
  const identity=String(details.identity||details.url||details.instagram||source).slice(0,600);
  run('INSERT INTO lead_origins(id,lead_id,source,identity,verified,details,at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(lead_id,source,identity) DO UPDATE SET at=excluded.at',
   id(),leadId,source,identity,verified?1:0,JSON.stringify(details),now());
