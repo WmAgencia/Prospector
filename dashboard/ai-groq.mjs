@@ -1,3 +1,4 @@
+import {BUSINESS_GUIDANCE} from "./knowledge-consecom.mjs";
 // Groq Cloud conversation draft adapter. No credentials in this repository.
 // No WhatsApp send occurs here; a human or a separately authorized workflow must approve.
 const API_BASE = "https://api.groq.com/openai/v1";
@@ -27,6 +28,7 @@ export async function aiDraft({text,context=""}={}){
  if(base!==API_BASE)return {ok:false,provider:"groq",code:"UNEXPECTED_PROVIDER_ENDPOINT",httpStatus:503};
  const model=process.env.GROQ_MODEL||DEFAULT_MODEL;
  const system=[
+  BUSINESS_GUIDANCE,
   "Você é assistente comercial da Consecom Brasil. Responda em português brasileiro.",
   "Gere apenas um RASCUNHO para revisão humana; não envie mensagens nem execute ações.",
   "Use somente informações fornecidas nesta conversa; não invente preços, promessas, descontos, links ou garantias.",
