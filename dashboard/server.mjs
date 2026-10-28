@@ -453,6 +453,9 @@ function reportQueueHealth(){
 const healthTimer=setInterval(()=>{try{reportQueueHealth();}catch(e){console.error('[queue health]',e.message);}},3*60000);
 setTimeout(()=>{try{reportQueueHealth();}catch(e){console.error('[queue health]',e.message);}},5000).unref();
 const interval=setInterval(()=>{
+ // One transport at a time. The WA-AKG bridge uses explicit approvals; never
+ // allow legacy Baileys workers to send to the same number from this process.
+ if(process.env.WHATSAPP_TRANSPORT==='waakg')return;
  try{queueOperatorTest();}catch(error){if(testInstructionError!==error.message){testInstructionError=error.message;console.error('[campaign test]',error.message);}}
  runOperatorDeliveryRetry().catch(error=>console.error('[campaign test] Falha no reenvio controlado: '+error.message));
  refreshOperatorReplies().catch(error=>console.error('[campaign test] Falha na recuperação de resposta: '+error.message));
