@@ -5,7 +5,7 @@ const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short"
 const tabs={overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",settings:"Configurações"};
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
 let view=["overview","conversations","prospects","connections","settings"].includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
-let state=null,wa=null,ai=null,selectedThread=null,messages=[],prospects=null,prospectFilter="uncontacted",niche="oficinas mecânicas",city="Sorocaba",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0;
+let state=null,wa=null,ai=null,remoteChats=[],selectedThread=null,messages=[],prospects=null,prospectFilter="uncontacted",niche="oficinas mecânicas",city="Sorocaba",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0;
 const root=q("#app");
 function n(msg){notice=msg;const el=q("#notice");if(el){el.textContent=msg;el.classList.toggle("hidden",!msg)}}
 async function api(path,opts={}){
@@ -15,7 +15,7 @@ async function api(path,opts={}){
  return data;
 }
 const post=(path,data)=>api(path,{method:"POST",body:JSON.stringify(data||{})});
-function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections")refreshWa();if(view==="prospects")loadProspects();if(view==="settings")refreshAI();}
+function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections")refreshWa();if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="settings")refreshAI();}
 function shell(){
  root.innerHTML='<div class="shell"><aside id="side" class="side"><div class="logo"><span class="logo-mark">P<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>CONSECOM BRASIL</small></div></div><div class="smalltitle">MENU PRINCIPAL</div><nav>'+Object.entries(tabs).map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'"><span class="navico">'+icons[key]+'</span>'+label+'</button>').join('')+'</nav><div class="sidefoot"><span class="pulse '+(wa?.connected?"ok":"")+'"></span><span>'+(wa?.connected?"WhatsApp conectado":"WhatsApp desconectado")+'</span></div></aside><div class="body"><header class="top"><button class="hamburger" data-action="menu" aria-label="Abrir menu">☰</button><div class="top-title"><span class="eyebrow">CONSECOM / PROSPECTOR</span><h1>'+tabs[view]+'</h1></div><div class="top-right"><span class="status-chip '+(wa?.connected?"online":"")+'">● '+(wa?.connected?"Conectado":"Aguardando conexão")+'</span><span class="useravatar">C</span></div></header><div id="notice" class="notice '+(notice?"":"hidden")+'">'+esc(notice)+'</div><main class="content" id="view"></main></div></div>';
 }
@@ -28,8 +28,8 @@ function overview(){
  '<section class="panel"><div class="heading"><div><h3>Atividade recente</h3><p>Últimas empresas na sua base</p></div><button class="link" data-tab="prospects">Ver prospecção ↗</button></div><div class="activity">'+(allLeads.length?allLeads.slice(0,7).map(x=>'<div class="activity-line"><span class="avatar">'+esc((x.business||"?")[0])+'</span><span><strong>'+esc(x.business)+'</strong><small>'+esc(x.city||"Localidade não informada")+' · '+esc(x.segment||"Sem nicho")+'</small></span><span class="tag">'+esc(x.stage==="DISCOVERED"?"Não abordada":"Acompanhar")+'</span></div>').join(""):'<div class="empty">Nenhuma empresa na base ainda. Vá até Prospecção e faça sua primeira pesquisa.</div>')+'</div></section>';
 }
 function conversations(){
- const threads=(state?.threads||[]).filter(t=>!chatFilter||[t.name,t.business,t.phone].some(v=>String(v||"").toLowerCase().includes(chatFilter.toLowerCase())));
- if(!selectedThread&&threads.length)selectedThread=threads[0].id;
+ const local=state?.threads||[];const ids=new Set(remoteChats.map(t=>t.phone));const threads=[...remoteChats,...local.filter(t=>!ids.has(t.phone))].filter(t=>!chatFilter||[t.name,t.business,t.phone].some(v=>String(v||"").toLowerCase().includes(chatFilter.toLowerCase())));
+ if((!selectedThread||!threads.some(t=>t.id===selectedThread))&&threads.length)selectedThread=threads[0].id;
  const chosen=threads.find(t=>t.id===selectedThread)||null;
  const bubble=messages.map(m=>'<div class="bubble-wrap '+(m.direction==="out"?"out":"in")+'"><div class="bubble">'+esc(m.body||"[Mídia]")+'<small>'+stamp(m.at)+' · '+esc(m.direction==="out"?"Enviada":"Recebida")+'</small></div></div>').join("");
  return '<section class="chats"><div class="chat-list"><div class="chats-title"><div><h3>Mensagens</h3><p>'+threads.length+' conversas</p></div><span class="small-pill">WhatsApp</span></div><input id="chat-search" class="field" placeholder="Buscar conversa..." value="'+esc(chatFilter)+'">'+(threads.length?threads.map(t=>'<button data-thread="'+esc(t.id)+'" class="chat-person '+(selectedThread===t.id?"selected":"")+'"><span class="avatar">'+esc((t.name||t.business||"?")[0])+'</span><span class="info"><strong>'+esc(t.name||t.business||t.phone)+'</strong><small>'+esc(t.phone||"")+'</small></span><time>'+stamp(t.last_message_at)+'</time></button>').join(""):'<div class="empty">Suas conversas aparecerão aqui quando chegarem mensagens.</div>')+'</div><div class="chat-panel">'+(chosen?'<div class="chat-heading"><span class="avatar">'+esc((chosen.name||chosen.business)[0])+'</span><div><strong>'+esc(chosen.name||chosen.business)+'</strong><small>'+esc(chosen.phone||"")+'</small></div><span class="message-status">'+(wa?.connected?"Conectado":"WhatsApp offline")+'</span></div><div class="message-feed" id="messages">'+(bubble||'<p class="empty">Carregando mensagens...</p>')+'</div><form class="composer" id="send-form"><input id="chat-text" autocomplete="off" maxlength="1500" placeholder="Escreva uma mensagem..." aria-label="Mensagem"><button class="primary" type="submit">Enviar ↗</button></form><p class="under-chat">Envio manual. Mensagens não são repetidas automaticamente se houver erro.</p>':'<div class="chat-blank"><div class="big-icon">◉</div><h3>Suas conversas, organizadas.</h3><p>Conecte o WhatsApp e receba mensagens para começar.</p><button class="primary" data-tab="connections">Conectar WhatsApp</button></div>')+'</div></section>';
@@ -62,6 +62,11 @@ async function refreshWa(redraw=true){
  }catch(e){wa={ok:false,status:"ERROR",message:e.message,connected:false};if(redraw&&view==="connections")render();}
 }
 async function refreshAI(){try{ai=await api("/api/ai/status");if(view==="settings")render();}catch{}}
+async function loadChats(){
+ if(!wa?.connected){remoteChats=[];if(view==="conversations")render();return;}
+ try{const r=await api("/api/whatsapp/chats");remoteChats=Array.isArray(r.items)?r.items:[];if(view==="conversations")render();}
+ catch(e){n("Não foi possível sincronizar o histórico do WhatsApp: "+e.message);}
+}
 async function loadProspects(){
  try{
   const params=new URLSearchParams({niche,city,status:prospectFilter});
@@ -71,19 +76,19 @@ async function loadProspects(){
 }
 async function loadMessages(id){
  try{
-  const items=await api("/api/threads/"+encodeURIComponent(id)+"/messages");
+  const items=id.startsWith("wa:")?await api("/api/whatsapp/chat-messages?jid="+encodeURIComponent(id.slice(3))):await api("/api/threads/"+encodeURIComponent(id)+"/messages");
   if(selectedThread!==id||view!=="conversations")return;
   messages=Array.isArray(items)?items:[];
   const feed=q("#messages");if(!feed)return;
   feed.innerHTML=messages.length?messages.map(m=>'<div class="bubble-wrap '+(m.direction==="out"?"out":"in")+'"><div class="bubble">'+esc(m.body||"[Mídia]")+'<small>'+stamp(m.at)+'</small></div></div>').join(""):'<div class="empty">Nenhuma mensagem nesta conversa.</div>';
   feed.scrollTop=feed.scrollHeight;
-  await post("/api/threads/"+encodeURIComponent(id)+"/read",{}).catch(()=>{});
+  if(!id.startsWith("wa:"))await post("/api/threads/"+encodeURIComponent(id)+"/read",{}).catch(()=>{});
  }catch(e){const feed=q("#messages");if(feed)feed.textContent="Não foi possível carregar a conversa.";}
 }
 async function reload(){
  try{
   state=await api("/api/state");lastRefresh=Date.now();
-  if(view==="prospects")await loadProspects();else render();
+  if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else render();
  }catch(e){if(!state)root.innerHTML='<main class="load-error"><h2>Não foi possível abrir o Prospector</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';else n(e.message);}
 }
 document.addEventListener("click",async ev=>{
@@ -109,7 +114,7 @@ document.addEventListener("submit",async ev=>{
  if(ev.target.id==="send-form"){
   ev.preventDefault();const text=q("#chat-text")?.value.trim();if(!text||!selectedThread)return;
   const btn=q('#send-form button');if(btn)btn.disabled=true;
-  try{await post("/api/whatsapp/reply",{threadId:selectedThread,text,requestId:crypto.randomUUID()});q("#chat-text").value="";await loadMessages(selectedThread);n("Mensagem enviada.");}
+  try{const endpoint=selectedThread.startsWith("wa:")?"/api/whatsapp/reply-remote":"/api/whatsapp/reply";const data=selectedThread.startsWith("wa:")?{jid:selectedThread.slice(3),text,requestId:crypto.randomUUID()}:{threadId:selectedThread,text,requestId:crypto.randomUUID()};await post(endpoint,data);q("#chat-text").value="";await loadMessages(selectedThread);n("Mensagem enviada.");}
   catch(e){n(e.message);}finally{if(btn)btn.disabled=false;}
  }
 });
