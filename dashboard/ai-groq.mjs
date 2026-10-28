@@ -1,7 +1,7 @@
 // Groq Cloud conversation draft adapter. No credentials in this repository.
 // No WhatsApp send occurs here; a human or a separately authorized workflow must approve.
 const API_BASE = "https://api.groq.com/openai/v1";
-const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_MODEL = "openai/gpt-oss-120b";
 export function aiStatus(){
  return {
   provider:"groq",
@@ -40,7 +40,7 @@ export async function aiDraft({text,context=""}={}){
   const response=await fetch(base+"/chat/completions",{
    method:"POST",
    headers:{"Authorization":"Bearer "+key,"Content-Type":"application/json"},
-   body:JSON.stringify({model,temperature:0.35,max_tokens:220,messages:[
+   body:JSON.stringify({model,temperature:0.35,reasoning_effort:"low",max_completion_tokens:400,messages:[
     {role:"system",content:system},
     ...(extra?[{role:"system",content:"Contexto aprovado pelo operador: "+extra}]:[]),
     {role:"user",content:prompt}
