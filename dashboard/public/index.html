@@ -1,34 +1,16 @@
 <!doctype html>
-<html lang="pt-BR"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#112d29"><meta name="description" content="Prospector Consecom — central de prospecção comercial">
-<title>Prospector • Consecom</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/campaign-ui.css">
-</head><body>
-<div id="shell">
- <aside class="sidebar">
-  <div class="brand"><span class="brand-mark">C<span class="brand-spark">✳</span></span><span><strong>prospector<span class="brand-point">.</span></strong><small>CONSECOM / OPERATIONS</small></span></div>
-  <div class="navlabel">OPERAÇÃO</div>
-  <nav id="navigation">
-   <button data-route="overview" class="navitem"><span>◫</span> Visão geral</button>
-   <button data-route="conversations" class="navitem"><span>◉</span> Conversas <span id="nav-unread"></span></button>
-   <button data-route="prospects" class="navitem"><span>▦</span> Prospecção</button>
-   <button data-route="workflows" class="navitem"><span>⌁</span> Automações</button>
-   <button data-route="discovery" class="navitem"><span>⌕</span> Descoberta</button>
-   <button data-route="mapsearch" class="navitem"><span>⌖</span> Google Maps</button>
-   <button data-route="gateway" class="navitem"><span>◉</span> IA + WhatsApp</button>
-   <button data-route="production" class="navitem"><span>▤</span> Produção</button>
-  </nav>
-  <div class="navlabel">SISTEMA</div>
-  <nav><button data-route="connections" class="navitem"><span>☷</span> Conexões</button><button data-route="settings" class="navitem"><span>⚙</span> Configurações</button></nav>
-  <div class="sidefoot"><div class="status-dot" id="dot"></div><div><strong id="service-status">Conferindo estado</strong><small>Campanhas e operação</small></div></div>
- </aside>
- <main class="main">
-  <header class="topbar"><button id="sidebar-toggle" class="sidebar-toggle" aria-label="Abrir menu de navegação">☰</button><div id="heading"></div><div class="top-actions"><button id="wa-pill" class="top-wa offline" data-route="connections"><span class="live-dot"></span>WhatsApp</button><span class="subtle sync-label" id="sync-status">Sincronizando</span><button id="pause-btn" class="btn secondary">Pausar</button><span class="userchip" title="Consecom">C</span></div></header>
-  <div id="screen" class="screen"><div class="loader">Carregando painel…</div></div>
- </main>
-</div>
-<div id="toast" role="status"></div>
-<div id="modal" class="modal-backdrop hidden" role="dialog" aria-modal="true"></div>
-<script type="module" src="/app.js"></script>
-<script type="module" src="/campaign-ui.mjs"></script><script type="module" src="/radar-ui.js"></script>
-</body></html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#123b30">
+<meta name="robots" content="noindex,nofollow">
+<meta name="description" content="Prospector Consecom — visão geral, conversas, prospecção, conexões e configurações.">
+<title>Prospector • Consecom Brasil</title>
+<link rel="stylesheet" href="/simple-app.css">
+</head>
+<body>
+<div id="app"><div class="load-error">Carregando Prospector...</div></div>
+<script type="module" src="/simple-app.js"></script>
+</body>
+</html>
