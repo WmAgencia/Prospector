@@ -79,11 +79,74 @@ async function loadGateway(){
  }catch(err){target.innerHTML='<p class="empty">Não foi possível carregar o WA-AKG: '+esc(err.message)+'</p>';}
 }
 function placesPage(){
- return '<section class="panel"><h3>Pesquisar empresas no Google Maps</h3><p class="subtle">Resultados consultados pela API oficial do Google Places. Os dados não são gravados automaticamente no CRM.</p><div class="row wrap"><input id="places-query" value="oficina mecânica" aria-label="Tipo de empresa" style="max-width:320px"><input id="places-city" value="Sorocaba" aria-label="Cidade" style="max-width:260px"><button class="btn" data-action="places-search">Pesquisar</button></div><p id="places-status" class="helper-text">Conferindo Google Places...</p><div id="places-results"></div></section>';
+ return '<section class="panel"><h3>Importar leads de um extrator open source</h3><p class="subtle">Use a extensão <a href="https://github.com/severoads3/apex-gmaps-extractor" target="_blank" rel="noopener noreferrer">Apex Leads Extractor (GitHub, MIT) ↗</a> no seu navegador, exporte o CSV e carregue-o aqui. Não precisa de uma chave paga de Google Maps.</p><p class="helper-text">Formato: CSV UTF-8 separado por ponto e vírgula, com as colunas Nome, Categoria, TelefoneNormalizado, LinkMaps, Site e Cidade. Sem envio automático. Só importe dados cuja utilização esteja de acordo com os termos aplicáveis e com a LGPD.</p><div class="row wrap"><input type="file" id="maps-csv" accept=".csv,text/csv" aria-label="Arquivo CSV do Maps" style="max-width:350px"><button class="btn secondary" data-action="maps-preview">Conferir arquivo</button><button id="maps-import-btn" class="btn" data-action="maps-import" disabled>Importar leads revisados</button></div><p id="maps-csv-status" class="helper-text">Selecione um arquivo para pré-visualizar os registros.</p><div id="maps-csv-preview"></div></section><section class="panel" style="margin-top:18px"><h3>Pesquisa oficial do Google Places (opcional)</h3><p class="subtle">Requer chave Google Maps Platform com faturamento habilitado, sem coleta automática em massa.</p><div class="row wrap"><input id="places-query" value="oficina mecânica" aria-label="Tipo de empresa" style="max-width:320px"><input id="places-city" value="Sorocaba" aria-label="Cidade" style="max-width:260px"><button class="btn" data-action="places-search">Pesquisar</button></div><p id="places-status" class="helper-text">Conferindo Google Places...</p><div id="places-results"></div></section>';
 }
 async function loadPlacesStatus(){
  try{const r=await fetch('/api/google-places/status');if(!r.ok)throw Error();const s=await r.json();if($('#places-status'))$('#places-status').textContent=s.configured&&s.enabled?'API pronta para busca. Consultas podem gerar cobrança no Google Maps Platform.':'API Google Places ainda não configurada no servidor; não é possível coletar diretamente do Google Maps sem a chave oficial e faturamento habilitado.';}catch{if($('#places-status'))$('#places-status').textContent='Não foi possível conferir a configuração.';}
 }
+
+let mapsImportRows=[];
+function parseMapsCSV(source){
+ const text=String(source||"").replace(/^\uFEFF/,"");
+ const headerLine=text.split(/\r?\n/,1)[0]||"";
+ const delimiter=(headerLine.match(/;/g)||[]).length>=(headerLine.match(/,/g)||[]).length?";":",";
+ let rows=[],row=[],field="",quoted=false;
+ for(let i=0;i<text.length;i++){
+  const ch=text[i];
+  if(ch==='"'){
+   if(quoted&&text[i+1]==='"'){field+='"';i++;}else quoted=!quoted;
+  }else if(ch===delimiter&&!quoted){row.push(field);field="";}
+  else if((ch==='\n'||ch==='\r')&&!quoted){
+   if(ch==='\r'&&text[i+1]==='\n')i++;
+   row.push(field);if(row.some(x=>x.trim()))rows.push(row);row=[];field="";
+  }else field+=ch;
+  if(rows.length>10000)throw Error('Limite de 10 mil registros por arquivo');
+ }
+ if(quoted)throw Error('CSV contém aspas não fechadas');
+ row.push(field);if(row.some(x=>x.trim()))rows.push(row);
+ if(rows.length<2)throw Error('O arquivo não contém linhas de dados');
+ const headers=rows.shift().map(x=>x.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase());
+ const index=(name)=>headers.indexOf(name);
+ if(index('nome')<0)throw Error('Coluna Nome não encontrada');
+ const value=(row,name)=>index(name)>=0?String(row[index(name)]||"").trim():"";
+ const safeUrl=(str,scope)=>{try{const u=new URL(str);if(!['https:','http:'].includes(u.protocol))return "";if(scope==='maps'&&!(/(^|\.)google\.[a-z.]+$/i.test(u.hostname)||u.hostname==='maps.app.goo.gl'))return "";return u.href.slice(0,500);}catch{return ""}};
+ const results=[];let skipped=0;
+ for(const r of rows){
+  const name=value(r,'nome').slice(0,120);
+  const p=value(r,'telefonenormalizado')||value(r,'telefone');
+  const digits=p.replace(/\D/g,'');
+  const mapsUrl=safeUrl(value(r,'linkmaps'),'maps');
+  if(!name||(!([10,11,12,13,14,15].includes(digits.length))&&!mapsUrl)){skipped++;continue;}
+  const site=safeUrl(value(r,'site'),'website');
+  const address=value(r,'endereco').slice(0,250);
+  results.push({business:name,source:'maps_extension',maps_id:mapsUrl||undefined,phone:digits||undefined,website:site||undefined,website_status:'UNCERTAIN',city:value(r,'cidade').slice(0,80)||null,segment:value(r,'categoria').slice(0,120)||null,contact_permission:false,notes:['Endereço: '+address,'Termo: '+value(r,'termo'),'Google Maps: '+mapsUrl].filter(Boolean).join(' | ').slice(0,700),collected_at:value(r,'datacoleta')||null});
+ }
+ return {results,skipped,total:rows.length};
+}
+async function previewMapsCSV(){
+ const file=$('#maps-csv')?.files?.[0];if(!file)throw Error('Selecione um arquivo CSV');
+ if(file.size>3*1024*1024)throw Error('Arquivo maior que 3 MB. Divida a exportação em partes');
+ const parsed=parseMapsCSV(await file.text());mapsImportRows=parsed.results;
+ const el=$('#maps-csv-status');if(el)el.textContent=parsed.results.length+' registros prontos para revisão; '+parsed.skipped+' ignorados por falta de telefone e link Maps válido. Nenhum contato será enviado.';
+ const btn=$('#maps-import-btn');if(btn)btn.disabled=!mapsImportRows.length;
+ const preview=$('#maps-csv-preview');if(preview)preview.innerHTML='<p class="helper-text">Amostra dos 5 primeiros:</p><div style="overflow:auto"><table class="catalog-table"><thead><tr><th>Empresa</th><th>Cidade</th><th>Telefone</th><th>Fonte</th></tr></thead><tbody>'+mapsImportRows.slice(0,5).map(x=>'<tr><td>'+esc(x.business)+'</td><td>'+esc(x.city||'—')+'</td><td>'+esc(x.phone||'—')+'</td><td>'+esc(x.maps_id?'Maps':'Telefone')+'</td></tr>').join('')+'</tbody></table></div>';
+}
+async function commitMapsCSV(){
+ if(!mapsImportRows.length)throw Error('Pré-visualize o CSV antes de importar');
+ const btn=$('#maps-import-btn');if(btn)btn.disabled=true;
+ let created=0,duplicates=0,errors=[];
+ try{
+  for(let i=0;i<mapsImportRows.length;i+=200){
+   const data=await request('/api/import',{leads:mapsImportRows.slice(i,i+200)});
+   created+=data.created||0;duplicates+=data.duplicates||0;errors.push(...(data.errors||[]));
+  }
+  const el=$('#maps-csv-status');if(el)el.textContent=created+' leads novos importados; '+duplicates+' duplicados; '+errors.length+' tipos de erro reportados. Todos permanecem sem permissão de contato.';
+  if(errors.length)showToast(errors[0]);
+  mapsImportRows=[];
+  await load(false);
+ }finally{if(btn)btn.disabled=true;}
+}
+
 let placesNextToken='';
 async function doPlacesSearch(next=false){
  const query=$('#places-query')?.value||'',city=$('#places-city')?.value||'Sorocaba';if(!next)placesNextToken='';
@@ -409,6 +472,8 @@ document.addEventListener('click',async event=>{
  const action=el.dataset.action;
  try{
   if(action==='route')return navigate(el.dataset.to);
+  if(action==='maps-preview'){await previewMapsCSV();return;}
+  if(action==='maps-import'){await commitMapsCSV();return;}
   if(action==='places-search'){await doPlacesSearch(false);return;}
   if(action==='places-next'){await doPlacesSearch(true);return;}
   if(action==='waakg-draft'){
