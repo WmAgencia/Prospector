@@ -12,6 +12,21 @@ const safeEq=(a,b)=>{const x=Buffer.from(String(a||"")),y=Buffer.from(String(b||
 export function gatewayStatus(){
  return {provider:"WA-AKG",configuredBase,apiKeyConfigured:!!process.env.WA_AKG_API_KEY,sessionConfigured:!!process.env.WA_AKG_SESSION_ID,webhookSecretConfigured:(process.env.WA_AKG_WEBHOOK_SECRET||"").length>=40,autoSend:false,manualSendEnabled:process.env.WA_AKG_MANUAL_SEND==="true",pending:one("SELECT COUNT(*) AS n FROM waakg_inbox WHERE state IN ('REVIEW','DRAFTED')")?.n||0,connected:false,connectionNotTested:true};
 }
+export async function gatewayRemoteStatus(){
+ const status=gatewayStatus();
+ const apiKey=process.env.WA_AKG_API_KEY||"";
+ if(!status.configuredBase||!apiKey)return {...status,reason:"MISSING_API_KEY_OR_URL"};
+ try{
+  const res=await fetch(base+"/api/sessions",{method:"GET",headers:{"X-API-Key":apiKey,"Accept":"application/json"},signal:AbortSignal.timeout(6500)});
+  if(!res.ok)return {...status,connected:false,connectionNotTested:false,reason:res.status===401?"INVALID_API_KEY":"WA_AKG_UNAVAILABLE",upstreamHttp:res.status};
+  const data=await res.json().catch(()=>({}));
+  const list=Array.isArray(data.data)?data.data:[];
+  const selected=process.env.WA_AKG_SESSION_ID||"";
+  const connected=list.some(s=>(!selected||s.sessionId===selected)&&["CONNECTED","OPEN","connected","open"].includes(s.status));
+  return {...status,connected,connectionNotTested:false,totalSessions:list.length,reason:connected?"CONNECTED":selected?"SESSION_NOT_CONNECTED":"SESSION_NOT_SELECTED"};
+ }catch{return {...status,connected:false,connectionNotTested:true,reason:"NETWORK_ERROR"};}
+}
+
 export function gatewayInbox(){
  const rows=all("SELECT i.id,i.session_id,i.jid,i.lead_id,i.body,i.state,i.draft,i.received_at FROM waakg_inbox i ORDER BY i.received_at DESC LIMIT 80");
  return {total:rows.length,items:rows,sendEnabled:process.env.WA_AKG_MANUAL_SEND==="true"};
