@@ -41,6 +41,16 @@ import {placesStatus,placesSearch} from './google-places-live.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
+// Five-tab mode: no legacy campaign, mass outreach or scheduled discovery on first rollout.
+// The operator can enable explicitly supported discovery settings from the new dashboard.
+if(!getSetting('five_tab_mode_20261028_applied',false)){
+ setSetting('paused',true);
+ setSetting('auto_initial',false);
+ setSetting('automation_enabled',false);
+ setSetting('discovery_auto_enabled',false);
+ setSetting('five_tab_mode_20261028_applied',true);
+}
+
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
 
 const envIsProd=process.env.NODE_ENV==='production'||!!process.env.RAILWAY_ENVIRONMENT;
