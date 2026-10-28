@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
+import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS waakg_manual_outbox(id TEXT PRIMARY KEY,inbox_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,requested_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT)");
@@ -119,4 +120,28 @@ export async function sendApproved(input){
   audit("WAAKG_MANUAL_SENT",lead.id,{id:mid});
   return {status:200,body:{ok:true,id:mid,state:"SENT"}};
  }catch{return {status:502,body:{error:"Falha de rede, estado desconhecido; conferir WhatsApp antes de outra tentativa",code:"UNKNOWN_NO_AUTO_RETRY"}};}
+}
+
+db.exec("CREATE TABLE IF NOT EXISTS waakg_operator_outbox(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+export async function sendChatMessage(input={}){
+ const threadId=String(input.threadId||""),text=String(input.text||"").trim(),requestId=String(input.requestId||"");
+ if(!/^[a-f0-9-]{36}$/i.test(requestId)||text.length<1||text.length>1500)return {status:400,body:{error:"Mensagem ou identificador inválido"}};
+ const thread=one("SELECT t.*,l.phone,l.business FROM threads t JOIN leads l ON l.id=t.lead_id WHERE t.id=?",threadId);
+ if(!thread||!thread.jid||!/^\d{10,15}@s\.whatsapp\.net$/.test(thread.jid))return {status:404,body:{error:"Conversa WhatsApp não encontrada"}};
+ if(one("SELECT id FROM waakg_operator_outbox WHERE id=?",requestId))return {status:409,body:{error:"Essa mensagem já foi processada ou enviada. Confira a conversa antes de repetir."}};
+ if(one("SELECT phone FROM suppressions WHERE phone=?",thread.phone))return {status:403,body:{error:"Contato optou por não receber mensagens"}};
+ if(!one("SELECT id FROM messages WHERE thread_id=? AND direction='in' LIMIT 1",threadId))return {status:403,body:{error:"O envio pelo painel está limitado a conversas iniciadas pelo cliente"}};
+ const wa=await waControlStatus();const session=selectedWaSession();
+ if(!wa.connected||!session)return {status:503,body:{error:"Conecte seu WhatsApp na aba Conexões"}};
+ const at=now();
+ // UNKNOWN is deliberate: after a timeout the provider may have delivered the message.
+ run("INSERT INTO waakg_operator_outbox(id,thread_id,state,created_at,updated_at) VALUES(?,?,?,?,?)",requestId,threadId,"UNKNOWN",at,at);
+ try{
+  const result=await waRequest("/api/messages/"+encodeURIComponent(session)+"/"+encodeURIComponent(thread.jid)+"/send",{method:"POST",data:{message:{text}}});
+  if(result.status!==true)return {status:502,body:{error:"Envio não confirmado. Não tente repetir automaticamente."}};
+  run("UPDATE waakg_operator_outbox SET state='SENT',updated_at=? WHERE id=?",now(),requestId);
+  addMessage({threadId,providerId:"operator:"+requestId,direction:"out",body:text,status:"sent"});
+  audit("WA_AKG_CHAT_MESSAGE_SENT",thread.lead_id,{thread:threadId,manual:true});
+  return {status:200,body:{ok:true,delivery:"ACCEPTED",message:"Enviado ao WA-AKG"}};
+ }catch(e){return {status:502,body:{error:"Falha ou resultado incerto no WhatsApp. Confira a conversa antes de tentar novamente.",delivery:"UNKNOWN"}};}
 }
