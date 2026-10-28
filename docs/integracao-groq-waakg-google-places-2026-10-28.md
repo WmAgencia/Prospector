@@ -30,7 +30,7 @@
 
 ## Auditoria de dependências
 - Build do WA-AKG original registrou **70 vulnerabilidades no npm audit** (4 low, 12 moderate, 51 high, 3 critical); sem relatório por pacote, **não é possível confirmar quais são exploráveis**. Evitar liberar para clientes antes de investigar `npm audit --json` num fork controlado e testar atualizações sem `npm audit fix --force` às cegas.
-- O endpoint de registro do WA-AKG consulta `systemConfig.enableRegistration` e permite o cadastro caso não exista configuração que o desative. **Desabilitar registro público no painel/admin** antes de liberar acesso real.
+- **Registro público:** no WA-AKG v1.7.0 auditado, o schema Prisma define `enableRegistration @default(false)` e a rota `/api/auth/register` rejeita novos usuários após o primeiro administrador, salvo quando um SUPERADMIN habilitou explicitamente o cadastro. Não presumir que o registro esteja aberto. Confirmar `enableRegistration=false` no painel e não salvá-lo como `true` por engano (`POST /api/settings/system` usa `enableRegistration ?? true`).
 - A implantação referencia a branch main de um repositório de terceiros. Para produção, espelhar/forkar o código, fixar a revisão auditada e revisar o pipeline de atualizações.
 - Baileys é integração não oficial; risco de restrições da plataforma. Avaliar WhatsApp Business Platform para operação contínua.
 
@@ -46,3 +46,10 @@
 - Chave Groq originalmente compartilhada na conversa deve ser substituída pelo proprietário e atualizada somente no Railway.
 - Não compartilhar credenciais, números de telefone, payloads de clientes ou histórico em commits.
 - O backend SQLite ocupa volume persistente; manter backup automatizado seguro e revisar prazo de retenção da LGPD antes do uso comercial.
+
+## Revisão adicional — mesmo dia
+- Backend e painel: forçado `WHATSAPP_TRANSPORT=waakg`, bloqueando conect/disconnect de Baileys e suas rotinas periódicas de envio. O frontend de conexão antiga agora direciona para WA-AKG.
+- Monitor de sessão remota: `/api/wa-akg/status` consulta `/api/sessions` apenas quando `WA_AKG_API_KEY` estiver definida; não inventa estado conectado.
+- Overpass: fallback secundário para erros temporários 502/503/504, uma tentativa por endpoint e nenhuma repetição de HTTP 429.
+- O domínio personalizado permanece configurado na Vercel, mas o DNS autoritativo foi identificado como dns.br e não está resolvido pela integração disponível; a Vercel exige registro CNAME no DNS que realmente é autoritativo.
+- A criação de sessão por QR Code requer o aparelho do proprietário; sessão existente no servidor WA-AKG: 0 na última auditoria. Não alegar teste de WhatsApp real sem sessão ativa.
