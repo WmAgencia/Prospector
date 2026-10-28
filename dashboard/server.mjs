@@ -441,7 +441,7 @@ async function handler(req,res){
   }
   if(req.method!=='GET')return respond(res,404,{error:'Rota inexistente'});
   const target=pathname==='/'?'index.html':pathname.slice(1);
-  if(!['index.html','app.js','style.css','campaign-ui.js','campaign-ui.mjs','campaign-ui-state.mjs','campaign-ui.css','radar-ui.js'].includes(target))return respond(res,404,{error:'Arquivo inexistente'});
+  if(!['index.html','simple-app.js','simple-app.css','app.js','style.css','campaign-ui.js','campaign-ui.mjs','campaign-ui-state.mjs','campaign-ui.css','radar-ui.js'].includes(target))return respond(res,404,{error:'Arquivo inexistente'});
   const f=path.join(root,target),ext=path.extname(f);
   res.writeHead(200,{'Content-Type':web[ext]||'text/plain','Cache-Control':'no-cache'});fs.createReadStream(f).pipe(res);
  }catch(e){console.error('[API]',e?.message);error(res,e);}
