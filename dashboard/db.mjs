@@ -146,8 +146,10 @@ if(!getSetting('consecom_350_intro_v3',false)){
 export function audit(action,lead_id=null,detail={}){run('INSERT INTO audit VALUES(?,?,?,?,?)',id(),now(),action,lead_id,JSON.stringify(detail));}
 export function addLead(item){
  const p=phone(item.phone||item.whatsapp), ig=instagram(item.instagram||item.instagram_username);
- if(!p&&!ig&&!(String(item.source)==='osm'&&String(item.osm_id||'').startsWith('https://www.openstreetmap.org/'))&&!(['cnpj','cnes'].includes(String(item.source))&&String(item.official_id||'').startsWith(String(item.source)+':')))throw Error('Informe Instagram ou WhatsApp válido');
- const existing=(p?one('SELECT * FROM leads WHERE phone=?',p):null)||(ig?one('SELECT * FROM leads WHERE instagram=?',ig):null)||(item.osm_id?one("SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source='osm' AND o.identity=?",item.osm_id):null)||(item.official_id?one('SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source=? AND o.identity=?',String(item.source),String(item.official_id)):null);
+ const mapsLink=String(item.maps_id||'');
+ const validMapsLink=String(item.source)==='maps_extension'&&/^https:\/\/(?:www\.google\.[a-z.]+\/maps\/|maps\.google\.[a-z.]+\/|maps\.app\.goo\.gl\/)/i.test(mapsLink);
+ if(!p&&!ig&&!validMapsLink&&!(String(item.source)==='osm'&&String(item.osm_id||'').startsWith('https://www.openstreetmap.org/'))&&!(['cnpj','cnes'].includes(String(item.source))&&String(item.official_id||'').startsWith(String(item.source)+':')))throw Error('Informe Instagram ou WhatsApp válido');
+ const existing=(p?one('SELECT * FROM leads WHERE phone=?',p):null)||(ig?one('SELECT * FROM leads WHERE instagram=?',ig):null)||(item.osm_id?one("SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source='osm' AND o.identity=?",item.osm_id):null)||(validMapsLink?one("SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source='maps_extension' AND o.identity=?",mapsLink):null)||(item.official_id?one('SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source=? AND o.identity=?',String(item.source),String(item.official_id)):null);
  if(existing){
   const suppliedName=personalName(item.name||item.contato_nome||item.contact_name);
   if(!personalName(existing.name)&&suppliedName){
