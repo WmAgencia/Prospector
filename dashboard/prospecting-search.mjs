@@ -74,7 +74,8 @@ export async function prospectingSearch({niche,city}={}){
  const query="prospector:v2:"+norm(niche)+":"+norm(city);
  const last=one("SELECT at,status,found FROM discoveries WHERE query=? ORDER BY at DESC LIMIT 1",query);
  const age=last?Date.now()-Date.parse(last.at):Infinity;
- if(age<20*60_000)return {ok:true,cached:true,added:0,source:"OpenStreetMap",note:"Consulta recente; exibindo dados já salvos.",...prospectingList({niche,city})};
+ if(age<20*60_000&&last?.status==="COMPLETE")return {ok:true,cached:true,added:0,source:"OpenStreetMap",note:"Consulta recente; exibindo dados já salvos.",...prospectingList({niche,city})};
+ if(age<2*60_000&&last?.status==="FAILED")throw Error("A fonte falhou recentemente. Confira a base já salva e tente novamente em instantes.");
  busy=true;
  const marker=id();run("INSERT INTO discoveries(id,query,found,at,status,details) VALUES(?,?,?,?,?,?)",marker,query,0,now(),"RUNNING","{}");
  try{
