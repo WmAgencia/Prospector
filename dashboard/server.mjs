@@ -34,6 +34,7 @@ import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsApp
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved} from './waakg-bridge.mjs';
+import {placesStatus,placesSearch} from './google-places-live.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
@@ -215,6 +216,8 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+  if(req.method==='GET'&&pathname==='/api/google-places/status')return respond(res,200,placesStatus());
+  if(req.method==='POST'&&pathname==='/api/google-places/search'){const result=await placesSearch(await json(req));return respond(res,result.status,result.body);}
   if(req.method==='GET'&&pathname==='/api/wa-akg/status')return respond(res,200,gatewayStatus());
   if(req.method==='GET'&&pathname==='/api/wa-akg/inbox')return respond(res,200,gatewayInbox());
   if(req.method==='POST'&&pathname==='/api/wa-akg/draft'){const r=await draftInbox(await json(req));return respond(res,r.status,r.body);}
