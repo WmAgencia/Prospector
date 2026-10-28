@@ -48,7 +48,7 @@ function draw(){
  $('#sync-status').textContent='Atualizado agora';
  const connected=state.connection.status==='CONNECTED';
  const quick=$('#wa-pill');
- if(quick){quick.className='top-wa '+(connected?'online':'offline');quick.innerHTML='<span class="live-dot"></span>'+esc(connected?'WhatsApp conectado':state.connection.status==='QR_READY'?'QR aguardando leitura':'WhatsApp desconectado');}
+ if(quick){quick.className='top-wa offline';quick.innerHTML='<span class="live-dot"></span>WA-AKG · conferir sessão';}
  const pa=$('#pause-btn');if(pa)pa.classList.toggle('is-running',!state.settings.paused);
  const views={overview,radar:radarPage,conversations,prospects,workflows:location.hash.includes('/classic')?workflows:()=>'<div id="campaign-app"></div>',discovery,production,studio,connections,campaign:campaignPage,recontacts,gateway:gatewayPage,mapsearch:placesPage,settings};
  $('#screen').innerHTML=(views[page]||overview)();
@@ -56,6 +56,7 @@ function draw(){
  if(page==='workflows'&&location.hash.includes('/classic'))bindWorkflowInputs();
  if(page==='studio')loadStudio();
  if(page==='gateway')loadGateway();
+ if(page==='connections')loadGateway();
  if(page==='mapsearch')loadPlacesStatus();
  if(page==='production'&&selectedThread){const id=selectedThread;selectedThread=null;prodModal(id);}
  window.dispatchEvent(new CustomEvent('prospector:draw',{detail:{page,state}}));
@@ -323,7 +324,8 @@ function discovery(){
  '</details>'+ 
  '<section class="panel" style="margin-top:18px"><h3>Segurança das abordagens</h3><p class="subtle">Empresas descobertas entram com contato não autorizado. A plataforma não envia campanhas para números coletados sem permissão. Fonte pública não equivale a autorização para WhatsApp. Empresas sem tag de site continuam como site incerto.</p></section>';
 }
-function connections(){
+function connections(){return gatewayPage();
+/* Legacy Baileys pairing UI kept for potential rollback but disabled in WA-AKG mode. */
  const c=state.connection||{},connected=c.status==='CONNECTED',waiting=c.status==='QR_READY',working=c.status==='CONNECTING';
  const fail=c.status==='LOGGED_OUT'||c.status==='ERROR',restarting=c.status==='RESTARTING',inProgress=working||waiting||restarting;
  const desc=connected?'Sessão autenticada e pronta para receber mensagens.':restarting?'Pareamento recebido. Concluindo a autenticação automaticamente — não gere outro QR.':waiting?'Escaneie o código com o WhatsApp do celular.':working?'Conectando ao servidor do WhatsApp…':fail?'A sessão anterior não foi aceita. Você pode iniciar um pareamento novo sem perder o backup.':'Clique em conectar para gerar seu QR Code.';
