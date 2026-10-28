@@ -33,7 +33,7 @@ import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
-import {gatewayStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved} from './waakg-bridge.mjs';
+import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved} from './waakg-bridge.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
@@ -218,7 +218,7 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
   if(req.method==='GET'&&pathname==='/api/google-places/status')return respond(res,200,placesStatus());
   if(req.method==='POST'&&pathname==='/api/google-places/search'){const result=await placesSearch(await json(req));return respond(res,result.status,result.body);}
-  if(req.method==='GET'&&pathname==='/api/wa-akg/status')return respond(res,200,gatewayStatus());
+  if(req.method==='GET'&&pathname==='/api/wa-akg/status')return respond(res,200,await gatewayRemoteStatus());
   if(req.method==='GET'&&pathname==='/api/wa-akg/inbox')return respond(res,200,gatewayInbox());
   if(req.method==='POST'&&pathname==='/api/wa-akg/draft'){const r=await draftInbox(await json(req));return respond(res,r.status,r.body);}
   if(req.method==='POST'&&pathname==='/api/wa-akg/send-approved'){const r=await sendApproved(await json(req));return respond(res,r.status,r.body);}
