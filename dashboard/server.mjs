@@ -36,6 +36,7 @@ import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
 import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
+import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
@@ -221,6 +222,9 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/google-places/status')return respond(res,200,placesStatus());
   if(req.method==='POST'&&pathname==='/api/google-places/search'){const result=await placesSearch(await json(req));return respond(res,result.status,result.body);}
   if(req.method==='POST'&&pathname==='/api/whatsapp/reply'){const result=await sendChatMessage(await json(req));if(result.status===200)notify();return respond(res,result.status,result.body);}
+  if(req.method==='GET'&&pathname==='/api/whatsapp/chats'){try{return respond(res,200,await remoteChats());}catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
+  if(req.method==='GET'&&pathname==='/api/whatsapp/chat-messages'){try{return respond(res,200,await remoteMessages(url.searchParams.get('jid')||''));}catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
+  if(req.method==='POST'&&pathname==='/api/whatsapp/reply-remote'){const r=await sendRemoteReply(await json(req));if(r.status===200)notify();return respond(res,r.status,r.body);}
   if(req.method==='GET'&&pathname==='/api/whatsapp/status')return respond(res,200,await waControlStatus());
   if(req.method==='GET'&&pathname==='/api/whatsapp/qr')return respond(res,200,await waGetQR());
   if(req.method==='POST'&&pathname==='/api/whatsapp/connect'){try{return respond(res,200,await waConnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
