@@ -56,7 +56,8 @@ function render(){
 }
 async function refreshWa(redraw=true){
  try{
-  const w=await api("/api/whatsapp/status");const changed=wa?.connected!==w.connected||wa?.status!==w.status;wa=w;
+  const w=await api("/api/whatsapp/status");const wasConnected=!!wa?.connected;const changed=wa?.connected!==w.connected||wa?.status!==w.status;wa=w;
+  if(view==="conversations"&&w.connected&&(!wasConnected||!remoteChats.length)){await loadChats();return;}
   if(view==="connections"&&w.hasSession&&!w.connected){qrResult=await api("/api/whatsapp/qr");}
   if(redraw&&(view==="connections"||changed))render();
  }catch(e){wa={ok:false,status:"ERROR",message:e.message,connected:false};if(redraw&&view==="connections")render();}
@@ -128,6 +129,6 @@ document.addEventListener("change",async e=>{
 });
 document.addEventListener("input",e=>{if(e.target.id==="chat-search"){chatFilter=e.target.value;const cursor=e.target.selectionStart;render();const input=q("#chat-search");if(input){input.focus();input.setSelectionRange(cursor,cursor);}}});
 window.addEventListener("hashchange",()=>{const tab=location.hash.split("/")[1];if(tabs[tab]&&tab!==view)nav(tab);});
-setInterval(async()=>{if(view==="connections"){await refreshWa();}else if(Date.now()-lastRefresh>20000&&state){await reload();}},5000);
+setInterval(async()=>{if(view==="connections"){await refreshWa();}else if(view==="conversations"&&Date.now()-lastRefresh>16000){await refreshWa(false);await reload();}else if(Date.now()-lastRefresh>20000&&state){await reload();}},5000);
 await reload();
 await refreshWa();
