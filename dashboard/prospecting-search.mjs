@@ -1,6 +1,7 @@
 // Operator-initiated OpenStreetMap discovery. Best effort; never claims exhaustive coverage.
 import {one,all,run,id,now,addLead,phone} from "./db.mjs";
 import {recordOrigin} from "./discovery.mjs";
+import {resolveLocation} from "./osm-discovery.mjs";
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 const map=[
  [/oficina|mecanica|automotiva|auto center|auto.?eletric/,["shop","car_repair"]],
@@ -48,6 +49,7 @@ export function prospectingList({niche="",city="",status="uncontacted",limit=500
  return {total:matches.length,uncontacted:uncontacted.length,contacted:contacted.length,returned:Math.min(selected.length,max),results:selected.slice(0,max).map(({previously_contacted,sent_message,...x})=>({...x,contacted:!!(previously_contacted||sent_message||x.stage!=="DISCOVERED")})),partial:allRows.length===6000,source:"Base do Prospector",note:"Não contatado significa não haver envio registrado neste sistema; não inclui contatos feitos externamente."};
 }
 async function locate(city){
+ const known=resolveLocation(city);if(known)return {lat:known.lat,lon:known.lon};
  const url=new URL("https://nominatim.openstreetmap.org/search");
  url.searchParams.set("q",city+", Brasil");url.searchParams.set("format","jsonv2");url.searchParams.set("addressdetails","1");url.searchParams.set("limit","1");
  const res=await fetch(url,{headers:{"User-Agent":"ConsecomProspector/2.0 (contact: wmagenciasuporte@gmail.com)","Accept":"application/json","Accept-Language":"pt-BR"},signal:AbortSignal.timeout(12000)});
