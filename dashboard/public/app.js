@@ -35,7 +35,7 @@ function navigate(to,thread=null){
  page=to;selectedThread=thread||null;location.hash='/'+to+(thread?'/'+thread:'');
  draw();
 }
-const titles={radar:['Radar de prospecção','Buscas e limites reais, atualizados pelo backend'],overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Automações','Acompanhe e selecione suas campanhas'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],production:['Produção','Pedidos de exemplo e entregas'],studio:['Site Studio','Propostas visuais exclusivas para apresentar aos clientes'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção'],campaign:['Campanha R$350','Mensagem, áudio, vídeo e prazo da oferta'],recontacts:['Recontatos','Histórico e revisão após 90 dias']};
+const titles={radar:['Radar de prospecção','Buscas e limites reais, atualizados pelo backend'],overview:['Visão geral','Acompanhe o funcionamento da operação'],conversations:['Conversas','Mensagens reais, tudo em um só lugar'],prospects:['Prospecção','Acompanhe cada empresa ao longo do funil'],workflows:['Automações','Acompanhe e selecione suas campanhas'],discovery:['Descoberta','Encontre empresas e organize oportunidades'],production:['Produção','Pedidos de exemplo e entregas'],studio:['Site Studio','Propostas visuais exclusivas para apresentar aos clientes'],connections:['Conexões','Gerencie sua sessão do WhatsApp'],settings:['Configurações','Controle o funcionamento da prospecção'],campaign:['Campanha R$350','Mensagem, áudio, vídeo e prazo da oferta'],gateway:['IA + WhatsApp','Rascunhos e conversas recebidas pelo WA-AKG'],mapsearch:['Google Maps','Pesquisa ao vivo de empresas pelo Google Places'],recontacts:['Recontatos','Histórico e revisão após 90 dias']};
 function draw(){
  if(!state)return;
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===page));
@@ -50,13 +50,45 @@ function draw(){
  const quick=$('#wa-pill');
  if(quick){quick.className='top-wa '+(connected?'online':'offline');quick.innerHTML='<span class="live-dot"></span>'+esc(connected?'WhatsApp conectado':state.connection.status==='QR_READY'?'QR aguardando leitura':'WhatsApp desconectado');}
  const pa=$('#pause-btn');if(pa)pa.classList.toggle('is-running',!state.settings.paused);
- const views={overview,radar:radarPage,conversations,prospects,workflows:location.hash.includes('/classic')?workflows:()=>'<div id="campaign-app"></div>',discovery,production,studio,connections,campaign:campaignPage,recontacts,settings};
+ const views={overview,radar:radarPage,conversations,prospects,workflows:location.hash.includes('/classic')?workflows:()=>'<div id="campaign-app"></div>',discovery,production,studio,connections,campaign:campaignPage,recontacts,gateway:gatewayPage,mapsearch:placesPage,settings};
  $('#screen').innerHTML=(views[page]||overview)();
  if(page==='conversations'&&selectedThread)loadMessages();
  if(page==='workflows'&&location.hash.includes('/classic'))bindWorkflowInputs();
  if(page==='studio')loadStudio();
+ if(page==='gateway')loadGateway();
+ if(page==='mapsearch')loadPlacesStatus();
  if(page==='production'&&selectedThread){const id=selectedThread;selectedThread=null;prodModal(id);}
  window.dispatchEvent(new CustomEvent('prospector:draw',{detail:{page,state}}));
+}
+
+
+function gatewayPage(){
+ return '<section class="panel"><h3>WA-AKG + IA de conversação</h3><p class="subtle">Recebimento por webhook assinado, rascunhos da Groq e envio somente após aprovação. Nenhum disparo automático.</p><p><a href="https://wa-akg-production-f9f0.up.railway.app/dashboard/sessions" target="_blank" rel="noopener noreferrer">Abrir WA-AKG e conectar o QR Code ↗</a></p><div id="gateway-contents"><p class="subtle">Conferindo configuração…</p></div></section>';
+}
+async function loadGateway(){
+ const target=$('#gateway-contents');if(!target)return;
+ try{
+  const [rs,ri]=await Promise.all([fetch('/api/wa-akg/status',{cache:'no-store'}),fetch('/api/wa-akg/inbox',{cache:'no-store'})]);
+  if(!rs.ok||!ri.ok)throw Error('Serviço indisponível');
+  const s=await rs.json(),inbox=await ri.json();
+  const stateText='API '+(s.apiKeyConfigured?'configurada':'pendente')+' · Sessão '+(s.sessionConfigured?'configurada':'pendente')+' · Webhook '+(s.webhookSecretConfigured?'seguro':'pendente')+' · Envio '+(s.manualSendEnabled?'manual habilitado':'desativado');
+  const cards=(inbox.items||[]).map(m=>'<article class="panel" style="margin-top:12px;padding:16px"><div class="between"><strong>'+esc(m.state)+'</strong><small>'+fmtDate(m.received_at)+'</small></div><p><small>WhatsApp: '+esc(m.jid)+'</small></p><p>'+esc(m.body)+'</p>'+(m.state==='REVIEW'||m.state==='DRAFTED'?'<button class="btn small secondary" data-action="waakg-draft" data-id="'+esc(m.id)+'">Gerar rascunho com IA</button>':'')+(m.draft?'<div style="margin-top:12px"><label>Resposta para revisão</label><textarea id="reply-'+esc(m.id)+'" rows="4">'+esc(m.draft)+'</textarea>'+(s.manualSendEnabled?'<button class="btn small" data-action="waakg-approve" data-id="'+esc(m.id)+'">Revisar e aprovar envio</button>':'<p class="helper-text">Envio ainda desativado. Copie e revise manualmente.</p>')+'</div>':'')+'</article>').join('');
+  target.innerHTML='<p class="helper-text">'+esc(stateText)+'</p>'+(cards||'<div class="empty">Nenhuma mensagem recebida pelo WA-AKG. Conecte a sessão e cadastre o webhook.</div>');
+ }catch(err){target.innerHTML='<p class="empty">Não foi possível carregar o WA-AKG: '+esc(err.message)+'</p>';}
+}
+function placesPage(){
+ return '<section class="panel"><h3>Pesquisar empresas no Google Maps</h3><p class="subtle">Resultados consultados pela API oficial do Google Places. Os dados não são gravados automaticamente no CRM.</p><div class="row wrap"><input id="places-query" value="oficina mecânica" aria-label="Tipo de empresa" style="max-width:320px"><input id="places-city" value="Sorocaba" aria-label="Cidade" style="max-width:260px"><button class="btn" data-action="places-search">Pesquisar</button></div><p id="places-status" class="helper-text">Conferindo Google Places...</p><div id="places-results"></div></section>';
+}
+async function loadPlacesStatus(){
+ try{const r=await fetch('/api/google-places/status');if(!r.ok)throw Error();const s=await r.json();if($('#places-status'))$('#places-status').textContent=s.configured&&s.enabled?'API pronta para busca. Consultas podem gerar cobrança no Google Maps Platform.':'API Google Places ainda não configurada no servidor; não é possível coletar diretamente do Google Maps sem a chave oficial e faturamento habilitado.';}catch{if($('#places-status'))$('#places-status').textContent='Não foi possível conferir a configuração.';}
+}
+let placesNextToken='';
+async function doPlacesSearch(next=false){
+ const query=$('#places-query')?.value||'',city=$('#places-city')?.value||'Sorocaba';if(!next)placesNextToken='';
+ const data=await request('/api/google-places/search',{query,city,pageToken:next?placesNextToken:undefined});
+ placesNextToken=data.nextPageToken||'';
+ const html=(data.results||[]).map(x=>'<div class="panel" style="padding:14px;margin:9px 0"><strong>'+esc(x.name)+'</strong><p class="subtle">'+esc(x.address)+'</p><p>'+esc(x.phone||'Telefone não informado')+(x.website?' · <a href="'+esc(x.website)+'" target="_blank" rel="noopener noreferrer">Site ↗</a>':'')+(x.mapsUrl?' · <a href="'+esc(x.mapsUrl)+'" target="_blank" rel="noopener noreferrer">Google Maps ↗</a>':'')+'</p></div>').join('');
+ const container=$('#places-results');if(!container)return;container.innerHTML=(next?container.innerHTML:'')+html+(placesNextToken?'<button class="btn secondary" data-action="places-next">Próxima página</button>':'<p class="helper-text">Fim dos resultados desta consulta. Isso não representa todas as empresas da cidade.</p>');
 }
 
 function radarView(){
@@ -374,6 +406,24 @@ document.addEventListener('click',async event=>{
  const action=el.dataset.action;
  try{
   if(action==='route')return navigate(el.dataset.to);
+  if(action==='places-search'){await doPlacesSearch(false);return;}
+  if(action==='places-next'){await doPlacesSearch(true);return;}
+  if(action==='waakg-draft'){
+    const result=await request('/api/wa-akg/draft',{id:el.dataset.id});
+    showToast(result.ok?'Rascunho gerado. Revise antes de enviar.':'Falha ao gerar rascunho');
+    await loadGateway();return;
+  }
+  if(action==='waakg-approve'){
+    const id=el.dataset.id;const draft=document.getElementById('reply-'+id)?.value||'';
+    modal('<h2>Confirma envio de mensagem?</h2><p>Verifique consentimento, destinatário e conteúdo. Envios de resultado incerto nunca serão repetidos automaticamente.</p><p>'+esc(draft)+'</p><button class="btn" data-action="waakg-send-confirm" data-id="'+esc(id)+'">Enviar mensagem aprovada</button><button class="btn secondary" data-action="close-modal">Cancelar</button>');return;
+  }
+  if(action==='waakg-send-confirm'){
+    const text=document.getElementById('reply-'+el.dataset.id)?.value||'';
+    if(!text)throw Error('Texto não encontrado; reabra o rascunho');
+    await request('/api/wa-akg/send-approved',{id:el.dataset.id,approve:true,confirmId:el.dataset.id,text});
+    closeModal();showToast('Envio confirmado.');await loadGateway();return;
+  }
+
   if(action==='kanban-filter'){kanbanStage=el.dataset.stage||'ALL';draw();return;}
   if(action==='prod-open')return navigate('production',el.dataset.lead);
   if(action==='prod-copy'){await prodCopy(el.dataset.lead);return;}
