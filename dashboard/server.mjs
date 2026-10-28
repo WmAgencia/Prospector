@@ -263,8 +263,8 @@ async function handler(req,res){
   if(req.method==='GET'&&/^\/api\/threads\/[^/]+\/messages$/.test(pathname)){
    const threadId=pathname.split('/')[3];return respond(res,200,all('SELECT * FROM messages WHERE thread_id=? ORDER BY at DESC LIMIT 300',threadId).reverse());
   }
-  if(req.method==='POST'&&pathname==='/api/connect'){const args=await json(req);return respond(res,200,await connectWhatsApp({fresh:args.fresh===true}));}
-  if(req.method==='POST'&&pathname==='/api/disconnect')return respond(res,200,await disconnectWhatsApp());
+  if(req.method==='POST'&&pathname==='/api/connect'){if(process.env.WHATSAPP_TRANSPORT==='waakg')return respond(res,409,{error:'WhatsApp agora é conectado pelo painel WA-AKG; não inicie outra sessão Baileys.'});const args=await json(req);return respond(res,200,await connectWhatsApp({fresh:args.fresh===true}));}
+  if(req.method==='POST'&&pathname==='/api/disconnect'){if(process.env.WHATSAPP_TRANSPORT==='waakg')return respond(res,409,{error:'Desconecte pelo WA-AKG para não gerar duas sessões'});return respond(res,200,await disconnectWhatsApp());}
   if(req.method==='POST'&&pathname==='/api/leads'){
    const value=await json(req);
    if(value.contact_permission===true&&!String(value.permission_proof||'').trim())throw Error('Contato autorizado exige registro de comprovante');
@@ -474,7 +474,7 @@ const osmTimer=setInterval(checkOSMDiscovery,60*1000);
 // Somente OSM executa pesquisas automáticas. Google Places permanece inativo.
 setTimeout(checkOSMDiscovery,12000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
-server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));});
+server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
 if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  setTimeout(async()=>{
