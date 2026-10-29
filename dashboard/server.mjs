@@ -39,6 +39,7 @@ import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {groqCatalog} from './groq-models.mjs';
 import {ownerStatus} from './groq-owner.mjs';
+import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
@@ -249,6 +250,8 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/wa-akg/send-approved'){const r=await sendApproved(await json(req));return respond(res,r.status,r.body);}
   if(req.method==='GET'&&pathname==='/api/groq/models')return respond(res,200,await groqCatalog());
   if(req.method==='GET'&&pathname==='/api/groq/owner')return respond(res,200,ownerStatus());
+  if(req.method==='GET'&&pathname==='/api/groq/capabilities')return respond(res,200,{count:agentTools.length,tools:agentTools.map(t=>({name:t.function.name,description:t.function.description})),owner:ownerStatus()});
+  if(req.method==='GET'&&pathname==='/api/groq/healthcheck'){const status=await runAgentTool('system_status');const settings=await runAgentTool('safe_settings');return respond(res,200,{ok:true,toolCount:agentTools.length,status:{leads:status.leads,threads:status.threads,paused:status.settings.paused,whatsappConnected:status.whatsapp.connected},settingsReadable:typeof settings.settings.paused==='boolean'});}
   if(req.method==='GET'&&pathname==='/api/ai/status')return respond(res,200,aiStatus());
   if(req.method==='POST'&&pathname==='/api/ai/test'){
    const result=await aiDraft({text:"Responda somente OK."});
