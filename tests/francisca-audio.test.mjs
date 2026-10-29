@@ -39,6 +39,10 @@ test('Groq Whisper receives Portuguese audio as private multipart body without a
  };
  const data=await transcribeAudio({buffer:Buffer.alloc(520),filename:'clip.ogg',fetchFn:fake});
  assert.match(data.text,/quero saber mais/);
+ const company=await transcribeAudio({buffer:Buffer.alloc(520),filename:'clip.ogg',
+  fetchFn:async()=>Response.json({text:'Aqui é a Francisca da Concecom Brasil.'})});
+ assert.match(company.text,/Consecom Brasil/);
+ assert.equal(company.text.includes('Concecom'),false);
 });
 test('Audio webhook job creates exactly one transcription in the existing customer inbox',async()=>{
  const a=queueInboundAudio({providerId,sessionId:'consecom-principal',jid,fileUrl});
