@@ -3,6 +3,7 @@
 // Keeping the active browser session stable avoids an empty screen on refresh.
 import {db,all,one,run,tx,now,id} from './db.mjs';
 import {prospectingList} from './prospecting-search.mjs';
+import {threeMonthsAfter} from './prospecting-recontact.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_viewed_keys(key TEXT PRIMARY KEY,lead_id TEXT NOT NULL REFERENCES leads(id),session_id TEXT NOT NULL,shown_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_prospecting_viewed_lead ON prospecting_viewed_keys(lead_id)");
@@ -29,15 +30,21 @@ export function listUnseenCompanies({session='',niche='',city='',status='unconta
    if(output.length>=Math.min(500,Math.max(1,Number(limit)||500)))break;
    const keys=businessKeys(lead);
    if(keys.some(k=>inPage.has(k)))continue;
-   const current=keys.map(k=>one('SELECT session_id FROM prospecting_viewed_keys WHERE key=?',k)).filter(Boolean);
-   if(current.some(x=>x.session_id!==sessionId))continue;
+   const current=keys.map(k=>one('SELECT session_id,shown_at FROM prospecting_viewed_keys WHERE key=?',k)).filter(Boolean);
+   const previous=current.filter(x=>x.session_id!==sessionId);
+   if(previous.length){
+    // Fresh opportunities are one-time only. Prior contacted companies may
+    // return only three calendar months after the LATEST exposure.
+    if(!lead.recontactEligible)continue;
+    if(previous.some(x=>!threeMonthsAfter(x.shown_at)||Date.parse(threeMonthsAfter(x.shown_at))>Date.now()))continue;
+   }
    // If two records of the same business exist, only one is shown in a session.
    keys.forEach(k=>inPage.add(k));
    const timestamp=now();
-   for(const key of keys)run('INSERT OR IGNORE INTO prospecting_viewed_keys(key,lead_id,session_id,shown_at) VALUES(?,?,?,?)',key,lead.id,sessionId,timestamp);
+   for(const key of keys)run('INSERT INTO prospecting_viewed_keys(key,lead_id,session_id,shown_at) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET lead_id=excluded.lead_id,session_id=excluded.session_id,shown_at=excluded.shown_at WHERE prospecting_viewed_keys.session_id<>excluded.session_id',key,lead.id,sessionId,timestamp);
    output.push(lead);
   }
  });
- return {...source,results:output,returned:output.length,shownInThisSession:output.length,visibility:'FIRST_EXPOSURE_ONLY',
-  note:'Empresas já exibidas em outra sessão, mesmo sem abordagem, não reaparecem. O histórico vale a partir da ativação deste controle.'};
+ return {...source,results:output,returned:output.length,shownInThisSession:output.length,visibility:'FIRST_EXPOSURE_OR_THREE_MONTH_RECONTACT',
+  note:'Primeira exposição única. Contatos sem resposta ou com desinteresse leve só retornam após três meses da última abordagem e da última exibição; recusas definitivas nunca retornam.'};
 }
