@@ -39,6 +39,7 @@ import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
+import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
@@ -264,6 +265,8 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/whatsapp/chats'){try{return respond(res,200,await remoteChats());}catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
   if(req.method==='GET'&&pathname==='/api/whatsapp/chat-messages'){try{return respond(res,200,await remoteMessages(url.searchParams.get('jid')||''));}catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/reply-remote'){const r=await sendRemoteReply(await json(req));if(r.status===200)notify();return respond(res,r.status,r.body);}
+  if(req.method==='GET'&&pathname==='/api/whatsapp/interactive-preview'){try{return respond(res,200,interactivePreview({mode:url.searchParams.get('mode')||'introduction'}));}catch(e){return respond(res,400,{error:e.message});}}
+  if(req.method==='POST'&&pathname==='/api/whatsapp/interactive-send'){const result=await sendApprovedInteractive(await json(req));if(result.status===200)notify();return respond(res,result.status,result.body);}
   if(req.method==='GET'&&pathname==='/api/whatsapp/status')return respond(res,200,await waControlStatus());
   if(req.method==='GET'&&pathname==='/api/whatsapp/qr')return respond(res,200,await waGetQR());
   if(req.method==='POST'&&pathname==='/api/whatsapp/connect'){try{return respond(res,200,await waConnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
