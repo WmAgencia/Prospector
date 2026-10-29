@@ -27,6 +27,16 @@ async function request(path,{method='GET',payload=null,expect='json'}={}){
 }
 function row(idValue){return one('SELECT * FROM maps_scraper_jobs WHERE id=?',idValue);}
 export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:'Render',async:true,automaticSend:false,privateAPI:true,source:'Google Maps (termos aplicáveis)',jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
+
+if(process.env.RUN_MAPS_CREATE_SMOKE==='true'){
+ setTimeout(async()=>{
+  try{
+   const data=await startMapsScrape({niche:'oficinas mecânicas',city:'Sorocaba'});
+   console.info('[maps-create-smoke]',JSON.stringify({status:data.status,created:!!data.id,reused:!!data.reused,error:null}));
+  }catch(e){console.info('[maps-create-smoke]',JSON.stringify({error:String(e?.message||'').slice(0,180)}));}
+ },3500).unref();
+}
+
 export async function startMapsScrape({niche,city}={}){
  if(!valid(niche)||!valid(city))throw Error('Informe nicho e cidade com até 85 caracteres');
  const recent=one("SELECT * FROM maps_scraper_jobs WHERE niche=? AND city=? AND status IN ('RUNNING','PENDING') ORDER BY created_at DESC LIMIT 1",niche.trim(),city.trim());
