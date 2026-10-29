@@ -8,6 +8,7 @@ import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
+import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,acceptPart,partsFor} from './groq-reply-channels.mjs';
 import {waControlStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_auto_events(provider_id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,at TEXT NOT NULL,error TEXT)");
 run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify before retry' WHERE state IN ('PROCESSING','SENDING')");
@@ -66,23 +67,58 @@ export async function handleSalesTurn(providerId,deps={}){
  if(!review.ok){audit('GROQ_REPLY_REJECTED',r.lead_id,{code:review.code,test:allowTest});return finish('REVIEW','SAFETY_'+review.code);}
  if(one('SELECT manual_takeover FROM threads WHERE id=?',r.thread_id)?.manual_takeover===1||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
- run("UPDATE groq_auto_events SET state='SENDING' WHERE provider_id=?",providerId);
- try{
-  const replyWithVoice=process.env.AUDIO_RESPONSE_ENABLED==='true'&&
-   !!one("SELECT provider_id FROM inbound_audio_jobs WHERE provider_id=? AND state='DONE'",providerId);
-  if(replyWithVoice){
-   const rendered=await (deps.voice||makeFranciscaVoice)(draft.draft);
-   await (deps.sendVoice||sendVoiceMedia)({jid:r.jid,session,bytes:rendered.bytes});
-  }else{
-   const send=deps.send||waRequest;
-   const ack=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(r.jid)+'/send',{method:'POST',data:{message:{text:draft.draft}}});
-   if(ack.status!==true)return finish('UNKNOWN','UNCONFIRMED');
+ const audioTable=!!one("SELECT name FROM sqlite_master WHERE type='table' AND name='inbound_audio_jobs'");
+ const wasAudio=audioTable&&!!one("SELECT provider_id FROM inbound_audio_jobs WHERE provider_id=? AND state='DONE'",providerId);
+ const routing=chooseReplyChannel({inbound:r.body,draft:draft.draft,wasAudio,isOperatorTest:allowTest,
+  preferredMode:channelPreference(r.jid),
+  voiceAvailable:process.env.AUDIO_RESPONSE_ENABLED==='true'&&process.env.FRANCISCA_TTS_ENABLED==='true'});
+ if(routing.preference)saveChannelPreference(r.jid,routing.preference);
+ // Synthesise before any transport attempt. For temporary TTS failure, retain a
+ // complete written response instead of leaving the contact without a reply.
+ let voiceBytes=null;
+ if(routing.voice){
+  try{const speech=await (deps.voice||makeFranciscaVoice)(draft.draft);voiceBytes=speech.bytes;
+   if(!Buffer.isBuffer(voiceBytes)||voiceBytes.length<256)throw Error('INVALID_VOICE');
+  }catch(e){
+   audit('GROQ_VOICE_FALLBACK',r.lead_id,{reason:'SYNTHESIS_FAILED',channel:routing.mode,test:allowTest});
+   routing.mode='TEXT';routing.text=true;routing.voice=false;
   }
+ }
+ // Recheck takeover and newer inbound after potentially slow TTS generation.
+ if(one('SELECT manual_takeover FROM threads WHERE id=?',r.thread_id)?.manual_takeover===1||
+    one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('HANDOFF');
+ if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
+ run("UPDATE groq_auto_events SET state='SENDING' WHERE provider_id=?",providerId);
+ const accepted=[];
+ const mark=(part)=>{acceptPart(providerId,part);accepted.push(part);};
+ try{
+  if(routing.text){
+   if(!reservePart(providerId,'TEXT'))return finish('UNKNOWN','DUPLICATE_TEXT_ATTEMPT');
+   const ack=await (deps.send||waRequest)('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(r.jid)+'/send',
+    {method:'POST',data:{message:{text:draft.draft}}});
+   if(ack.status!==true)return finish('UNKNOWN','TEXT_UNCONFIRMED');
+   mark('TEXT');
+  }
+  if(routing.voice){
+   if(!reservePart(providerId,'VOICE'))return finish(accepted.length?'PARTIAL':'UNKNOWN','DUPLICATE_VOICE_ATTEMPT');
+   const ack=await (deps.sendVoice||sendVoiceMedia)({jid:r.jid,session,bytes:voiceBytes});
+   if(ack?.accepted!==true)return finish(accepted.length?'PARTIAL':'UNKNOWN','VOICE_UNCONFIRMED');
+   mark('VOICE');
+  }
+  const prefix=routing.mode==='VOICE'?'[Áudio Francisca] ':
+    routing.mode==='BOTH'?'[Texto + áudio Francisca] ':'';
   addMessage({threadId:r.thread_id,providerId:'groq:'+providerId,direction:'out',
-    body:replyWithVoice?'[Áudio Francisca] '+draft.draft:draft.draft,status:'sent'});
-  audit('GROQ_AUTOMATED_INBOUND_REPLY',r.lead_id,{inbound:true,testOnly:allowTest,replyLength:draft.draft.length,voice:replyWithVoice});
+    body:prefix+draft.draft,status:'sent'});
+  audit('GROQ_AUTOMATED_INBOUND_REPLY',r.lead_id,{inbound:true,testOnly:allowTest,
+    replyLength:draft.draft.length,deliveryMode:routing.mode,channelReason:routing.reason,parts:accepted});
   return finish('SENT');
- }catch{return finish('UNKNOWN','TRANSPORT_UNCERTAIN');}
+ }catch(e){
+  // If the written part was accepted but a voice send fails, NEVER send it again.
+  const result=accepted.length?'PARTIAL':'UNKNOWN';
+  audit('GROQ_REPLY_DELIVERY_UNCERTAIN',r.lead_id,{deliveryMode:routing.mode,
+    partsAccepted:accepted,partsLedger:partsFor(providerId),result});
+  return finish(result,'TRANSPORT_UNCERTAIN');
+ }
 }
 let workerBusy=false;
 export async function tickSalesAgent(deps={}){
