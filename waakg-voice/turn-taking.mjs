@@ -2,7 +2,7 @@
 // Pure module: no WhatsApp credentials, no audio recordings, no wall-clock timers.
 export class TurnDetector {
  constructor({sampleRate=16000,minVoiceMs=210,stopSilenceMs=480,maxTurnMs=11500,
-  preRollMs=240,bargeVoiceMs=240,baseRms=.010,bargeRms=.024}={}){
+  preRollMs=240,bargeVoiceMs=240,baseRms=.010,bargeRms=.018}={}){
   this.rate=sampleRate;
   this.minVoice=Math.ceil(sampleRate*minVoiceMs/1000);
   this.stopSilence=Math.ceil(sampleRate*stopSilenceMs/1000);
