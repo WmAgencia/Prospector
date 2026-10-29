@@ -1,11 +1,13 @@
 // Deterministic guardrails shared by simulated evaluation and live single-number QA.
 // This is NOT model fine-tuning; Groq drafts remain generative.
 const normalize=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-export const TEST_RECIPIENT='5515981817336';
+// Phone is not hardcoded: require the COMPLETE operator-approved destination.
 export function testModeAllowed(phone){
- return process.env.PROSPECTOR_LIVE_TEST_ENABLED==='true' &&
-  String(process.env.PROSPECTOR_LIVE_TEST_PHONE||'').replace(/\D/g,'')===TEST_RECIPIENT &&
-  String(phone||'').replace(/\D/g,'')===TEST_RECIPIENT;
+ const configured=String(process.env.PROSPECTOR_LIVE_TEST_PHONE||'').replace(/\D/g,'');
+ const normalized=configured.length===11?'55'+configured:configured;
+ return process.env.PROSPECTOR_LIVE_TEST_ENABLED==='true'&&
+  /^55\d{10,11}$/.test(normalized)&&
+  String(phone||'').replace(/\D/g,'')===normalized;
 }
 export function testGreeting(date=new Date()){
  const hour=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',hour:'2-digit',hourCycle:'h23'}).format(date));
