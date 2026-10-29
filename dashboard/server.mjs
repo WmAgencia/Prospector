@@ -38,6 +38,7 @@ import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mj
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
+import {kanbanSnapshot} from './kanban.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -275,6 +276,7 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/whatsapp/disconnect'){try{return respond(res,200,await waDisconnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:500}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
+  if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
   if(req.method==='POST'&&pathname==='/api/prospecting/queue'){const r=enqueueApprovedApproaches(await json(req));if(r.status===202)notify();return respond(res,r.status,r.body);}
   if(req.method==='POST'&&pathname==='/api/prospecting/queue/cancel'){const r=cancelApproachQueue();notify();return respond(res,200,r);}
