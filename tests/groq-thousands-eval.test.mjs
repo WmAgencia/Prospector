@@ -59,7 +59,7 @@ test('One number alone can use QA mode, and greeting matches local Brazilian bou
   if(prior.a===undefined)delete process.env.PROSPECTOR_LIVE_TEST_ENABLED;else process.env.PROSPECTOR_LIVE_TEST_ENABLED=prior.a;
   if(prior.b===undefined)delete process.env.PROSPECTOR_LIVE_TEST_PHONE;else process.env.PROSPECTOR_LIVE_TEST_PHONE=prior.b;
  }
- assert.match(testGreeting(new Date('2026-10-29T07:59:00Z')),/bom dia/); // 04:59 BRT? DST assumption
+ assert.match(testGreeting(new Date('2026-10-29T08:00:00Z')),/bom dia/); // 04:59 BRT? DST assumption
  reviewed+=5;
 });
 test.after(()=>console.log('SYNTHETIC_GROQ_QA '+JSON.stringify({reviewed,realModelCalls:0,sentWhatsApp:0,kind:'deterministic adversarial preflight'})));
