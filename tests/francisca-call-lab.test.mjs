@@ -59,6 +59,33 @@ test('Mutation tool requests from a model are rejected before invoking a tool',a
  assert.equal(actualCalls,0);
  assert.match(result.spoken,/confirme por texto/);
 });
+test('A spoken interruption carries the last question and unfinished reply into Groq context',async()=>{
+ const utterances=['Crie uma página com agenda para clientes',
+  'Não, inclui agendamento automático e lembretes também',
+  'Não, não, muda de assunto, preciso de uma frase de apresentação'];
+ const prompts=[];
+ const replies=['Vou criar uma agenda para clientes.',
+  'Vou unir agenda, agendamento automático e lembretes.',
+  'Claro, posso sugerir uma apresentação curta.'];
+ const s=newFranciscaCallSession(OWNER,{
+  transcribe:async()=>({text:utterances.shift()}),
+  chat:async({messages})=>{prompts.push(messages.map(x=>({...x})));return {choice:{content:replies.shift()}};},
+  synthesize:async()=>({bytes:Buffer.alloc(512),voice:'test'}),
+  convert:async()=>Buffer.alloc(32000)
+ });
+ const first=await s.reply(pcm);
+ assert.match(first.replyId,/^[0-9a-f-]{36}$/);
+ const second=await s.reply(pcm,{interruption:{replyId:first.replyId,playedMs:230,totalMs:1000}});
+ assert.match(second.spoken,/agendamento/);
+ assert(prompts[1].some(m=>m.role==='user'&&/agenda/.test(m.content)));
+ assert(prompts[1].some(m=>m.role==='assistant'&&/agenda/.test(m.content)));
+ assert(prompts[1].some(m=>m.role==='system'&&/CORTADA/.test(m.content)));
+ assert(prompts[1].some(m=>m.role==='system'&&/ADIÇÃO OU CORREÇÃO/.test(m.content)));
+ await s.reply(pcm,{interruption:{replyId:second.replyId,playedMs:100,totalMs:1000}});
+ assert(prompts[2].some(m=>m.role==='system'&&/MUDANÇA EXPLÍCITA/.test(m.content)));
+ assert(prompts[2].some(m=>m.role==='user'&&/agenda/.test(m.content)));
+ s.end();
+});
 test('Malformed, oversized and extremely short audio segments are refused',()=>{
  assert.throws(()=>wavFromPcm16(Buffer.alloc(9)),/INVALID_DURATION/);
  assert.throws(()=>wavFromPcm16(Buffer.alloc(16_000*2*15)),/INVALID_DURATION/);
