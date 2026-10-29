@@ -15,7 +15,7 @@ const {handleSalesTurn}=await import('../dashboard/groq-sales-automation.mjs');
 const {salesOutcomes}=await import('../dashboard/sales-outcomes.mjs');
 const {agentStatus}=await import('../dashboard/groq-sales-automation.mjs');
 const {reviewGroqReply}=await import('../dashboard/groq-live-test-guard.mjs');
-const {salesEnding,SITE_AVERAGE_PRICE_BRL,approvedAveragePriceDraft}=await import('../dashboard/sales-policy.mjs');
+const {salesEnding,isExplicitOptOut,SITE_AVERAGE_PRICE_BRL,approvedAveragePriceDraft}=await import('../dashboard/sales-policy.mjs');
 const {dailyReport}=await import('../dashboard/notifications.mjs');
 const now=new Date('2026-10-29T18:00:00Z').getTime();
 let time=now;
@@ -91,6 +91,22 @@ test('Explicit interest transfers to human and records the result once',async()=
  assert.equal(db.one('SELECT status FROM sales_outcomes WHERE lead_id=?',lead.id).status,'INTERESTED');
  assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='GROQ_HOT_LEAD'",lead.id).n,1);
  assert.equal((await handleSalesTurn('consecom-principal:fullsales-3',{})).state,'SKIP');
+});
+test('Preferring text to audio does not create an opt-out or stop the sale',()=>{
+ assert.equal(salesEnding('Não quero áudio, prefiro mensagem por escrito'),null);
+ assert.equal(isExplicitOptOut('Não quero áudio, prefiro texto'),false);
+ assert.equal(isExplicitOptOut('Não quero receber mensagens'),true);
+ assert.equal(salesEnding('Não quero um site'), 'NO_INTEREST');
+ const l=eligible('Cliente com preferência de texto');
+ const stamp=db.now();
+ db.run("INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)",
+  l.id,l.phone,'SENT',db.id(),stamp);
+ const got=recordInboundTranscript({sessionId:'consecom-principal',jid:l.phone+'@s.whatsapp.net',
+  unique:'consecom-principal:fullsales-4',content:'Não quero áudio, só texto por favor.'});
+ assert.equal(got.status,200);
+ assert.equal(db.one('SELECT stage FROM leads WHERE id=?',l.id).stage,'CONVERSING');
+ assert.equal(db.one('SELECT COUNT(*) n FROM suppressions WHERE phone=?',l.phone).n,0);
+ assert.equal(db.one("SELECT state FROM groq_auto_events WHERE provider_id='consecom-principal:fullsales-4'").state,'PENDING');
 });
 test('Results can be read by UI; daily report counts the new WA-AKG queue',()=>{
  const statuses=salesOutcomes();
