@@ -36,7 +36,8 @@ import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
 import {recordInboundTranscript} from './waakg-bridge.mjs';
 import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inbound.mjs';
-import {voiceStatus,makeFranciscaVoice} from './francisca-tts.mjs';
+import {voiceStatus,makeFranciscaVoice,makeFranciscaCallPcm} from './francisca-tts.mjs';
+import {wavFromPcm16} from './francisca-call-lab.mjs';
 import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
 import {authorizeCallBridge,processCallBridge,callBridgeStatus} from './francisca-call-bridge.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
@@ -166,6 +167,28 @@ if(process.env.RUN_FRANCISCA_AUDIO_SMOKE==='true'){
   }catch(error){console.warn('[francisca-whisper-live-smoke]',JSON.stringify({
    ok:false,errorType:error?.name||'ERROR',code:String(error?.message||'').slice(0,80),whatsappMessagesSent:0}));}
  },8500).unref();
+}
+// Explicitly enabled one-shot phone-quality round trip through real Edge speech
+// synthesis and Whisper, without a live WhatsApp call, contact data, or persistence.
+// Only log durations and success status. Disable the flag after the smoke.
+if(process.env.RUN_FRANCISCA_CALL_PCM_SMOKE==='true'){
+ setTimeout(async()=>{
+  const t0=Date.now();
+  try{
+   const pcm=await makeFranciscaCallPcm('Alô! Aqui é a Francisca. Você está me ouvindo?');
+   const synthMs=Date.now()-t0;
+   const wav=wavFromPcm16(pcm.pcm16k);
+   const recognized=await transcribeAudio({buffer:wav,filename:'francisca-call-smoke.wav'});
+   console.info('[francisca-call-pcm-smoke]',JSON.stringify({
+    ok:/francisca/i.test(recognized.text),synthMs,transcriptionMs:Date.now()-t0-synthMs,
+    durationMs:Math.round(pcm.pcm16k.length/32),format:'pcm_s16le_16000',
+    sentToWhatsApp:false
+   }));
+  }catch(error){console.warn('[francisca-call-pcm-smoke]',JSON.stringify({
+   ok:false,errorType:error?.name||'ERROR',reason:String(error?.message||'').slice(0,85),
+   sentToWhatsApp:false
+  }));}
+ },6000).unref();
 }
 // One explicitly authorized WhatsApp voice test; no restart retry after an
 // ambiguous provider delivery. It is completely separate from prospecting.
