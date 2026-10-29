@@ -1,0 +1,52 @@
+name: Verify real business discovery source
+on:
+  push:
+    branches:
+      - test/overture-sorocaba-20261029
+  workflow_dispatch:
+jobs:
+  real_business_lookup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install minimal query engine
+        run: pip install --disable-pip-version-check duckdb==1.4.1
+      - name: Query Overture Maps official public dataset for real Sorocaba businesses
+        shell: bash
+        run: |
+          python - <<'PY'
+          import duckdb,time,json
+          start=time.monotonic()
+          db=duckdb.connect()
+          db.execute("SET threads=2")
+          db.execute("SET memory_limit='2GB'")
+          db.execute("INSTALL httpfs; LOAD httpfs;")
+          db.execute("SET s3_region='us-west-2'")
+          db.execute("SET s3_url_style='path'")
+          db.execute("CREATE OR REPLACE SECRET anonymous_overture (TYPE S3, PROVIDER config, REGION 'us-west-2')")
+          url='s3://overturemaps-us-west-2/release/2026-10-21.0/theme=places/type=place/*'
+          # Sorocaba - approximate municipal urban bounding box.
+          sql="""
+          SELECT names.primary AS business, taxonomy.primary AS category,
+                 phones[1] AS phone, websites[1] AS website,
+                 bbox.xmin AS longitude, bbox.ymin AS latitude
+          FROM read_parquet(?, hive_partitioning=1)
+          WHERE bbox.xmin > -47.62 AND bbox.xmax < -47.33
+            AND bbox.ymin > -23.64 AND bbox.ymax < -23.35
+            AND (lower(taxonomy.primary) LIKE '%automotiv%'
+                 OR lower(taxonomy.primary) LIKE '%car_repair%'
+                 OR lower(taxonomy.primary) LIKE '%vehicle_repair%'
+                 OR lower(names.primary) LIKE '%oficina mec%'
+                 OR lower(names.primary) LIKE '%auto mec%')
+          LIMIT 25
+          """
+          rows=db.execute(sql,[url]).fetchall()
+          print('LIVE_OVERTURE',json.dumps({'count':len(rows),'elapsed_s':round(time.monotonic()-start,1),'sample':rows[:5]},ensure_ascii=False,default=str))
+          if not rows: raise RuntimeError('No real automobile repair businesses found. FAIL CLOSED.')
+          if not any(name and lng is not None and lat is not None for name,category,phone,website,lng,lat in rows):
+              raise RuntimeError('Found records but no valid geolocated business. FAIL CLOSED.')
+          PY
