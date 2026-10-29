@@ -35,8 +35,8 @@ import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
 import {recordInboundTranscript} from './waakg-bridge.mjs';
-import {processAudioJobs,audioStatus} from './waakg-audio-inbound.mjs';
-import {voiceStatus} from './francisca-tts.mjs';
+import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inbound.mjs';
+import {voiceStatus,makeFranciscaVoice} from './francisca-tts.mjs';
 import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
 import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
@@ -144,6 +144,25 @@ if(['true','remaining'].includes(process.env.RUN_TEST_7336_GROQ_SMOKE)){
   console.info('[test-7336-model-qa]',JSON.stringify({samples:report,confirmedCommitment:check.confirmed,
     passed:report.every(x=>x.modelResponded&&x.safe)&&check.confirmed===true,customerMessagesSent:0}));
  },12000).unref();
+}
+// One-shot opt-in real voice + transcription verification; no customer data,
+// phone numbers, audio file persistence or WhatsApp requests involved.
+if(process.env.RUN_FRANCISCA_AUDIO_SMOKE==='true'){
+ setTimeout(async()=>{
+  try{
+   const sample='Olá! Sou a Francisca, assistente virtual da Consecom Brasil. Como posso ajudar?';
+   const voice=await makeFranciscaVoice(sample);
+   const recognized=await transcribeAudio({buffer:voice.bytes,filename:'francisca.m4a'});
+   const heard=recognized.text.toLowerCase();
+   const ok=voice.bytes.length>400&&heard.includes('francisca')&&heard.includes('consecom');
+   console.info('[francisca-whisper-live-smoke]',JSON.stringify({
+    ok,voice:'pt-BR-FranciscaNeural',audioBytes:voice.bytes.length,
+    transcribedChars:recognized.text.length,mentionsFrancisca:heard.includes('francisca'),
+    mentionsConsecom:heard.includes('consecom'),whatsappMessagesSent:0
+   }));
+  }catch(error){console.warn('[francisca-whisper-live-smoke]',JSON.stringify({
+   ok:false,errorType:error?.name||'ERROR',code:String(error?.message||'').slice(0,80),whatsappMessagesSent:0}));}
+ },8500).unref();
 }
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
