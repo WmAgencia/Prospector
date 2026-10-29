@@ -50,11 +50,12 @@ export async function processCallBridge(a={}){
   return {ok:true,event:'backchannel',rate:16000,pcm16k:voice.pcm16k.toString('base64')};
  }
  if(a.event==='greeting'){
-  // Warm a small fixed set of low-volume listening/thinking phrases without
-  // blocking the greeting or persisting any caller audio.
-  void Promise.allSettled(['aham','pensar','instante','entendi'].map(backchannelClip));
   const greet='Alô! Aqui é a Francisca, da Consecom. Estou ouvindo, pode falar.';
   const voice=await makeFranciscaCallPcm(greet);
+  // Warm a tiny set sequentially AFTER the greeting has been synthesized.
+  // Never delay the first spoken reply or saturate Edge with parallel TTS jobs.
+  void (async()=>{for(const kind of ['pensar','aham','instante']){
+   try{await backchannelClip(kind);}catch{}}})();
   return {ok:true,event:'greeting',spoken:greet,rate:16000,pcm16k:voice.pcm16k.toString('base64')};
  }
  if(typeof a.pcm16k!=='string'||a.pcm16k.length>Math.ceil(MAX_SAMPLES*4/3)+1024)throw Error('CALL_AUDIO_TOO_LARGE');
