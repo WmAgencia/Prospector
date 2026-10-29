@@ -6,7 +6,7 @@ import {aiDraft} from "./ai-groq.mjs";
 import {ownerReceived} from "./groq-owner.mjs";
 import {classifyContact} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
-import {salesEnding} from "./sales-policy.mjs";
+import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
@@ -89,7 +89,7 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  addMessage({threadId:thread.id,providerId:unique,direction:"in",body:content,status:"received"});
  let state="REVIEW";
  const ending=identity.role==='PROSPECT_APPROACHED'?salesEnding(content):null;
- if(/^(?:pare|parar|stop|sair|remover|cancelar|não\s+(?:quero|me\s+contate)|nao\s+(?:quero|me\s+contate))(?:[.! ]|$)/i.test(content)||ending==='OPT_OUT'){
+ if(isExplicitOptOut(content)||ending==='OPT_OUT'){
   stopLead(lead.id,"INBOUND_OPTOUT");state="OPT_OUT";
  }else if(/^(?:não tenho interesse|nao tenho interesse|agora não|agora nao|não é o momento|nao e o momento)(?:[.!\s]|$)/i.test(content)||ending==='NO_INTEREST'){
   stage(lead.id,'NO_INTEREST','INBOUND_SOFT_DECLINE');state='NO_INTEREST';
