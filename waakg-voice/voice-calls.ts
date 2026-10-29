@@ -100,8 +100,8 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   const started=Date.now();
   const thinkingId=active.thinking.start(started);
   // A rare acknowledgment only if processing actually stalls; never overlap an immediate reply.
-  const thinkingTimer=setTimeout(()=>void maybeThink(active,generation,thinkingId),active.thinking.delayMs+30);
-  thinkingTimer.unref?.();
+  const thinkingTimer=event==="turn"?setTimeout(()=>void maybeThink(active,generation,thinkingId),active.thinking.delayMs+30):null;
+  thinkingTimer?.unref?.();
   const interruption=event==="turn"?active.ledger.take():null;
   try{
    const r=await bridge(active,sessionId,event,pcm,interruption?{interruption}:undefined);
@@ -126,7 +126,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   }catch(e){
    if(!active.ended)console.warn("[voice-calls] TURN_ERROR",String((e as Error).message).slice(0,75));
   }finally{
-   clearTimeout(thinkingTimer);
+   if(thinkingTimer)clearTimeout(thinkingTimer);
    active.cuePlaying=false;
    active.playback=false;
    active.replying=false;
@@ -155,7 +155,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
     if(active.playback||!active.cuePlaying)break;
     const buf=pcm.subarray(offset,Math.min(offset+320,pcm.length));
     const frame=new Float32Array(buf.length/2);
-    for(let i=0;i<frame.length;i++)frame[i]=buf.readInt16LE(i*2)/32768*.37;
+    for(let i=0;i<frame.length;i++)frame[i]=buf.readInt16LE(i*2)/32768*.28;
     active.cueDirty=true;
     manager.feedLiveAudio(frame);
     await quiet(10);
@@ -242,8 +242,11 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
    active.backchannel.resetTurn();
    console.info("[voice-calls] USER_TURN_DETECTED",result.durationMs,result.voiceMs);
    if(active.replying){
-    // Keep only the latest completed utterance; avoid CALL_BUSY in the backend.
-    active.pending=pcm;
+    // Preserve multiple additions spoken during one in-flight AI response.
+    // Append a brief silence between user utterances for clean transcription.
+    const separator=Buffer.alloc(16000*2/5); // 200 ms, mono PCM16
+    const combined=active.pending?Buffer.concat([active.pending,separator,pcm]):pcm;
+    active.pending=combined.length<=16000*2*13?combined:combined.subarray(combined.length-16000*2*13);
     active.gate.cancel();
    }else void sendTurn(active,"turn",pcm);
   }else if(result.type==="none"&&mode==="listening"&&!active.ackBusy&&
