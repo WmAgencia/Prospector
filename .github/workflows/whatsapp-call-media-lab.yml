@@ -1,0 +1,45 @@
+name: Experimental WhatsApp call media lab
+on:
+  push:
+    paths:
+      - ".github/workflows/whatsapp-call-media-lab.yml"
+      - "dashboard/francisca-call-lab.mjs"
+      - "tests/francisca-call-lab.test.mjs"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prospector-voice-turns:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/francisca-call-lab.mjs
+      - run: node --test tests/francisca-call-lab.test.mjs
+  experimental-native-media:
+    # This job DOES NOT connect to WhatsApp, load auth secrets, or affect production.
+    # Pinned to a fixed upstream revision. Binary-native dependencies execute only on this throwaway runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out experimental community call harness
+        uses: actions/checkout@v4
+        with:
+          repository: paulohsilvestre/wa-node-call-ba
+          ref: f9db8e52f8c0d915f1a1c29f009506e7ec2bf02c
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install pinned harness dependencies
+        run: npm ci
+      - name: Check TypeScript call stack
+        run: npm run typecheck
+      - name: Exercise native MLow codec and WebRTC without WhatsApp login
+        run: npx tsx smoke.ts

@@ -38,6 +38,7 @@ import {recordInboundTranscript} from './waakg-bridge.mjs';
 import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inbound.mjs';
 import {voiceStatus,makeFranciscaVoice} from './francisca-tts.mjs';
 import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
+import {authorizeCallBridge,processCallBridge,callBridgeStatus} from './francisca-call-bridge.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
 import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
@@ -356,6 +357,12 @@ async function handler(req,res){
    try{const output=await receiveWebhook(req);return respond(res,output.status,output.body);}
    catch(err){return respond(res,400,{error:'Webhook inválido'});}
   }
+  if(url.pathname==='/api/internal/waakg/call-turn'){
+   if(req.method!=='POST')return respond(res,405,{error:'Method not allowed'});
+   if(!authorizeCallBridge(req.headers['x-wa-call-bridge-secret']))return respond(res,401,{error:'Unauthorized'});
+   try{return respond(res,200,await processCallBridge(await json(req)));}
+   catch(e){console.warn('[voice-call-bridge]',String(e?.message||e).slice(0,70));return respond(res,422,{error:String(e?.message||e).slice(0,100)});}
+  }
   if(!protectedAccess(req,res,url.pathname))return;
   const pathname=decodeURIComponent(url.pathname);
   if(pathname==='/api/events'){
@@ -422,6 +429,7 @@ async function handler(req,res){
    // Health-only output; never reveal provider text, credentials, or customer data.
    return respond(res,result.ok?200:result.httpStatus||502,{ok:result.ok,provider:result.provider,model:result.model||null,code:result.code||null,autoSend:false});
   }
+  if(req.method==='GET'&&pathname==='/api/ai/call-bridge-status')return respond(res,200,callBridgeStatus());
   if(req.method==='GET'&&pathname==='/api/ai/audio-status')
    return respond(res,200,{transcription:audioStatus(),francisca:voiceStatus(),manualVoice:true,autoVoiceReplies:process.env.AUDIO_RESPONSE_ENABLED==='true'});
   if(req.method==='POST'&&pathname==='/api/ai/voice-preview'){
