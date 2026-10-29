@@ -25,9 +25,9 @@ function createHarness(){
    return null;
   }
  };
- const leads=[{id:'1',business:'Oficina Real de Itu',city:'Itu',segment:'Oficina',source:'osm',stage:'DISCOVERED'}];
+ const leads=[{id:'11111111-1111-4111-8111-111111111111',business:'Oficina Real de Itu',city:'Itu',segment:'Oficina',source:'osm',stage:'DISCOVERED',phone:'5515999999999'}];
  const state={leads,threads:[],settings:{paused:true,discovery_auto_enabled:false},stats:{found:1}};
- const base={total:1,uncontacted:1,contacted:0,returned:1,results:[{...leads[0],contacted:false}],partial:false};
+ const base={total:1,uncontacted:1,contacted:0,returned:1,results:[{...leads[0],contacted:false,selectable:true,maps_url:'https://www.google.com/maps/search/?api=1&query=Oficina',instagram_url:'https://www.instagram.com/oficina.teste/'}],partial:false};
  const fetch=async (url,opts={})=>{
   const route=String(url);fetches.push({route,method:opts.method||'GET'});
   let data={};
@@ -36,6 +36,7 @@ function createHarness(){
   else if(route==='/api/maps/status')data={jobs:[]};
   else if(route==='/api/whatsapp/status')data={ok:true,connected:false,status:'DISCONNECTED'};
   else if(route==='/api/prospecting/search')data={ok:true,source:'OpenStreetMap',added:2};
+  else if(route==='/api/prospecting/approach-preview')data={ok:true,selected:1,greeting:'boa tarde',message:'Olá, boa tarde, como vai?',ready:0,items:[{id:leads[0].id,business:leads[0].business,phoneSuffix:'9999',status:'NEEDS_PERMISSION',authorized:false}]};
   else if(route==='/api/maps/search')data={id:'sample-id',status:'PENDING',niche:'oficinas mecânicas',city:'Sorocaba'};
   else if(route==='/api/ai/status')data={configured:false};
   else return {ok:false,status:404,json:async()=>({error:'unknown route '+route})};
@@ -59,7 +60,7 @@ test('Prospecção starts with no hidden city/niche filter and displays existing
  assert.match(h.viewEl.innerHTML,/Oficina Real de Itu/);
  assert.match(h.viewEl.innerHTML,/Oportunidades cadastradas/);
  assert.match(h.viewEl.innerHTML,/Google Maps \(Gosom\)/);
- assert.ok(h.fetches.some(f=>f.route==='/api/prospecting?niche=&city=&status=all'),'default must show all saved leads');
+ assert.ok(h.fetches.some(f=>f.route==='/api/prospecting?niche=&city=&status=uncontacted'),'default must show only unapproached leads');
  assert.ok(!h.fetches.some(f=>f.method==='POST'),'opening the tab must not trigger provider calls or messaging');
  assert.match(h.root.innerHTML,/data-tab="prospects"/);
  assert.match(h.root.innerHTML,/data-tab="connections"/);
@@ -85,7 +86,7 @@ test('Navigation preserves safety and accommodates mobile, form focus and reduce
  assert.match(css,/focus-visible/);
  assert.match(app,/document\.hidden\|\|busy\|\|q\("input:focus,textarea:focus,select:focus"\)/);
  assert.match(app,/confirm\("Importar as empresas desta pesquisa/);
- assert.match(app,/prospectFilter="all",niche="",city=""/);
+ assert.match(app,/prospectFilter="uncontacted"/);
  assert.match(h.root.innerHTML,/^$/);
 });
 
@@ -103,4 +104,22 @@ test('Every workspace section renders without a runtime exception',async()=>{
   vm.runInContext('view='+JSON.stringify(name)+';render()',h.context);
   assert.match(h.viewEl.innerHTML,new RegExp(content),'failed to render '+name);
  }
+});
+
+test('Selectable leads show Maps and Instagram; explicit selection only creates previews',async()=>{
+ const h=createHarness();
+ await vm.runInContext('reload()',h.context);
+ assert.match(h.viewEl.innerHTML,/data-select-lead=/);
+ assert.match(h.viewEl.innerHTML,/Maps ↗/);
+ assert.match(h.viewEl.innerHTML,/Instagram ↗/);
+ const hit={dataset:{action:'select-all'},closest:()=>null};
+ // Top-level click delegation looks at the closest matching action control.
+ await h.listeners.click({target:{closest:()=>hit}});
+ assert.match(h.viewEl.innerHTML,/1 selecionadas/);
+ await h.listeners.click({target:{closest:()=>({dataset:{action:'approach-selected'}})}});
+ assert.ok(h.fetches.some(x=>x.route==='/api/prospecting/approach-preview'&&x.method==='POST'));
+ assert.ok(!h.fetches.some(x=>x.route.includes('send')||x.route.includes('reply')),'selection must never send WhatsApp messages');
+ assert.match(h.viewEl.innerHTML,/Olá, boa tarde, como vai/);
+ await h.listeners.click({target:{closest:()=>({dataset:{action:'clear-selection'}})}});
+ assert.match(h.viewEl.innerHTML,/0 selecionadas/);
 });
