@@ -60,8 +60,8 @@ export class ThinkingCuePolicy{
   this.turnId++;this.startedAt=now;this.claimed=false;
   return this.turnId;
  }
- due({turnId,now=Date.now(),replying=false,playing=false,ackBusy=false,ended=false}={}){
-  return turnId===this.turnId&&!this.claimed&&replying&&!playing&&!ackBusy&&!ended&&
+ due({turnId,now=Date.now(),replying=false,playing=false,ackBusy=false,ended=false,userSpeaking=false}={}){
+  return turnId===this.turnId&&!this.claimed&&replying&&!playing&&!ackBusy&&!ended&&!userSpeaking&&
    now-this.startedAt>=this.delayMs&&now-this.lastAt>=this.cooldownMs;
  }
  claim(now=Date.now()){
