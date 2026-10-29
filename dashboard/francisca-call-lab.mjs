@@ -1,7 +1,7 @@
 // Experimental voice-turn engine. No WhatsApp call transport or public HTTP route is installed.
-// Intended for an in-process WA-AKG call-media adapter after its VoIP stack is tested.
-// Fail closed: only exact owner JID on the selected session; read-only tools; no recordings.
-// DO NOT advertise this module as working WhatsApp call reception.
+// Audio turn engine. Called by the authenticated WA-AKG bridge; no recordings.
+// Exact owner JID and selected session are mandatory, including in owner QA sandbox.
+// QA sandbox may speak, but cannot invoke owner tools.
 import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -42,9 +42,10 @@ export function verifyVoiceOwner({jid,sessionId}={}){
  if(!expected||jid!==expected+'@s.whatsapp.net'||sessionId!==selectedWaSession())
   throw Error('VOICE_CALL_UNVERIFIED_OWNER');
  const role=classifyContact({jid,sessionId});
- if(role.role!=='OWNER'||role.ownerTools!==true||role.testSandbox)
+ if(role.role!=='OWNER'||role.authorized!==true)
   throw Error('VOICE_CALL_UNVERIFIED_OWNER');
- return {jid,sessionId};
+ // Sandbox disables privileged owner tools; it must not silence the owner's voice.
+ return {jid,sessionId,ownerTools:role.ownerTools===true};
 }
 export async function convertM4aToPcm16(bytes,{exec=execFile}={}){
  if(!Buffer.isBuffer(bytes)||bytes.length<256||bytes.length>5*1024*1024)
@@ -76,24 +77,26 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const recognized=await (deps.transcribe||transcribeAudio)({buffer:wav,filename:'live-turn.wav'});
     const heard=String(recognized.text||'').trim().slice(0,650);
     if(heard.length<2)throw Error('CALL_TRANSCRIPTION_EMPTY');
+    const verified=verifyVoiceOwner({jid,sessionId});
+    const availableTools=verified.ownerTools?allowedTools:[];
     const messages=[
      {role:'system',content:'Você é Francisca, atendente virtual da Consecom, em uma chamada de teste exclusivamente com o proprietário. Fale português brasileiro natural e conciso. Use somente ferramentas de leitura do Prospector. NUNCA ative campanhas, envie mensagens, faça alterações ou execute comandos por voz. Caso peçam uma ação, diga que requer confirmação posterior por texto. Responda com no máximo 300 caracteres. Nunca invente status do sistema.'},
      ...history,{role:'user',content:heard}
     ];
     const chat=deps.chat||groqChat,readTool=deps.readTool||runAgentTool;
-    let result=await chat({task:'conversation',messages,tools:allowedTools,maxTokens:200});
+    let result=await chat({task:'conversation',messages,tools:availableTools,maxTokens:200});
     for(let n=0;n<2&&result.choice?.tool_calls?.length;n++){
      const calls=result.choice.tool_calls.slice(0,2);
      messages.push(result.choice);
      for(const call of calls){
       let output;
       try{
-       if(!READ_ONLY.has(call.function?.name))throw Error('READ_ONLY_CALL');
+       if(!availableTools.some(x=>x.function.name===call.function?.name))throw Error('READ_ONLY_CALL');
        output=await readTool(call.function.name,JSON.parse(call.function.arguments||'{}'),{jid,sessionId});
       }catch(e){output={error:String(e.message).slice(0,90)};}
       messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(output).slice(0,3000)});
      }
-     result=await chat({task:'conversation',messages,tools:allowedTools,maxTokens:200});
+     result=await chat({task:'conversation',messages,tools:availableTools,maxTokens:200});
     }
     let spoken=String(result.choice?.content||'').trim().slice(0,600);
     if(spoken.length<2)spoken='Não consegui entender. Pode repetir, por favor?';
