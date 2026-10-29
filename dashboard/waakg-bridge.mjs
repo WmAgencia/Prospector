@@ -1,9 +1,10 @@
 // WA-AKG webhook receiver and consent-gated WhatsApp transport.
 // No credentials here. No automatic message sending. WAL-backed idempotency.
 import crypto from "node:crypto";
-import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,audit} from "./db.mjs";
+import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
 import {ownerReceived} from "./groq-owner.mjs";
+import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
@@ -63,6 +64,8 @@ export async function receiveWebhook(req){
  let state="REVIEW";
  if(/^(?:pare|parar|stop|sair|remover|cancelar|não\s+(?:quero|me\s+contate)|nao\s+(?:quero|me\s+contate))(?:[.! ]|$)/i.test(content)){
   stopLead(lead.id,"INBOUND_OPTOUT");state="OPT_OUT";
+ }else if(/^(?:não tenho interesse|nao tenho interesse|agora não|agora nao|não é o momento|nao e o momento)(?:[.!\s]|$)/i.test(content)){
+  stage(lead.id,'NO_INTEREST','INBOUND_SOFT_DECLINE');
  }else if(/\b(humano|atendente|pessoa de verdade|falar com algu[eé]m)\b/i.test(content)){
   run("UPDATE threads SET manual_takeover=1 WHERE id=?",thread.id);state="HUMAN";
  }
@@ -70,6 +73,7 @@ export async function receiveWebhook(req){
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid});
  ownerReceived({jid,sessionId:sid,text:content,providerId:unique});
+ if(state==="REVIEW")queueInboundTurn({providerId:unique,jid});
  return {status:200,body:{accepted:true,processed:true}};
 }
 export async function draftInbox(input){
@@ -143,6 +147,8 @@ export async function sendChatMessage(input={}){
   if(result.status!==true)return {status:502,body:{error:"Envio não confirmado. Não tente repetir automaticamente."}};
   run("UPDATE waakg_operator_outbox SET state='SENT',updated_at=? WHERE id=?",now(),requestId);
   addMessage({threadId,providerId:"operator:"+requestId,direction:"out",body:text,status:"sent"});
+  stage(thread.lead_id,"CONVERSING","OPERATOR_CHAT_MESSAGE");
+  run("UPDATE threads SET manual_takeover=1 WHERE id=?",threadId);
   audit("WA_AKG_CHAT_MESSAGE_SENT",thread.lead_id,{thread:threadId,manual:true});
   return {status:200,body:{ok:true,delivery:"ACCEPTED",message:"Enviado ao WA-AKG"}};
  }catch(e){return {status:502,body:{error:"Falha ou resultado incerto no WhatsApp. Confira a conversa antes de tentar novamente.",delivery:"UNKNOWN"}};}

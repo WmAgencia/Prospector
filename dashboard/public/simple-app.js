@@ -5,7 +5,22 @@ const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short"
 const tabs={overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",settings:"Configurações"};
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
 let view=["overview","conversations","prospects","connections","settings"].includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
-let state=null,wa=null,ai=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,mapsJob=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false;
+let state=null,wa=null,ai=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false;
+const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
+function newProspectSession(){
+ const token=crypto.randomUUID();
+ try{if(typeof sessionStorage!=="undefined"){sessionStorage.setItem("prospect-session",token);sessionStorage.setItem("prospect-session-day",prospectDay());}}catch{}
+ return token;
+}
+function savedProspectSession(){
+ try{
+  const session=typeof sessionStorage!=="undefined"?sessionStorage.getItem("prospect-session"):"";
+  const day=typeof sessionStorage!=="undefined"?sessionStorage.getItem("prospect-session-day"):"";
+  if(day===prospectDay()&&/^[a-f0-9-]{36}$/i.test(session||""))return session;
+ }catch{}
+ return newProspectSession();
+}
+let prospectSession=savedProspectSession();
 const root=q("#app");
 function n(msg){notice=String(msg||"");const el=q("#notice");if(el){el.textContent=notice;el.classList.toggle("hidden",!notice);el.setAttribute("role",notice?"status":"none")}}
 async function api(path,opts={}){
@@ -15,7 +30,7 @@ async function api(path,opts={}){
  return data;
 }
 const post=(path,data)=>api(path,{method:"POST",body:JSON.stringify(data||{})});
-function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections"){refreshWa();refreshGroq();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="settings")refreshAI();}
+function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections"){refreshWa();refreshGroq();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="settings")refreshAI();}
 
 function glyph(key){
  const paths={
@@ -43,14 +58,29 @@ function cards(values){
  return '<div class="stats">'+values.map((x,i)=>'<div class="metric"><div class="metric-top"><span class="metric-label">'+esc(x[0])+'</span><span class="metric-index">0'+(i+1)+'</span></div><div class="metric-value">'+esc(x[1])+'</div><div class="metric-help">'+esc(x[2]||'')+'</div></div>').join('')+'</div>';
 }
 function overview(){
- const stats=state?.stats||{},allLeads=state?.leads||[],ths=state?.threads||[];
- const uncontacted=allLeads.filter(x=>x.stage==='DISCOVERED').length;
- const paused=state?.settings?.paused!==false;
- return '<section class="welcome"><div class="welcome-copy"><span class="kicker">CENTRAL DE OPERAÇÕES <span class="kicker-line"></span> AO VIVO</span><h2>Suas oportunidades,<br><em>sob controle.</em></h2><p>Encontre empresas, organize seus contatos e acompanhe conversas. Uma visão clara da sua operação comercial.</p><div class="actions"><button class="primary" data-tab="prospects">Explorar empresas '+glyph('arrow')+'</button><button class="secondary" data-tab="conversations">Ver conversas</button></div></div><div class="welcome-art"><div class="hero-grid"></div><div class="hero-graphic"><span class="hero-graphic-caption">OPERAÇÃO</span><span class="hero-graphic-number">'+esc(stats.found??allLeads.length)+'</span><span class="hero-graphic-label">empresas na base</span><div class="hero-graphic-track"><span></span></div><span class="hero-graphic-bottom">PROSPECTOR <b>↗</b></span></div></div></section>'+
- '<div class="section-heading"><div><span class="kicker">VISÃO GERAL</span><h2>Indicadores da operação</h2></div><span class="section-aside">Dados da sua base</span></div>'+
- cards([['Empresas encontradas',stats.found??allLeads.length,'Registros cadastrados'],['Em descoberta',uncontacted,'Ainda não abordadas'],['Conversas',ths.length,'Histórico no painel'],['Operação',paused?'Pausada':'Ativa',paused?'Sem envios automáticos':'Conforme as permissões']])+
- '<div class="overview-grid"><section class="panel activity-panel"><div class="heading"><div><span class="kicker">MOVIMENTAÇÃO</span><h3>Empresas recentes</h3><p>Acompanhe as últimas oportunidades registradas</p></div><button class="link" data-tab="prospects">Ver todas '+glyph('arrow')+'</button></div><div class="activity">'+(allLeads.length?allLeads.slice(0,6).map(x=>'<div class="activity-line"><span class="avatar">'+esc((x.business||'?')[0])+'</span><span><strong>'+esc(x.business)+'</strong><small>'+esc(x.city||'Local não informado')+' · '+esc(x.segment||'Sem segmento')+'</small></span><span class="tag">'+esc(x.stage==='DISCOVERED'?'Na base':'Em andamento')+'</span></div>').join(''):'<div class="empty"><span class="empty-mark">'+glyph('prospects')+'</span><strong>Pronto para encontrar oportunidades?</strong><p>Vá até Prospecção e faça sua primeira pesquisa.</p><button class="secondary compact" data-tab="prospects">Abrir Prospecção</button></div>')+'</div></section>'+
- '<section class="panel health-panel"><div class="heading"><div><span class="kicker">PAINEL DE CONTROLE</span><h3>Saúde da operação</h3><p>Serviços essenciais</p></div></div><div class="health-row"><span><i class="health-dot ok"></i> Plataforma</span><strong>Operacional</strong></div><div class="health-row"><span><i class="health-dot '+(wa?.connected?'ok':'warn')+'"></i> WhatsApp</span><strong>'+(wa?.connected?'Conectado':'Verificar conexão')+'</strong></div><div class="health-row"><span><i class="health-dot '+(paused?'warn':'ok')+'"></i> Campanhas</span><strong>'+(paused?'Pausadas':'Habilitadas')+'</strong></div><div class="health-note">A busca de empresas e as campanhas são independentes. Nenhum contato recebe mensagens apenas por ter sido encontrado.</div><button class="secondary block" data-tab="connections">Ver integrações '+glyph('arrow')+'</button></section></div>';
+ const k=kanban||{columns:{approaching:[],no_interest:[],interested:[],conversing:[]},counts:{}};
+ const definition=[
+  ['approaching','Abordando','Mensagens enviadas, aguardando retorno'],
+  ['no_interest','Sem interesse','Recusas e contatos não convertidos'],
+  ['interested','Interessados','Interesse confirmado e aviso privado'],
+  ['conversing','Conversando','Atendimento assumido por você']
+ ];
+ const total=Object.values(k.counts||{}).reduce((x,y)=>x+Number(y||0),0);
+ const stat=(label,value,description)=>'<div class="kanban-metric"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong><small>'+esc(description)+'</small></div>';
+ const item=(lead,col)=>{
+  const due=lead.blocked?'Não contatar':lead.nextEligibleAt?(lead.eligibleAgain?'Recontato liberado':'Retorna '+new Date(lead.nextEligibleAt).toLocaleDateString('pt-BR')):'';
+  const note=col==='approaching'?(lead.noResponse?'Aguardando resposta':'Abordagem iniciada'):col==='no_interest'?(due||'Sem interesse'):col==='interested'?'Interesse confirmado':'Em atendimento';
+  return '<div class="kanban-lead"><div class="kanban-lead-top"><span class="kanban-lead-avatar">'+esc((lead.business||'?')[0])+'</span><div><strong title="'+esc(lead.business)+'">'+esc(lead.business)+'</strong><small>'+esc(lead.city||lead.phone||'Empresa')+'</small></div></div><p>'+esc(note)+'</p>'+
+  (lead.phone?'<button class="kanban-message" type="button" data-kanban-chat="'+esc(lead.phone)+'">'+(col==='interested'?'Enviar mensagem ↗':'Abrir conversa ↗')+'</button>':'')+'</div>';
+ };
+ return '<div class="kanban-dashboard" id="overview-board">'+
+  '<div class="kanban-overview-head"><div><span class="kicker">PIPELINE COMERCIAL</span><h2>Visão da operação</h2><p>Todos os contatos e oportunidades em uma única tela.</p></div><button class="secondary compact" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div>'+
+  '<div class="kanban-metrics">'+stat('Empresas acompanhadas',total,'Com atividade registrada')+stat('Abordando',k.counts?.approaching||0,'Em contato')+stat('Interessados',k.counts?.interested||0,'Prioridade comercial')+stat('Conversando',k.counts?.conversing||0,'Atendimento humano')+'</div>'+
+  '<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>Os cartões rolam dentro das colunas, sem rolagem da página.</small></div>'+
+  '<div class="kanban-columns" aria-label="Kanban comercial">'+definition.map(([key,label,description])=>
+   '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items">'+
+   ((k.columns?.[key]||[]).length?k.columns[key].map(x=>item(x,key)).join(''):'<div class="kanban-empty">Nenhuma empresa nesta etapa.</div>')+'</div></section>').join('')+
+  '</div></div>';
 }
 
 function conversations(){
@@ -182,7 +212,7 @@ function startMapsPolling(){
 async function loadProspects(){
  prospectLoading=true;
  try{
-  const params=new URLSearchParams({niche,city,status:prospectFilter});
+  const params=new URLSearchParams({niche,city,status:prospectFilter,session:prospectSession});
   const [base,queue]=await Promise.all([api("/api/prospecting?"+params.toString()),api("/api/prospecting/queue").catch(()=>null)]);
   prospects=base;
   approachQueue=queue;
@@ -200,19 +230,32 @@ async function loadMessages(id){
   if(!id.startsWith("wa:"))await post("/api/threads/"+encodeURIComponent(id)+"/read",{}).catch(()=>{});
  }catch(e){const feed=q("#messages");if(feed)feed.textContent="Não foi possível carregar a conversa.";}
 }
+async function loadKanban(){try{kanban=await api('/api/kanban');if(view==='overview')render();}catch(e){n('Não foi possível carregar o Kanban: '+e.message);}}
 async function reload(){
  try{
   state=await api("/api/state");lastRefresh=Date.now();
-  if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else render();
+  if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else render();
  }catch(e){if(!state)root.innerHTML='<main class="load-error"><h2>Não foi possível abrir o Prospector</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';else n(e.message);}
 }
 document.addEventListener("click",async ev=>{
- const el=ev.target.closest("[data-tab],[data-action],[data-thread],[data-filter]");if(!el)return;
+ const el=ev.target.closest("[data-tab],[data-action],[data-thread],[data-filter],[data-kanban-chat]");if(!el)return;
+ if(el.dataset.kanbanChat){
+  const number=String(el.dataset.kanbanChat||'').replace(/\D/g,'');
+  if(!/^55\d{10,11}$/.test(number)){n('Contato sem número válido');return;}
+  if(wa?.connected){
+   await loadChats();
+   const matching=remoteChats.find(t=>t.phone===number);
+   if(matching){selectedThread=matching.id;messages=[];nav('conversations');return;}
+  }
+  window.open('https://wa.me/'+number,'_blank','noopener,noreferrer');
+  return;
+ }
  if(el.dataset.tab){q("#side")?.classList.remove("mobile-open");q(".scrim")?.classList.remove("visible");nav(el.dataset.tab);return;}
  if(el.dataset.thread){selectedThread=el.dataset.thread;messages=[];groqSalesProfile=null;interactiveState=null;render();return;}
  if(el.dataset.filter){prospectFilter=el.dataset.filter;selectedLeadIds.clear();approachPreview=null;await loadProspects();return;}
  const action=el.dataset.action;
  try{
+  if(action==="refresh-kanban"){await loadKanban();n('Kanban atualizado.');return;}
   if(action==="suggest-groq"){
    if(!selectedThread||!messages.length){n("Abra uma conversa com mensagem recebida para gerar uma sugestão.");return;}
    const recent=messages.slice(-10);
@@ -274,7 +317,7 @@ document.addEventListener("click",async ev=>{
   if(action==="reset-filters"){niche="";city="";prospectFilter="uncontacted";selectedLeadIds.clear();approachPreview=null;prospectError="";await loadProspects();return;}
   if(action==="filter-base"){niche=q("#niche")?.value.trim()||"";city=q("#city")?.value.trim()||"";prospectFilter="uncontacted";selectedLeadIds.clear();approachPreview=null;await loadProspects();return;}
   if(action==="search-again"){q("#search-form")?.requestSubmit();return;}
-  if(action==="maps-search"){const a=q("#niche")?.value.trim()||niche,b=q("#city")?.value.trim()||city;if(!a||!b){n("Preencha nicho e cidade antes de pesquisar no Google Maps.");q("#niche")?.focus();return;}niche=a;city=b;busy=true;prospectError="";render();try{mapsJob=await post("/api/maps/search",{niche,city});n("Pesquisa enviada ao Google Maps. O processamento pode levar alguns minutos.");startMapsPolling();}catch(e){prospectError=e.message;n("Google Maps: "+e.message);}finally{busy=false;if(view==="prospects"){await loadProspects();}}return;}
+  if(action==="maps-search"){const a=q("#niche")?.value.trim()||niche,b=q("#city")?.value.trim()||city;if(!a||!b){n("Preencha nicho e cidade antes de pesquisar no Google Maps.");q("#niche")?.focus();return;}niche=a;city=b;busy=true;prospectError="";prospectSession=newProspectSession();render();try{mapsJob=await post("/api/maps/search",{niche,city});n("Pesquisa enviada ao Google Maps. O processamento pode levar alguns minutos.");startMapsPolling();}catch(e){prospectError=e.message;n("Google Maps: "+e.message);}finally{busy=false;if(view==="prospects"){await loadProspects();}}return;}
   if(action==="maps-import"){if(!mapsJob?.id)return;if(!confirm("Importar as empresas desta pesquisa para sua base, sem autorizar mensagens automáticas?"))return;const out=await post("/api/maps/import",{id:mapsJob.id});mapsJob={...mapsJob,status:"IMPORTED",added:out.added};n(out.added+" empresas novas importadas e deduplicadas.");await loadProspects();return;}
   if(action==="maps-poll"){await updateMapsJob();return;}
   if(action==="import-csv"){await importMapsCSV();return;}

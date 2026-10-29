@@ -2,6 +2,7 @@
 import {one,all,run,id,now,addLead,phone} from "./db.mjs";
 import {recordOrigin} from "./discovery.mjs";
 import {resolveLocation} from "./osm-discovery.mjs";
+import {recontactDecision} from "./prospecting-recontact.mjs";
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 const map=[
  [/oficina|mecanica|automotiva|auto center|auto.?eletric/,["shop","car_repair"]],
@@ -48,12 +49,14 @@ export function prospectingList({niche="",city="",status="uncontacted",limit=500
   return loc&&nicheOK;
  });
  const contacted=matches.filter(l=>l.previously_contacted||l.sent_message||l.stage!=="DISCOVERED"||l.suppressed);
- const uncontacted=matches.filter(l=>!l.previously_contacted&&!l.sent_message&&!l.suppressed&&l.stage==="DISCOVERED");
+ const uncontacted=matches.filter(l=>recontactDecision(l).eligible);
  const selected=status==="contacted"?contacted:status==="all"?matches:uncontacted;
- const max=Math.min(Math.max(1,Number(limit)||500),500);
+ const max=Math.min(Math.max(1,Number(limit)||500),6000);
  return {total:matches.length,uncontacted:uncontacted.length,contacted:contacted.length,returned:Math.min(selected.length,max),results:selected.slice(0,max).map(({previously_contacted,sent_message,suppressed,notes,...x})=>({
   ...x,contacted:!!(previously_contacted||sent_message||suppressed||x.stage!=="DISCOVERED"),
-  selectable:!!x.phone&&!suppressed&&!previously_contacted&&!sent_message&&x.stage==="DISCOVERED",
+  selectable:!!x.phone&&recontactDecision(x).eligible,
+  recontactEligible:recontactDecision(x).eligible&&!recontactDecision(x).fresh,
+  nextEligibleAt:recontactDecision(x).eligibleAt||null,
   // Links open for operator review. Google Maps search is used when the source
   // does not provide a verified place URL; no fake place ID is invented.
   maps_url:(String(notes||"").match(/https:\/\/(?:www\.)?google\.[a-z.]+\/maps[^\s|]*/i)||[])[0]||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(x.business+' '+(x.city||'')),

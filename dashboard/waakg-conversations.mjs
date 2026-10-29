@@ -1,6 +1,6 @@
 // Remote WA-AKG chat synchronization and manual replies.
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
-import {db,one,run,now,phone,addLead,getThread,addMessage,audit} from "./db.mjs";
+import {db,one,run,now,phone,addLead,getThread,addMessage,audit,stage} from "./db.mjs";
 db.exec("CREATE TABLE IF NOT EXISTS waakg_remote_outbox(id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL)");
 const jidAllowed=j=>/^\d{10,15}@s\.whatsapp\.net$/.test(j);
 function currentId(){const s=selectedWaSession();if(!s)throw Error("Conecte seu WhatsApp em Conexões");return encodeURIComponent(s);}
@@ -39,6 +39,8 @@ export async function sendRemoteReply(input={}){
   const lead=addLead({business:"Contato WhatsApp "+normalized.slice(-4),phone:normalized,source:"WHATSAPP_INBOUND",contact_permission:false}).lead;
   const thread=getThread(lead.id,jid);
   addMessage({threadId:thread.id,providerId:"remote-operator:"+requestId,direction:"out",body:text,status:"sent"});
+  stage(lead.id,"CONVERSING","OPERATOR_REMOTE_REPLY");
+  run("UPDATE threads SET manual_takeover=1 WHERE id=?",thread.id);
   audit("WA_AKG_OPERATOR_REPLY",lead.id,{manual:true});
   return {status:200,body:{ok:true,delivery:"ACCEPTED"}};
  }catch{return {status:502,body:{error:"Envio incerto; confira o WhatsApp antes de tentar novamente",delivery:"UNKNOWN"}};}

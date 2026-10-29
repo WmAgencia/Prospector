@@ -49,11 +49,11 @@ test('funil: áudio após resposta e 60 segundos; vídeo após áudio',async()=>
  await runtime.incoming({key:{remoteJid:'5515999776655@s.whatsapp.net',id:'reply-3'},message:{conversation:'quero saber mais'}});
  assert.equal(db.one("SELECT COUNT(*) c FROM owner_notices WHERE lead_id=?",lead.id).c,1);
 });
-test('histórico de 90 dias e promoção não expirada',()=>{
+test('histórico de três meses de calendário e promoção não expirada',()=>{
  const start='2026-07-01T12:00:00.000Z',end=cadence.nextEligible(start);
- assert.equal(Date.parse(end)-Date.parse(start),90*86400000);
+ assert.equal(end,'2026-10-01T12:00:00.000Z');
  assert.equal(cadence.allowedToRecontact({phone:'5515999887766',contact_permission:1,stage:'REPLIED',next_contact_at:end},Date.parse(end)),true);
- assert.equal(cadence.allowedToRecontact({phone:'5515999887766',contact_permission:1,stage:'NO_INTEREST',next_contact_at:end},Date.parse(end)),false);
+ assert.equal(cadence.allowedToRecontact({phone:'5515999887766',contact_permission:1,stage:'NO_INTEREST',next_contact_at:end},Date.parse(end)),true);
  assert.equal(offer.isOfferActive('2026-10-18',Date.parse('2026-10-18T20:00:00-03:00')),true);
  assert.equal(offer.isOfferActive('2026-10-18',Date.parse('2026-10-19T00:00:00-03:00')),false);
 });

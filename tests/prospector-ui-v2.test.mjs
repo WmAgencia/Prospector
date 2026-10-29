@@ -34,6 +34,11 @@ function createHarness(){
   const route=String(url);fetches.push({route,method:opts.method||'GET'});
   let data={};
   if(route==='/api/state')data=state;
+  else if(route==='/api/kanban')data={counts:{approaching:1,no_interest:1,interested:1,conversing:1},columns:{
+    approaching:[{id:'test1',business:'Oficina Em Abordagem',phone:'5515999888877',city:'Sorocaba',noResponse:true}],
+    no_interest:[{id:'test2',business:'Oficina Sem Interesse',phone:'5515999888876',city:'Sorocaba',blocked:false,nextEligibleAt:'2027-02-01T00:00:00Z'}],
+    interested:[{id:'test3',business:'Oficina Interessada',phone:'5515999888875',city:'Sorocaba'}],
+    conversing:[{id:'test4',business:'Oficina Em Conversa',phone:'5515999888874',city:'Sorocaba'}]}};
   else if(route.startsWith('/api/prospecting?'))data=base;
   else if(route==='/api/maps/status')data={jobs:[]};
   else if(route==='/api/prospecting/queue')data={active:false,waiting:0,intervalSeconds:90};
@@ -65,7 +70,7 @@ test('Prospecção starts with no hidden city/niche filter and displays existing
  assert.match(h.viewEl.innerHTML,/Oficina Real de Itu/);
  assert.match(h.viewEl.innerHTML,/Empresas não abordadas/);
  assert.match(h.viewEl.innerHTML,/Pesquisar empresas/);
- assert.ok(h.fetches.some(f=>f.route==='/api/prospecting?niche=&city=&status=uncontacted'),'default must show only unapproached leads');
+ assert.ok(h.fetches.some(f=>f.route.startsWith('/api/prospecting?niche=&city=&status=uncontacted&session=')),'default must show only unapproached leads');
  assert.ok(!h.fetches.some(f=>f.method==='POST'),'opening the tab must not trigger provider calls or messaging');
  assert.match(h.root.innerHTML,/data-tab="prospects"/);
  assert.match(h.root.innerHTML,/data-tab="connections"/);
@@ -99,7 +104,7 @@ test('Every workspace section renders without a runtime exception',async()=>{
  const h=createHarness();
  await vm.runInContext('reload()',h.context);
  const expected={
-  overview:'Indicadores da operação',
+  overview:'Kanban de oportunidades',
   conversations:'Suas conversas',
   prospects:'Empresas não abordadas',
   connections:'INTEGRAÇÃO WHATSAPP',
@@ -149,4 +154,16 @@ test('WhatsApp interactive options open a preview and do not send without confir
  assert.match(h.viewEl.innerHTML,/Falar com alguém/);
  await h.listeners.click({target:{closest:()=>({dataset:{action:'send-options'}})}});
  assert.ok(!h.fetches.some(x=>x.route==='/api/whatsapp/interactive-send'),'Confirmation rejected: never send');
+});
+
+test('Home shows compact four-column Kanban with verified hot leads and operator conversation actions',async()=>{
+ const h=createHarness();
+ await vm.runInContext("view='overview';reload()",h.context);
+ assert.match(h.viewEl.innerHTML,/Kanban de oportunidades/);
+ for(const title of ['Abordando','Sem interesse','Interessados','Conversando'])assert.match(h.viewEl.innerHTML,new RegExp(title));
+ assert.match(h.viewEl.innerHTML,/Oficina Interessada/);
+ assert.match(h.viewEl.innerHTML,/Enviar mensagem/);
+ assert.match(css,/\.body:has\(\.kanban-dashboard\).*height:100dvh/);
+ assert.match(css,/\.kanban-column-items\{[^}]*overflow-y:auto/);
+ assert.ok(!h.fetches.some(x=>x.method==='POST'),'Board is read-only, never sends WhatsApp');
 });
