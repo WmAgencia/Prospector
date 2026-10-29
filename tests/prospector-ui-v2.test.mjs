@@ -88,3 +88,19 @@ test('Navigation preserves safety and accommodates mobile, form focus and reduce
  assert.match(app,/prospectFilter="all",niche="",city=""/);
  assert.match(h.root.innerHTML,/^$/);
 });
+
+test('Every workspace section renders without a runtime exception',async()=>{
+ const h=createHarness();
+ await vm.runInContext('reload()',h.context);
+ const expected={
+  overview:'Indicadores da operação',
+  conversations:'Suas conversas',
+  prospects:'Oportunidades cadastradas',
+  connections:'INTEGRAÇÃO WHATSAPP',
+  settings:'PREFERÊNCIAS'
+ };
+ for(const [name,content] of Object.entries(expected)){
+  vm.runInContext('view='+JSON.stringify(name)+';render()',h.context);
+  assert.match(h.viewEl.innerHTML,new RegExp(content),'failed to render '+name);
+ }
+});
