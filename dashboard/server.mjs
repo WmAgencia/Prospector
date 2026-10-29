@@ -36,7 +36,7 @@ import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
 import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
-import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape} from './gosom-maps.mjs';
+import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {ownerStatus} from './groq-owner.mjs';
@@ -518,16 +518,36 @@ setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media res
 setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
 const interruptedSearches=reconcileInterruptedSearches();
 if(interruptedSearches.recovered)console.info('[osm discovery] Recuperadas '+interruptedSearches.recovered+' consultas interrompidas; mantidas na cota diária');
+let lastOSMStatus='',lastOSMLogAt=0;
 function checkOSMDiscovery(){
  return dailyLocalDiscovery().then(x=>{
   if(x?.source==='osm'&&x.added)notify();
-  if(x?.source==='osm'||x?.status==='SOURCE_ERROR'||x?.status==='PROVIDER_LIMIT')
-   console.info('[osm discovery]',JSON.stringify({status:x.status||'COMPLETE',city:x.city,segment:x.segment,examined:x.examined,added:x.added,withPhone:x.withPhone,foundToday:x.foundToday,reason:x.error}));
+  if(x?.source==='osm'||x?.status==='SOURCE_ERROR'||x?.status==='PROVIDER_LIMIT'){
+   const status=x.status||'COMPLETE',at=Date.now();
+   // Respect the community provider's quota without flooding application logs.
+   if(status!==lastOSMStatus||x.added||at-lastOSMLogAt>=15*60_000){
+    console.info('[osm discovery]',JSON.stringify({status,city:x.city,segment:x.segment,examined:x.examined,added:x.added,withPhone:x.withPhone,foundToday:x.foundToday,reason:x.error}));
+    lastOSMStatus=status;lastOSMLogAt=at;
+   }
+  }
  }).catch(err=>console.error('[osm discovery]',err.message));
 }
 const osmTimer=setInterval(checkOSMDiscovery,60*1000);
+// Keep already-started Google Maps jobs updated on the server even if the browser closes.
+// This is status-only: no lead import, campaign activation, or WhatsApp sending.
+async function checkMapsJobs(){
+ try{
+  const statuses=await refreshActiveMapsScrapes({limit:2,maxAgeHours:6});
+  for(const item of statuses){
+   if(item.changed)console.info('[maps background]',JSON.stringify({status:item.status,idPresent:!!item.id}));
+   if(item.error)console.warn('[maps background]',item.error);
+  }
+ }catch(error){console.warn('[maps background]',String(error.message).slice(0,160));}
+}
+const mapsStatusTimer=setInterval(checkMapsJobs,5*60_000);
 // Somente OSM executa pesquisas automáticas. Google Places permanece inativo.
 setTimeout(checkOSMDiscovery,12000).unref();
+setTimeout(checkMapsJobs,25000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
@@ -544,4 +564,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(agentBridgeTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(agentBridgeTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
