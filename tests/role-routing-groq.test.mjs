@@ -27,7 +27,7 @@ test('Privileged owner inbox never makes a CRM lead or outbound sales job',()=>{
  const r=inbound('5515981817336','Sou o dono, qual o status do sistema?');
  assert.equal(r.owner,true);
  assert.equal(db.one("SELECT id FROM leads WHERE phone='5515981817336'"),undefined);
- assert.equal(db.one("SELECT id FROM groq_auto_events WHERE jid=? ",JID('5515981817336')),undefined);
+ assert.equal(db.one("SELECT provider_id FROM groq_auto_events WHERE jid=? ",JID('5515981817336')),undefined);
 });
 test('Existing customer saying they want to hire cannot trigger a new hot-sales lead',async()=>{
  const p='5515999777781',l=db.addLead({business:'Empresa Cliente',phone:p,source:'MANUAL'}).lead;
