@@ -65,5 +65,4 @@ test('Malformed, oversized and extremely short audio segments are refused',()=>{
  assert.equal(callLabStatus().answeringCalls,false);
  assert.equal(callLabStatus().mediaTransportConnected,false);
 });
-test.after(()=>{try{const db=requireFallback();db?.close?.()}catch{}fs.rmSync(dir,{recursive:true,force:true});});
-function requireFallback(){return null;}
+test.after(async()=>{const {db}=await import('../dashboard/db.mjs');db.close();fs.rmSync(dir,{recursive:true,force:true});});
