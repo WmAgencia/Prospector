@@ -182,16 +182,17 @@ function startMapsPolling(){
  mapsTimer=setInterval(async()=>{if(!mapsJob||["IMPORTED","FAILED","COMPLETED"].includes(mapsJob.status)){clearInterval(mapsTimer);mapsTimer=null;return;}await updateMapsJob();},12000);
 }
 async function loadProspects(){
+ prospectLoading=true;
  try{
   const params=new URLSearchParams({niche,city,status:prospectFilter});
   const [base,remote]=await Promise.all([api("/api/prospecting?"+params.toString()),api("/api/maps/status").catch(()=>null)]);
-  prospects=base;prospectError="";
+  prospects=base;
   if(remote?.jobs?.length&&!mapsJob){
    const previous=remote.jobs.find(j=>j.niche===niche&&j.city===city)||(!niche&&!city?remote.jobs[0]:null);
    if(previous){mapsJob=previous;if(["PENDING","RUNNING"].includes(previous.status))startMapsPolling();}
   }
   if(view==="prospects")render();
- }catch(e){prospectError=e.message;if(view==="prospects")render();n(e.message);}
+ }catch(e){prospectError=e.message;if(view==="prospects")render();n(e.message);}finally{prospectLoading=false;}
 }
 async function loadMessages(id){
  try{
