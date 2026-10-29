@@ -3,6 +3,7 @@ import {one,all,run,id,now,addLead,phone} from "./db.mjs";
 import {recordOrigin} from "./discovery.mjs";
 import {resolveLocation} from "./osm-discovery.mjs";
 import {recontactDecision} from "./prospecting-recontact.mjs";
+import {documentedOptIn} from "./outreach-queue.mjs";
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 const map=[
  [/oficina|mecanica|automotiva|auto center|auto.?eletric/,["shop","car_repair"]],
@@ -61,7 +62,8 @@ export function prospectingList({niche="",city="",status="uncontacted",limit=500
   // does not provide a verified place URL; no fake place ID is invented.
   maps_url:(String(notes||"").match(/https:\/\/(?:www\.)?google\.[a-z.]+\/maps[^\s|]*/i)||[])[0]||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(x.business+' '+(x.city||'')),
   instagram_url:(()=>{const m=new RegExp('^https?://(?:www[.])?instagram[.]com/([a-z0-9._]{2,30})(?:/|$)','i').exec(x.website||'');const user=/^[a-z0-9._]{2,30}$/i.test(x.instagram||'')?x.instagram:m?.[1];return user?'https://www.instagram.com/'+user+'/':null;})(),
-  needs_permission:x.contact_permission!==1
+  authorized:x.contact_permission===1&&documentedOptIn(x.id),
+  needs_permission:x.contact_permission!==1||!documentedOptIn(x.id)
  })),partial:allRows.length===6000,source:"Base do Prospector",note:"Não contatada significa sem envio registrado, desconsiderando números bloqueados. O sistema não conhece contatos feitos fora do Prospector."};
 }
 async function locate(city){
