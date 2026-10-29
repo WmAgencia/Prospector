@@ -35,7 +35,7 @@ export async function processCallBridge(a={}){
   const pcm=await convertM4aToPcm16(voice.bytes);
   return {ok:true,event:'greeting',spoken:greet,rate:16000,pcm16k:pcm.toString('base64')};
  }
- if(typeof a.pcm16k!=='string'||a.pcm16k.length>MAX_SAMPLES*4)throw Error('CALL_AUDIO_TOO_LARGE');
+ if(typeof a.pcm16k!=='string'||a.pcm16k.length>Math.ceil(MAX_SAMPLES*4/3)+1024)throw Error('CALL_AUDIO_TOO_LARGE');
  const pcm=Buffer.from(a.pcm16k,'base64');
  if(pcm.length<16000||pcm.length>MAX_SAMPLES||pcm.length%2)throw Error('CALL_AUDIO_INVALID');
  const reply=await c.session.reply(pcm);
