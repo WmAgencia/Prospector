@@ -4,7 +4,7 @@
 import {jidDecode, jidEncode, type BinaryNode} from "@whiskeysockets/baileys";
 import {NativeCallManager,createCallAck} from "./voice-protocol/src/index.js";
 import {TurnDetector,PlaybackGate} from "./turn-taking.mjs";
-import {InterruptionLedger,BackchannelPolicy} from "./conversation-runtime.mjs";
+import {InterruptionLedger,BackchannelPolicy,ThinkingCuePolicy} from "./conversation-runtime.mjs";
 import type {WASocket} from "@whiskeysockets/baileys";
 
 const SAMPLE_RATE=16000;
@@ -17,7 +17,8 @@ type Session={
  callId:string;from:string;startedAt:number;ended:boolean;greeted:boolean;
  replying:boolean;playback:boolean;pending:Buffer|null;
  detector:TurnDetector;gate:PlaybackGate;
- ledger:InterruptionLedger;backchannel:BackchannelPolicy;ackBusy:boolean;
+ ledger:InterruptionLedger;backchannel:BackchannelPolicy;thinking:ThinkingCuePolicy;
+ ackBusy:boolean;cuePlaying:boolean;cueDirty:boolean;
 };
 function requireReady(sessionId:string){
  return !!owner&&/^55\d{10,11}$/.test(owner)&&sessionId===correctSession&&
@@ -89,7 +90,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
  let call:Session|null=null;
  function same(id:string){return call&&!call.ended&&call.callId===id?call:null;}
  const reset=()=>{
-  if(call){call.ended=true;call.pending=null;call.gate.cancel();call.detector.reset();call.ledger.clear();}
+  if(call){call.ended=true;call.pending=null;call.gate.cancel();call.detector.reset();call.ledger.clear();call.cuePlaying=false;}
   call=null;
  };
  async function sendTurn(active:Session,event:"turn"|"greeting",pcm?:Buffer){
@@ -97,6 +98,10 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   active.replying=true;
   const generation=active.gate.next();
   const started=Date.now();
+  const thinkingId=active.thinking.start(started);
+  // A rare acknowledgment only if processing actually stalls; never overlap an immediate reply.
+  const thinkingTimer=setTimeout(()=>void maybeThink(active,generation,thinkingId),active.thinking.delayMs+30);
+  thinkingTimer.unref?.();
   const interruption=event==="turn"?active.ledger.take():null;
   try{
    const r=await bridge(active,sessionId,event,pcm,interruption?{interruption}:undefined);
@@ -109,6 +114,9 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
     return;
    }
    if(r.replyId)active.ledger.begin(r.replyId,durationMs);
+   // If a short thinking/acknowledgment cue is still in the outgoing jitter buffer,
+   // flush only that buffer before the real response to avoid overlay or extra latency.
+   if(active.cueDirty){active.cuePlaying=false;active.cueDirty=false;manager.setExternalAudioMode(true);}
    console.info("[voice-calls] BRIDGE_RESPONSE_READY",event,"ms",Date.now()-started);
    await renderReply(manager,active,r.pcm16k,generation);
    if(active.gate.valid(generation)){
@@ -118,12 +126,44 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   }catch(e){
    if(!active.ended)console.warn("[voice-calls] TURN_ERROR",String((e as Error).message).slice(0,75));
   }finally{
+   clearTimeout(thinkingTimer);
+   active.cuePlaying=false;
    active.playback=false;
    active.replying=false;
    if(!active.ended&&same(active.callId)&&active.pending){
     const next=active.pending;active.pending=null;
     queueMicrotask(()=>void sendTurn(active,"turn",next));
    }
+  }
+ }
+ // A short empathetic cue after a perceptible processing delay, never for
+ // immediate responses. Nonverbal audio alone does not consume a user turn.
+ async function maybeThink(active:Session,generation:number,thinkingId:number){
+  if(!same(active.callId)||!active.gate.valid(generation))return;
+  if(!active.thinking.due({turnId:thinkingId,replying:active.replying,
+   playing:active.playback||active.cuePlaying,ackBusy:active.ackBusy,ended:active.ended}))return;
+  const kind=active.thinking.claim();
+  if(!kind)return;
+  try{
+   const r=await bridge(active,sessionId,"backchannel",undefined,{kind});
+   if(!r.pcm16k||active.ended||!active.replying||active.playback||!active.gate.valid(generation))return;
+   const pcm=Buffer.from(r.pcm16k,"base64");
+   if(pcm.length<2000||pcm.length>16000*2*3||pcm.length%2)return;
+   active.cuePlaying=true;
+   for(let offset=0;offset<pcm.length&&!active.ended&&active.replying&&active.gate.valid(generation);offset+=320){
+    if(active.playback||!active.cuePlaying)break;
+    const buf=pcm.subarray(offset,Math.min(offset+320,pcm.length));
+    const frame=new Float32Array(buf.length/2);
+    for(let i=0;i<frame.length;i++)frame[i]=buf.readInt16LE(i*2)/32768*.37;
+    active.cueDirty=true;
+    manager.feedLiveAudio(frame);
+    await quiet(10);
+   }
+   if(active.gate.valid(generation))console.info("[voice-calls] THINKING_ACK_SENT",kind);
+  }catch(e){
+   console.warn("[voice-calls] THINKING_ACK_FAILED",String((e as Error).message).slice(0,70));
+  }finally{
+   active.cuePlaying=false;
   }
  }
  async function acknowledge(active:Session,kind:"aham"|"hum"){
@@ -140,6 +180,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
     const frame=new Float32Array(chunk.length/2);
     // Quiet acknowledgement: background confirmation, not a second speaker turn.
     for(let i=0;i<frame.length;i++)frame[i]=chunk.readInt16LE(i*2)/32768*.23;
+    active.cueDirty=true;
     manager.feedLiveAudio(frame);
     await quiet(10);
    }
@@ -158,7 +199,8 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   if(c.isVideo||c.mediaType==="video"){console.info("[voice-calls] VIDEO_NOT_SUPPORTED");return;}
   const incoming:Session={callId:c.callId,from:pn,startedAt:Date.now(),ended:false,greeted:false,
    replying:false,playback:false,pending:null,detector:new TurnDetector(),gate:new PlaybackGate(),
-   ledger:new InterruptionLedger(),backchannel:new BackchannelPolicy(),ackBusy:false};
+   ledger:new InterruptionLedger(),backchannel:new BackchannelPolicy(),
+   thinking:new ThinkingCuePolicy(),ackBusy:false,cuePlaying:false,cueDirty:false};
   call=incoming;
   try{
    manager.setExternalAudioMode(true);
@@ -185,12 +227,12 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
  manager.on("call:audio",(audio:Float32Array)=>{
   const active=call;
   if(!active||active.ended||!audio.length)return;
-  const mode=active.playback?"speaking":active.replying?"thinking":"listening";
+  const mode=(active.playback||active.cuePlaying)?"speaking":active.replying?"thinking":"listening";
   const result=active.detector.push(audio,mode);
   if(result.type==="interrupt"){
    active.ledger.interrupt();
    active.gate.cancel(); // Only sound stops; previous question and answer draft are retained.
-   active.playback=false;
+   active.playback=false;active.cuePlaying=false;active.cueDirty=false;
    // Flush unread TTS samples from the same already-authenticated WA-AKG socket.
    manager.setExternalAudioMode(true);
    console.info("[voice-calls] FRANCISCA_INTERRUPTED");
