@@ -12,7 +12,7 @@ import {selectedWaSession} from './waakg-control.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import {makeFranciscaVoice,makeFranciscaCallPcm,checkVoiceText} from './francisca-tts.mjs';
 import {groqChat} from './groq-models.mjs';
-import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
+import {agentTools,runAgentTool,readVoiceOperationalBriefing} from './groq-owner-tools.mjs';
 import {newCallContext} from './francisca-voice-context.mjs';
 import {randomUUID} from 'node:crypto';
 
@@ -84,9 +84,29 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const verified=verifyVoiceOwner({jid,sessionId});
     const availableTools=verified.ownerTools?allowedTools:[];
     if(interruption)context.noteInterruption(interruption);
+    // Voice sandbox blocks commands, but a verified owner may inspect safe,
+    // aggregate operational facts. Preload these before calling Groq so a
+    // malformed model tool call cannot make the reply completely ungrounded.
+    let operationalBriefing=null;
+    if(/prospector|(?:situação|status|diagnóstico|pendências|falta implementar|verificar.*sistema|como está o sistema)/i.test(heard)){
+     try{
+      operationalBriefing=await (deps.readOperationalBriefing||readVoiceOperationalBriefing)({jid,sessionId});
+      console.info('[francisca-voice-briefing]',JSON.stringify({
+       ok:true,hasStats:!!operationalBriefing?.stats,source:'operational-db'
+      }));
+     }catch(e){
+      console.warn('[francisca-voice-briefing]',JSON.stringify({
+       ok:false,error:String(e?.message||e).slice(0,55)
+      }));
+     }
+    }
     const messages=[
      {role:'system',content:'Você é a Francisca, atendente virtual da Consecom, numa ligação com o proprietário. Converse em português brasileiro, de forma natural, calorosa e direta. Use ocasionalmente expressões curtas como ah, entendi ou vamos lá, mas não sempre e não repita muletas. Responda em uma ou duas frases curtas, sem listas, textos longos nem repetir a pergunta. Nunca alegue ser humana. Só utilize ferramentas de leitura do Prospector. NUNCA envie mensagens, ative campanhas, gaste dinheiro, altere configurações ou execute ordens por voz; explique que essas ações requerem confirmação por texto. Não invente informações sobre o sistema.'},
      {role:'system',content:context.systemNote(heard)},
+     ...(operationalBriefing?[{role:'system',content:
+      'DADOS OPERACIONAIS REAIS DISPONÍVEIS AGORA (somente leitura): '+
+      JSON.stringify(operationalBriefing).slice(0,2600)+
+      '\nAo responder, cite apenas o que esses dados demonstram. Nunca confunda situação operacional com lista completa do que falta implementar. Se a pergunta for sobre pendências técnicas não verificadas pelo repositório, diga que uma auditoria de código é necessária.'}]:[]),
      ...context.messages(),{role:'user',content:heard}
     ];
     const chat=deps.chat||groqChat,readTool=deps.readTool||runAgentTool;
