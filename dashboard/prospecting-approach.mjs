@@ -2,6 +2,7 @@
 // Initial greeting is deterministic by Brazil local time; Groq can enrich replies
 // after the operator supplies an approved playbook and example conversations.
 import {one,all} from './db.mjs';
+import {documentedOptIn} from './outreach-queue.mjs';
 
 export function greetingForTime(at=new Date(),timeZone='America/Sao_Paulo'){
  const fmt=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',hourCycle:'h23',timeZone});
@@ -21,8 +22,8 @@ export function prepareApproaches(input={}){
   if(!row){items.push({id:leadId,status:'MISSING',eligible:false});continue;}
   const contacted=row.approached||row.sent||row.stage!=='DISCOVERED';
   const eligible=!!row.phone&&!contacted&&!row.suppressed;
-  const authorized=eligible&&row.contact_permission===1;
+  const authorized=eligible&&row.contact_permission===1&&documentedOptIn(row.id);
   items.push({id:row.id,business:row.business,phoneSuffix:row.phone?row.phone.slice(-4):null,message:eligible?message:null,eligible,authorized,status:!eligible?'UNAVAILABLE':authorized?'READY_FOR_APPROVAL':'NEEDS_PERMISSION'});
  }
- return {ok:true,greeting,message,items,selected:ids.length,ready:items.filter(x=>x.authorized).length,needsPermission:items.filter(x=>x.status==='NEEDS_PERMISSION').length,requiresHumanApproval:true,autoSent:false,groqTraining:'AWAITING_OPERATOR_EXAMPLES'};
+ return {ok:true,greeting,message,items,selected:ids.length,ready:items.filter(x=>x.authorized).length,needsPermission:items.filter(x=>x.status==='NEEDS_PERMISSION').length,requiresHumanApproval:true,autoSent:false,groqTraining:'CUSTOMIZED_DRAFT_ONLY'};
 }
