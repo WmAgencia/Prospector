@@ -657,7 +657,7 @@ const audioTranscriptionTimer=setInterval(()=>{
  }).catch(e=>console.warn('[audio transcription] unexpected',String(e?.message||e).slice(0,80)));
 },4000);
 const customerAiTimer=setInterval(()=>{
- if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true')return;
+ if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true'&&process.env.PROSPECTOR_LIVE_TEST_ENABLED!=='true')return;
  tickSalesAgent().then(()=>flushInterestAlerts()).then(async sent=>sent+await flushPersonalNotices()).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
 },6000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
