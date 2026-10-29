@@ -8,10 +8,10 @@ const URL_BASE='https://consecom-prospector-maps.onrender.com';
 const configured=()=>Boolean(process.env.PROSPECTOR_MAPS_KEY);
 const valid=x=>typeof x==='string'&&x.trim().length>=2&&x.length<=85&&!/[\r\n<>]/.test(x);
 function jobStatus(s){const v=String(s||'').toLowerCase();return ['completed','complete','done','finished'].includes(v)?'COMPLETED':['failed','error','cancelled','canceled'].includes(v)?'FAILED':['pending','queued','created'].includes(v)?'PENDING':'RUNNING';}
-async function request(path,{method='GET',json=false}={}){
+async function request(path,{method='GET',payload=null,expect='json'}={}){
  if(!configured())throw Error('Serviço Google Maps não configurado');
  if(!/^\/api\/v1\/jobs(?:\/[a-f0-9-]{36}(?:\/download)?)?$/.test(path))throw Error('Rota de scraper inválida');
- const response=await fetch(URL_BASE+path,{method,headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY,Accept:json?'application/json':'text/csv',...(json?{'Content-Type':'application/json'}:{})},body:json?JSON.stringify(json):undefined,signal:AbortSignal.timeout(method==='POST'?22000:20000)});
+ const response=await fetch(URL_BASE+path,{method,headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY,Accept:expect==='json'?'application/json':'text/csv',...(payload!==null?{'Content-Type':'application/json'}:{})},body:payload!==null?JSON.stringify(payload):undefined,signal:AbortSignal.timeout(method==='POST'?22000:20000)});
  if(!response.ok){if(response.status===401)throw Error('Chave interna do Maps recusada');throw Error('Scraper HTTP '+response.status);}
  return response;
 }
@@ -22,7 +22,7 @@ export async function startMapsScrape({niche,city}={}){
  const recent=one("SELECT * FROM maps_scraper_jobs WHERE niche=? AND city=? AND status IN ('RUNNING','PENDING') ORDER BY created_at DESC LIMIT 1",niche.trim(),city.trim());
  if(recent)return {id:recent.id,status:recent.status,reused:true};
  const payload={name:'Prospector: '+niche.trim()+' / '+city.trim(),keywords:[niche.trim()+' em '+city.trim()+', Brasil'],lang:'pt',zoom:15,depth:1,max_time:240,fast_mode:false,radius:10000,email:false};
- const response=await request('/api/v1/jobs',{method:'POST',json:payload});
+ const response=await request('/api/v1/jobs',{method:'POST',payload});
  const result=await response.json();
  if(!/^[a-f0-9-]{36}$/i.test(result.id||''))throw Error('Scraper não retornou ID de tarefa válido');
  const internal=id(),at=now();
@@ -33,7 +33,7 @@ export async function startMapsScrape({niche,city}={}){
 export async function pollMapsScrape(jobId){
  const job=row(jobId);if(!job)throw Error('Pesquisa não encontrada');
  if(!['COMPLETED','FAILED','IMPORTED'].includes(job.status)){
-  const res=await request('/api/v1/jobs/'+job.provider_id,{json:true});
+  const res=await request('/api/v1/jobs/'+job.provider_id);
   const detail=await res.json(),status=jobStatus(detail.status);
   run("UPDATE maps_scraper_jobs SET status=?,updated_at=?,error=? WHERE id=?",status,now(),status==='FAILED'?'Execução do scraper falhou':null,jobId);
  }
@@ -60,7 +60,7 @@ export async function importMapsScrape(jobId){
  const job=row(jobId);if(!job)throw Error('Pesquisa não encontrada');
  if(job.status==='IMPORTED')return {ok:true,alreadyImported:true,added:job.added,processed:job.processed};
  if(job.status!=='COMPLETED')throw Error('Pesquisa ainda não concluiu');
- const response=await request('/api/v1/jobs/'+job.provider_id+'/download');
+ const response=await request('/api/v1/jobs/'+job.provider_id+'/download',{expect:'csv'});
  const csv=await response.text(),items=csvRows(csv);
  let added=0,processed=0,skipped=0;
  for(const x of items){
