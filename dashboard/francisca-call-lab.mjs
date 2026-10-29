@@ -10,7 +10,7 @@ import {promisify} from 'node:util';
 import {verifiedOwnerPhone,classifyContact} from './whatsapp-roles.mjs';
 import {selectedWaSession} from './waakg-control.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
-import {makeFranciscaVoice,checkVoiceText} from './francisca-tts.mjs';
+import {makeFranciscaVoice,makeFranciscaCallPcm,checkVoiceText} from './francisca-tts.mjs';
 import {groqChat} from './groq-models.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 
@@ -74,17 +74,19 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
    const wav=wavFromPcm16(pcm16k);
    busy=true;
    try{
+    const began=Date.now();
     const recognized=await (deps.transcribe||transcribeAudio)({buffer:wav,filename:'live-turn.wav'});
+    const sttMs=Date.now()-began;
     const heard=String(recognized.text||'').trim().slice(0,650);
     if(heard.length<2)throw Error('CALL_TRANSCRIPTION_EMPTY');
     const verified=verifyVoiceOwner({jid,sessionId});
     const availableTools=verified.ownerTools?allowedTools:[];
     const messages=[
-     {role:'system',content:'Você é Francisca, atendente virtual da Consecom, em uma chamada de teste exclusivamente com o proprietário. Fale português brasileiro natural e conciso. Use somente ferramentas de leitura do Prospector. NUNCA ative campanhas, envie mensagens, faça alterações ou execute comandos por voz. Caso peçam uma ação, diga que requer confirmação posterior por texto. Responda com no máximo 300 caracteres. Nunca invente status do sistema.'},
+     {role:'system',content:'Você é a Francisca, atendente virtual da Consecom, numa ligação com o proprietário. Converse em português brasileiro, de forma humana, espontânea e direta. Responda em uma ou duas frases curtas, sem listas, textos longos nem repetir a pergunta. Nunca alegue ser humana. Só utilize ferramentas de leitura do Prospector. NUNCA envie mensagens, ative campanhas, gaste dinheiro, altere configurações ou execute ordens por voz; explique que essas ações requerem confirmação por texto. Não invente informações sobre o sistema.'},
      ...history,{role:'user',content:heard}
     ];
     const chat=deps.chat||groqChat,readTool=deps.readTool||runAgentTool;
-    let result=await chat({task:'conversation',messages,tools:availableTools,maxTokens:200});
+    let result=await chat({task:'voice',messages,tools:availableTools,maxTokens:170});
     for(let n=0;n<2&&result.choice?.tool_calls?.length;n++){
      const calls=result.choice.tool_calls.slice(0,2);
      messages.push(result.choice);
@@ -96,17 +98,27 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
       }catch(e){output={error:String(e.message).slice(0,90)};}
       messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(output).slice(0,3000)});
      }
-     result=await chat({task:'conversation',messages,tools:availableTools,maxTokens:200});
+     result=await chat({task:'voice',messages,tools:availableTools,maxTokens:170});
     }
-    let spoken=String(result.choice?.content||'').trim().slice(0,600);
+    const llmMs=Date.now()-began-sttMs;
+    let spoken=String(result.choice?.content||'').trim().slice(0,300);
     if(spoken.length<2)spoken='Não consegui entender. Pode repetir, por favor?';
     spoken=checkVoiceText(spoken);
-    const audio=await (deps.synthesize||makeFranciscaVoice)(spoken);
-    const outgoing=await (deps.convert||convertM4aToPcm16)(audio.bytes);
-    if(!Buffer.isBuffer(outgoing)||!outgoing.length)throw Error('CALL_AUDIO_OUT_INVALID');
+    // Test fixtures may inject the legacy two-step converter. Production
+    // performs one MP3->PCM conversion without the intermediate AAC/M4A.
+    const pcmGenerator=deps.synthesizePcm||(!deps.synthesize&&!deps.convert?makeFranciscaCallPcm:null);
+    let outgoing,voice;
+    if(pcmGenerator){const data=await pcmGenerator(spoken);outgoing=data.pcm16k;voice=data.voice;}
+    else {const audio=await (deps.synthesize||makeFranciscaVoice)(spoken);
+      outgoing=await (deps.convert||convertM4aToPcm16)(audio.bytes);voice=audio.voice;}
+    if(!Buffer.isBuffer(outgoing)||outgoing.length===0||outgoing.length%2)
+     throw Error('CALL_AUDIO_OUT_INVALID');
+    const ttsMs=Date.now()-began-sttMs-llmMs;
+    console.info('[francisca-call-turn-timing]',JSON.stringify({sttMs,llmMs,ttsMs,totalMs:Date.now()-began,
+      inputMs:Math.round(pcm16k.length/32),outputMs:Math.round(outgoing.length/32)}));
     history.push({role:'user',content:heard},{role:'assistant',content:spoken});
     if(history.length>8)history.splice(0,history.length-8);
-    return {heard,spoken,pcm16k:outgoing,format:'s16le',rate:VOICE_RATE,voice:audio.voice};
+    return {heard,spoken,pcm16k:outgoing,format:'s16le',rate:VOICE_RATE,voice};
    }finally{busy=false;}
   },
   end(){ended=true;history.length=0;},

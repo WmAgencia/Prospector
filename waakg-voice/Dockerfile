@@ -15,6 +15,7 @@ RUN npm ci --legacy-peer-deps \
 # Install native runtime calling dependencies after Next build.
 RUN npm install --save-exact --legacy-peer-deps baileys@7.0.0-rc12 @roamhq/wrtc@0.8.0 koffi@2.12.0 @evan/opus@1.0.3 fluent-ffmpeg@2.1.3
 COPY voice-calls.ts /app/voice-runtime/voice-calls.ts
+COPY turn-taking.mjs /app/voice-runtime/turn-taking.mjs
 RUN mkdir -p voice-runtime/voice-protocol \
  && cp -R /tmp/voice-source/src voice-runtime/voice-protocol/ \
  && cp -R /tmp/voice-source/native voice-runtime/voice-protocol/ \

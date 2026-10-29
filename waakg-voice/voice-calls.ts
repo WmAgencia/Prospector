@@ -3,11 +3,10 @@
 // Compatible with the pinned community voice-protocol (typechecked in CI).
 import {jidDecode, jidEncode, type BinaryNode} from "@whiskeysockets/baileys";
 import {NativeCallManager,createCallAck} from "./voice-protocol/src/index.js";
+import {TurnDetector,PlaybackGate} from "./turn-taking.mjs";
 import type {WASocket} from "@whiskeysockets/baileys";
 
 const SAMPLE_RATE=16000;
-const TURN_MAX=12*SAMPLE_RATE;
-const TALK_RMS=0.017;
 const BRIDGE_URL=(process.env.PROSPECTOR_VOICE_BASE_URL||"").replace(/\/+$/,"")+"/api/internal/waakg/call-turn";
 const SECRET=process.env.WA_CALL_BRIDGE_SECRET||"";
 const owner=String(process.env.PROSPECTOR_OWNER_PHONE||"").replace(/\D/g,"");
@@ -15,8 +14,8 @@ const correctSession=process.env.WA_AKG_SESSION_ID||"";
 const quiet=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));
 type Session={
  callId:string;from:string;startedAt:number;ended:boolean;greeted:boolean;
- replying:boolean;playback:boolean;quietFrames:number;voiceFrames:number;frames:Float32Array[];
- cooldownUntil:number;
+ replying:boolean;playback:boolean;pending:Buffer|null;
+ detector:TurnDetector;gate:PlaybackGate;
 };
 function requireReady(sessionId:string){
  return !!owner&&/^55\d{10,11}$/.test(owner)&&sessionId===correctSession&&
@@ -56,21 +55,26 @@ function encodePcm(frames:Float32Array[]):Buffer{
  }
  return out;
 }
-async function renderReply(manager:NativeCallManager,call:Session,audio64:string){
+async function renderReply(manager:NativeCallManager,call:Session,audio64:string,generation:number){
  if(!audio64||audio64.length>16000*2*65*1.4)throw Error("VOICE_REPLY_TOO_LARGE");
  const pcm=Buffer.from(audio64,"base64");
  if(!pcm.length||pcm.length%2)throw Error("VOICE_REPLY_INVALID");
  call.playback=true;
  try{
-  for(let offset=0;offset<pcm.length&&!call.ended;offset+=640){
+  for(let offset=0;offset<pcm.length&&!call.ended&&call.gate.valid(generation);offset+=640){
    const buf=pcm.subarray(offset,Math.min(pcm.length,offset+640));
    const frame=new Float32Array(buf.length/2);
    for(let i=0;i<frame.length;i++)frame[i]=buf.readInt16LE(i*2)/32768;
+   // The AudioEngine's external-mode circular playback queue is reset on barge-in.
+   if(!call.gate.valid(generation))break;
    manager.feedLiveAudio(frame);
    await quiet(20);
   }
- }finally{call.playback=false;call.cooldownUntil=Date.now()+950;}
+ }finally{
+  call.playback=false;
+ }
 }
+
 export function installFranciscaCalls(sock:WASocket,sessionId:string){
  if(process.env.WA_AKG_CALLS_ENABLED!=="true")return;
  if(!requireReady(sessionId)){console.warn("[voice-calls] DISABLED_MISSING_CONFIG");return;}
@@ -80,22 +84,32 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
  let call:Session|null=null;
  function same(id:string){return call&&!call.ended&&call.callId===id?call:null;}
  const reset=()=>{
-  if(call)call.ended=true;
+  if(call){call.ended=true;call.pending=null;call.gate.cancel();call.detector.reset();}
   call=null;
  };
  async function sendTurn(active:Session,event:"turn"|"greeting",pcm?:Buffer){
   if(active.replying||active.ended)return;
   active.replying=true;
-  active.frames=[];active.voiceFrames=0;active.quietFrames=0;
+  const generation=active.gate.next();
+  const started=Date.now();
   try{
    const r=await bridge(active,sessionId,event,pcm);
-   if(active.ended||!same(active.callId)||!r.pcm16k)return;
-   await renderReply(manager,active,r.pcm16k);
-   console.info("[voice-calls] FRANCISCA_AUDIO_SENT",event);
+   if(active.ended||!same(active.callId)||!active.gate.valid(generation)||!r.pcm16k)return;
+   console.info("[voice-calls] BRIDGE_RESPONSE_READY",event,"ms",Date.now()-started);
+   await renderReply(manager,active,r.pcm16k,generation);
+   if(active.gate.valid(generation))console.info("[voice-calls] FRANCISCA_AUDIO_SENT",event);
   }catch(e){
-   console.warn("[voice-calls] TURN_ERROR",String((e as Error).message).slice(0,75));
-  }finally{active.replying=false;}
+   if(!active.ended)console.warn("[voice-calls] TURN_ERROR",String((e as Error).message).slice(0,75));
+  }finally{
+   active.playback=false;
+   active.replying=false;
+   if(!active.ended&&same(active.callId)&&active.pending){
+    const next=active.pending;active.pending=null;
+    queueMicrotask(()=>void sendTurn(active,"turn",next));
+   }
+  }
  }
+
  manager.on("call:incoming",async(c:any)=>{
   // The call event is always reauthenticated against exact PN, not display name.
   let pn:string|null=null;
@@ -104,7 +118,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   if(call&&!call.ended){console.info("[voice-calls] BUSY");return;}
   if(c.isVideo||c.mediaType==="video"){console.info("[voice-calls] VIDEO_NOT_SUPPORTED");return;}
   const incoming:Session={callId:c.callId,from:pn,startedAt:Date.now(),ended:false,greeted:false,
-   replying:false,playback:false,quietFrames:0,voiceFrames:0,frames:[],cooldownUntil:0};
+   replying:false,playback:false,pending:null,detector:new TurnDetector(),gate:new PlaybackGate()};
   call=incoming;
   try{
    manager.setExternalAudioMode(true);
@@ -130,24 +144,26 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
  manager.on("call:error",(e:Error)=>console.warn("[voice-calls] MEDIA_ERROR",String(e.message).slice(0,100)));
  manager.on("call:audio",(audio:Float32Array)=>{
   const active=call;
-  if(!active||active.ended||active.replying||active.playback||Date.now()<active.cooldownUntil)return;
-  if(!audio.length)return;
-  const segment=new Float32Array(audio);let sum=0;
-  for(let i=0;i<segment.length;i++)sum+=segment[i]*segment[i];
-  const rms=Math.sqrt(sum/segment.length),voice=rms>TALK_RMS;
-  active.frames.push(segment);
-  if(voice){active.voiceFrames+=segment.length;active.quietFrames=0;}
-  else active.quietFrames+=segment.length;
-  const samples=active.frames.reduce((n,x)=>n+x.length,0);
-  // Keep 250ms pre-roll but ignore long silence before the user begins speaking.
-  if(active.voiceFrames===0&&samples>SAMPLE_RATE/4)active.frames.splice(0,active.frames.length-4);
-  else if(active.voiceFrames>=SAMPLE_RATE*.35&&(active.quietFrames>=SAMPLE_RATE*.75||samples>=TURN_MAX)){
-   const payload=encodePcm(active.frames);
-   void sendTurn(active,"turn",payload);
+  if(!active||active.ended||!audio.length)return;
+  const mode=active.playback?"speaking":active.replying?"thinking":"listening";
+  const result=active.detector.push(audio,mode);
+  if(result.type==="interrupt"){
+   active.gate.cancel(); // All remaining response PCM becomes invalid immediately.
+   active.playback=false;
+   // Flush unread TTS samples from the same already-authenticated WA-AKG socket.
+   manager.setExternalAudioMode(true);
+   console.info("[voice-calls] FRANCISCA_INTERRUPTED");
+  }else if(result.type==="turn"){
+   const pcm=encodePcm(result.frames);
+   console.info("[voice-calls] USER_TURN_DETECTED",result.durationMs,result.voiceMs);
+   if(active.replying){
+    // Keep only the latest completed utterance; avoid CALL_BUSY in the backend.
+    active.pending=pcm;
+    active.gate.cancel();
+   }else void sendTurn(active,"turn",pcm);
   }
-  // Hard cap even if no silence; never persist incoming voice.
-  if(samples>TURN_MAX)active.frames=[];
  });
+
  ws.on("CB:call",async(node:BinaryNode)=>{
   const inner=Array.isArray(node.content)?node.content[0] as BinaryNode:null;
   if(!inner?.tag)return;

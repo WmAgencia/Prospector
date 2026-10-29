@@ -2,7 +2,7 @@
 // Inbound audio and responses are ephemeral; never stored or shown to other contacts.
 import crypto from 'node:crypto';
 import {newFranciscaCallSession,verifyVoiceOwner,convertM4aToPcm16,callLabStatus} from './francisca-call-lab.mjs';
-import {makeFranciscaVoice} from './francisca-tts.mjs';
+import {makeFranciscaCallPcm} from './francisca-tts.mjs';
 const sessions=new Map();
 const MAX_SAMPLES=16000*2*14;
 export function callBridgeStatus(){return {...callLabStatus(),bridgeConfigured:(process.env.WA_CALL_BRIDGE_SECRET||'').length>=40,activeCalls:sessions.size};}
@@ -31,9 +31,8 @@ export async function processCallBridge(a={}){
  c.updated=Date.now();
  if(a.event==='greeting'){
   const greet='Alô! Aqui é a Francisca, da Consecom. Estou ouvindo, pode falar.';
-  const voice=await makeFranciscaVoice(greet);
-  const pcm=await convertM4aToPcm16(voice.bytes);
-  return {ok:true,event:'greeting',spoken:greet,rate:16000,pcm16k:pcm.toString('base64')};
+  const voice=await makeFranciscaCallPcm(greet);
+  return {ok:true,event:'greeting',spoken:greet,rate:16000,pcm16k:voice.pcm16k.toString('base64')};
  }
  if(typeof a.pcm16k!=='string'||a.pcm16k.length>Math.ceil(MAX_SAMPLES*4/3)+1024)throw Error('CALL_AUDIO_TOO_LARGE');
  const pcm=Buffer.from(a.pcm16k,'base64');

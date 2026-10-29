@@ -2,6 +2,7 @@
 const BASE='https://api.groq.com/openai/v1';
 const tasks={
  conversation:['openai/gpt-oss-120b','llama-3.3-70b-versatile','openai/gpt-oss-20b'],
+ voice:['openai/gpt-oss-20b','llama-3.3-70b-versatile','llama-3.1-8b-instant','openai/gpt-oss-120b'],
  actions:['openai/gpt-oss-120b','openai/gpt-oss-20b','llama-3.3-70b-versatile'],
  quick:['llama-3.1-8b-instant','openai/gpt-oss-20b','openai/gpt-oss-120b'],
  summarization:['openai/gpt-oss-20b','llama-3.1-8b-instant','openai/gpt-oss-120b'],
@@ -33,6 +34,7 @@ export async function selectGroq(task='conversation'){
 export async function groqChat({task='conversation',messages,tools,maxTokens=700}){
  const model=await selectGroq(task);
  const payload={model,messages,temperature:task==='actions'?0.15:0.45,max_completion_tokens:maxTokens};
+ if(task==='voice'&&model.startsWith('openai/gpt-oss-'))payload.reasoning_effort='low';
  if(Array.isArray(tools)&&tools.length){payload.tools=tools;payload.tool_choice='auto';payload.parallel_tool_calls=false;}
  const response=await fetch(BASE+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+process.env.GROQ_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});
  if(!response.ok)throw Error('GROQ_HTTP_'+response.status);
