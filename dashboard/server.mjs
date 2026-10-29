@@ -41,6 +41,7 @@ import {prepareApproaches} from './prospecting-approach.mjs';
 import {kanbanSnapshot} from './kanban.mjs';
 import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
+import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -346,6 +347,7 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
   if(req.method==='GET'&&pathname==='/api/ai/customer-status')return respond(res,200,agentStatus());
+  if(req.method==='GET'&&pathname==='/api/ai/concierge-status')return respond(res,200,statusConcierge());
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
   if(req.method==='POST'&&pathname==='/api/prospecting/queue'){const r=enqueueApprovedApproaches(await json(req));if(r.status===202)notify();return respond(res,r.status,r.body);}
   if(req.method==='POST'&&pathname==='/api/prospecting/queue/cancel'){const r=cancelApproachQueue();notify();return respond(res,200,r);}
@@ -610,8 +612,8 @@ const interval=setInterval(()=>{
 // Inbound customer messages are handled separately from the 90-second outreach queue.
 // Owner-only interest notifications never trigger customer-facing messages.
 const customerAiTimer=setInterval(()=>{
- if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true')return;
- tickSalesAgent().then(()=>flushInterestAlerts()).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
+ if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true')return;
+ tickSalesAgent().then(()=>flushInterestAlerts()).then(async sent=>sent+await flushPersonalNotices()).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
 },6000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
