@@ -27,6 +27,7 @@ export const agentTools=[
  tool('list_whatsapp_chats','Read the connected WA-AKG chat list; most recent 20',{limit:{type:'integer',minimum:1,maximum:20}}),
  tool('read_whatsapp_chat','Read the latest 20 messages from a WA-AKG chat by exact JID',{jid:string('Exact chat JID from list_whatsapp_chats')},['jid']),
  tool('list_meetings','Show upcoming or recent meetings',{limit:{type:'integer',minimum:1,maximum:30}}),
+ tool('list_workflows','Read workflow names and whether each is enabled, without executing them',{limit:{type:'integer',minimum:1,maximum:25}}),
  tool('read_audit_log','Read recent changes and operations (without secret configuration)',{limit:{type:'integer',minimum:1,maximum:30}}),
  tool('discovery_history','Check history of niche/city lookups, errors and discovered counts',{limit:{type:'integer',minimum:1,maximum:25}}),
  tool('safe_settings','Read only safe operational settings, NEVER any credentials'),
@@ -92,7 +93,7 @@ export async function runAgentTool(name,a={}){
  }
  if(name==='system_diagnostics'){
   const jobs=all('SELECT status,COUNT(*) n FROM jobs GROUP BY status').map(x=>({status:x.status,count:x.n}));
-  const discoveries=all('SELECT status,COUNT(*) n FROM discoveries WHERE at>datetime("now","-7 days") GROUP BY status').map(x=>({status:x.status,count:x.n}));
+  const discoveries=all('SELECT status,COUNT(*) n FROM discoveries WHERE at>? GROUP BY status',new Date(Date.now()-7*86400000).toISOString()).map(x=>({status:x.status,count:x.n}));
   const failed=all("SELECT at,query,status,details FROM discoveries WHERE status='FAILED' ORDER BY at DESC LIMIT 4").map(x=>({at:x.at,query:x.query,details:String(x.details||'').slice(0,200)}));
   return {jobs,discoveries,failed,paused:getSetting('paused',true),automaticSendsEnabled:false};
  }
@@ -122,6 +123,7 @@ export async function runAgentTool(name,a={}){
   const result=await remoteMessages(jid);
   return {jid,messages:result.slice(-20)};
  }
+ if(name==='list_workflows')return {workflows:all('SELECT id,name,is_default,version,enabled,segments_json FROM workflows ORDER BY name LIMIT ?',limit(a.limit,25,20)).map(w=>({...w,enabled:Boolean(w.enabled),default:Boolean(w.is_default)}))};
  if(name==='list_meetings')return {meetings:all("SELECT m.id,m.start_at,m.notes,m.status,l.business,l.phone,l.id AS lead_id FROM meetings m JOIN leads l ON l.id=m.lead_id ORDER BY m.start_at DESC LIMIT ?",limit(a.limit,30,15))};
  if(name==='read_audit_log')return {recent:all('SELECT at,action,lead_id,detail FROM audit ORDER BY at DESC LIMIT ?',limit(a.limit,30,15)).map(x=>({at:x.at,action:x.action,lead_id:x.lead_id,details:String(x.detail||'').slice(0,350)}))};
  if(name==='discovery_history')return {recent:all('SELECT at,query,status,found,details FROM discoveries ORDER BY at DESC LIMIT ?',limit(a.limit,25,12)).map(x=>({...x,details:String(x.details||'').slice(0,220)}))};
