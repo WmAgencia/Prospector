@@ -10,9 +10,9 @@ run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify befo
 const digits=s=>String(s||'').replace(/\D/g,'');
 const optedOut=s=>/\b(pare|parar|stop|sair|remover|nao me contate|não me contate|sem interesse|nao tenho interesse)\b/i.test(String(s||''));
 export function ownerTarget(){const raw=digits(process.env.PROSPECTOR_HOT_LEAD_PHONE);const val=raw.length===11?'55'+raw:raw;return /^55\d{10,11}$/.test(val)?val:null;}
-export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true};}
+export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true};}
 export function queueInboundTurn({providerId,jid}={}){
- if(process.env.AI_CONVERSATION_AUTOSEND!=='true'||!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
+ if((process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true')||!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
  return run("INSERT OR IGNORE INTO groq_auto_events(provider_id,jid,state,at) VALUES(?,?,?,?)",providerId,jid,'PENDING',now()).changes>0;
 }
 const active=new Set();
@@ -20,7 +20,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
  if(!r)return {state:'SKIP'};
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
- if(process.env.AI_CONVERSATION_AUTOSEND!=='true')return finish('DISABLED');
+ if(process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true')return finish('DISABLED');
  if(r.session_id!==selectedWaSession())return finish('SKIPPED','SESSION');
  if(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP))return finish('SKIPPED','OWNER');
  if(optedOut(r.body)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT');
@@ -43,6 +43,7 @@ export async function handleSalesTurn(providerId,deps={}){
  }
  // An apparent commitment which the model cannot verify is left for review.
  if(explicitInterest(r.body))return finish('REVIEW','UNCERTAIN_INTEREST');
+ if(process.env.AI_CONVERSATION_AUTOSEND!=='true')return finish('REVIEW','AI_AUTOREPLY_DISABLED');
  if(r.inbox_state!=='REVIEW'||r.manual_takeover)return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
  const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
