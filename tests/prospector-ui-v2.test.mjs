@@ -1,0 +1,90 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+const app=fs.readFileSync(new URL('../dashboard/public/simple-app.js',import.meta.url),'utf8');
+const css=fs.readFileSync(new URL('../dashboard/public/simple-app.css',import.meta.url),'utf8');
+
+function createHarness(){
+ const fetches=[];
+ const listeners={};
+ const root={innerHTML:''},viewEl={innerHTML:''};
+ const notice={textContent:'',classList:{toggle(){}},setAttribute(){}};
+ const field={value:'',focus(){},selectionStart:0,setSelectionRange(){}};
+ const city={value:'',focus(){}};
+ const document={
+  hidden:false,
+  addEventListener(name,cb){listeners[name]=cb;},
+  querySelector(sel){
+   if(sel==='#app')return root;
+   if(sel==='#view')return viewEl;
+   if(sel==='#notice')return notice;
+   if(sel==='#niche')return field;
+   if(sel==='#city')return city;
+   return null;
+  }
+ };
+ const leads=[{id:'1',business:'Oficina Real de Itu',city:'Itu',segment:'Oficina',source:'osm',stage:'DISCOVERED'}];
+ const state={leads,threads:[],settings:{paused:true,discovery_auto_enabled:false},stats:{found:1}};
+ const base={total:1,uncontacted:1,contacted:0,returned:1,results:[{...leads[0],contacted:false}],partial:false};
+ const fetch=async (url,opts={})=>{
+  const route=String(url);fetches.push({route,method:opts.method||'GET'});
+  let data={};
+  if(route==='/api/state')data=state;
+  else if(route.startsWith('/api/prospecting?'))data=base;
+  else if(route==='/api/maps/status')data={jobs:[]};
+  else if(route==='/api/whatsapp/status')data={ok:true,connected:false,status:'DISCONNECTED'};
+  else if(route==='/api/prospecting/search')data={ok:true,source:'OpenStreetMap',added:2};
+  else if(route==='/api/maps/search')data={id:'sample-id',status:'PENDING',niche:'oficinas mecânicas',city:'Sorocaba'};
+  else if(route==='/api/ai/status')data={configured:false};
+  else return {ok:false,status:404,json:async()=>({error:'unknown route '+route})};
+  return {ok:true,status:200,json:async()=>data};
+ };
+ const context=vm.createContext({
+  document,window:{addEventListener(){}},location:{hash:'#/prospects'},
+  fetch,URL,URLSearchParams,console,confirm:()=>false,
+  setInterval:()=>1,clearInterval(){},Date,crypto:{randomUUID:()=> 'mock'},
+ });
+ // Runtime starts after the top-level await only in the actual browser.
+ const source=app.replace(/await reload\(\);\s*await refreshWa\(\);\s*$/,'');
+ assert.notEqual(source,app,'expected app boot sequence was not found');
+ vm.runInContext(source,context,{filename:'simple-app.js',timeout:2500});
+ return {context,root,viewEl,notice,field,city,fetches,listeners};
+}
+
+test('Prospecção starts with no hidden city/niche filter and displays existing leads',async()=>{
+ const h=createHarness();
+ await vm.runInContext('reload()',h.context);
+ assert.match(h.viewEl.innerHTML,/Oficina Real de Itu/);
+ assert.match(h.viewEl.innerHTML,/Oportunidades cadastradas/);
+ assert.match(h.viewEl.innerHTML,/Google Maps \(Gosom\)/);
+ assert.ok(h.fetches.some(f=>f.route==='/api/prospecting?niche=&city=&status=all'),'default must show all saved leads');
+ assert.ok(!h.fetches.some(f=>f.method==='POST'),'opening the tab must not trigger provider calls or messaging');
+ assert.match(h.root.innerHTML,/data-tab="prospects"/);
+ assert.match(h.root.innerHTML,/data-tab="connections"/);
+});
+
+test('Main search calls the on-demand OSM API; Gosom stays optional',async()=>{
+ const h=createHarness();
+ await vm.runInContext('reload()',h.context);
+ h.field.value='oficinas mecânicas';h.city.value='Sorocaba';
+ const submit=h.listeners.submit;
+ assert.equal(typeof submit,'function');
+ await submit({target:{id:'search-form'},preventDefault(){}});
+ assert.ok(h.fetches.some(f=>f.route==='/api/prospecting/search'&&f.method==='POST'));
+ assert.ok(!h.fetches.some(f=>f.route==='/api/maps/search'));
+ assert.ok(!h.fetches.some(f=>f.route.includes('/api/whatsapp/reply')));
+});
+
+test('Navigation preserves safety and accommodates mobile, form focus and reduced motion',()=>{
+ const h=createHarness();
+ assert.match(css,/@media\(max-width:700px\)/);
+ assert.match(css,/@media\(max-width:940px\)/);
+ assert.match(css,/prefers-reduced-motion:reduce/);
+ assert.match(css,/focus-visible/);
+ assert.match(app,/document\.hidden\|\|busy\|\|q\("input:focus,textarea:focus,select:focus"\)/);
+ assert.match(app,/confirm\("Importar as empresas desta pesquisa/);
+ assert.match(app,/prospectFilter="all",niche="",city=""/);
+ assert.match(h.root.innerHTML,/^$/);
+});
