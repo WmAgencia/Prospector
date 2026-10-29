@@ -1,6 +1,6 @@
 // Remote WA-AKG chat synchronization and manual replies.
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
-import {db,one,run,now,phone,addLead,getThread,addMessage,audit,stage} from "./db.mjs";
+import {db,one,all,run,now,phone,addLead,getThread,addMessage,audit,stage} from "./db.mjs";
 db.exec("CREATE TABLE IF NOT EXISTS waakg_remote_outbox(id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL)");
 const jidAllowed=j=>/^\d{10,15}@s\.whatsapp\.net$/.test(j);
 function currentId(){const s=selectedWaSession();if(!s)throw Error("Conecte seu WhatsApp em Conexões");return encodeURIComponent(s);}
@@ -19,7 +19,20 @@ export async function remoteMessages(jid){
  if(!/^[0-9]{10,15}@(s\.whatsapp\.net|lid|g\.us)$/.test(jid))throw Error("Conversa inválida");
  const result=await waRequest("/api/chat/"+currentId()+"/"+encodeURIComponent(jid));
  const arr=Array.isArray(result.data)?result.data:[];
- return arr.slice(-100).map(x=>({id:x.id||x.keyId,direction:x.fromMe?"out":"in",body:typeof x.content==="string"?x.content:String(x.caption||"["+String(x.type||"Mídia")+"]"),at:x.timestamp||x.createdAt||null}));
+ const output=arr.slice(-100).map(x=>({id:x.id||x.keyId,direction:x.fromMe?"out":"in",
+  body:typeof x.content==="string"?x.content:String(x.caption||"["+String(x.type||"Mídia")+"]"),
+  at:x.timestamp||x.createdAt||null}));
+ // Transcript is not stored on the WhatsApp provider; merge the locally
+ // transcribed audio as an explicitly labelled message in the UI.
+ if(one("SELECT name FROM sqlite_master WHERE type='table' AND name='inbound_audio_jobs'")){
+  const rows=all("SELECT a.provider_id,m.body,m.at FROM inbound_audio_jobs a JOIN messages m ON m.provider_id=a.provider_id WHERE a.jid=? AND a.state='DONE' ORDER BY m.at DESC LIMIT 60",jid);
+  for(const item of rows)output.push({id:'transcription:'+item.provider_id,direction:'in',
+   body:'🎙 Áudio transcrito: '+item.body,at:item.at,transcript:true});
+ }
+ const toTime=value=>{if(typeof value==='number')return value<1e12?value*1000:value;
+   const numeric=Number(value);if(Number.isFinite(numeric)&&String(value).trim())return numeric<1e12?numeric*1000:numeric;
+   return Date.parse(value)||0;};
+ return output.sort((a,b)=>toTime(a.at)-toTime(b.at)).slice(-100);
 }
 export async function sendRemoteReply(input={}){
  const jid=String(input.jid||""),text=String(input.text||"").trim(),requestId=String(input.requestId||"");
