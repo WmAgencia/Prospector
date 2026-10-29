@@ -5,7 +5,7 @@ const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short"
 const tabs={overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",settings:"Configurações"};
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
 let view=["overview","conversations","prospects","connections","settings"].includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
-let state=null,wa=null,ai=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],prospects=null,mapsJob=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false;
+let state=null,wa=null,ai=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,mapsJob=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false;
 const root=q("#app");
 function n(msg){notice=String(msg||"");const el=q("#notice");if(el){el.textContent=notice;el.classList.toggle("hidden",!notice);el.setAttribute("role",notice?"status":"none")}}
 async function api(path,opts={}){
@@ -58,7 +58,7 @@ function conversations(){
  if((!selectedThread||!threads.some(t=>t.id===selectedThread))&&threads.length)selectedThread=threads[0].id;
  const chosen=threads.find(t=>t.id===selectedThread)||null;
  const bubble=messages.map(m=>'<div class="bubble-wrap '+(m.direction==="out"?"out":"in")+'"><div class="bubble">'+esc(m.body||"[Mídia]")+'<small>'+stamp(m.at)+' · '+esc(m.direction==="out"?"Enviada":"Recebida")+'</small></div></div>').join("");
- return '<section class="chats"><div class="chat-list"><div class="chats-title"><div><h3>Mensagens</h3><p>'+threads.length+' conversas</p></div><span class="small-pill">WhatsApp</span></div><input id="chat-search" class="field" placeholder="Buscar conversa..." value="'+esc(chatFilter)+'">'+(threads.length?threads.map(t=>'<button data-thread="'+esc(t.id)+'" class="chat-person '+(selectedThread===t.id?"selected":"")+'"><span class="avatar">'+esc((t.name||t.business||"?")[0])+'</span><span class="info"><strong>'+esc(t.name||t.business||t.phone)+'</strong><small>'+esc(t.phone||"")+'</small></span><time>'+stamp(t.last_message_at)+'</time></button>').join(""):'<div class="empty">Suas conversas aparecerão aqui quando chegarem mensagens.</div>')+'</div><div class="chat-panel">'+(chosen?'<div class="chat-heading"><span class="avatar">'+esc((chosen.name||chosen.business)[0])+'</span><div><strong>'+esc(chosen.name||chosen.business)+'</strong><small>'+esc(chosen.phone||"")+'</small></div><span class="message-status">'+(wa?.connected?"Conectado":"WhatsApp offline")+'</span></div><div class="message-feed" id="messages">'+(bubble||'<p class="empty">Carregando mensagens...</p>')+'</div><form class="composer" id="send-form"><button type="button" class="secondary groq-draft-button" data-action="suggest-groq" title="Gerar rascunho com Groq sem enviar" aria-label="Sugerir resposta com Groq">✦ Groq</button><input id="chat-text" autocomplete="off" maxlength="1500" placeholder="Escreva ou revise uma mensagem..." aria-label="Mensagem"><button class="primary" type="submit">Enviar ↗</button></form><p class="under-chat">O Groq sugere um rascunho no seu estilo. Revise e envie manualmente; a IA não envia sozinha.</p>':'<div class="chat-blank"><div class="big-icon">◉</div><h3>Suas conversas, organizadas.</h3><p>Conecte o WhatsApp e receba mensagens para começar.</p><button class="primary" data-tab="connections">Conectar WhatsApp</button></div>')+'</div></section>';
+ return '<section class="chats"><div class="chat-list"><div class="chats-title"><div><h3>Mensagens</h3><p>'+threads.length+' conversas</p></div><span class="small-pill">WhatsApp</span></div><input id="chat-search" class="field" placeholder="Buscar conversa..." value="'+esc(chatFilter)+'">'+(threads.length?threads.map(t=>'<button data-thread="'+esc(t.id)+'" class="chat-person '+(selectedThread===t.id?"selected":"")+'"><span class="avatar">'+esc((t.name||t.business||"?")[0])+'</span><span class="info"><strong>'+esc(t.name||t.business||t.phone)+'</strong><small>'+esc(t.phone||"")+'</small></span><time>'+stamp(t.last_message_at)+'</time></button>').join(""):'<div class="empty">Suas conversas aparecerão aqui quando chegarem mensagens.</div>')+'</div><div class="chat-panel">'+(chosen?'<div class="chat-heading"><span class="avatar">'+esc((chosen.name||chosen.business)[0])+'</span><div><strong>'+esc(chosen.name||chosen.business)+'</strong><small>'+esc(chosen.phone||"")+'</small></div><span class="message-status">'+(wa?.connected?"Conectado":"WhatsApp offline")+'</span></div><div class="message-feed" id="messages">'+(bubble||'<p class="empty">Carregando mensagens...</p>')+'</div>'+(groqSalesProfile?'<div class="chat-profile"><span class="small-pill">Groq · Perfil comercial</span><strong>'+esc(groqSalesProfile.profileLabel||'Em descoberta')+'</strong><span>'+esc(groqSalesProfile.nextAction||'Analisar a conversa')+'</span><small>Inferência de comunicação · '+esc(groqSalesProfile.confidence==='low'?'confiança baixa':'confiança moderada')+'</small></div>':'')+(interactiveState&&chosen?.id===interactiveState.threadId?'<div class="interactive-review" id="interactive-review"><div class="heading"><div><span class="kicker">BOTÕES WHATSAPP</span><h3>Revisar mensagem interativa</h3><p>Visualização depende do aparelho do cliente.</p></div><button class="secondary compact" data-action="hide-options">Fechar</button></div><strong>'+esc(interactiveState.data.title)+'</strong><p>'+esc(interactiveState.data.body)+'</p><div class="option-buttons">'+interactiveState.data.buttons.map(b=>'<div>'+esc(b.displayText)+'</div>').join('')+'</div><div class="actions"><button type="button" class="primary" data-action="send-options">Confirmar envio manual</button><button type="button" class="secondary" data-action="hide-options">Cancelar</button></div><small>Gateway não oficial: a confirmação da API não garante que os botões aparecerão.</small></div>':'')+'<form class="composer" id="send-form"><button type="button" class="secondary groq-draft-button" data-action="suggest-groq" title="Gerar rascunho com Groq sem enviar" aria-label="Sugerir resposta com Groq">✦ Groq</button><button type="button" class="secondary interactive-button" data-action="show-options" title="Revisar botões interativos do WhatsApp">Opções</button><input id="chat-text" autocomplete="off" maxlength="1500" placeholder="Escreva ou revise uma mensagem..." aria-label="Mensagem"><button class="primary" type="submit">Enviar ↗</button></form><p class="under-chat">O Groq sugere um rascunho no seu estilo. Revise e envie manualmente; a IA não envia sozinha.</p>':'<div class="chat-blank"><div class="big-icon">◉</div><h3>Suas conversas, organizadas.</h3><p>Conecte o WhatsApp e receba mensagens para começar.</p><button class="primary" data-tab="connections">Conectar WhatsApp</button></div>')+'</div></section>';
 }
 
 function prospecting(){
@@ -215,7 +215,7 @@ async function reload(){
 document.addEventListener("click",async ev=>{
  const el=ev.target.closest("[data-tab],[data-action],[data-thread],[data-filter]");if(!el)return;
  if(el.dataset.tab){q("#side")?.classList.remove("mobile-open");q(".scrim")?.classList.remove("visible");nav(el.dataset.tab);return;}
- if(el.dataset.thread){selectedThread=el.dataset.thread;messages=[];render();return;}
+ if(el.dataset.thread){selectedThread=el.dataset.thread;messages=[];groqSalesProfile=null;interactiveState=null;render();return;}
  if(el.dataset.filter){prospectFilter=el.dataset.filter;selectedLeadIds.clear();approachPreview=null;await loadProspects();return;}
  const action=el.dataset.action;
  try{
@@ -229,9 +229,26 @@ document.addEventListener("click",async ev=>{
    const result=await post("/api/ai/draft",{text:String(last.body||"").slice(0,1500),context:context.slice(0,2200)});
    const input=q("#chat-text");
    if(!input){n("O chat foi alterado. Abra novamente a conversa.");return;}
-   input.value=result.draft||"";
-   input.focus();
-   n("Rascunho do Groq preparado no estilo Consecom. Revise antes de enviar.");
+   groqSalesProfile=result.profile||null;
+   render();
+   const prepared=q("#chat-text");
+   if(prepared){prepared.value=result.draft||"";prepared.focus();}
+   n("Groq: sugestão baseada no perfil de conversa. Revise antes de enviar.");
+   return;
+  }
+  if(action==="show-options"){
+   if(!selectedThread?.startsWith("wa:")){n("Botões estão disponíveis somente em conversas do WhatsApp sincronizadas.");return;}
+   const data=await api("/api/whatsapp/interactive-preview?mode=introduction");
+   interactiveState={threadId:selectedThread,data};
+   render();q("#interactive-review")?.scrollIntoView({behavior:"smooth",block:"nearest"});
+   return;
+  }
+  if(action==="hide-options"){interactiveState=null;render();return;}
+  if(action==="send-options"){
+   if(!interactiveState||!selectedThread?.startsWith("wa:")||interactiveState.threadId!==selectedThread){n("Abra a conversa e revise os botões.");return;}
+   if(!confirm("Enviar os botões para esta conversa agora? O gateway pode não mostrar os botões no celular do destinatário."))return;
+   const data=await post("/api/whatsapp/interactive-send",{jid:selectedThread.slice(3),mode:interactiveState.data.mode,approve:true,requestId:crypto.randomUUID()});
+   interactiveState=null;render();n(data.message||"Gateway aceitou o envio. Confira no WhatsApp.");await loadMessages(selectedThread);
    return;
   }
   if(action==="menu"){q("#side")?.classList.toggle("mobile-open");q(".scrim")?.classList.toggle("visible");return;}
