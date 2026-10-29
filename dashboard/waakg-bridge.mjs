@@ -5,6 +5,7 @@ import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,
 import {aiDraft} from "./ai-groq.mjs";
 import {ownerReceived} from "./groq-owner.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
+import {queueInboundBrief} from "./personal-concierge.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
@@ -60,6 +61,7 @@ export async function receiveWebhook(req){
  if(!number)return {status:200,body:{accepted:true,ignored:true}};
  const lead=addLead({business:"Contato WhatsApp "+number.slice(-4),phone:number,source:"WHATSAPP_INBOUND",contact_permission:false}).lead;
  const thread=getThread(lead.id,jid);
+ const firstInbound=!one("SELECT id FROM messages WHERE thread_id=? AND direction=\'in\' LIMIT 1",thread.id);
  addMessage({threadId:thread.id,providerId:unique,direction:"in",body:content,status:"received"});
  let state="REVIEW";
  if(/^(?:pare|parar|stop|sair|remover|cancelar|não\s+(?:quero|me\s+contate)|nao\s+(?:quero|me\s+contate))(?:[.! ]|$)/i.test(content)){
@@ -73,6 +75,7 @@ export async function receiveWebhook(req){
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid});
  ownerReceived({jid,sessionId:sid,text:content,providerId:unique});
+ if(firstInbound)queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:"WHATSAPP_INBOUND"});
  if(state==="REVIEW")queueInboundTurn({providerId:unique,jid});
  return {status:200,body:{accepted:true,processed:true}};
 }
