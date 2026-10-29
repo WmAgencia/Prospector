@@ -47,3 +47,26 @@ export class BackchannelPolicy{
  }
  resetTurn(){this.acked=false;}
 }
+
+
+// A separate, scarce cue while Francisca transcribes/thinks/synthesizes.
+// Never pretends to check external data when no lookup was actually performed.
+export class ThinkingCuePolicy{
+ constructor({delayMs=1500,cooldownMs=17000}={}){
+  this.delayMs=delayMs;this.cooldownMs=cooldownMs;this.lastAt=-Infinity;
+  this.turnId=0;this.claimed=false;this.total=0;this.startedAt=0;
+ }
+ start(now=Date.now()){
+  this.turnId++;this.startedAt=now;this.claimed=false;
+  return this.turnId;
+ }
+ due({turnId,now=Date.now(),replying=false,playing=false,ackBusy=false,ended=false}={}){
+  return turnId===this.turnId&&!this.claimed&&replying&&!playing&&!ackBusy&&!ended&&
+   now-this.startedAt>=this.delayMs&&now-this.lastAt>=this.cooldownMs;
+ }
+ claim(now=Date.now()){
+  if(this.claimed)return null;
+  this.claimed=true;this.lastAt=now;
+  return ['pensar','instante','entendi'][this.total++%3];
+ }
+}
