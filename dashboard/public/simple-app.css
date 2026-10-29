@@ -141,3 +141,23 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
  .kanban-board-title small{display:none}
  .kanban-columns{grid-template-columns:repeat(4,235px);gap:8px}
 }
+
+/* Francisca voice controls: accessible, compact, distinct from text sending. */
+.francisca-button{border:1px solid #d2d9ef;background:#f1f4ff;color:#454a91;min-width:93px;font-weight:750;white-space:nowrap}
+.francisca-button:hover{background:#e4eaff;border-color:#aaaee1}
+.francisca-send-button{border:1px solid #bcdccc;background:#edf8f1;color:#236b4a;min-width:79px;white-space:nowrap}
+.francisca-send-button:hover{background:#d9f0e1}
+.composer{flex-wrap:wrap}
+@media(max-width:750px){
+ .composer .francisca-button,.composer .francisca-send-button{flex:1;min-width:0}
+}
+@media(max-width:520px){
+ .composer{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .composer>.groq-draft-button{grid-column:1;grid-row:1}
+ .composer>.interactive-button{grid-column:2;grid-row:1}
+ .composer>.francisca-button{grid-column:3;grid-row:1}
+ .composer>.francisca-send-button{grid-column:4;grid-row:1}
+ .composer input{grid-column:1/-1;grid-row:2}
+ .composer>.primary{grid-column:1/-1;grid-row:3}
+ .composer button{padding:9px 5px;font-size:10px;min-width:0}
+}
