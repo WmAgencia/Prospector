@@ -21,7 +21,15 @@ function jobStatus(s){const v=String(s||'').toLowerCase();return ['completed','c
 async function request(path,{method='GET',payload=null,expect='json'}={}){
  if(!configured())throw Error('Serviço Google Maps não configurado');
  if(!/^\/api\/v1\/jobs(?:\/[a-f0-9-]{36}(?:\/download)?)?$/.test(path))throw Error('Rota de scraper inválida');
- const response=await fetch(URL_BASE+path,{method,headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY,Accept:expect==='json'?'application/json':'text/csv',...(payload!==null?{'Content-Type':'application/json'}:{})},body:payload!==null?JSON.stringify(payload):undefined,signal:AbortSignal.timeout(method==='POST'?22000:20000)});
+ // Render instances may need a cold start. Bound the wait, especially for
+ // queued jobs, without treating a network timeout as a failed scrape.
+ let response;
+ try{
+  response=await fetch(URL_BASE+path,{method,headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY,Accept:expect==='json'?'application/json':'text/csv',...(payload!==null?{'Content-Type':'application/json'}:{})},body:payload!==null?JSON.stringify(payload):undefined,signal:AbortSignal.timeout(method==='POST'?45000:60000)});
+ }catch(error){
+  if(error?.name==='TimeoutError'||error?.name==='AbortError')throw Error('O serviço Gosom não respondeu dentro do prazo. A tarefa foi preservada; tente consultar novamente.');
+  throw Error('Não foi possível conectar ao serviço Gosom; a tarefa foi preservada.');
+ }
  if(!response.ok){if(response.status===401)throw Error('Chave interna do Maps recusada');throw Error('Scraper HTTP '+response.status);}
  return response;
 }
@@ -68,7 +76,7 @@ export async function pollMapsScrape(jobId){
   run("UPDATE maps_scraper_jobs SET status=?,updated_at=?,error=? WHERE id=?",status,now(),status==='FAILED'?'Execução do scraper falhou':null,jobId);
  }
  const j=row(jobId);
- return {id:j.id,status:j.status,niche:j.niche,city:j.city,added:j.added,processed:j.processed,imported:j.status==='IMPORTED',source:'Gosom Google Maps',note:'Dados do Google Maps sujeitos a condições de uso; importação exige confirmação.'};
+ return {id:j.id,status:j.status,niche:j.niche,city:j.city,added:j.added,processed:j.processed,error:j.error||null,imported:j.status==='IMPORTED',source:'Gosom Google Maps',note:'Dados do Google Maps sujeitos a condições de uso; importação exige confirmação.'};
 }
 function csvRows(src){
  if(typeof src!=='string'||src.length>3_000_000)throw Error('CSV muito grande');
@@ -126,7 +134,10 @@ export async function refreshActiveMapsScrapes({limit=2,maxAgeHours=6}={}){
    const state=await pollMapsScrape(job.id);
    outcomes.push({id:job.id,status:state.status,changed:state.status!==job.status});
   }catch(error){
-   outcomes.push({id:job.id,error:String(error?.message||error).slice(0,140)});
+   const message=String(error?.message||error).slice(0,140);
+   // A temporary outage is diagnostic, not job failure. Keep the provider ID.
+   run("UPDATE maps_scraper_jobs SET error=?,updated_at=? WHERE id=? AND status IN ('PENDING','RUNNING')",message,now(),job.id);
+   outcomes.push({id:job.id,error:message});
   }
  }
  return outcomes;

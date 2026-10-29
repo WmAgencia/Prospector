@@ -13,13 +13,14 @@ const maps=await import('../dashboard/gosom-maps.mjs');
 
 test('Gosom job creation, background completion, confirmed import and deduplication',async()=>{
  const providerId='11111111-1111-4111-8111-111111111111';
- let status='running',creates=0,downloads=0,reads=0;
+ let status='running',creates=0,downloads=0,reads=0,timeoutNext=false;
  const csv=[
   'link,title,phone,website,address',
   '"https://www.google.com/maps/place/Empresa+QA","Empresa QA","+55 15 99999-1111","https://qa.example.org","Rua Um, 1"',
   '"https://www.google.com/maps/place/Empresa+QA","Empresa QA","+55 15 99999-1111","https://qa.example.org","Rua Um, 1"',
  ].join('\r\n');
  globalThis.fetch=async(url,opts={})=>{
+  if(timeoutNext){timeoutNext=false;throw new DOMException('timeout','TimeoutError');}
   const u=new URL(String(url));
   assert.equal(u.host,'consecom-prospector-maps.onrender.com');
   assert.equal(opts.headers?.['X-Prospector-Maps-Key'],'test-server-only-secret');
@@ -45,6 +46,11 @@ test('Gosom job creation, background completion, confirmed import and deduplicat
   assert.equal(updated[0].status,'RUNNING');
   assert.equal(updated[0].changed,true);
   assert.equal(downloads,0,'status polling must never import automatically');
+  timeoutNext=true;
+  const unavailable=await maps.refreshActiveMapsScrapes();
+  assert.match(unavailable[0].error,/Gosom não respondeu/);
+  assert.equal(db.one('SELECT status FROM maps_scraper_jobs WHERE id=?',created.id).status,'RUNNING','timeout is not a failed scrape');
+  assert.match(db.one('SELECT error FROM maps_scraper_jobs WHERE id=?',created.id).error,/Gosom não respondeu/);
   status='completed';
   updated=await maps.refreshActiveMapsScrapes();
   assert.equal(updated[0].status,'COMPLETED');
