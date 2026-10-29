@@ -2,6 +2,7 @@
 const BASE='https://api.groq.com/openai/v1';
 const tasks={
  conversation:['openai/gpt-oss-120b','llama-3.3-70b-versatile','openai/gpt-oss-20b'],
+ voice:['openai/gpt-oss-20b','llama-3.3-70b-versatile','llama-3.1-8b-instant','openai/gpt-oss-120b'],
  actions:['openai/gpt-oss-120b','openai/gpt-oss-20b','llama-3.3-70b-versatile'],
  quick:['llama-3.1-8b-instant','openai/gpt-oss-20b','openai/gpt-oss-120b'],
  summarization:['openai/gpt-oss-20b','llama-3.1-8b-instant','openai/gpt-oss-120b'],
