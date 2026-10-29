@@ -5,7 +5,7 @@ const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short"
 const tabs={overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",settings:"Configurações"};
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
 let view=["overview","conversations","prospects","connections","settings"].includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
-let state=null,wa=null,ai=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false;
+let salesResults=null,state=null,wa=null,ai=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false;
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
 function newProspectSession(){
  const token=crypto.randomUUID();
@@ -80,7 +80,12 @@ function overview(){
   '<div class="kanban-columns" aria-label="Kanban comercial">'+definition.map(([key,label,description])=>
    '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items">'+
    ((k.columns?.[key]||[]).length?k.columns[key].map(x=>item(x,key)).join(''):'<div class="kanban-empty">Nenhuma empresa nesta etapa.</div>')+'</div></section>').join('')+
-  '</div></div>';
+  '</div>'+
+  '<section class="panel" style="margin-top:20px"><div class="heading"><div><h3>Desfechos comerciais</h3><p>Referência média por site: R$ '+esc(salesResults?.priceReferenceBrl||550)+' · Proposta final depende do escopo.</p></div></div>'+
+   (salesResults?.items?.length?salesResults.items.slice(0,8).map(x=>
+    '<div class="kanban-lead" style="margin-bottom:8px"><div class="kanban-lead-top"><div><strong>'+esc(x.business)+'</strong><small>'+esc(({INTERESTED:'Interessado',NO_INTEREST:'Sem interesse',OPT_OUT:'Não contatar',HUMAN_REVIEW:'Revisão humana',CLOSED_WON:'Venda confirmada'})[x.status]||x.status)+'</small></div></div><p>'+esc(x.summary)+'</p>'+
+    (x.phone?'<a class="kanban-message" target="_blank" rel="noopener noreferrer" href="https://wa.me/'+encodeURIComponent(x.phone)+'">Abrir conversa ↗</a>':'')+'</div>').join(''):'<p>Nenhum desfecho comercial confirmado ainda.</p>')+
+  '</section></div>';
 }
 
 function conversations(){
@@ -103,8 +108,8 @@ function prospecting(){
   '<section class="panel prospect-results-simple"><div class="heading"><div><h2>Empresas não abordadas</h2><p>'+count+' resultado'+(count===1?'':'s')+' na base'+(niche||city?' para esta pesquisa':'')+'. Empresas já abordadas não aparecem.</p></div></div>'+
   '<div class="selection-toolbar"><div class="selection-left"><button type="button" class="secondary" data-action="toggle-all" '+(available.length?'':'disabled')+'>'+glyph('check')+' '+(allSelected?'Desmarcar todas':'Selecionar todas')+'</button><span class="selection-count">'+selectedLeadIds.size+' selecionada'+(selectedLeadIds.size===1?'':'s')+'</span></div><button type="button" class="primary" data-action="approach-selected" '+(!selectedLeadIds.size||active?'disabled':'')+'>Abordar '+glyph('arrow')+'</button></div>'+
   (active?'<div class="prospect-queue-strip" role="status"><span>Fila de abordagens: '+waiting+' aguardando · intervalo mínimo de 90 segundos</span><button class="secondary compact" type="button" data-action="cancel-approach-queue">Cancelar fila</button></div>':'')+
-  (records.length?'<div class="table-wrap"><table class="result-table"><thead><tr><th class="check-col">SEL.</th><th>EMPRESA</th><th>CIDADE / RAMO</th><th>TELEFONE</th><th>ABRIR</th></tr></thead><tbody>'+records.map(p=>
-  '<tr class="'+(selectedLeadIds.has(p.id)?'selected-row':'')+'"><td><input type="checkbox" class="lead-checkbox" data-select-lead="'+esc(p.id)+'" '+(selectedLeadIds.has(p.id)?'checked':'')+' '+(p.selectable?'':'disabled')+' aria-label="Selecionar '+esc(p.business)+'"></td><td><strong>'+esc(p.business)+'</strong><small>'+esc(p.website||'')+'</small></td><td>'+esc(p.city||'—')+'<small>'+esc(p.segment||'—')+'</small></td><td>'+esc(p.phone||'Sem telefone')+'</td><td><div class="external-actions"><a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.maps_url||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.business+' '+(p.city||'')))+'">Maps ↗</a>'+(p.instagram_url?'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.instagram_url)+'">Instagram ↗</a>':'')+'</div></td></tr>'
+  (records.length?'<div class="table-wrap"><table class="result-table"><thead><tr><th class="check-col">SEL.</th><th>EMPRESA</th><th>CIDADE / RAMO</th><th>TELEFONE</th><th>AUTORIZAÇÃO</th><th>ABRIR</th></tr></thead><tbody>'+records.map(p=>
+  '<tr class="'+(selectedLeadIds.has(p.id)?'selected-row':'')+'"><td><input type="checkbox" class="lead-checkbox" data-select-lead="'+esc(p.id)+'" '+(selectedLeadIds.has(p.id)?'checked':'')+' '+(p.selectable?'':'disabled')+' aria-label="Selecionar '+esc(p.business)+'"></td><td><strong>'+esc(p.business)+'</strong><small>'+esc(p.website||'')+'</small></td><td>'+esc(p.city||'—')+'<small>'+esc(p.segment||'—')+'</small></td><td>'+esc(p.phone||'Sem telefone')+'</td><td>'+esc(p.authorized?'Autorizado':'Pendente')+'</td><td><div class="external-actions"><a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.maps_url||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.business+' '+(p.city||'')))+'">Maps ↗</a>'+(p.instagram_url?'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.instagram_url)+'">Instagram ↗</a>':'')+'</div></td></tr>'
   ).join('')+'</tbody></table></div>':'<div class="empty prospect-empty"><span class="empty-mark">'+glyph('search')+'</span><h4>Nenhuma empresa encontrada</h4><p>Pesquise um ramo e uma cidade. Se as fontes externas não responderem, a lista mostrará apenas registros já salvos.</p></div>')+
   '<p class="prospect-disclaimer">O envio fica restrito a empresas com autorização documentada; encontrar um telefone público não significa permissão para abordar. O intervalo de 90 segundos não garante que o WhatsApp não aplique restrições.</p>'+
   '</section></div>';
@@ -230,7 +235,7 @@ async function loadMessages(id){
   if(!id.startsWith("wa:"))await post("/api/threads/"+encodeURIComponent(id)+"/read",{}).catch(()=>{});
  }catch(e){const feed=q("#messages");if(feed)feed.textContent="Não foi possível carregar a conversa.";}
 }
-async function loadKanban(){try{kanban=await api('/api/kanban');if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
+async function loadKanban(){try{[kanban,salesResults]=await Promise.all([api('/api/kanban'),api('/api/sales/outcomes')]);if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
 async function reload(){
  try{
   state=await api("/api/state");lastRefresh=Date.now();
