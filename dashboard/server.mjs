@@ -44,6 +44,16 @@ import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
 
+// Explicitly authorized one-shot production discovery check for Sorocaba mechanics.
+// Writes only sourced business leads, with contact_permission=false; no messages.
+if(process.env.RUN_PROSPECTING_LIVE_SMOKE==='true'){
+ setTimeout(async()=>{
+  try{
+   const data=await prospectingSearch({niche:'oficina mecânica',city:'Sorocaba'});
+   console.info('[prospecting-live-smoke]',JSON.stringify({ok:true,added:data.added,examined:data.examined,visible:data.uncontacted,source:data.source,cached:!!data.cached}));
+  }catch(error){console.warn('[prospecting-live-smoke]',JSON.stringify({ok:false,message:String(error?.message||error).slice(0,200)}));}
+ },7000).unref();
+}
 // One-shot synthetic functional test when explicitly enabled. Does not touch customer data.
 if(process.env.RUN_GROQ_FUNCTION_SMOKE==='true'){
  setTimeout(async()=>{
