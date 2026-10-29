@@ -6,7 +6,8 @@ import {makeFranciscaCallPcm} from './francisca-tts.mjs';
 const sessions=new Map();
 // Common acknowledgement clips only; no caller content or recordings cached.
 const backchannelClips=new Map();
-const BACKCHANNELS={aham:'Aham.',hum:'Hum.',entendi:'Entendi.'};
+const BACKCHANNELS={aham:'Aham.',hum:'Hum.',entendi:'Ah, entendi.',
+ pensar:'Hum, deixa eu pensar.',instante:'Certo, só um instante.'};
 async function backchannelClip(kind){
  if(!Object.hasOwn(BACKCHANNELS,kind))throw Error('CALL_BACKCHANNEL_UNSUPPORTED');
  let promise=backchannelClips.get(kind);
@@ -49,6 +50,9 @@ export async function processCallBridge(a={}){
   return {ok:true,event:'backchannel',rate:16000,pcm16k:voice.pcm16k.toString('base64')};
  }
  if(a.event==='greeting'){
+  // Warm a small fixed set of low-volume listening/thinking phrases without
+  // blocking the greeting or persisting any caller audio.
+  void Promise.allSettled(['aham','pensar','instante','entendi'].map(backchannelClip));
   const greet='Alô! Aqui é a Francisca, da Consecom. Estou ouvindo, pode falar.';
   const voice=await makeFranciscaCallPcm(greet);
   return {ok:true,event:'greeting',spoken:greet,rate:16000,pcm16k:voice.pcm16k.toString('base64')};
