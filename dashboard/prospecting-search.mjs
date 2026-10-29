@@ -57,7 +57,7 @@ export function prospectingList({niche="",city="",status="uncontacted",limit=500
   // Links open for operator review. Google Maps search is used when the source
   // does not provide a verified place URL; no fake place ID is invented.
   maps_url:(String(notes||"").match(/https:\/\/(?:www\.)?google\.[a-z.]+\/maps[^\s|]*/i)||[])[0]||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(x.business+' '+(x.city||'')),
-  instagram_url:/^[a-z0-9._]{2,30}$/i.test(x.instagram||'')?'https://www.instagram.com/'+x.instagram+'/':null,
+  instagram_url:(()=>{const m=/^https?:\\/\\/(?:www\\.)?instagram\\.com\\/([a-z0-9._]{2,30})(?:\\/|$)/i.exec(x.website||'');const user=/^[a-z0-9._]{2,30}$/i.test(x.instagram||'')?x.instagram:m?.[1];return user?'https://www.instagram.com/'+user+'/':null;})(),
   needs_permission:x.contact_permission!==1
  })),partial:allRows.length===6000,source:"Base do Prospector",note:"Não contatada significa sem envio registrado, desconsiderando números bloqueados. O sistema não conhece contatos feitos fora do Prospector."};
 }
