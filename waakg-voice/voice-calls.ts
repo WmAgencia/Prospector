@@ -2,7 +2,7 @@
 // No second socket, credentials store, or outgoing calls. Owner-only inbound calls.
 // Compatible with the pinned community voice-protocol (typechecked in CI).
 import {jidDecode, jidEncode, type BinaryNode} from "@whiskeysockets/baileys";
-import {NativeCallManager,createCallAck} from "../../voice-protocol/src/index.js";
+import {NativeCallManager,createCallAck} from "./voice-protocol/src/index.js";
 import type {WASocket} from "@whiskeysockets/baileys";
 
 const SAMPLE_RATE=16000;
