@@ -30,7 +30,7 @@ jobs:
           node --check dashboard/studio-sync.mjs
           node --check dashboard/server.mjs
           node --check dashboard/public/app.js
-          node --check dashboard/public/simple-app.js
+          node --input-type=module --check < dashboard/public/simple-app.js
           node --check dashboard/prospecting-search.mjs
           node --check dashboard/gosom-maps.mjs
           node --check dashboard/public/campaign-ui.js
