@@ -4,6 +4,7 @@ import {mkdtemp,mkdir,writeFile,rm,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {makeFranciscaCallPcm} from '../dashboard/francisca-tts.mjs';
+process.env.FRANCISCA_TTS_ENABLED='true';
 
 test('phone-call TTS produces PCM16 directly without AAC and cleans temporary files',async()=>{
  const root=await mkdtemp(path.join(tmpdir(),'francisca-pcm-unit-'));
