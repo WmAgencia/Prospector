@@ -34,7 +34,7 @@ import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsApp
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
-import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
+import {waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
@@ -91,6 +91,22 @@ if(process.env.RUN_KANBAN_SMOKE==='true'){
    }));
   }catch(error){console.warn('[kanban-live-smoke]',JSON.stringify({ok:false,errorType:error?.name||'ERROR',description:String(error?.message||'').slice(0,135)}));}
  },9000).unref();
+}
+// Read-only test preflight for the operator-owned number ending 7336.
+// No chat bodies, access keys or full phone identifiers are logged.
+if(process.env.RUN_TEST_7336_PREFLIGHT==='true'){
+ setTimeout(async()=>{
+  try{
+   const status=await waControlStatus();
+   const identity=await waIdentityStatus();
+   const suffix=(process.env.PROSPECTOR_HOT_LEAD_PHONE||'').replace(/\D/g,'').slice(-4);
+   console.info('[test-7336-preflight]',JSON.stringify({ok:status.ok,connected:status.connected,
+     status:status.status,hasSession:status.hasSession,sessionConfigured:!!status.sessionId,
+     senderSuffix:identity.numberSuffix,recipientSuffix:suffix,
+     sameSenderAndRecipient:!!identity.numberSuffix&&identity.numberSuffix===suffix,
+     safeToAttempt:status.connected&&identity.numberSuffix!==suffix}));
+  }catch(e){console.warn('[test-7336-preflight]',JSON.stringify({ok:false,errorType:e?.name||'ERROR'}));}
+ },5000).unref();
 }
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
