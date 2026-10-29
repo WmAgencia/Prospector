@@ -2,6 +2,7 @@
 // model output, imported names, or a last-four-digit match for authorization.
 import {db,one,run,now,audit,phone} from './db.mjs';
 import {testModeAllowed} from './groq-live-test-guard.mjs';
+import {selectedWaSession} from './waakg-control.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS contact_relationships(phone TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('EXISTING_CLIENT')),evidence TEXT NOT NULL,source TEXT NOT NULL,updated_at TEXT NOT NULL)");
 const fullPhone=x=>{
  const p=phone(x);
@@ -15,7 +16,7 @@ export function verifiedOwnerPhone(){
 export function classifyContact({jid,sessionId}={}){
  const inbound=/^\d{12,13}@s\.whatsapp\.net$/.test(String(jid||''));
  const number=inbound?fullPhone(String(jid).split('@')[0]):null;
- if(!number||!sessionId||sessionId!==process.env.WA_AKG_SESSION_ID)return {role:'UNVERIFIED',authorized:false,reason:'UNVERIFIED_SESSION'};
+ if(!number||!sessionId||sessionId!==selectedWaSession())return {role:'UNVERIFIED',authorized:false,reason:'UNVERIFIED_SESSION'};
  const owner=verifiedOwnerPhone();
  if(owner&&number===owner)return {
   role:'OWNER',authorized:true,ownerTools:!testModeAllowed(number),
