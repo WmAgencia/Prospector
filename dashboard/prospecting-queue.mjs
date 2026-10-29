@@ -90,6 +90,7 @@ export async function tickApproachQueue(deps={}){
    const nowMs=currentTime();
    if(nowMs-latest<APPROACH_INTERVAL_MS)return false;
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
+   if(!eligibleLead(next.lead_id,next.id))return false;
    run('UPDATE prospecting_send_clock SET last_attempt_ms=? WHERE id=1',nowMs);
    run("UPDATE prospecting_batch_items SET status='SENDING',attempt_at=? WHERE id=? AND status='QUEUED'",new Date(nowMs).toISOString(),next.id);
    // No duplicate recipient attempts even after crashes.
