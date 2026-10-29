@@ -39,13 +39,14 @@ import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inboun
 import {voiceStatus,makeFranciscaVoice} from './francisca-tts.mjs';
 import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
-import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
+import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
 import {kanbanSnapshot} from './kanban.mjs';
 import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
+import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
@@ -365,7 +366,14 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/google-places/status')return respond(res,200,placesStatus());
   if(req.method==='POST'&&pathname==='/api/google-places/search'){const result=await placesSearch(await json(req));return respond(res,result.status,result.body);}
   if(req.method==='POST'&&pathname==='/api/whatsapp/reply'){const result=await sendChatMessage(await json(req));if(result.status===200)notify();return respond(res,result.status,result.body);}
-  if(req.method==='GET'&&pathname==='/api/whatsapp/chats'){try{return respond(res,200,await remoteChats());}catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
+  if(req.method==='GET'&&pathname==='/api/whatsapp/chats'){try{
+  const chats=await remoteChats();
+  return respond(res,200,{...chats,items:(chats.items||[]).map(c=>{
+   const role=classifyContact({jid:c.jid,sessionId:selectedWaSession()});
+   const lead=one('SELECT id FROM leads WHERE phone=?',phone(c.phone));
+   return {...c,contactRole:role.role,relationshipReason:role.reason,leadId:lead?.id||null};
+  })});
+ }catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
   if(req.method==='GET'&&pathname==='/api/whatsapp/chat-messages'){try{return respond(res,200,await remoteMessages(url.searchParams.get('jid')||''));}catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/reply-remote'){const r=await sendRemoteReply(await json(req));if(r.status===200)notify();return respond(res,r.status,r.body);}
   if(req.method==='GET'&&pathname==='/api/whatsapp/interactive-preview'){try{return respond(res,200,interactivePreview({mode:url.searchParams.get('mode')||'introduction'}));}catch(e){return respond(res,400,{error:e.message});}}
@@ -377,6 +385,19 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:500}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
+  if(req.method==='GET'&&pathname==='/api/whatsapp/contact-role'){
+   const p=phone(url.searchParams.get('phone')||'');
+   if(!p)return respond(res,400,{error:'Número inválido'});
+   const identity=classifyContact({jid:p+'@s.whatsapp.net',sessionId:selectedWaSession()});
+   return respond(res,200,{role:identity.role,reason:identity.reason,ownerTools:identity.ownerTools===true,
+    testSandbox:identity.testSandbox===true,phoneSuffix:p.slice(-4)});
+  }
+  if(req.method==='POST'&&/^\/api\/leads\/[^/]+\/relationship$/.test(pathname)){
+   const leadId=pathname.split('/')[3],v=await json(req);
+   if(v.confirm!==true)return respond(res,400,{error:'Confirmação administrativa é obrigatória'});
+   const result=setExistingClientRelationship({leadId,existing:v.existing,evidence:v.evidence});
+   notify();return respond(res,200,result);
+  }
   if(req.method==='GET'&&pathname==='/api/ai/customer-status')return respond(res,200,agentStatus());
   if(req.method==='GET'&&pathname==='/api/ai/concierge-status')return respond(res,200,statusConcierge());
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());

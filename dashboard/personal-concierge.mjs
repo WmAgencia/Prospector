@@ -2,6 +2,7 @@
 // Notices are independent of customer autoreplies and idempotent per contact.
 import {one,all,run,now} from './db.mjs';
 import {queueNotice} from './notifications.mjs';
+import {verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {waControlStatus,waIdentityStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
 
 const digits=x=>String(x||'').replace(/\D/g,'');
@@ -25,7 +26,7 @@ export function queueInboundBrief({leadId,phone,body,source='WHATSAPP_INBOUND'}=
  const dest=personalPhone();
  if(process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true'||!dest||!leadId)return false;
  const p=digits(phone);
- if(p===dest)return false;
+ if(p===dest||p===verifiedOwnerPhone())return false;
  const kind=classifyInbound(body);
  if(kind.category==='opt_out')return false;
  const clean=String(body||'').replace(/[\r\n\t]+/g,' ').slice(0,180);

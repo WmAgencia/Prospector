@@ -4,6 +4,7 @@ import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 process.env.PROSPECTOR_DATA_DIR=await mkdtemp(path.join(os.tmpdir(),'francisca-test-'));
+process.env.WA_AKG_SESSION_ID='consecom-principal';
 const db=await import('../dashboard/db.mjs');
 const {safeMediaPath,fetchPrivateAudio,sendVoiceMedia}=await import('../dashboard/waakg-media.mjs');
 const {transcribeAudio,queueInboundAudio,processAudioJobs,audioStatus}=await import('../dashboard/waakg-audio-inbound.mjs');

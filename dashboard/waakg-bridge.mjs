@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
 import {ownerReceived} from "./groq-owner.mjs";
+import {classifyContact} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
@@ -72,6 +73,14 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  if(!content)return {status:400,body:{accepted:false,error:'EMPTY_TRANSCRIPT'}};
  const number=phone(jid.split("@")[0]);
  if(!number)return {status:200,body:{accepted:true,ignored:true}};
+ const identity=classifyContact({jid,sessionId:sid});
+ if(identity.role==='UNVERIFIED')return {status:200,body:{accepted:true,ignored:true}};
+ if(identity.role==='OWNER'&&!identity.testSandbox){
+  // Owner messages are NEVER persisted as customer leads or sales prospects.
+  const accepted=ownerReceived({jid,sessionId:sid,text:content,providerId:unique});
+  return {status:200,body:{accepted:true,processed:accepted,owner:true,
+    ownerToolsAuthorized:identity.ownerTools}};
+ }
  const lead=addLead({business:"Contato WhatsApp "+number.slice(-4),phone:number,source:"WHATSAPP_INBOUND",contact_permission:false}).lead;
  const thread=getThread(lead.id,jid);
  const firstInbound=!one("SELECT id FROM messages WHERE thread_id=? AND direction=\'in\' LIMIT 1",thread.id);
@@ -86,8 +95,8 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  }
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
- audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source});
- ownerReceived({jid,sessionId:sid,text:content,providerId:unique});
+ audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
+ // The owner has already been routed above, including the sandbox exception.
  if(firstInbound)queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
  if(state==="REVIEW")queueInboundTurn({providerId:unique,jid});
  return {status:200,body:{accepted:true,processed:true}};

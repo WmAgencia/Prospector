@@ -2,12 +2,12 @@ import {db,one,all,run,id,now,audit} from './db.mjs';
 import {groqChat,groqCatalog} from './groq-models.mjs';
 import {agentTools,runAgentTool,claimApproval,markApproval,executeConfirmedOperation} from './groq-owner-tools.mjs';
 import {selectedWaSession,waRequest} from './waakg-control.mjs';
-import {testModeAllowed} from './groq-live-test-guard.mjs';
+import {verifiedOwnerPhone,classifyContact} from './whatsapp-roles.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_owner_history(id TEXT PRIMARY KEY,event_id TEXT UNIQUE NOT NULL,role TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS groq_owner_events(provider_id TEXT PRIMARY KEY,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 const backlog=[];
 let running=false;
-function owner(){return String(process.env.GROQ_OWNER_WHATSAPP||'').replace(/\D/g,'');}
+function owner(){return verifiedOwnerPhone()||'';}
 export function ownerStatus(){return {provider:'GroqCloud',active:!!process.env.GROQ_API_KEY&&owner().length>=12,ownerConfigured:owner().length>=12,ownerSuffix:owner().slice(-4),autoReplyOnlyOwner:true,allowsBulk:false};}
 export async function ownerModels(){return groqCatalog();}
 async function send(session,jid,text){
@@ -66,7 +66,8 @@ async function respondToOwner(e){
  }catch(err){console.warn('[groq-owner]',err?.message?.slice(0,120)||'REQUEST_FAILED');return false;}
 }
 export function ownerReceived({jid,sessionId,text,providerId}={}){
- if(testModeAllowed(String(jid||'').split('@')[0]))return false; // QA contact belongs only to the sales test assistant.
+ const identity=classifyContact({jid,sessionId});
+ if(identity.role!=='OWNER'||identity.ownerTools!==true)return false;
  if(!ownerStatus().active||sessionId!==selectedWaSession()||jid!==owner()+'@s.whatsapp.net'||typeof text!=='string'||!text.trim()||!providerId)return false;
  if(one('SELECT provider_id FROM groq_owner_events WHERE provider_id=?',providerId))return false;
  run('INSERT INTO groq_owner_events(provider_id,state,created_at,updated_at) VALUES(?,?,?,?)',providerId,'QUEUED',now(),now());

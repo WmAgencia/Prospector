@@ -6,6 +6,7 @@ import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
+import {classifyContact} from './whatsapp-roles.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
 import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,acceptPart,partsFor} from './groq-reply-channels.mjs';
@@ -25,16 +26,23 @@ export async function handleSalesTurn(providerId,deps={}){
  const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
  if(!r)return {state:'SKIP'};
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
- const allowTest=testModeAllowed(r.phone);
+ const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
+ const allowTest=identity.role==='OWNER'&&identity.testSandbox===true;
+ if(identity.role==='UNVERIFIED')return finish('SKIPPED','UNVERIFIED_SENDER');
+ if(identity.role==='OWNER'&&!allowTest)return finish('HANDOFF','OWNER_PRIVILEGED_CHANNEL');
  if(process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
  if(r.session_id!==selectedWaSession())return finish('SKIPPED','SESSION');
  if(!allowTest&&(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP)||r.phone===personalPhone()))return finish('SKIPPED','OWNER');
  if(optedOut(r.body)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT');
- if(['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(r.stage))return finish('SKIPPED','ALREADY_HANDOFF');
+ if(['INTERESTED','NO_INTEREST'].includes(r.stage)||
+   (r.stage==='CLOSED_WON'&&identity.role!=='EXISTING_CLIENT'))return finish('SKIPPED','ALREADY_HANDOFF');
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
  const history=all("SELECT direction,body FROM messages WHERE thread_id=? ORDER BY at DESC LIMIT 8",r.thread_id).reverse().map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
  const qualify=deps.qualify||qualifyWithGroq;
- const interest=await qualify({text:r.body,history});
+ // Existing customers and owner QA NEVER become sales opportunities from
+ // their ordinary WhatsApp messages, regardless of how they phrase a request.
+ const interest=['EXISTING_CLIENT','OWNER'].includes(identity.role)?
+  {confirmed:false,reason:'NOT_A_SALES_PROSPECT'}:await qualify({text:r.body,history});
  if(interest.confirmed){
   tx(()=>{
    if(one('SELECT manual_takeover FROM threads WHERE id=?',r.thread_id)?.manual_takeover!==1){
@@ -48,7 +56,7 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('HOT');
  }
  // An apparent commitment which the model cannot verify is left for review.
- if(explicitInterest(r.body))return finish('REVIEW','UNCERTAIN_INTEREST');
+ if(identity.role!=='EXISTING_CLIENT'&&identity.role!=='OWNER'&&explicitInterest(r.body))return finish('REVIEW','UNCERTAIN_INTEREST');
  if(process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&!allowTest)return finish('REVIEW','AI_AUTOREPLY_DISABLED');
  if(r.inbox_state!=='REVIEW'||r.manual_takeover)return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
@@ -58,9 +66,9 @@ export async function handleSalesTurn(providerId,deps={}){
  if(incoming.human)return finish('HANDOFF','REQUESTED_HUMAN');
  // A one-word hello never requires an external model call.
  const draft=incoming.intro?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
-   await (deps.draft||aiDraft)({text:r.body,context:history+
-     '\nEste é um contato que iniciou uma conversa. Identifique primeiro o assunto. '+
-     'Se não for sobre Consecom ou não estiver claro, pergunte o que a pessoa precisa. '+
+   await (deps.draft||aiDraft)({text:r.body,audience:identity.role,context:history+
+     '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
+     'Se não estiver claro, pergunte o que a pessoa precisa. '+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.'});
  if(!draft.ok||!draft.draft)return finish('REVIEW','GROQ_UNAVAILABLE');
  const review=reviewGroqReply({inbound:r.body,draft:draft.draft});
@@ -110,7 +118,7 @@ export async function handleSalesTurn(providerId,deps={}){
   addMessage({threadId:r.thread_id,providerId:'groq:'+providerId,direction:'out',
     body:prefix+draft.draft,status:'sent'});
   audit('GROQ_AUTOMATED_INBOUND_REPLY',r.lead_id,{inbound:true,testOnly:allowTest,
-    replyLength:draft.draft.length,deliveryMode:routing.mode,channelReason:routing.reason,parts:accepted});
+    replyLength:draft.draft.length,deliveryMode:routing.mode,channelReason:routing.reason,contactRole:identity.role,parts:accepted});
   return finish('SENT');
  }catch(e){
   // If the written part was accepted but a voice send fails, NEVER send it again.

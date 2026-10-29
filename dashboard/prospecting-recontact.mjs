@@ -1,6 +1,7 @@
 // Three calendar months (not an approximation of 90 days) between
 // contact attempts or renewed appearances in prospecting.
 import {one} from './db.mjs';
+import {hasExistingClientRelationship,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 export function threeMonthsAfter(value){
  const src=new Date(value);if(!Number.isFinite(src.getTime()))return null;
  const year=src.getUTCFullYear(),month=src.getUTCMonth(),day=src.getUTCDate();
@@ -23,6 +24,8 @@ export function latestOutreachAt(leadId,phone){
 }
 export function recontactDecision(lead,at=Date.now(),excludeQueuedItemId=''){
  if(!lead?.id)return {eligible:false,reason:'MISSING'};
+ if(lead.phone&&lead.phone===verifiedOwnerPhone())return {eligible:false,reason:'OWNER'};
+ if(hasExistingClientRelationship(lead.phone))return {eligible:false,reason:'EXISTING_CLIENT'};
  if(lead.phone&&one('SELECT phone FROM suppressions WHERE phone=?',lead.phone))return {eligible:false,reason:'OPT_OUT'};
  if(['INTERESTED','CONVERSING','CLOSED_WON'].includes(lead.stage))return {eligible:false,reason:'ACTIVE_RELATIONSHIP'};
  const thread=one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id);
