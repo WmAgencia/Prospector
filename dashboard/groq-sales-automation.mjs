@@ -6,6 +6,8 @@ import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
+import {makeFranciscaVoice} from './francisca-tts.mjs';
+import {sendVoiceMedia} from './waakg-media.mjs';
 import {waControlStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_auto_events(provider_id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,at TEXT NOT NULL,error TEXT)");
 run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify before retry' WHERE state IN ('PROCESSING','SENDING')");
@@ -66,11 +68,19 @@ export async function handleSalesTurn(providerId,deps={}){
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
  run("UPDATE groq_auto_events SET state='SENDING' WHERE provider_id=?",providerId);
  try{
-  const send=deps.send||waRequest;
-  const ack=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(r.jid)+'/send',{method:'POST',data:{message:{text:draft.draft}}});
-  if(ack.status!==true)return finish('UNKNOWN','UNCONFIRMED');
-  addMessage({threadId:r.thread_id,providerId:'groq:'+providerId,direction:'out',body:draft.draft,status:'sent'});
-  audit('GROQ_AUTOMATED_INBOUND_REPLY',r.lead_id,{inbound:true,testOnly:allowTest,replyLength:draft.draft.length});
+  const replyWithVoice=process.env.AUDIO_RESPONSE_ENABLED==='true'&&
+   !!one("SELECT provider_id FROM inbound_audio_jobs WHERE provider_id=? AND state='DONE'",providerId);
+  if(replyWithVoice){
+   const rendered=await (deps.voice||makeFranciscaVoice)(draft.draft);
+   await (deps.sendVoice||sendVoiceMedia)({jid:r.jid,session,bytes:rendered.bytes});
+  }else{
+   const send=deps.send||waRequest;
+   const ack=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(r.jid)+'/send',{method:'POST',data:{message:{text:draft.draft}}});
+   if(ack.status!==true)return finish('UNKNOWN','UNCONFIRMED');
+  }
+  addMessage({threadId:r.thread_id,providerId:'groq:'+providerId,direction:'out',
+    body:replyWithVoice?'[Áudio Francisca] '+draft.draft:draft.draft,status:'sent'});
+  audit('GROQ_AUTOMATED_INBOUND_REPLY',r.lead_id,{inbound:true,testOnly:allowTest,replyLength:draft.draft.length,voice:replyWithVoice});
   return finish('SENT');
  }catch{return finish('UNKNOWN','TRANSPORT_UNCERTAIN');}
 }
