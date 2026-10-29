@@ -56,7 +56,7 @@ test('Only a CONFIRMED first outbound contact sets PROSPECT_APPROACHED',()=>{
 test('Only operator-confirmed relationship or completed sale classifies existing client',()=>{
  const a=lead('5515991112226');outreach(a);
  assert.equal(roles.classifyContact({jid:jid(a.phone),sessionId:s}).role,'PROSPECT_APPROACHED');
- assert.throws(()=>roles.setExistingClientRelationship({leadId:a.id,existing:true,evidence:'sou cliente'}),/comprovação/);
+ assert.throws(()=>roles.setExistingClientRelationship({leadId:a.id,existing:true,evidence:'sim'}),/comprovação/);
  const updated=roles.setExistingClientRelationship({leadId:a.id,existing:true,evidence:'Contrato cadastrado pelo operador'});
  assert.equal(updated.role,'EXISTING_CLIENT');
  assert.equal(roles.classifyContact({jid:jid(a.phone),sessionId:s}).role,'EXISTING_CLIENT');
