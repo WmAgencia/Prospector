@@ -2,7 +2,15 @@
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 const intent=/\b(quero contratar|quero fechar|vamos fechar|vamos fazer|quero fazer|aceito a proposta|pode mandar o contrato|quero agendar uma reuniao|vamos marcar uma reuniao|quando podemos comecar|quero iniciar o projeto)\b/;
 const refusal=/\b(sem interesse|nao quero|nao me contate|parar|pare|stop)\b/;
-export function explicitInterest(text){const n=norm(text);return intent.test(n)&&!refusal.test(n);}
+export function explicitInterest(text){
+ const n=norm(text),match=intent.exec(n);
+ if(!match||refusal.test(n))return false;
+ const before=n.slice(Math.max(0,match.index-56),match.index);
+ // A negated or hypothetical intent is NOT a confirmed buyer.
+ if(/\\b(?:nao|nem|nunca)\\s+(?:(?:[a-z]+)\\s+){0,3}$/.test(before))return false;
+ if(/\\b(?:se|caso|talvez|hipoteticamente)\\s+(?:(?:[a-z]+)\\s+){0,4}$/.test(before))return false;
+ return true;
+}
 export async function qualifyWithGroq({text,history='',fetchFn=fetch}={}){
  if(!explicitInterest(text))return {confirmed:false,reason:'NO_COMMITMENT'};
  const key=process.env.GROQ_API_KEY;
