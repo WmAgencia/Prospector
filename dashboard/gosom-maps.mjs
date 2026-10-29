@@ -6,6 +6,16 @@ import {prospectingList} from './prospecting-search.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS maps_scraper_jobs(id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,niche TEXT NOT NULL,city TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,imported_at TEXT,added INTEGER NOT NULL DEFAULT 0,processed INTEGER NOT NULL DEFAULT 0,error TEXT)");
 const URL_BASE='https://consecom-prospector-maps.onrender.com';
 const configured=()=>Boolean(process.env.PROSPECTOR_MAPS_KEY);
+if(process.env.RUN_MAPS_SMOKE==='true'){
+ setTimeout(async()=>{
+  try{
+   const response=await fetch(URL_BASE+'/api/v1/jobs',{headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY||''},signal:AbortSignal.timeout(25000)});
+   let list=[];if(response.ok)list=await response.json().catch(()=>[]);
+   console.info('[maps-smoke]',JSON.stringify({http:response.status,authenticated:response.ok,jobs:Array.isArray(list)?list.length:null}));
+  }catch(e){console.info('[maps-smoke]',JSON.stringify({error:e?.name||'NETWORK_ERROR'}));}
+ },1000).unref();
+}
+
 const valid=x=>typeof x==='string'&&x.trim().length>=2&&x.length<=85&&!/[\r\n<>]/.test(x);
 function jobStatus(s){const v=String(s||'').toLowerCase();return ['completed','complete','done','finished'].includes(v)?'COMPLETED':['failed','error','cancelled','canceled'].includes(v)?'FAILED':['pending','queued','created'].includes(v)?'PENDING':'RUNNING';}
 async function request(path,{method='GET',payload=null,expect='json'}={}){
