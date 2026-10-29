@@ -41,3 +41,8 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
 .approach-line strong{font-size:12px}
 .approach-line small{font-size:11px;color:var(--muted)}
 @media(max-width:720px){.selection-toolbar{align-items:stretch}.selection-toolbar>.primary{width:100%}.selection-left{width:100%}.approach-line{align-items:flex-start;flex-direction:column}.result-table{min-width:740px}}
+
+/* Groq-assisted, operator-approved WhatsApp drafts. */
+.groq-draft-button{flex-shrink:0;color:#17643f;background:#eaf5ec;border-color:#cce6d5;min-width:86px}
+.groq-draft-button:hover{background:#dcf1e2;border-color:#90c9a5}
+@media(max-width:520px){.composer{display:grid;grid-template-columns:auto 1fr;gap:8px}.composer input{grid-column:2;grid-row:1}.composer>.primary{grid-column:1/-1}.groq-draft-button{grid-column:1;grid-row:1;min-width:75px;padding:9px}}
