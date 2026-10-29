@@ -107,3 +107,27 @@ export async function importMapsScrape(jobId){
  audit('MAPS_SCRAPER_IMPORTED',null,{jobId,added,processed,skipped});
  return {ok:true,added,processed,skipped,source:'Gosom Google Maps',...prospectingList({niche:job.niche,city:job.city})};
 }
+
+/**
+ * Refresh existing Gosom job statuses when no dashboard tab is open.
+ * Read-only provider polling: importing collected companies always requires approval.
+ * Bound both batch size and age so abandoned tasks do not consume an unlimited API quota.
+ */
+export async function refreshActiveMapsScrapes({limit=2,maxAgeHours=6}={}){
+ if(!configured())return [];
+ const capped=Math.max(1,Math.min(3,Math.trunc(Number(limit)||2)));
+ const hours=Math.max(1,Math.min(24,Number(maxAgeHours)||6));
+ const cutoff=Date.now()-hours*3600_000;
+ const active=all("SELECT id,status,created_at FROM maps_scraper_jobs WHERE status IN ('PENDING','RUNNING') ORDER BY created_at DESC LIMIT ?",capped);
+ const outcomes=[];
+ for(const job of active){
+  if(!Number.isFinite(Date.parse(job.created_at))||Date.parse(job.created_at)<cutoff)continue;
+  try{
+   const state=await pollMapsScrape(job.id);
+   outcomes.push({id:job.id,status:state.status,changed:state.status!==job.status});
+  }catch(error){
+   outcomes.push({id:job.id,error:String(error?.message||error).slice(0,140)});
+  }
+ }
+ return outcomes;
+}

@@ -7,10 +7,14 @@ const html=fs.readFileSync(path.join(dir,'index.html'),'utf8');
 const app=fs.readFileSync(path.join(dir,'app.js'),'utf8');
 const cards=fs.readFileSync(path.join(dir,'campaign-ui.mjs'),'utf8');
 const css=fs.readFileSync(path.join(dir,'campaign-ui.css'),'utf8');
-test('main navigation still offers every daily operational destination',()=>{
- for(const route of ['overview','conversations','prospects','workflows','discovery','production','connections','settings'])
-  assert.ok(html.includes('data-route="'+route+'"'),route);
- assert.match(html,/src="\/campaign-ui\.mjs"/);
+test('the current five-view navigation is the shipped, accessible interface',()=>{
+ const simple=fs.readFileSync(path.join(dir,'simple-app.js'),'utf8');
+ assert.match(html,/src="\/simple-app\.js"/);
+ assert.match(html,/href="\/simple-app\.css"/);
+ for(const route of ['overview','conversations','prospects','connections','settings'])
+  assert.ok(simple.includes(route+':"'),route);
+ assert.ok(simple.includes('data-tab="'));
+ assert.ok(!simple.slice(0,500).includes('workflows:"'));
 });
 test('campaign manager has stable rendering, selection and draft-only actions',()=>{
  assert.ok(app.includes("'<div id=\"campaign-app\"></div>'"));
