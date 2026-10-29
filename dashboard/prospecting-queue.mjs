@@ -3,6 +3,7 @@
 // A send timeout is UNKNOWN and is never retried automatically.
 import {db,id,one,all,run,tx,now,audit,addLead,getThread,addMessage} from './db.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
+import {recontactDecision} from './prospecting-recontact.mjs';
 import {greetingForTime} from './prospecting-approach.mjs';
 import {waRequest,selectedWaSession,waControlStatus} from './waakg-control.mjs';
 
@@ -17,12 +18,13 @@ run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interro
 
 function eligibleLead(leadId,ignoreQueueItemId=''){
  const l=one("SELECT id,business,phone,stage,contact_permission FROM leads WHERE id=?",leadId);
- if(!l||!l.phone||l.stage!=='DISCOVERED'||l.contact_permission!==1)return null;
+ if(!l||!l.phone||l.contact_permission!==1)return null;
+ if(!recontactDecision(l,Date.now(),ignoreQueueItemId).eligible)return null;
  if(!documentedOptIn(l.id))return null;
  if(one('SELECT phone FROM suppressions WHERE phone=?',l.phone))return null;
- if(one('SELECT lead_id FROM initial_contacts WHERE lead_id=? OR phone=?',l.id,l.phone))return null;
- if(one("SELECT 1 FROM threads t JOIN messages m ON m.thread_id=t.id WHERE t.lead_id=? AND m.direction='out' LIMIT 1",l.id))return null;
- if(one("SELECT 1 FROM prospecting_batch_items WHERE (lead_id=? OR phone=?) AND id<>? AND status IN ('QUEUED','SENDING','SENT','UNKNOWN') LIMIT 1",l.id,l.phone,ignoreQueueItemId))return null;
+
+
+ if(one("SELECT 1 FROM prospecting_batch_items WHERE (lead_id=? OR phone=?) AND id<>? AND status IN ('QUEUED','SENDING','UNKNOWN') LIMIT 1",l.id,l.phone,ignoreQueueItemId))return null;
  return l;
 }
 function currentBatch(){
@@ -94,7 +96,7 @@ export async function tickApproachQueue(deps={}){
    run('UPDATE prospecting_send_clock SET last_attempt_ms=? WHERE id=1',nowMs);
    run("UPDATE prospecting_batch_items SET status='SENDING',attempt_at=? WHERE id=? AND status='QUEUED'",new Date(nowMs).toISOString(),next.id);
    // No duplicate recipient attempts even after crashes.
-   run('INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)',next.lead_id,next.phone,'UNKNOWN',next.id,new Date(nowMs).toISOString());
+   run('INSERT OR IGNORE INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)',next.lead_id,next.phone,'UNKNOWN',next.id,new Date(nowMs).toISOString());
    return true;
   });
   if(!reserved)return {status:'WAITING'};
@@ -107,6 +109,7 @@ export async function tickApproachQueue(deps={}){
    const lead=one('SELECT * FROM leads WHERE id=?',next.lead_id);
    const thread=getThread(lead.id,next.phone+'@s.whatsapp.net');
    addMessage({threadId:thread.id,providerId:'prospect-queue:'+next.id,direction:'out',body:message,status:'sent'});
+   if(lead.stage==='NO_INTEREST')run("UPDATE leads SET stage='CONTACTED',last_activity_at=? WHERE id=?",now(),lead.id);
    audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:90});
    return {status:'SENT',batchId:batch.id};
   }catch(error){
