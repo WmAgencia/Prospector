@@ -18,6 +18,17 @@ const MODES={
 const jidValid=jid=>/^\d{10,15}@s\.whatsapp\.net$/.test(jid);
 const uuidValid=id=>/^[a-f0-9-]{36}$/i.test(id);
 const optOut=text=>/\b(parar|pare|stop|remover|nao me contate|não me contate|nao quero|não quero|sem interesse)\b/i.test(String(text||''));
+// Official WhatsApp customer-service guidance uses a 24-hour inbound window.
+// Check available timestamps even though WA-AKG is an unofficial gateway.
+export function withinInboundWindow(value,nowMs=Date.now()){
+ if(value===undefined||value===null||value==='')return false;
+ let ms;
+ if(typeof value==='number'||/^\d{10,13}$/.test(String(value))) {
+  const number=Number(value);
+  ms=number<100000000000?number*1000:number;
+ }else ms=Date.parse(String(value));
+ return Number.isFinite(ms)&&ms<=nowMs+60000&&nowMs-ms<=24*60*60*1000;
+}
 export function interactivePreview(input={}){
  const mode=typeof input.mode==='string'?input.mode:'introduction';
  if(!Object.hasOwn(MODES,mode))throw Error('Modelo de botões inválido');
@@ -43,6 +54,7 @@ export async function sendApprovedInteractive(input={},deps={}){
  if(!Array.isArray(history)||!history.some(m=>m.direction==='in'))return {status:403,body:{error:'Botões são permitidos somente em conversas iniciadas pelo contato'}};
  const lastInbound=history.filter(m=>m.direction==='in').at(-1);
  if(optOut(lastInbound?.body))return {status:403,body:{error:'O contato recusou mensagens'}};
+ if(!withinInboundWindow(lastInbound?.at))return {status:403,body:{error:'Somente conversas com mensagem recente do cliente (últimas 24 horas) podem receber botões. Para novos contatos, utilize template oficial aprovado.'}};
  const at=now();
  // Lock before transport: UNKNOWN means never retry automatically after timeout.
  run('INSERT INTO waakg_interactive_outbox(id,jid,state,created_at,updated_at) VALUES(?,?,?,?,?)',requestId,jid,'UNKNOWN',at,at);
