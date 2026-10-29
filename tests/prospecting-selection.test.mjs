@@ -31,13 +31,27 @@ test('Prospection lists only unapproached contacts; no phone stays visible but d
  assert.equal(list.uncontacted,2);
  assert.deepEqual(list.results.map(x=>x.business).sort(),['Mecânica Ativa','Mecânica sem telefone'].sort());
  assert.ok(list.results.find(x=>x.business==='Mecânica Ativa').selectable);
+ const manual=list.results.find(x=>x.business==='Mecânica Ativa').manual_contact_url;
+ assert.match(manual,/^https:\/\/wa\.me\/5515988887777\?text=/);
+ assert.match(decodeURIComponent(manual.split('text=')[1]),/Consecom Brasil/);
+ assert.equal(db.one('SELECT COUNT(*) n FROM messages').n,0,'generating a link never sends messages');
+
  assert.ok(!list.results.find(x=>x.business==='Mecânica sem telefone').selectable);
  assert.ok(list.results.every(x=>x.maps_url.includes('google.com/maps/')));
  assert.ok(!list.results.some(x=>x.business==='Mecânica Contatada'||x.business==='Mecânica Bloqueada'));
+ const allContacts=prospectingList({niche:'oficina mecânica',city:'Sorocaba',status:'all'});
+ assert.equal(allContacts.results.find(x=>x.business==='Mecânica Bloqueada').manual_contact_url,null);
+ assert.equal(allContacts.results.find(x=>x.business==='Mecânica Contatada').manual_contact_url,null);
+ assert.equal(allContacts.results.find(x=>x.business==='Mecânica sem telefone').manual_contact_url,null);
+
  const out=prepareApproaches({leadIds:[active.lead.id,contacted.lead.id,blocked.lead.id,missing.lead.id]});
  assert.equal(out.selected,4);
  assert.equal(out.ready,0,'public business listings are not permission evidence');
  assert.equal(out.needsPermission,1);
+ assert.equal(out.manualReady,1,'public business is eligible for operator-led contact');
+ assert.equal(out.items.find(x=>x.id===active.lead.id).manualUrl,'https://wa.me/5515988887777');
+ assert.equal(out.items.find(x=>x.id===blocked.lead.id).manualUrl,null);
+
  assert.equal(out.items.filter(x=>x.eligible).length,1);
  assert.equal(db.one('SELECT COUNT(*) n FROM messages').n,0,'preview must never send or create messages');
 });
