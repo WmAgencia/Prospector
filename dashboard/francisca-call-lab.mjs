@@ -111,7 +111,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     if(pcmGenerator){const data=await pcmGenerator(spoken);outgoing=data.pcm16k;voice=data.voice;}
     else {const audio=await (deps.synthesize||makeFranciscaVoice)(spoken);
       outgoing=await (deps.convert||convertM4aToPcm16)(audio.bytes);voice=audio.voice;}
-    if(!Buffer.isBuffer(outgoing)||outgoing.length<3200||outgoing.length%2)
+    if(!Buffer.isBuffer(outgoing)||outgoing.length===0||outgoing.length%2)
      throw Error('CALL_AUDIO_OUT_INVALID');
     const ttsMs=Date.now()-began-sttMs-llmMs;
     console.info('[francisca-call-turn-timing]',JSON.stringify({sttMs,llmMs,ttsMs,totalMs:Date.now()-began,
