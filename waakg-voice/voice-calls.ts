@@ -4,6 +4,7 @@
 import {jidDecode, jidEncode, type BinaryNode} from "@whiskeysockets/baileys";
 import {NativeCallManager,createCallAck} from "./voice-protocol/src/index.js";
 import {TurnDetector,PlaybackGate} from "./turn-taking.mjs";
+import {InterruptionLedger,BackchannelPolicy,ThinkingCuePolicy} from "./conversation-runtime.mjs";
 import type {WASocket} from "@whiskeysockets/baileys";
 
 const SAMPLE_RATE=16000;
@@ -16,6 +17,8 @@ type Session={
  callId:string;from:string;startedAt:number;ended:boolean;greeted:boolean;
  replying:boolean;playback:boolean;pending:Buffer|null;
  detector:TurnDetector;gate:PlaybackGate;
+ ledger:InterruptionLedger;backchannel:BackchannelPolicy;thinking:ThinkingCuePolicy;
+ ackBusy:boolean;cuePlaying:boolean;cueDirty:boolean;
 };
 function requireReady(sessionId:string){
  return !!owner&&/^55\d{10,11}$/.test(owner)&&sessionId===correctSession&&
@@ -36,12 +39,14 @@ async function exactCaller(sock:WASocket,peer:string){
  const out=jidDecode(pn);
  return out?.server==="s.whatsapp.net"&&out.user===owner?pn:null;
 }
-async function bridge(call:Session,sessionId:string,event:"greeting"|"turn"|"end",pcm?:Buffer){
- const data={callId:call.callId,jid:owner+"@s.whatsapp.net",sessionId,event,...(pcm?{pcm16k:pcm.toString("base64")}:{})};
+async function bridge(call:Session,sessionId:string,event:"greeting"|"turn"|"end"|"backchannel",
+ pcm?:Buffer,metadata?:Record<string,unknown>){
+ const data={callId:call.callId,jid:owner+"@s.whatsapp.net",sessionId,event,
+  ...(pcm?{pcm16k:pcm.toString("base64")}:{}) ,...(metadata||{})};
  const res=await fetch(BRIDGE_URL,{method:"POST",headers:{"content-type":"application/json",
   "x-wa-call-bridge-secret":SECRET},body:JSON.stringify(data),signal:AbortSignal.timeout(80_000)});
  if(!res.ok)throw Error("PROSPECTOR_BRIDGE_"+res.status);
- const answer=await res.json() as {ok:boolean,pcm16k?:string};
+ const answer=await res.json() as {ok:boolean,pcm16k?:string,replyId?:string};
  if(!answer.ok)throw Error("BRIDGE_NOT_OK");
  return answer;
 }
@@ -68,6 +73,7 @@ async function renderReply(manager:NativeCallManager,call:Session,audio64:string
    // The AudioEngine's external-mode circular playback queue is reset on barge-in.
    if(!call.gate.valid(generation))break;
    manager.feedLiveAudio(frame);
+   call.ledger.progress((offset+buf.length)/32);
    await quiet(20);
   }
  }finally{
@@ -84,7 +90,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
  let call:Session|null=null;
  function same(id:string){return call&&!call.ended&&call.callId===id?call:null;}
  const reset=()=>{
-  if(call){call.ended=true;call.pending=null;call.gate.cancel();call.detector.reset();}
+  if(call){call.ended=true;call.pending=null;call.gate.cancel();call.detector.reset();call.ledger.clear();call.cuePlaying=false;}
   call=null;
  };
  async function sendTurn(active:Session,event:"turn"|"greeting",pcm?:Buffer){
@@ -92,15 +98,36 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   active.replying=true;
   const generation=active.gate.next();
   const started=Date.now();
+  const thinkingId=active.thinking.start(started);
+  // A rare acknowledgment only if processing actually stalls; never overlap an immediate reply.
+  const thinkingTimer=event==="turn"?setTimeout(()=>void maybeThink(active,generation,thinkingId),active.thinking.delayMs+30):null;
+  thinkingTimer?.unref?.();
+  const interruption=event==="turn"?active.ledger.take():null;
   try{
-   const r=await bridge(active,sessionId,event,pcm);
-   if(active.ended||!same(active.callId)||!active.gate.valid(generation)||!r.pcm16k)return;
+   const r=await bridge(active,sessionId,event,pcm,interruption?{interruption}:undefined);
+   if(active.ended||!same(active.callId)||!r.pcm16k)return;
+   const durationMs=Math.min(60000,Math.round(Buffer.from(r.pcm16k,"base64").length/32));
+   if(!active.gate.valid(generation)){
+    // A follow-up arrived while Groq/TTS was still thinking. That discarded
+    // answer is still available to the next turn as an unfinished draft.
+    if(r.replyId)active.ledger.unseen(r.replyId,durationMs);
+    return;
+   }
+   if(r.replyId)active.ledger.begin(r.replyId,durationMs);
+   // If a short thinking/acknowledgment cue is still in the outgoing jitter buffer,
+   // flush only that buffer before the real response to avoid overlay or extra latency.
+   if(active.cueDirty){active.cuePlaying=false;active.cueDirty=false;manager.setExternalAudioMode(true);}
    console.info("[voice-calls] BRIDGE_RESPONSE_READY",event,"ms",Date.now()-started);
    await renderReply(manager,active,r.pcm16k,generation);
-   if(active.gate.valid(generation))console.info("[voice-calls] FRANCISCA_AUDIO_SENT",event);
+   if(active.gate.valid(generation)){
+    active.ledger.completed();
+    console.info("[voice-calls] FRANCISCA_AUDIO_SENT",event);
+   }
   }catch(e){
    if(!active.ended)console.warn("[voice-calls] TURN_ERROR",String((e as Error).message).slice(0,75));
   }finally{
+   if(thinkingTimer)clearTimeout(thinkingTimer);
+   active.cuePlaying=false;
    active.playback=false;
    active.replying=false;
    if(!active.ended&&same(active.callId)&&active.pending){
@@ -108,6 +135,60 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
     queueMicrotask(()=>void sendTurn(active,"turn",next));
    }
   }
+ }
+ // A short empathetic cue after a perceptible processing delay, never for
+ // immediate responses. Nonverbal audio alone does not consume a user turn.
+ async function maybeThink(active:Session,generation:number,thinkingId:number){
+  if(!same(active.callId)||!active.gate.valid(generation))return;
+  if(!active.thinking.due({turnId:thinkingId,replying:active.replying,
+   playing:active.playback||active.cuePlaying,ackBusy:active.ackBusy,ended:active.ended,
+   userSpeaking:active.detector.hasSpeech}))return;
+  const kind=active.thinking.claim();
+  if(!kind)return;
+  try{
+   const r=await bridge(active,sessionId,"backchannel",undefined,{kind});
+   if(!r.pcm16k||active.ended||!active.replying||active.playback||!active.gate.valid(generation))return;
+   const pcm=Buffer.from(r.pcm16k,"base64");
+   if(pcm.length<2000||pcm.length>16000*2*3||pcm.length%2)return;
+   active.cuePlaying=true;
+   for(let offset=0;offset<pcm.length&&!active.ended&&active.replying&&active.gate.valid(generation);offset+=320){
+    if(active.playback||!active.cuePlaying)break;
+    const buf=pcm.subarray(offset,Math.min(offset+320,pcm.length));
+    const frame=new Float32Array(buf.length/2);
+    for(let i=0;i<frame.length;i++)frame[i]=buf.readInt16LE(i*2)/32768*.28;
+    active.cueDirty=true;
+    manager.feedLiveAudio(frame);
+    await quiet(10);
+   }
+   if(active.gate.valid(generation))console.info("[voice-calls] THINKING_ACK_SENT",kind);
+  }catch(e){
+   console.warn("[voice-calls] THINKING_ACK_FAILED",String((e as Error).message).slice(0,70));
+  }finally{
+   active.cuePlaying=false;
+  }
+ }
+ async function acknowledge(active:Session,kind:"aham"|"hum"){
+  if(active.ackBusy||active.ended)return;
+  active.ackBusy=true;
+  try{
+   const r=await bridge(active,sessionId,"backchannel",undefined,{kind});
+   if(!r.pcm16k||active.ended||active.replying||active.playback||!active.detector.hasSpeech)return;
+   const pcm=Buffer.from(r.pcm16k,"base64");
+   if(pcm.length<2000||pcm.length>16000*2*2||pcm.length%2)return;
+   for(let offset=0;offset<pcm.length&&!active.ended;offset+=320){
+    if(active.replying||active.playback||!active.detector.hasSpeech)break;
+    const chunk=pcm.subarray(offset,Math.min(pcm.length,offset+320));
+    const frame=new Float32Array(chunk.length/2);
+    // Quiet acknowledgement: background confirmation, not a second speaker turn.
+    for(let i=0;i<frame.length;i++)frame[i]=chunk.readInt16LE(i*2)/32768*.23;
+    active.cueDirty=true;
+    manager.feedLiveAudio(frame);
+    await quiet(10);
+   }
+   console.info("[voice-calls] LISTENING_ACK_SENT",kind);
+  }catch(e){
+   console.warn("[voice-calls] LISTENING_ACK_FAILED",String((e as Error).message).slice(0,70));
+  }finally{active.ackBusy=false;}
  }
 
  manager.on("call:incoming",async(c:any)=>{
@@ -118,7 +199,9 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   if(call&&!call.ended){console.info("[voice-calls] BUSY");return;}
   if(c.isVideo||c.mediaType==="video"){console.info("[voice-calls] VIDEO_NOT_SUPPORTED");return;}
   const incoming:Session={callId:c.callId,from:pn,startedAt:Date.now(),ended:false,greeted:false,
-   replying:false,playback:false,pending:null,detector:new TurnDetector(),gate:new PlaybackGate()};
+   replying:false,playback:false,pending:null,detector:new TurnDetector(),gate:new PlaybackGate(),
+   ledger:new InterruptionLedger(),backchannel:new BackchannelPolicy(),
+   thinking:new ThinkingCuePolicy(),ackBusy:false,cuePlaying:false,cueDirty:false};
   call=incoming;
   try{
    manager.setExternalAudioMode(true);
@@ -145,22 +228,32 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
  manager.on("call:audio",(audio:Float32Array)=>{
   const active=call;
   if(!active||active.ended||!audio.length)return;
-  const mode=active.playback?"speaking":active.replying?"thinking":"listening";
+  const mode=(active.playback||active.cuePlaying)?"speaking":active.replying?"thinking":"listening";
   const result=active.detector.push(audio,mode);
   if(result.type==="interrupt"){
-   active.gate.cancel(); // All remaining response PCM becomes invalid immediately.
-   active.playback=false;
+   active.ledger.interrupt();
+   active.gate.cancel(); // Only sound stops; previous question and answer draft are retained.
+   active.playback=false;active.cuePlaying=false;active.cueDirty=false;
    // Flush unread TTS samples from the same already-authenticated WA-AKG socket.
    manager.setExternalAudioMode(true);
    console.info("[voice-calls] FRANCISCA_INTERRUPTED");
   }else if(result.type==="turn"){
    const pcm=encodePcm(result.frames);
+   active.backchannel.resetTurn();
    console.info("[voice-calls] USER_TURN_DETECTED",result.durationMs,result.voiceMs);
    if(active.replying){
-    // Keep only the latest completed utterance; avoid CALL_BUSY in the backend.
-    active.pending=pcm;
+    // Preserve multiple additions spoken during one in-flight AI response.
+    // Append a brief silence between user utterances for clean transcription.
+    const separator=Buffer.alloc(16000*2/5); // 200 ms, mono PCM16
+    const combined=active.pending?Buffer.concat([active.pending,separator,pcm]):pcm;
+    active.pending=combined.length<=16000*2*13?combined:combined.subarray(combined.length-16000*2*13);
     active.gate.cancel();
    }else void sendTurn(active,"turn",pcm);
+  }else if(result.type==="none"&&mode==="listening"&&!active.ackBusy&&
+   active.backchannel.canPlay({voicedSamples:active.detector.voiced,replying:active.replying,
+    playing:active.playback,ended:active.ended})){
+   const kind=active.backchannel.played();
+   void acknowledge(active,kind);
   }
  });
 

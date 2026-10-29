@@ -13,6 +13,8 @@ import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import {makeFranciscaVoice,makeFranciscaCallPcm,checkVoiceText} from './francisca-tts.mjs';
 import {groqChat} from './groq-models.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
+import {newCallContext} from './francisca-voice-context.mjs';
+import {randomUUID} from 'node:crypto';
 
 const execFile=promisify(execFileCb);
 export const VOICE_RATE=16000;
@@ -64,10 +66,10 @@ export async function convertM4aToPcm16(bytes,{exec=execFile}={}){
 export function newFranciscaCallSession({jid,sessionId}={},deps={}){
  // Always validate at creation AND each turn; no unverified caller can use AI tools.
  verifyVoiceOwner({jid,sessionId});
- const history=[];
+ const context=newCallContext();
  let busy=false,ended=false;
  return {
-  async reply(pcm16k){
+  async reply(pcm16k,{interruption}={}){
    if(ended)throw Error('CALL_ENDED');
    if(busy)throw Error('CALL_BUSY');
    verifyVoiceOwner({jid,sessionId});
@@ -81,9 +83,11 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     if(heard.length<2)throw Error('CALL_TRANSCRIPTION_EMPTY');
     const verified=verifyVoiceOwner({jid,sessionId});
     const availableTools=verified.ownerTools?allowedTools:[];
+    if(interruption)context.noteInterruption(interruption);
     const messages=[
-     {role:'system',content:'Você é a Francisca, atendente virtual da Consecom, numa ligação com o proprietário. Converse em português brasileiro, de forma humana, espontânea e direta. Responda em uma ou duas frases curtas, sem listas, textos longos nem repetir a pergunta. Nunca alegue ser humana. Só utilize ferramentas de leitura do Prospector. NUNCA envie mensagens, ative campanhas, gaste dinheiro, altere configurações ou execute ordens por voz; explique que essas ações requerem confirmação por texto. Não invente informações sobre o sistema.'},
-     ...history,{role:'user',content:heard}
+     {role:'system',content:'Você é a Francisca, atendente virtual da Consecom, numa ligação com o proprietário. Converse em português brasileiro, de forma natural, calorosa e direta. Use ocasionalmente expressões curtas como ah, entendi ou vamos lá, mas não sempre e não repita muletas. Responda em uma ou duas frases curtas, sem listas, textos longos nem repetir a pergunta. Nunca alegue ser humana. Só utilize ferramentas de leitura do Prospector. NUNCA envie mensagens, ative campanhas, gaste dinheiro, altere configurações ou execute ordens por voz; explique que essas ações requerem confirmação por texto. Não invente informações sobre o sistema.'},
+     {role:'system',content:context.systemNote(heard)},
+     ...context.messages(),{role:'user',content:heard}
     ];
     const chat=deps.chat||groqChat,readTool=deps.readTool||runAgentTool;
     let result=await chat({task:'voice',messages,tools:availableTools,maxTokens:170});
@@ -116,12 +120,12 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const ttsMs=Date.now()-began-sttMs-llmMs;
     console.info('[francisca-call-turn-timing]',JSON.stringify({sttMs,llmMs,ttsMs,totalMs:Date.now()-began,
       inputMs:Math.round(pcm16k.length/32),outputMs:Math.round(outgoing.length/32)}));
-    history.push({role:'user',content:heard},{role:'assistant',content:spoken});
-    if(history.length>8)history.splice(0,history.length-8);
-    return {heard,spoken,pcm16k:outgoing,format:'s16le',rate:VOICE_RATE,voice};
+    const replyId=randomUUID();
+    context.remember({heard,spoken,replyId,totalMs:Math.round(outgoing.length/32)});
+    return {heard,spoken,replyId,pcm16k:outgoing,format:'s16le',rate:VOICE_RATE,voice};
    }finally{busy=false;}
   },
-  end(){ended=true;history.length=0;},
+  end(){ended=true;context.clear();},
   get state(){return ended?'ENDED':busy?'BUSY':'READY';}
  };
 }
