@@ -31,22 +31,35 @@ const map=[
  [/tatuador|tatuagem/,["shop","tattoo"]],
  [/construtor|construcao/,["craft","builder"]]
 ];
+function instagramFrom(tags){
+ const raw=String(tags?.["contact:instagram"]||tags?.instagram||"").trim();
+ const m=raw.match(/(?:instagram\.com\/|^@?)([a-z0-9._]{2,30})(?:\/?(?:\?.*)?)?$/i);
+ return m?m[1].toLowerCase():null;
+}
 function phoneFrom(tags){for(const key of ["contact:whatsapp","contact:phone","phone"]){const hits=String(tags?.[key]||"").split(/[;,]/);for(const hit of hits){const p=phone(hit);if(p)return p;}}return null;}
 function category(niche){return map.find(([re])=>re.test(norm(niche)))?.[1]||null;}
 function valid(v){return typeof v==="string"&&v.length>=2&&v.length<=85&&!/[\r\n<>\\]/.test(v);}
 export function prospectingList({niche="",city="",status="uncontacted",limit=500}={}){
- const allRows=all("SELECT l.id,l.business,l.phone,l.city,l.segment,l.website,l.stage,l.source,l.website_status,l.created_at,l.notes, EXISTS(SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id) AS previously_contacted, EXISTS(SELECT 1 FROM threads t JOIN messages m ON m.thread_id=t.id WHERE t.lead_id=l.id AND m.direction='out') AS sent_message FROM leads l ORDER BY l.created_at DESC LIMIT 6000");
+ const allRows=all("SELECT l.id,l.business,l.phone,l.city,l.segment,l.website,l.instagram,l.contact_permission,l.stage,l.source,l.website_status,l.created_at,l.notes, EXISTS(SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id) AS previously_contacted, EXISTS(SELECT 1 FROM threads t JOIN messages m ON m.thread_id=t.id WHERE t.lead_id=l.id AND m.direction='out') AS sent_message, EXISTS(SELECT 1 FROM suppressions s WHERE s.phone=l.phone) AS suppressed FROM leads l ORDER BY l.created_at DESC LIMIT 6000");
  const words=norm(niche).split(/\s+/).filter(w=>w.length>=4),targetCity=norm(city),cat=category(niche);
  const matches=allRows.filter(l=>{
   const loc=!targetCity||norm(l.city).includes(targetCity);
   const nicheOK=!words.length||words.some(w=>[l.segment,l.business,l.notes].some(v=>norm(v).includes(w)))||(cat&&l.segment===cat[1]);
   return loc&&nicheOK;
  });
- const contacted=matches.filter(l=>l.previously_contacted||l.sent_message||l.stage!=="DISCOVERED");
- const uncontacted=matches.filter(l=>!l.previously_contacted&&!l.sent_message&&l.stage==="DISCOVERED");
+ const contacted=matches.filter(l=>l.previously_contacted||l.sent_message||l.stage!=="DISCOVERED"||l.suppressed);
+ const uncontacted=matches.filter(l=>!l.previously_contacted&&!l.sent_message&&!l.suppressed&&l.stage==="DISCOVERED");
  const selected=status==="contacted"?contacted:status==="all"?matches:uncontacted;
  const max=Math.min(Math.max(1,Number(limit)||500),500);
- return {total:matches.length,uncontacted:uncontacted.length,contacted:contacted.length,returned:Math.min(selected.length,max),results:selected.slice(0,max).map(({previously_contacted,sent_message,...x})=>({...x,contacted:!!(previously_contacted||sent_message||x.stage!=="DISCOVERED")})),partial:allRows.length===6000,source:"Base do Prospector",note:"Não contatado significa não haver envio registrado neste sistema; não inclui contatos feitos externamente."};
+ return {total:matches.length,uncontacted:uncontacted.length,contacted:contacted.length,returned:Math.min(selected.length,max),results:selected.slice(0,max).map(({previously_contacted,sent_message,suppressed,notes,...x})=>({
+  ...x,contacted:!!(previously_contacted||sent_message||suppressed||x.stage!=="DISCOVERED"),
+  selectable:!!x.phone&&!suppressed&&!previously_contacted&&!sent_message&&x.stage==="DISCOVERED",
+  // Links open for operator review. Google Maps search is used when the source
+  // does not provide a verified place URL; no fake place ID is invented.
+  maps_url:(String(notes||"").match(/https:\/\/(?:www\.)?google\.[a-z.]+\/maps[^\s|]*/i)||[])[0]||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(x.business+' '+(x.city||'')),
+  instagram_url:(()=>{const m=new RegExp('^https?://(?:www[.])?instagram[.]com/([a-z0-9._]{2,30})(?:/|$)','i').exec(x.website||'');const user=/^[a-z0-9._]{2,30}$/i.test(x.instagram||'')?x.instagram:m?.[1];return user?'https://www.instagram.com/'+user+'/':null;})(),
+  needs_permission:x.contact_permission!==1
+ })),partial:allRows.length===6000,source:"Base do Prospector",note:"Não contatada significa sem envio registrado, desconsiderando números bloqueados. O sistema não conhece contatos feitos fora do Prospector."};
 }
 async function locate(city){
  const known=resolveLocation(city);if(known)return {lat:known.lat,lon:known.lon};
@@ -61,10 +74,10 @@ async function locate(city){
 // The total deadline is bounded so the dashboard is not held waiting for a minute.
 export async function remoteQuery(q){
  let failure;
- const providers=["https://overpass.private.coffee/api/interpreter","https://overpass-api.de/api/interpreter"];
+ const providers=["https://overpass.private.coffee/api/interpreter","https://overpass-api.de/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
  for(const endpoint of providers){
   try{
-   const res=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=utf-8","User-Agent":"ConsecomProspector/2.1 (business research; contact: wmagenciasuporte@gmail.com)","Accept":"application/json"},body:new URLSearchParams({data:q}),signal:AbortSignal.timeout(17500)});
+   const res=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=utf-8","User-Agent":"ConsecomProspector/2.1 (business research; contact: wmagenciasuporte@gmail.com)","Accept":"application/json"},body:new URLSearchParams({data:q}),signal:AbortSignal.timeout(15000)});
    if(res.ok){
     const data=await res.json();
     if(data?.remark||!Array.isArray(data?.elements))throw Error("A fonte OSM não concluiu a consulta");
@@ -100,7 +113,7 @@ export async function prospectingSearch({niche,city}={}){
    const tags=item.tags||{},name=String(tags.name||"").trim();if(!name)continue;
    const osmUrl="https://www.openstreetmap.org/"+item.type+"/"+item.id;
    try{
-    const r=addLead({business:name.slice(0,150),phone:phoneFrom(tags),city:city.trim(),segment:niche.trim().slice(0,90),website:String(tags.website||tags["contact:website"]||"").slice(0,450)||undefined,website_status:"UNCERTAIN",source:"osm",osm_id:osmUrl,contact_permission:false,notes:"OSM: "+osmUrl});
+    const r=addLead({business:name.slice(0,150),phone:phoneFrom(tags),instagram:instagramFrom(tags),city:city.trim(),segment:niche.trim().slice(0,90),website:String(tags.website||tags["contact:website"]||"").slice(0,450)||undefined,website_status:"UNCERTAIN",source:"osm",osm_id:osmUrl,contact_permission:false,notes:"OSM: "+osmUrl});
     if(r.created)added++;
     recordOrigin(r.lead.id,"osm",{identity:osmUrl,query:niche,city,provider:"Overpass"},false);
    }catch{skipped++;}

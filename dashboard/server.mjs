@@ -36,6 +36,7 @@ import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
 import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
+import {prepareApproaches} from './prospecting-approach.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
@@ -43,6 +44,16 @@ import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
 
+// Explicitly authorized one-shot production discovery check for Sorocaba mechanics.
+// Writes only sourced business leads, with contact_permission=false; no messages.
+if(process.env.RUN_PROSPECTING_LIVE_SMOKE==='true'){
+ setTimeout(async()=>{
+  try{
+   const data=await prospectingSearch({niche:'oficina mecânica',city:'Sorocaba'});
+   console.info('[prospecting-live-smoke]',JSON.stringify({ok:true,added:data.added,examined:data.examined,visible:data.uncontacted,source:data.source,cached:!!data.cached}));
+  }catch(error){console.warn('[prospecting-live-smoke]',JSON.stringify({ok:false,message:String(error?.message||error).slice(0,200)}));}
+ },7000).unref();
+}
 // One-shot synthetic functional test when explicitly enabled. Does not touch customer data.
 if(process.env.RUN_GROQ_FUNCTION_SMOKE==='true'){
  setTimeout(async()=>{
@@ -258,6 +269,7 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/whatsapp/connect'){try{return respond(res,200,await waConnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/disconnect'){try{return respond(res,200,await waDisconnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,prospectingList({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',limit:500}));}
+  if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/maps/status')return respond(res,200,scraperStatus());
   if(req.method==='POST'&&pathname==='/api/maps/search'){try{return respond(res,202,await startMapsScrape(await json(req)));}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/maps/job'){try{return respond(res,200,await pollMapsScrape(url.searchParams.get('id')||''));}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
