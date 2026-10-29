@@ -74,10 +74,10 @@ async function locate(city){
 // The total deadline is bounded so the dashboard is not held waiting for a minute.
 export async function remoteQuery(q){
  let failure;
- const providers=["https://overpass.private.coffee/api/interpreter","https://overpass-api.de/api/interpreter"];
+ const providers=["https://overpass.private.coffee/api/interpreter","https://overpass-api.de/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
  for(const endpoint of providers){
   try{
-   const res=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=utf-8","User-Agent":"ConsecomProspector/2.1 (business research; contact: wmagenciasuporte@gmail.com)","Accept":"application/json"},body:new URLSearchParams({data:q}),signal:AbortSignal.timeout(17500)});
+   const res=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=utf-8","User-Agent":"ConsecomProspector/2.1 (business research; contact: wmagenciasuporte@gmail.com)","Accept":"application/json"},body:new URLSearchParams({data:q}),signal:AbortSignal.timeout(15000)});
    if(res.ok){
     const data=await res.json();
     if(data?.remark||!Array.isArray(data?.elements))throw Error("A fonte OSM não concluiu a consulta");
