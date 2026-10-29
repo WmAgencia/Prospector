@@ -1,7 +1,7 @@
 // WA-AKG webhook receiver and consent-gated WhatsApp transport.
 // No credentials here. No automatic message sending. WAL-backed idempotency.
 import crypto from "node:crypto";
-import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,audit} from "./db.mjs";
+import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
 import {ownerReceived} from "./groq-owner.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
@@ -63,6 +63,8 @@ export async function receiveWebhook(req){
  let state="REVIEW";
  if(/^(?:pare|parar|stop|sair|remover|cancelar|não\s+(?:quero|me\s+contate)|nao\s+(?:quero|me\s+contate))(?:[.! ]|$)/i.test(content)){
   stopLead(lead.id,"INBOUND_OPTOUT");state="OPT_OUT";
+ }else if(/^(?:não tenho interesse|nao tenho interesse|agora não|agora nao|não é o momento|nao e o momento)(?:[.!\s]|$)/i.test(content)){
+  stage(lead.id,'NO_INTEREST','INBOUND_SOFT_DECLINE');
  }else if(/\b(humano|atendente|pessoa de verdade|falar com algu[eé]m)\b/i.test(content)){
   run("UPDATE threads SET manual_takeover=1 WHERE id=?",thread.id);state="HUMAN";
  }
@@ -143,6 +145,8 @@ export async function sendChatMessage(input={}){
   if(result.status!==true)return {status:502,body:{error:"Envio não confirmado. Não tente repetir automaticamente."}};
   run("UPDATE waakg_operator_outbox SET state='SENT',updated_at=? WHERE id=?",now(),requestId);
   addMessage({threadId,providerId:"operator:"+requestId,direction:"out",body:text,status:"sent"});
+  stage(thread.lead_id,"CONVERSING","OPERATOR_CHAT_MESSAGE");
+  run("UPDATE threads SET manual_takeover=1 WHERE id=?",threadId);
   audit("WA_AKG_CHAT_MESSAGE_SENT",thread.lead_id,{thread:threadId,manual:true});
   return {status:200,body:{ok:true,delivery:"ACCEPTED",message:"Enviado ao WA-AKG"}};
  }catch(e){return {status:502,body:{error:"Falha ou resultado incerto no WhatsApp. Confira a conversa antes de tentar novamente.",delivery:"UNKNOWN"}};}
