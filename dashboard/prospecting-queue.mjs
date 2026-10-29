@@ -73,9 +73,9 @@ export async function tickApproachQueue(deps={}){
   const time=currentTime(),batch=currentBatch();
   if(!batch)return {status:'IDLE'};
   const clock=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
-  if(time-clock<APPROACH_INTERVAL_MS)return {status:'WAITING',remainingMs:APPROACH_INTERVAL_MS-(time-clock)};
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
   if(!next){run("UPDATE prospecting_batches SET status='COMPLETED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);return {status:'COMPLETED'};}
+  if(time-clock<APPROACH_INTERVAL_MS)return {status:'WAITING',remainingMs:APPROACH_INTERVAL_MS-(time-clock)};
   if(!eligibleLead(next.lead_id,next.id)){
    run("UPDATE prospecting_batch_items SET status='SKIPPED',error='Elegibilidade alterada',attempt_at=? WHERE id=?",now(),next.id);
    return {status:'SKIPPED'};
