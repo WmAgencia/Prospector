@@ -44,6 +44,7 @@ test('Prospection lists only unapproached contacts; no phone stays visible but d
 
 test('An expressly consented lead can receive a preview ready for human approval',()=>{
  const ok=db.addLead({business:'Cliente que autorizou',phone:'15988887776',source:'MANUAL',contact_permission:true});
+ db.audit('CONSENT_UPDATED',ok.lead.id,{permitted:true,evidence:'autorização documentada para teste'});
  const out=prepareApproaches({leadIds:[ok.lead.id]});
  assert.equal(out.ready,1);
  assert.equal(out.items[0].status,'READY_FOR_APPROVAL');

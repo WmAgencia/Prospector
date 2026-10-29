@@ -60,3 +60,25 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
 .option-buttons{display:flex;flex-direction:column;gap:7px;max-width:290px;margin:13px 0}
 .option-buttons>div{background:#fff;border:1px solid #bdddc8;color:#226846;border-radius:8px;text-align:center;font-size:12px;font-weight:750;padding:9px}
 @media(max-width:520px){.composer{grid-template-columns:1fr 1fr}.composer>.groq-draft-button{grid-column:1;grid-row:1}.composer>.interactive-button{grid-column:2;grid-row:1}.composer input{grid-row:2;grid-column:1/-1}.composer>.primary{grid-row:3;grid-column:1/-1}}
+
+/* Minimal prospecting view: search above one clean, selectable list. */
+.prospect-simple{max-width:1260px;margin:0 auto}
+.prospect-simple .panel{padding:25px 27px}
+.prospect-simple .heading{margin:0 0 20px}
+.prospect-simple .heading h2{font-size:21px;margin:0 0 5px;letter-spacing:-.04em}
+.prospect-simple .heading p{font-size:12px;color:#85998b;margin:0}
+.prospect-simple .search-form{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto;margin:0;align-items:end}
+.prospect-simple .search-form>.primary{min-height:46px}
+.prospect-simple .prospect-results-simple .heading{margin-bottom:8px}
+.prospect-simple .selection-toolbar{margin:0 0 9px;padding:16px 0}
+.prospect-simple .selection-toolbar>.primary{min-width:123px}
+.prospect-simple .result-table th{padding:15px 12px}
+.prospect-simple .result-table td{padding:13px 12px}
+.prospect-simple .result-table strong{max-width:295px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prospect-simple .external-actions{min-width:125px}
+.prospect-simple .prospect-empty{padding:43px 18px 36px}
+.prospect-disclaimer{font-size:11px;color:#8fa497;margin:17px 0 0;line-height:1.65}
+.prospect-search-error{margin:17px 0 0;color:#a46c37;background:#fff7ea;border:1px solid #f2e4c7;border-radius:9px;padding:11px 13px;font-size:12px}
+.prospect-queue-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#eff8f0;border:1px solid #d6ecdc;border-radius:11px;margin-bottom:15px;font-size:12px;color:#3a7054;font-weight:700}
+@media(max-width:950px){.prospect-simple .search-form{grid-template-columns:1fr 1fr}.prospect-simple .search-form>.primary{grid-column:1/-1;justify-self:start}}
+@media(max-width:700px){.prospect-simple .panel{padding:19px 17px}.prospect-simple .search-form{grid-template-columns:1fr}.prospect-simple .search-form>.primary{width:100%;grid-column:auto}.prospect-queue-strip{flex-direction:column;align-items:flex-start}.prospect-simple .selection-toolbar{flex-direction:column;align-items:stretch}.prospect-simple .selection-toolbar>.primary{width:100%}.prospect-simple .selection-left{justify-content:space-between}.prospect-simple .result-table{min-width:690px}}
