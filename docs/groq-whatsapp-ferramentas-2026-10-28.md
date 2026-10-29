@@ -9,14 +9,14 @@ Atualização: 28/10/2026
 - Executor: `dashboard/groq-owner-tools.mjs`. Nenhuma SQL ou credencial é exposta como ferramenta ao LLM.
 - Fila: `dashboard/groq-owner.mjs` — serializa solicitações do proprietário e registra evento de webhook antes de processá-lo. Não repete envio quando a entrega é incerta.
 
-## 22 ferramentas disponíveis
+## 23 ferramentas disponíveis
 **Leitura e diagnóstico**:
 `list_capabilities`, `system_status`, `system_diagnostics`, `list_prospects`, `search_leads`, `get_lead`, `list_conversations`, `read_conversation`, `whatsapp_status`, `list_whatsapp_chats`, `read_whatsapp_chat`, `list_meetings`, `list_workflows`, `read_audit_log`, `discovery_history`, `safe_settings`.
 
 **Ações com validação**:
 `create_lead`, `update_lead`, `set_pause`, `create_meeting`, `block_contact`, `search_businesses`, `prepare_message`.
 
-Obs.: O inventário atual contém 23 ferramentas no total conforme o código, pois inclui 16 leituras e 7 operações. Se divergirem as contagens entre versões, consultar `GET /api/groq/capabilities` (autenticado).
+Inventário verificado no código: **23 ferramentas**, sendo 16 de leitura e 7 de operação. Consulte `GET /api/groq/capabilities` (autenticado) para confirmar a versão publicada.
 
 ## Controles de segurança
 - `block_contact`: não bloqueia imediatamente; retorna código único que só executa após mensagem `CONFIRMAR 123456` do proprietário.
