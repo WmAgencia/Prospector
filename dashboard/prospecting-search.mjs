@@ -57,17 +57,26 @@ async function locate(city){
  const x=(await res.json())[0];if(!x||x.address?.country_code!=="br")throw Error("Cidade não encontrada no Brasil");
  return {lat:Number(x.lat),lon:Number(x.lon)};
 }
-async function remoteQuery(q){
+// Two independent hosts, not multiple aliases for the same overloaded provider.
+// The total deadline is bounded so the dashboard is not held waiting for a minute.
+export async function remoteQuery(q){
  let failure;
- for(const endpoint of ["https://overpass.private.coffee/api/interpreter","https://overpass.kumi.systems/api/interpreter"]){
+ const providers=["https://overpass.private.coffee/api/interpreter","https://overpass-api.de/api/interpreter"];
+ for(const endpoint of providers){
   try{
-   const res=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=utf-8","User-Agent":"ConsecomProspector/2.0 (contact: wmagenciasuporte@gmail.com)"},body:new URLSearchParams({data:q}),signal:AbortSignal.timeout(29000)});
-   if(res.ok)return res.json();
-   failure=Error("OpenStreetMap HTTP "+res.status);
+   const res=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=utf-8","User-Agent":"ConsecomProspector/2.1 (business research; contact: wmagenciasuporte@gmail.com)","Accept":"application/json"},body:new URLSearchParams({data:q}),signal:AbortSignal.timeout(17500)});
+   if(res.ok){
+    const data=await res.json();
+    if(data?.remark||!Array.isArray(data?.elements))throw Error("A fonte OSM não concluiu a consulta");
+    return data;
+   }
+   failure=Error("Fonte pública OSM respondeu HTTP "+res.status);
+   // Honor provider throttling; retry only transient upstream availability errors.
    if(![502,503,504].includes(res.status))break;
   }catch(e){failure=e;}
  }
- throw failure||Error("OpenStreetMap indisponível");
+ const detail=failure?.name==="TimeoutError"||failure?.name==="AbortError"?"Tempo excedido nos servidores OSM":String(failure?.message||"Fonte pública indisponível");
+ throw Error(detail+". Os registros já salvos permanecem disponíveis.");
 }
 let busy=false;
 export async function prospectingSearch({niche,city}={}){
