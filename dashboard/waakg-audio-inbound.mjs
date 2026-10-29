@@ -29,13 +29,15 @@ export async function transcribeAudio({buffer,filename,fetchFn=fetch}={}){
  form.append('model','whisper-large-v3-turbo');
  form.append('language','pt');
  form.append('response_format','json');
- form.append('prompt','Transcreva falas em português brasileiro com precisão. Termos comerciais: Consecom, site, orçamento, atendimento, WhatsApp.');
+ form.append('prompt','Conversa da agência Consecom Brasil. A palavra Consecom escreve-se C-O-N-S-E-C-O-M. Francisca é o nome da voz. Termos: Consecom Brasil, site, orçamento, atendimento, WhatsApp.');
  const res=await fetchFn('https://api.groq.com/openai/v1/audio/transcriptions',{
   method:'POST',headers:{Authorization:'Bearer '+key,Accept:'application/json'},
   body:form,signal:AbortSignal.timeout(24000)});
  if(!res.ok)throw Error('GROQ_TRANSCRIPTION_HTTP_'+res.status);
  const data=await res.json().catch(()=>({}));
- const content=String(data.text||'').trim().slice(0,2000);
+ // The specific agency name is often split phonetically by Whisper. Correct
+ // common spelling variants without changing the rest of the transcript.
+ const content=String(data.text||'').trim().slice(0,2000).replace(/\b(?:conse\s*com|consecon|concecom|consecone|consecom)\b/gi,'Consecom');
  if(content.length<2)throw Error('TRANSCRIPT_EMPTY');
  // Avoid hallucinating common boilerplate for silence.
  if(/^(?:legendas? (?:por|pela)|obrigad[oa] por assistir|inscreva-se no canal)[.!\s]*$/i.test(content))throw Error('TRANSCRIPT_UNCERTAIN');
