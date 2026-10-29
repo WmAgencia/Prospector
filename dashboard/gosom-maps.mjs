@@ -1,0 +1,79 @@
+// Async Gosom Google Maps integration. All provider calls remain server-side.
+// Jobs are never mistaken for completed results; importing requires explicit user action.
+import {db,one,all,run,id,now,addLead,audit} from './db.mjs';
+import {recordOrigin} from './discovery.mjs';
+import {prospectingList} from './prospecting-search.mjs';
+db.exec("CREATE TABLE IF NOT EXISTS maps_scraper_jobs(id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,niche TEXT NOT NULL,city TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,imported_at TEXT,added INTEGER NOT NULL DEFAULT 0,processed INTEGER NOT NULL DEFAULT 0,error TEXT)");
+const URL_BASE='https://consecom-prospector-maps.onrender.com';
+const configured=()=>Boolean(process.env.PROSPECTOR_MAPS_KEY);
+const valid=x=>typeof x==='string'&&x.trim().length>=2&&x.length<=85&&!/[\r\n<>]/.test(x);
+function jobStatus(s){const v=String(s||'').toLowerCase();return ['completed','complete','done','finished'].includes(v)?'COMPLETED':['failed','error','cancelled','canceled'].includes(v)?'FAILED':['pending','queued','created'].includes(v)?'PENDING':'RUNNING';}
+async function request(path,{method='GET',json=false}={}){
+ if(!configured())throw Error('Serviço Google Maps não configurado');
+ if(!/^\/api\/v1\/jobs(?:\/[a-f0-9-]{36}(?:\/download)?)?$/.test(path))throw Error('Rota de scraper inválida');
+ const response=await fetch(URL_BASE+path,{method,headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY,Accept:json?'application/json':'text/csv',...(json?{'Content-Type':'application/json'}:{})},body:json?JSON.stringify(json):undefined,signal:AbortSignal.timeout(method==='POST'?22000:20000)});
+ if(!response.ok){if(response.status===401)throw Error('Chave interna do Maps recusada');throw Error('Scraper HTTP '+response.status);}
+ return response;
+}
+function row(idValue){return one('SELECT * FROM maps_scraper_jobs WHERE id=?',idValue);}
+export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:'Render',async:true,automaticSend:false,privateAPI:true,source:'Google Maps (termos aplicáveis)',jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
+export async function startMapsScrape({niche,city}={}){
+ if(!valid(niche)||!valid(city))throw Error('Informe nicho e cidade com até 85 caracteres');
+ const recent=one("SELECT * FROM maps_scraper_jobs WHERE niche=? AND city=? AND status IN ('RUNNING','PENDING') ORDER BY created_at DESC LIMIT 1",niche.trim(),city.trim());
+ if(recent)return {id:recent.id,status:recent.status,reused:true};
+ const payload={name:'Prospector: '+niche.trim()+' / '+city.trim(),keywords:[niche.trim()+' em '+city.trim()+', Brasil'],lang:'pt',zoom:15,depth:1,max_time:240,fast_mode:false,radius:10000,email:false};
+ const response=await request('/api/v1/jobs',{method:'POST',json:payload});
+ const result=await response.json();
+ if(!/^[a-f0-9-]{36}$/i.test(result.id||''))throw Error('Scraper não retornou ID de tarefa válido');
+ const internal=id(),at=now();
+ run("INSERT INTO maps_scraper_jobs(id,provider_id,niche,city,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",internal,result.id,niche.trim(),city.trim(),'PENDING',at,at);
+ audit('MAPS_SCRAPER_STARTED',null,{jobId:internal,niche:niche.trim(),city:city.trim()});
+ return {id:internal,status:'PENDING',source:'Gosom Google Maps',note:'Pesquisa iniciada. Os resultados aparecem após o processamento, que pode levar alguns minutos.'};
+}
+export async function pollMapsScrape(jobId){
+ const job=row(jobId);if(!job)throw Error('Pesquisa não encontrada');
+ if(!['COMPLETED','FAILED','IMPORTED'].includes(job.status)){
+  const res=await request('/api/v1/jobs/'+job.provider_id,{json:true});
+  const detail=await res.json(),status=jobStatus(detail.status);
+  run("UPDATE maps_scraper_jobs SET status=?,updated_at=?,error=? WHERE id=?",status,now(),status==='FAILED'?'Execução do scraper falhou':null,jobId);
+ }
+ const j=row(jobId);
+ return {id:j.id,status:j.status,niche:j.niche,city:j.city,added:j.added,processed:j.processed,imported:j.status==='IMPORTED',source:'Gosom Google Maps',note:'Dados do Google Maps sujeitos a condições de uso; importação exige confirmação.'};
+}
+function csvRows(src){
+ if(typeof src!=='string'||src.length>3_000_000)throw Error('CSV muito grande');
+ const text=src.replace(/^\uFEFF/,'');const lines=[];let quoted=false,field='',record=[];
+ for(let i=0;i<text.length;i++){const ch=text[i];if(ch==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++;}else quoted=!quoted;}
+ else if(ch===','&&!quoted){record.push(field);field='';}
+ else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&text[i+1]==='\n')i++;record.push(field);if(record.some(x=>x.trim()))lines.push(record);record=[];field='';}
+ else field+=ch;
+ if(lines.length>3000)throw Error('Exportação excede limite de 3000 registros');
+ }
+ record.push(field);if(record.some(x=>x.trim()))lines.push(record);if(quoted)throw Error('CSV malformado');
+ const head=(lines.shift()||[]).map(x=>x.trim().toLowerCase());
+ return lines.map(v=>Object.fromEntries(head.map((h,i)=>[h,v[i]||''])));
+}
+function mapUrl(x){
+ const str=String(x.link||x.google_maps_url||'');try{const u=new URL(str);if(u.protocol!=='https:')return '';if(!/^(www\.)?google\.[a-z.]+$/.test(u.hostname)&&u.hostname!=='maps.app.goo.gl')return '';if(!u.pathname.startsWith('/maps')&&u.hostname!=='maps.app.goo.gl')return '';return str.slice(0,700);}catch{return '';}
+}
+export async function importMapsScrape(jobId){
+ const job=row(jobId);if(!job)throw Error('Pesquisa não encontrada');
+ if(job.status==='IMPORTED')return {ok:true,alreadyImported:true,added:job.added,processed:job.processed};
+ if(job.status!=='COMPLETED')throw Error('Pesquisa ainda não concluiu');
+ const response=await request('/api/v1/jobs/'+job.provider_id+'/download');
+ const csv=await response.text(),items=csvRows(csv);
+ let added=0,processed=0,skipped=0;
+ for(const x of items){
+  const url=mapUrl(x),business=String(x.title||x.name||'').trim().slice(0,150);
+  if(!business||!url){skipped++;continue;}
+  try{
+   // Never confer WhatsApp consent solely from a Maps business listing.
+   const saved=addLead({business,phone:x.phone||undefined,city:job.city,segment:job.niche,website:String(x.website||'').slice(0,400),maps_id:url,source:'maps_extension',contact_permission:false,notes:'Origem: Gosom Google Maps. Endereço: '+String(x.address||'').slice(0,250)});
+   recordOrigin(saved.lead.id,'maps_extension',{identity:url,provider:'gosom',jobId:job.id},false);
+   if(saved.created)added++;processed++;
+  }catch{skipped++;}
+ }
+ run("UPDATE maps_scraper_jobs SET status='IMPORTED',added=?,processed=?,imported_at=?,updated_at=? WHERE id=?",added,processed,now(),now(),jobId);
+ audit('MAPS_SCRAPER_IMPORTED',null,{jobId,added,processed,skipped});
+ return {ok:true,added,processed,skipped,source:'Gosom Google Maps',...prospectingList({niche:job.niche,city:job.city})};
+}
