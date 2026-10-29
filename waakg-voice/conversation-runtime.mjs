@@ -52,7 +52,7 @@ export class BackchannelPolicy{
 // A separate, scarce cue while Francisca transcribes/thinks/synthesizes.
 // Never pretends to check external data when no lookup was actually performed.
 export class ThinkingCuePolicy{
- constructor({delayMs=2200,cooldownMs=17000}={}){
+ constructor({delayMs=950,cooldownMs=4000}={}){
   this.delayMs=delayMs;this.cooldownMs=cooldownMs;this.lastAt=-Infinity;
   this.turnId=0;this.claimed=false;this.total=0;this.startedAt=0;
  }
@@ -67,6 +67,6 @@ export class ThinkingCuePolicy{
  claim(now=Date.now()){
   if(this.claimed)return null;
   this.claimed=true;this.lastAt=now;
-  return ['pensar','instante','entendi'][this.total++%3];
+  return ['consultar','pensar','instante'][this.total++%3];
  }
 }
