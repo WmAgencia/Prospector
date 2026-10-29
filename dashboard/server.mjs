@@ -36,6 +36,7 @@ import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
 import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
+import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
@@ -272,7 +273,7 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/whatsapp/qr')return respond(res,200,await waGetQR());
   if(req.method==='POST'&&pathname==='/api/whatsapp/connect'){try{return respond(res,200,await waConnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/disconnect'){try{return respond(res,200,await waDisconnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
-  if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,prospectingList({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',limit:500}));}
+  if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:500}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
   if(req.method==='POST'&&pathname==='/api/prospecting/queue'){const r=enqueueApprovedApproaches(await json(req));if(r.status===202)notify();return respond(res,r.status,r.body);}
