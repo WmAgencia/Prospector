@@ -147,7 +147,13 @@ export async function runAgentTool(name,a={},actor){
   return {created:r.created,lead:cleanLead(r.lead),contactPermission:false};
  }
  if(name==='update_lead')return updateLead(a);
- if(name==='set_pause'){if(typeof a.paused!=='boolean')throw Error('Use true ou false');setSetting('paused',a.paused);audit('GROQ_OWNER_PAUSE',null,{paused:a.paused});return {paused:a.paused,automaticSends:false};}
+ if(name==='set_pause'){
+  if(typeof a.paused!=='boolean')throw Error('Use true ou false');
+  if(a.paused===false&&getSetting('auto_initial',false)===true)
+   return runOwnerAdminTool('request_change_setting',{key:'paused',value:false});
+  setSetting('paused',a.paused);audit('GROQ_OWNER_PAUSE',null,{paused:a.paused});
+  return {paused:a.paused,automaticSends:false};
+ }
  if(name==='create_meeting'){
   const l=getLead(a.lead_id);if(!l)throw Error('Empresa não encontrada');
   const stamp=requiredText(a.start_at,55,14),date=new Date(stamp);
