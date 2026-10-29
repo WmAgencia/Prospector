@@ -63,6 +63,13 @@ export function prospectingList({niche="",city="",status="uncontacted",limit=500
   maps_url:(String(notes||"").match(/https:\/\/(?:www\.)?google\.[a-z.]+\/maps[^\s|]*/i)||[])[0]||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(x.business+' '+(x.city||'')),
   instagram_url:(()=>{const m=new RegExp('^https?://(?:www[.])?instagram[.]com/([a-z0-9._]{2,30})(?:/|$)','i').exec(x.website||'');const user=/^[a-z0-9._]{2,30}$/i.test(x.instagram||'')?x.instagram:m?.[1];return user?'https://www.instagram.com/'+user+'/':null;})(),
   authorized:x.contact_permission===1&&documentedOptIn(x.id),
+  // Public commercial records can be reviewed and contacted individually by the
+  // operator, but this does NOT authorize automated WA-AKG dispatch.
+  // Suppressed, active and otherwise ineligible records never get a link.
+  manual_contact_url:x.phone&&!suppressed&&recontactDecision(x).eligible?
+   'https://wa.me/'+encodeURIComponent(x.phone)+'?text='+encodeURIComponent(
+    'Olá! Sou da Consecom Brasil. Posso conversar sobre soluções de presença digital para sua empresa? Se preferir não receber contatos, é só me avisar.'
+   ):null,
   needs_permission:x.contact_permission!==1||!documentedOptIn(x.id)
  })),partial:allRows.length===6000,source:"Base do Prospector",note:"Não contatada significa sem envio registrado, desconsiderando números bloqueados. O sistema não conhece contatos feitos fora do Prospector."};
 }
