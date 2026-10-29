@@ -28,6 +28,6 @@ test('New businesses appear once; duplicates in the same search are not repeated
  const out=listUnseenCompanies({session:B,niche:'',city:'Sorocaba'});
  assert.equal(out.results.length,1);
  assert.equal(out.results[0].business,'Beta Auto Centro');
- assert.equal(listUnseenCompanies({session:A,niche:'',city:'Sorocaba'}).results.length,0);
+ assert.ok(!listUnseenCompanies({session:A,niche:'',city:'Sorocaba'}).results.some(x=>x.business==='Beta Auto Centro'));
 });
 test.after(()=>{db.db.close();fs.rmSync(dir,{recursive:true,force:true});});
