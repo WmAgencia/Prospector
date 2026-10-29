@@ -36,6 +36,7 @@ function createHarness(){
   if(route==='/api/state')data=state;
   else if(route.startsWith('/api/prospecting?'))data=base;
   else if(route==='/api/maps/status')data={jobs:[]};
+  else if(route==='/api/prospecting/queue')data={active:false,waiting:0,intervalSeconds:90};
   else if(route==='/api/whatsapp/status')data={ok:true,connected:false,status:'DISCONNECTED'};
   else if(route==='/api/prospecting/search')data={ok:true,source:'OpenStreetMap',added:2};
   else if(route==='/api/ai/draft')data={ok:true,draft:'Claro! Posso explicar melhor?',profile:{profileLabel:'Quer entender os detalhes',nextAction:'Explicar de modo simples',confidence:'moderate'},requiresApproval:true,autoSend:false};
@@ -63,7 +64,7 @@ test('Prospecção starts with no hidden city/niche filter and displays existing
  await vm.runInContext('reload()',h.context);
  assert.match(h.viewEl.innerHTML,/Oficina Real de Itu/);
  assert.match(h.viewEl.innerHTML,/Oportunidades cadastradas/);
- assert.match(h.viewEl.innerHTML,/Google Maps \(Gosom\)/);
+ assert.match(h.viewEl.innerHTML,/Pesquisar empresas/);
  assert.ok(h.fetches.some(f=>f.route==='/api/prospecting?niche=&city=&status=uncontacted'),'default must show only unapproached leads');
  assert.ok(!h.fetches.some(f=>f.method==='POST'),'opening the tab must not trigger provider calls or messaging');
  assert.match(h.root.innerHTML,/data-tab="prospects"/);
@@ -100,7 +101,7 @@ test('Every workspace section renders without a runtime exception',async()=>{
  const expected={
   overview:'Indicadores da operação',
   conversations:'Suas conversas',
-  prospects:'Oportunidades cadastradas',
+  prospects:'Empresas não abordadas',
   connections:'INTEGRAÇÃO WHATSAPP',
   settings:'PREFERÊNCIAS'
  };
@@ -116,16 +117,14 @@ test('Selectable leads show Maps and Instagram; explicit selection only creates 
  assert.match(h.viewEl.innerHTML,/data-select-lead=/);
  assert.match(h.viewEl.innerHTML,/Maps ↗/);
  assert.match(h.viewEl.innerHTML,/Instagram ↗/);
- const hit={dataset:{action:'select-all'},closest:()=>null};
- // Top-level click delegation looks at the closest matching action control.
+ const hit={dataset:{action:'toggle-all'},closest:()=>null};
  await h.listeners.click({target:{closest:()=>hit}});
- assert.match(h.viewEl.innerHTML,/1 selecionadas/);
- await h.listeners.click({target:{closest:()=>({dataset:{action:'approach-selected'}})}});
- assert.ok(h.fetches.some(x=>x.route==='/api/prospecting/approach-preview'&&x.method==='POST'));
- assert.ok(!h.fetches.some(x=>x.route.includes('send')||x.route.includes('reply')),'selection must never send WhatsApp messages');
- assert.match(h.viewEl.innerHTML,/Olá, boa tarde, como vai/);
- await h.listeners.click({target:{closest:()=>({dataset:{action:'clear-selection'}})}});
+ assert.match(h.viewEl.innerHTML,/1 selecionada/);
+ assert.match(h.viewEl.innerHTML,/Desmarcar todas/);
+ await h.listeners.click({target:{closest:()=>hit}});
  assert.match(h.viewEl.innerHTML,/0 selecionadas/);
+ assert.match(h.viewEl.innerHTML,/Selecionar todas/);
+ assert.ok(!h.fetches.some(x=>x.method==='POST'),'selection must not call outbound API');
 });
 
 test('Groq draft button proposes a response without sending',async()=>{
