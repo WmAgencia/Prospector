@@ -24,7 +24,7 @@ test('Prospection lists only unapproached contacts; no phone stays visible but d
  const active=db.addLead({business:'Mecânica Ativa',phone:'15988887777',city:'Sorocaba',segment:'oficina mecânica',source:'osm'});
  const contacted=db.addLead({business:'Mecânica Contatada',phone:'15988887778',city:'Sorocaba',segment:'oficina mecânica',source:'osm'});
  const blocked=db.addLead({business:'Mecânica Bloqueada',phone:'15988887779',city:'Sorocaba',segment:'oficina mecânica',source:'osm'});
- const missing=db.addLead({business:'Mecânica sem telefone',city:'Sorocaba',segment:'oficina mecânica',source:'osm'});
+ const missing=db.addLead({business:'Mecânica sem telefone',instagram:'mecanica.semtelefone.qa',city:'Sorocaba',segment:'oficina mecânica',source:'osm'});
  db.run('INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)',contacted.lead.id,contacted.lead.phone,'SENT',db.id(),db.now());
  db.run('INSERT INTO suppressions(phone,reason,created_at) VALUES(?,?,?)',blocked.lead.phone,'OPTOUT',db.now());
  const list=prospectingList({niche:'oficina mecânica',city:'Sorocaba',status:'uncontacted'});
