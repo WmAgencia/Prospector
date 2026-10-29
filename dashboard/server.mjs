@@ -157,7 +157,7 @@ if(process.env.RUN_FRANCISCA_AUDIO_SMOKE==='true'){
    const ok=voice.bytes.length>400&&heard.includes('francisca')&&heard.includes('consecom');
    console.info('[francisca-whisper-live-smoke]',JSON.stringify({
     ok,voice:'pt-BR-FranciscaNeural',audioBytes:voice.bytes.length,
-    transcribedChars:recognized.text.length,mentionsFrancisca:heard.includes('francisca'),
+    transcribedChars:recognized.text.length,fictionalTestTranscript:recognized.text.slice(0,120),mentionsFrancisca:heard.includes('francisca'),
     mentionsConsecom:heard.includes('consecom'),whatsappMessagesSent:0
    }));
   }catch(error){console.warn('[francisca-whisper-live-smoke]',JSON.stringify({
