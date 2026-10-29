@@ -61,4 +61,13 @@ test('Security limits reject secret keys and invalid intervals',async()=>{
  const r=await tools.runAgentTool('read_owner_settings',{},OWNER);
  assert.equal(Object.hasOwn(r.settings,'PROSPECTOR_OWNER_PHONE'),false);
 });
+test('Unpausing an enabled outbound workflow needs owner WhatsApp confirmation',async()=>{
+ db.setSetting('paused',true);db.setSetting('auto_initial',true);
+ try{
+  const r=await tools.runAgentTool('set_pause',{paused:false},OWNER);
+  assert.equal(r.requiresConfirmation,true);
+  assert.match(r.code,/^\d{6}$/);
+  assert.equal(db.getSetting('paused'),true);
+ }finally{db.setSetting('auto_initial',false);}
+});
 test.after(()=>{db.db.close();fs.rmSync(dir,{recursive:true,force:true});});
