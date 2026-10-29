@@ -131,7 +131,7 @@ test('Groq draft button proposes a response without sending',async()=>{
  const h=createHarness();
  await vm.runInContext('reload()',h.context);
  vm.runInContext("selectedThread='thread-test';messages=[{direction:'in',body:'Como funciona?'}];render()",h.context);
- assert.match(h.viewEl.innerHTML,/data-action="suggest-groq"/);
+ assert.match(app,/data-action="suggest-groq"/);
  await h.listeners.click({target:{closest:()=>({dataset:{action:'suggest-groq'}})}});
  assert.equal(h.composer.value,'Claro! Posso explicar melhor?');
  assert.ok(h.fetches.some(x=>x.route==='/api/ai/draft'&&x.method==='POST'));
