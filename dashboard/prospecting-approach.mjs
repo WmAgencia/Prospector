@@ -23,7 +23,14 @@ export function prepareApproaches(input={}){
   const contacted=row.approached||row.sent||row.stage!=='DISCOVERED';
   const eligible=!!row.phone&&!contacted&&!row.suppressed;
   const authorized=eligible&&row.contact_permission===1&&documentedOptIn(row.id);
-  items.push({id:row.id,business:row.business,phoneSuffix:row.phone?row.phone.slice(-4):null,message:eligible?message:null,eligible,authorized,status:!eligible?'UNAVAILABLE':authorized?'READY_FOR_APPROVAL':'NEEDS_PERMISSION'});
+  items.push({id:row.id,business:row.business,phoneSuffix:row.phone?row.phone.slice(-4):null,message:eligible?message:null,eligible,authorized,
+   // A manual one-to-one link does not call the WA-AKG sender. Only the human
+   // operating the browser can choose whether to submit the message.
+   manualUrl:eligible&&row.phone?'https://wa.me/'+encodeURIComponent(row.phone):null,
+   status:!eligible?'UNAVAILABLE':authorized?'READY_FOR_APPROVAL':'NEEDS_PERMISSION'});
  }
- return {ok:true,greeting,message,items,selected:ids.length,ready:items.filter(x=>x.authorized).length,needsPermission:items.filter(x=>x.status==='NEEDS_PERMISSION').length,requiresHumanApproval:true,autoSent:false,groqTraining:'CUSTOMIZED_DRAFT_ONLY'};
+ return {ok:true,greeting,message,items,selected:ids.length,ready:items.filter(x=>x.authorized).length,
+  manualReady:items.filter(x=>x.eligible&&!x.authorized).length,
+  needsPermission:items.filter(x=>x.status==='NEEDS_PERMISSION').length,
+  requiresHumanApproval:true,autoSent:false,groqTraining:'CUSTOMIZED_DRAFT_ONLY'};
 }
