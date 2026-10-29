@@ -5,7 +5,7 @@ const MAX_CHARS=650;
 const normalize=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function voiceInterruptionHint(text=''){
  const n=normalize(text);
- if(/(?:muda(?:r)? (?:de )?assunto|outro assunto|vamos falar de outra coisa|esquece (?:isso|essa (?:pergunta|ideia))|deixa isso pra la|responde isso aqui rapidinho)/.test(n))
+ if(/(?:muda(?:r)? (?:de )?assunto|outro assunto|vamos falar de outra coisa|esquece (?:isso|essa (?:pergunta|ideia))|deixa isso pra la)/.test(n))
   return 'switch';
  if(/(?:inclui|inclua|acrescenta|adiciona|coloca tambem|considera tambem|mas (?:tambem|inclui|adiciona)|na verdade|so que|e se|alem disso|nesse caso|continuando|pode completar|termina de)/.test(n))
   return 'extend';
