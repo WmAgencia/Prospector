@@ -50,6 +50,16 @@ export async function startMapsScrape({niche,city}={}){
  audit('MAPS_SCRAPER_STARTED',null,{jobId:internal,niche:niche.trim(),city:city.trim()});
  return {id:internal,status:'PENDING',source:'Gosom Google Maps',note:'Pesquisa iniciada. Os resultados aparecem após o processamento, que pode levar alguns minutos.'};
 }
+
+if(process.env.RUN_MAPS_POLL_SMOKE==='true'){
+ setTimeout(async()=>{
+  const recent=one('SELECT id FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 1');
+  if(!recent)return;
+  try{const state=await pollMapsScrape(recent.id);console.info('[maps-poll-smoke]',JSON.stringify({status:state.status,idPresent:!!state.id,processed:state.processed}));}
+  catch(e){console.info('[maps-poll-smoke]',JSON.stringify({error:String(e?.message||'').slice(0,160)}));}
+ },1500).unref();
+}
+
 export async function pollMapsScrape(jobId){
  const job=row(jobId);if(!job)throw Error('Pesquisa não encontrada');
  if(!['COMPLETED','FAILED','IMPORTED'].includes(job.status)){
