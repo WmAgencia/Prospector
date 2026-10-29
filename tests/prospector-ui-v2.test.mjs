@@ -65,7 +65,7 @@ test('Prospecção starts with no hidden city/niche filter and displays existing
  assert.match(h.viewEl.innerHTML,/Oficina Real de Itu/);
  assert.match(h.viewEl.innerHTML,/Empresas não abordadas/);
  assert.match(h.viewEl.innerHTML,/Pesquisar empresas/);
- assert.ok(h.fetches.some(f=>f.route==='/api/prospecting?niche=&city=&status=uncontacted'),'default must show only unapproached leads');
+ assert.ok(h.fetches.some(f=>f.route.startsWith('/api/prospecting?niche=&city=&status=uncontacted&session=')),'default must show only unapproached leads');
  assert.ok(!h.fetches.some(f=>f.method==='POST'),'opening the tab must not trigger provider calls or messaging');
  assert.match(h.root.innerHTML,/data-tab="prospects"/);
  assert.match(h.root.innerHTML,/data-tab="connections"/);
