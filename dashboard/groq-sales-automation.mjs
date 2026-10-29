@@ -67,7 +67,8 @@ export async function handleSalesTurn(providerId,deps={}){
  if(!review.ok){audit('GROQ_REPLY_REJECTED',r.lead_id,{code:review.code,test:allowTest});return finish('REVIEW','SAFETY_'+review.code);}
  if(one('SELECT manual_takeover FROM threads WHERE id=?',r.thread_id)?.manual_takeover===1||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
- const wasAudio=!!one("SELECT provider_id FROM inbound_audio_jobs WHERE provider_id=? AND state='DONE'",providerId);
+ const audioTable=!!one("SELECT name FROM sqlite_master WHERE type='table' AND name='inbound_audio_jobs'");
+ const wasAudio=audioTable&&!!one("SELECT provider_id FROM inbound_audio_jobs WHERE provider_id=? AND state='DONE'",providerId);
  const routing=chooseReplyChannel({inbound:r.body,draft:draft.draft,wasAudio,isOperatorTest:allowTest,
   preferredMode:channelPreference(r.jid),
   voiceAvailable:process.env.AUDIO_RESPONSE_ENABLED==='true'&&process.env.FRANCISCA_TTS_ENABLED==='true'});
