@@ -76,7 +76,7 @@ export async function tickSalesAgent(deps={}){
 }
 let notifying=false;
 export async function flushInterestAlerts(deps={}){
- const target=ownerTarget();if(!target||notifying)return 0;
+ const target=ownerTarget();if(!target||notifying||!one("SELECT id FROM owner_notices WHERE kind='GROQ_HOT_LEAD' AND status='PENDING' LIMIT 1"))return 0;
  notifying=true;
  try{
   const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
