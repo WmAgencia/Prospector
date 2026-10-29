@@ -34,6 +34,10 @@ import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsApp
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
+import {recordInboundTranscript} from './waakg-bridge.mjs';
+import {processAudioJobs,audioStatus} from './waakg-audio-inbound.mjs';
+import {voiceStatus} from './francisca-tts.mjs';
+import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
 import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
@@ -370,6 +374,21 @@ async function handler(req,res){
    // Health-only output; never reveal provider text, credentials, or customer data.
    return respond(res,result.ok?200:result.httpStatus||502,{ok:result.ok,provider:result.provider,model:result.model||null,code:result.code||null,autoSend:false});
   }
+  if(req.method==='GET'&&pathname==='/api/ai/audio-status')
+   return respond(res,200,{transcription:audioStatus(),francisca:voiceStatus(),manualVoice:true,autoVoiceReplies:process.env.AUDIO_RESPONSE_ENABLED==='true'});
+  if(req.method==='POST'&&pathname==='/api/ai/voice-preview'){
+   const payload=await json(req);
+   try{
+    const voice=await voicePreview(payload.text);
+    res.writeHead(200,{'Content-Type':'audio/mp4','Content-Length':voice.buffer.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+    res.end(voice.buffer);return;
+   }catch(e){return respond(res,502,{error:'Não foi possível gerar a voz Francisca',code:String(e.message).slice(0,70)});}
+  }
+  if(req.method==='POST'&&pathname==='/api/ai/voice-send'){
+   const result=await sendApprovedVoice(await json(req));
+   if(result.status===200)notify();
+   return respond(res,result.status,result.body);
+  }
   if(req.method==='POST'&&pathname==='/api/ai/draft'){
    const payload=await json(req);
    const result=await aiDraft({text:payload.text,context:payload.context});
@@ -611,6 +630,13 @@ const interval=setInterval(()=>{
 // rule: the persisted send clock enforces at least 90 seconds between attempts.
 // Inbound customer messages are handled separately from the 90-second outreach queue.
 // Owner-only interest notifications never trigger customer-facing messages.
+const audioTranscriptionTimer=setInterval(()=>{
+ if(process.env.AUDIO_TRANSCRIPTION_ENABLED!=='true')return;
+ processAudioJobs({deliver:recordInboundTranscript}).then(result=>{
+  if(result.status==='DONE')notify();
+  if(result.status==='REVIEW')console.warn('[audio transcription]',result.error);
+ }).catch(e=>console.warn('[audio transcription] unexpected',String(e?.message||e).slice(0,80)));
+},4000);
 const customerAiTimer=setInterval(()=>{
  if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true')return;
  tickSalesAgent().then(()=>flushInterestAlerts()).then(async sent=>sent+await flushPersonalNotices()).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
@@ -670,4 +696,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
