@@ -7,8 +7,8 @@ export function explicitInterest(text){
  if(!match||refusal.test(n))return false;
  const before=n.slice(Math.max(0,match.index-56),match.index);
  // A negated or hypothetical intent is NOT a confirmed buyer.
- if(/\\b(?:nao|nem|nunca)\\s+(?:(?:[a-z]+)\\s+){0,3}$/.test(before))return false;
- if(/\\b(?:se|caso|talvez|hipoteticamente)\\s+(?:(?:[a-z]+)\\s+){0,4}$/.test(before))return false;
+ if(/\b(?:nao|nem|nunca)\s+(?:(?:[a-z]+)\s+){0,3}$/.test(before))return false;
+ if(/\b(?:se|caso|talvez|hipoteticamente)\s+(?:(?:[a-z]+)\s+){0,4}$/.test(before))return false;
  return true;
 }
 export async function qualifyWithGroq({text,history='',fetchFn=fetch}={}){
