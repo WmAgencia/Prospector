@@ -36,6 +36,7 @@ import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
 import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
+import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {ownerStatus} from './groq-owner.mjs';
@@ -257,6 +258,10 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/whatsapp/connect'){try{return respond(res,200,await waConnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/disconnect'){try{return respond(res,200,await waDisconnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,prospectingList({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',limit:500}));}
+  if(req.method==='GET'&&pathname==='/api/maps/status')return respond(res,200,scraperStatus());
+  if(req.method==='POST'&&pathname==='/api/maps/search'){try{return respond(res,202,await startMapsScrape(await json(req)));}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
+  if(req.method==='GET'&&pathname==='/api/maps/job'){try{return respond(res,200,await pollMapsScrape(url.searchParams.get('id')||''));}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
+  if(req.method==='POST'&&pathname==='/api/maps/import'){try{const a=await importMapsScrape((await json(req)).id);notify();return respond(res,200,a);}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
   if(req.method==='POST'&&pathname==='/api/prospecting/search'){try{const result=await prospectingSearch(await json(req));notify();return respond(res,200,result);}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/wa-akg/status')return respond(res,200,await gatewayRemoteStatus());
   if(req.method==='GET'&&pathname==='/api/wa-akg/inbox')return respond(res,200,gatewayInbox());
