@@ -29,7 +29,7 @@ function createHarness(){
  };
  const leads=[{id:'11111111-1111-4111-8111-111111111111',business:'Oficina Real de Itu',city:'Itu',segment:'Oficina',source:'osm',stage:'DISCOVERED',phone:'5515999999999'}];
  const state={leads,threads:[],settings:{paused:true,discovery_auto_enabled:false},stats:{found:1}};
- const base={total:1,uncontacted:1,contacted:0,returned:1,results:[{...leads[0],contacted:false,selectable:true,maps_url:'https://www.google.com/maps/search/?api=1&query=Oficina',instagram_url:'https://www.instagram.com/oficina.teste/'}],partial:false};
+ const base={total:1,uncontacted:1,contacted:0,returned:1,results:[{...leads[0],contacted:false,selectable:true,maps_url:'https://www.google.com/maps/search/?api=1&query=Oficina',instagram_url:'https://www.instagram.com/oficina.teste/',manual_contact_url:'https://wa.me/5515999999999?text=Ol%C3%A1'}],partial:false};
  const fetch=async (url,opts={})=>{
   const route=String(url);fetches.push({route,method:opts.method||'GET'});
   let data={};
@@ -122,6 +122,8 @@ test('Selectable leads show Maps and Instagram; explicit selection only creates 
  assert.match(h.viewEl.innerHTML,/data-select-lead=/);
  assert.match(h.viewEl.innerHTML,/Maps ↗/);
  assert.match(h.viewEl.innerHTML,/Instagram ↗/);
+ assert.match(h.viewEl.innerHTML,/WhatsApp manual ↗/);
+ assert.ok(h.viewEl.innerHTML.includes('https://wa.me/5515999999999?text='));
  const hit={dataset:{action:'toggle-all'},closest:()=>null};
  await h.listeners.click({target:{closest:()=>hit}});
  assert.match(h.viewEl.innerHTML,/1 selecionada/);
