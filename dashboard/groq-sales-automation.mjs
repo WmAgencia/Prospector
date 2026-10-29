@@ -2,6 +2,10 @@
 // transfer to the operator; never sends an extra response on handoff.
 import {db,one,all,run,id,tx,now,stage,addMessage,audit} from './db.mjs';
 import {aiDraft} from './ai-groq.mjs';
+import {getSetting} from './db.mjs';
+import {documentedOptIn} from './outreach-queue.mjs';
+import {prospectSalesContext} from './sales-policy.mjs';
+import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
@@ -16,9 +20,18 @@ run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify befo
 const digits=s=>String(s||'').replace(/\D/g,'');
 const optedOut=s=>/\b(pare|parar|stop|sair|remover|nao me contate|não me contate|sem interesse|nao tenho interesse)\b/i.test(String(s||''));
 export function ownerTarget(){const preferred=personalPhone();if(preferred)return preferred;const raw=digits(process.env.PROSPECTOR_HOT_LEAD_PHONE);const val=raw.length===11?'55'+raw:raw;return /^55\d{10,11}$/.test(val)?val:null;}
-export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true};}
+export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',approvedProspectFollowup:getSetting('sales_followup_enabled',true)===true,alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true};}
+function approvedProspectFollowup(identity,jid){
+ if(getSetting('sales_followup_enabled',true)!==true||identity.role!=='PROSPECT_APPROACHED')return false;
+ const number=String(jid||'').split('@')[0];
+ const lead=one("SELECT id FROM leads WHERE phone=?",number);
+ return !!lead&&documentedOptIn(lead.id);
+}
 export function queueInboundTurn({providerId,jid}={}){
- if((process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!testModeAllowed(String(jid||'').split('@')[0]))||!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
+ if(!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
+ const identity=classifyContact({jid,sessionId:selectedWaSession()});
+ const allowed=approvedProspectFollowup(identity,jid);
+ if(!allowed&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!testModeAllowed(String(jid).split('@')[0]))return false;
  return run("INSERT OR IGNORE INTO groq_auto_events(provider_id,jid,state,at) VALUES(?,?,?,?)",providerId,jid,'PENDING',now()).changes>0;
 }
 const active=new Set();
@@ -28,9 +41,10 @@ export async function handleSalesTurn(providerId,deps={}){
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
  const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
  const allowTest=identity.role==='OWNER'&&identity.testSandbox===true;
+ const salesFollowup=approvedProspectFollowup(identity,r.jid);
  if(identity.role==='UNVERIFIED')return finish('SKIPPED','UNVERIFIED_SENDER');
  if(identity.role==='OWNER'&&!allowTest)return finish('HANDOFF','OWNER_PRIVILEGED_CHANNEL');
- if(process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
+ if(!salesFollowup&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
  if(r.session_id!==selectedWaSession())return finish('SKIPPED','SESSION');
  if(!allowTest&&(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP)||r.phone===personalPhone()))return finish('SKIPPED','OWNER');
  if(optedOut(r.body)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT');
@@ -46,32 +60,53 @@ export async function handleSalesTurn(providerId,deps={}){
   tx(()=>{
    if(one('SELECT manual_takeover FROM threads WHERE id=?',r.thread_id)?.manual_takeover!==1){
     stage(r.lead_id,'INTERESTED','GROQ_REAL_INTEREST');
+    recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:interest.evidence||r.body,notify:false});
     run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
     queueNotice('groq-hot:'+r.lead_id,'GROQ_HOT_LEAD',
-     '⭐ *Interesse real no Prospector*\nEmpresa: '+r.business+'\nConversa: https://wa.me/'+r.phone+'\nTrecho de interesse: '+String(interest.evidence||'Intenção confirmada').slice(0,130)+'\nContinue o atendimento pessoalmente.',r.lead_id);
+     '⭐ *Interesse real no Prospector*\nEmpresa: '+r.business+'\nConversa: https://wa.me/'+r.phone+'\nTrecho de interesse: '+String(interest.evidence||'Intenção confirmada').slice(0,130)+'\nReferência de site: R$ 550 (média, confirmar escopo)\nPróximo passo: assumir negociação e validar proposta.',r.lead_id);
     audit('GROQ_INTEREST_ALERT_QUEUED',r.lead_id,{model:'groq',confidence:interest.confidence});
    }
   });
   return finish('HOT');
  }
  // An apparent commitment which the model cannot verify is left for review.
- if(identity.role!=='EXISTING_CLIENT'&&identity.role!=='OWNER'&&explicitInterest(r.body))return finish('REVIEW','UNCERTAIN_INTEREST');
- if(process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&!allowTest)return finish('REVIEW','AI_AUTOREPLY_DISABLED');
+ if(identity.role!=='EXISTING_CLIENT'&&identity.role!=='OWNER'&&explicitInterest(r.body)){
+  if(salesFollowup){
+   run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
+   recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'Intenção comercial precisa de confirmação: '+r.body});
+  }
+  return finish('REVIEW','UNCERTAIN_INTEREST');
+ }
+ if(!salesFollowup&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&!allowTest)return finish('REVIEW','AI_AUTOREPLY_DISABLED');
  if(r.inbox_state!=='REVIEW'||r.manual_takeover)return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
  const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
  if(!wa.connected||!session)return finish('REVIEW','WA_OFFLINE');
  const incoming=classifyInbound(r.body);
- if(incoming.human)return finish('HANDOFF','REQUESTED_HUMAN');
+ if(incoming.human){
+  if(salesFollowup){
+   run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
+   recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:r.body});
+  }
+  return finish('HANDOFF','REQUESTED_HUMAN');
+ }
  // A one-word hello never requires an external model call.
  const draft=incoming.intro?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,context:history+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
-     'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.'});
- if(!draft.ok||!draft.draft)return finish('REVIEW','GROQ_UNAVAILABLE');
- const review=reviewGroqReply({inbound:r.body,draft:draft.draft});
- if(!review.ok){audit('GROQ_REPLY_REJECTED',r.lead_id,{code:review.code,test:allowTest});return finish('REVIEW','SAFETY_'+review.code);}
+     'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+
+     (salesFollowup?prospectSalesContext(r):'')});
+ if(!draft.ok||!draft.draft){
+  if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});
+  return finish('REVIEW','GROQ_UNAVAILABLE');
+ }
+ const review=reviewGroqReply({inbound:r.body,draft:draft.draft,allowAveragePrice:salesFollowup});
+ if(!review.ok){
+  audit('GROQ_REPLY_REJECTED',r.lead_id,{code:review.code,test:allowTest});
+  if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'Resposta bloqueada para revisão: '+review.code});
+  return finish('REVIEW','SAFETY_'+review.code);
+ }
  if(one('SELECT manual_takeover FROM threads WHERE id=?',r.thread_id)?.manual_takeover===1||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
  const audioTable=!!one("SELECT name FROM sqlite_master WHERE type='table' AND name='inbound_audio_jobs'");
@@ -141,13 +176,13 @@ export async function tickSalesAgent(deps={}){
 }
 let notifying=false;
 export async function flushInterestAlerts(deps={}){
- const target=ownerTarget();if(!target||notifying||!one("SELECT id FROM owner_notices WHERE kind='GROQ_HOT_LEAD' AND status='PENDING' LIMIT 1"))return 0;
+ const target=ownerTarget();if(!target||notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME') AND status='PENDING' LIMIT 1"))return 0;
  notifying=true;
  try{
   const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
   if(!wa.connected||!session)return 0;
   let delivered=0;
-  for(const entry of all("SELECT * FROM owner_notices WHERE kind='GROQ_HOT_LEAD' AND status='PENDING' ORDER BY created_at LIMIT 5")){
+  for(const entry of all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME') AND status='PENDING' ORDER BY created_at LIMIT 5")){
    if(!run("UPDATE owner_notices SET status='SENDING',updated_at=? WHERE id=? AND status='PENDING'",now(),entry.id).changes)continue;
    try{
     const send=deps.send||waRequest;
