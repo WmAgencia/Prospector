@@ -45,6 +45,24 @@ test('Existing customer saying they want to hire cannot trigger a new hot-sales 
  assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='GROQ_HOT_LEAD'",l.id).n,0);
  assert.equal(db.one('SELECT stage FROM leads WHERE id=?',l.id).stage,'DISCOVERED');
 });
+test('Contracted or previously uninterested customers can still receive support',async()=>{
+ const p='5515999777784',l=db.addLead({business:'Empresa Contratada',phone:p,source:'MANUAL'}).lead;
+ db.stage(l.id,'CLOSED_WON','OPERATOR');
+ const r=inbound(p,'Preciso de ajuda no site que contratei.');
+ assert.equal(r.processed,true);
+ let role=null;
+ const out=await bot.tickSalesAgent({...fake,draft:async input=>{
+  role=input.audience;return {ok:true,draft:'Claro! Qual problema está aparecendo no site?'};
+ }});
+ assert.equal(out.states[0],'SENT');
+ assert.equal(role,'EXISTING_CLIENT');
+ const p2='5515999777785',l2=db.addLead({business:'Empresa Antiga',phone:p2,source:'MANUAL'}).lead;
+ db.stage(l2.id,'NO_INTEREST','OPERATOR');
+ roles.setExistingClientRelationship({leadId:l2.id,existing:true,evidence:'Contrato vigente no arquivo'});
+ inbound(p2,'O painel do meu site deu problema.');
+ const next=await bot.tickSalesAgent({...fake});
+ assert.equal(next.states[0],'SENT');
+});
 test('Confirmed approached prospect may be escalated without giving access to owner tools',async()=>{
  const p='5515999777782',l=db.addLead({business:'Cliente prospect',phone:p,source:'MANUAL'}).lead;
  db.run('INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)',
