@@ -3,6 +3,8 @@ import {db,one,all,run,now,id,getSetting,setSetting,stage,addLead,phone,audit,st
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {waControlStatus} from './waakg-control.mjs';
 import {remoteChats,remoteMessages} from './waakg-conversations.mjs';
+import {classifyContact,verifiedOwnerPhone} from './whatsapp-roles.mjs';
+import {ownerAdminTools,ownerAdminToolNames,runOwnerAdminTool,executeOwnerAdminConfirmation} from './groq-owner-admin.mjs';
 
 // This is a deliberately restricted, auditable interface to real CRM operations.
 // Never grant raw SQL, arbitrary HTTP fetches, code execution, credential reads, or bulk sends.
@@ -39,6 +41,7 @@ export const agentTools=[
  tool('block_contact','Stop future outreach to an existing lead and cancel any pending tasks',{lead_id:string('Exact lead ID'),reason:string('Reason for stopping contact')},['lead_id']),
  tool('search_businesses','Run a live, rate-limited public OpenStreetMap niche/city search and save found businesses; coverage incomplete',{niche:string('Industry, e.g. oficinas mecânicas'),city:string('Brazilian city, e.g. Sorocaba')},['niche','city']),
  tool('prepare_message','Prepare ONE WhatsApp reply to a contact who has already messaged the business; requires a confirmation code',{phone:string('Recipient phone with DDD'),text:string('Exact message, no bulk sends')},['phone','text'])
+,...ownerAdminTools
 ];
 const requiredText=(v,max=300,min=1)=>{
  if(typeof v!=='string'||v.trim().length<min||v.length>max)throw Error('Valor inválido (texto ou tamanho)');
@@ -86,9 +89,14 @@ function getLeadDetails(a){
  const jobs=all('SELECT id,status,created_at,updated_at FROM jobs WHERE lead_id=? ORDER BY created_at DESC LIMIT 8',lead.id);
  return {lead:cleanLead(lead),thread:{id:thread?.id||null,manual_takeover:Boolean(thread?.manual_takeover),unread:thread?.unread_count||0},messages,meetings,jobs};
 }
-export async function runAgentTool(name,a={}){
+export async function runAgentTool(name,a={},actor){
  if(!a||typeof a!=='object'||Array.isArray(a))throw Error('Argumentos inválidos');
- if(name==='list_capabilities')return {available:agentTools.map(t=>({name:t.function.name,description:t.function.description})),limitations:['Sem SQL arbitrário, edição de código do servidor ou leitura de senhas','Sem envios em massa','Enviar mensagem ou bloquear contato exige código de confirmação','Dados pesquisados podem ter cobertura parcial']};
+ if(!['system_status','safe_settings'].includes(name)){
+  const role=classifyContact({jid:actor?.jid,sessionId:actor?.sessionId});
+  if(role.role!=='OWNER'||role.ownerTools!==true||actor?.jid!==verifiedOwnerPhone()+'@s.whatsapp.net')throw Error('Ferramenta exclusiva do proprietário verificado');
+ }
+ if(ownerAdminToolNames.has(name))return runOwnerAdminTool(name,a);
+ if(name==='list_capabilities')return {available:agentTools.map(t=>({name:t.function.name,description:t.function.description})),limitations:['Sem shell, SQL arbitrário ou leitura de senhas pelo WhatsApp','Filas de abordagem exigem opt-in documentado, intervalo de 90 segundos e confirmação','Envios incertos não são repetidos automaticamente','Buscas públicas têm cobertura parcial']};
  if(name==='system_status'){
   const wa=await waControlStatus();
   return {leads:one('SELECT COUNT(*) n FROM leads')?.n||0,uncontacted:one("SELECT COUNT(*) n FROM leads WHERE stage='DISCOVERED'")?.n||0,threads:one('SELECT COUNT(*) n FROM threads')?.n||0,meetings:one("SELECT COUNT(*) n FROM meetings WHERE status='SCHEDULED' AND start_at>?",now())?.n||0,settings:safeSettingsRead(),whatsapp:{connected:wa.connected,status:wa.status,hasSession:wa.hasSession},automatedOutreach:false};
@@ -139,7 +147,13 @@ export async function runAgentTool(name,a={}){
   return {created:r.created,lead:cleanLead(r.lead),contactPermission:false};
  }
  if(name==='update_lead')return updateLead(a);
- if(name==='set_pause'){if(typeof a.paused!=='boolean')throw Error('Use true ou false');setSetting('paused',a.paused);audit('GROQ_OWNER_PAUSE',null,{paused:a.paused});return {paused:a.paused,automaticSends:false};}
+ if(name==='set_pause'){
+  if(typeof a.paused!=='boolean')throw Error('Use true ou false');
+  if(a.paused===false&&getSetting('auto_initial',false)===true)
+   return runOwnerAdminTool('request_change_setting',{key:'paused',value:false});
+  setSetting('paused',a.paused);audit('GROQ_OWNER_PAUSE',null,{paused:a.paused});
+  return {paused:a.paused,automaticSends:false};
+ }
  if(name==='create_meeting'){
   const l=getLead(a.lead_id);if(!l)throw Error('Empresa não encontrada');
   const stamp=requiredText(a.start_at,55,14),date=new Date(stamp);
@@ -182,7 +196,9 @@ export function claimApproval(code){
 }
 export function markApproval(code){run("UPDATE groq_owner_approvals SET state='SENT' WHERE code=? AND state='UNKNOWN'",code);}
 
-export function executeConfirmedOperation(code){
+export function executeConfirmedOperation(code,actor){
+ const role=classifyContact({jid:actor?.jid,sessionId:actor?.sessionId});
+ if(role.role!=='OWNER'||role.ownerTools!==true||actor?.jid!==verifiedOwnerPhone()+'@s.whatsapp.net')throw Error('Confirmação exclusiva do proprietário');
  const p=one("SELECT * FROM groq_owner_confirmations WHERE code=? AND state='PENDING' AND expires>?",String(code),Date.now());
  if(!p)return null;
  run("UPDATE groq_owner_confirmations SET state='UNKNOWN' WHERE code=? AND state='PENDING'",code);
@@ -193,6 +209,13 @@ export function executeConfirmedOperation(code){
   audit('GROQ_OWNER_CONTACT_BLOCKED',lead.id,{reason:args.reason,confirmation:true});
   run("UPDATE groq_owner_confirmations SET state='EXECUTED' WHERE code=?",code);
   return {ok:true,message:'Contato bloqueado e tarefas pendentes canceladas',company:lead.business};
+ }
+ try{
+  const result=executeOwnerAdminConfirmation(p);
+  if(result!==null)return result;
+ }catch(error){
+  run("UPDATE groq_owner_confirmations SET state='FAILED' WHERE code=? AND state='UNKNOWN'",code);
+  return {ok:false,error:'Operação não executada: '+String(error.message).slice(0,180)};
  }
  return {ok:false,error:'Operação não permitida'};
 }
