@@ -1,6 +1,6 @@
 // Private inbound concierge: classify the *request*, never infer personal traits.
 // Notices are independent of customer autoreplies and idempotent per contact.
-import {one,all,run,now,queueNotice as unused} from './db.mjs';
+import {one,all,run,now} from './db.mjs';
 import {queueNotice} from './notifications.mjs';
 import {waControlStatus,waIdentityStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
 
