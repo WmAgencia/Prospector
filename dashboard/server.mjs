@@ -39,6 +39,7 @@ import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
 import {kanbanSnapshot} from './kanban.mjs';
+import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -277,6 +278,7 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:500}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
+  if(req.method==='GET'&&pathname==='/api/ai/customer-status')return respond(res,200,agentStatus());
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
   if(req.method==='POST'&&pathname==='/api/prospecting/queue'){const r=enqueueApprovedApproaches(await json(req));if(r.status===202)notify();return respond(res,r.status,r.body);}
   if(req.method==='POST'&&pathname==='/api/prospecting/queue/cancel'){const r=cancelApproachQueue();notify();return respond(res,200,r);}
@@ -538,6 +540,12 @@ const interval=setInterval(()=>{
 // Dedicated consent-gated batch worker; intentionally independent of the WA-AKG
 // incoming webhook and manual reply handlers. Polling cadence is NOT the spacing
 // rule: the persisted send clock enforces at least 90 seconds between attempts.
+// Inbound customer messages are handled separately from the 90-second outreach queue.
+// Owner-only interest notifications never trigger customer-facing messages.
+const customerAiTimer=setInterval(()=>{
+ if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true')return;
+ tickSalesAgent().then(()=>flushInterestAlerts()).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
+},6000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
@@ -593,4 +601,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(agentBridgeTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
