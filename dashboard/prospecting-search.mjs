@@ -95,7 +95,7 @@ let busy=false;
 export async function prospectingSearch({niche,city}={}){
  if(!valid(niche)||!valid(city))throw Error("Informe um nicho e cidade válidos (até 85 caracteres)");
  if(busy)throw Error("Já existe uma pesquisa em andamento");
- const query="prospector:v2:"+norm(niche)+":"+norm(city);
+ const query="prospector:v3:"+norm(niche)+":"+norm(city);
  const last=one("SELECT at,status,found FROM discoveries WHERE query=? ORDER BY at DESC LIMIT 1",query);
  const age=last?Date.now()-Date.parse(last.at):Infinity;
  if(age<20*60_000&&last?.status==="COMPLETE")return {ok:true,cached:true,added:0,source:"OpenStreetMap",note:"Consulta recente; exibindo dados já salvos.",...prospectingList({niche,city})};
