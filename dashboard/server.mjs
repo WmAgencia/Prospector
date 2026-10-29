@@ -37,6 +37,7 @@ import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox
 import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
+import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
@@ -273,6 +274,9 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/whatsapp/disconnect'){try{return respond(res,200,await waDisconnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,prospectingList({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',limit:500}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
+  if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
+  if(req.method==='POST'&&pathname==='/api/prospecting/queue'){const r=enqueueApprovedApproaches(await json(req));if(r.status===202)notify();return respond(res,r.status,r.body);}
+  if(req.method==='POST'&&pathname==='/api/prospecting/queue/cancel'){const r=cancelApproachQueue();notify();return respond(res,200,r);}
   if(req.method==='GET'&&pathname==='/api/maps/status')return respond(res,200,scraperStatus());
   if(req.method==='POST'&&pathname==='/api/maps/search'){try{return respond(res,202,await startMapsScrape(await json(req)));}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/maps/job'){try{return respond(res,200,await pollMapsScrape(url.searchParams.get('id')||''));}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
@@ -528,6 +532,13 @@ const interval=setInterval(()=>{
  refreshOperatorReplies().catch(error=>console.error('[campaign test] Falha na recuperação de resposta: '+error.message));
  tick().catch(e=>console.error('[tick]',e.message));
 },2500);
+// Dedicated consent-gated batch worker; intentionally independent of the WA-AKG
+// incoming webhook and manual reply handlers. Polling cadence is NOT the spacing
+// rule: the persisted send clock enforces at least 90 seconds between attempts.
+const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
+ if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
+ if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
+}).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160))),1000);
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
 setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
 setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
