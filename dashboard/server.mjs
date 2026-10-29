@@ -366,7 +366,14 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/google-places/status')return respond(res,200,placesStatus());
   if(req.method==='POST'&&pathname==='/api/google-places/search'){const result=await placesSearch(await json(req));return respond(res,result.status,result.body);}
   if(req.method==='POST'&&pathname==='/api/whatsapp/reply'){const result=await sendChatMessage(await json(req));if(result.status===200)notify();return respond(res,result.status,result.body);}
-  if(req.method==='GET'&&pathname==='/api/whatsapp/chats'){try{return respond(res,200,await remoteChats());}catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
+  if(req.method==='GET'&&pathname==='/api/whatsapp/chats'){try{
+  const chats=await remoteChats();
+  return respond(res,200,{...chats,items:(chats.items||[]).map(c=>{
+   const role=classifyContact({jid:c.jid,sessionId:selectedWaSession()});
+   const lead=one('SELECT id FROM leads WHERE phone=?',phone(c.phone));
+   return {...c,contactRole:role.role,relationshipReason:role.reason,leadId:lead?.id||null};
+  })});
+ }catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
   if(req.method==='GET'&&pathname==='/api/whatsapp/chat-messages'){try{return respond(res,200,await remoteMessages(url.searchParams.get('jid')||''));}catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/reply-remote'){const r=await sendRemoteReply(await json(req));if(r.status===200)notify();return respond(res,r.status,r.body);}
   if(req.method==='GET'&&pathname==='/api/whatsapp/interactive-preview'){try{return respond(res,200,interactivePreview({mode:url.searchParams.get('mode')||'introduction'}));}catch(e){return respond(res,400,{error:e.message});}}
