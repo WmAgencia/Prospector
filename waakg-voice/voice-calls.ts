@@ -156,7 +156,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
    if(node.attrs.id&&peer)await (sock as any).sendNode(createCallAck(String(node.attrs.id),peer,inner.tag));
    const decoded=jidDecode(peer),njid=decoded?jidEncode(decoded.user,decoded.server,decoded.device):peer;
    switch(inner.tag){
-    case "offer":await manager.handleCallOffer(node,njid);break;
+    case "offer":if(await exactCaller(sock,njid))await manager.handleCallOffer(node,njid);else console.info("[voice-calls] NON_OWNER_OFFER_IGNORED");break;
     case "preaccept":await manager.handleCallPreaccept(node,njid);break;
     case "accept":await manager.handleCallAccept(node,njid);break;
     case "transport":await manager.handleCallTransport(node,njid);break;
