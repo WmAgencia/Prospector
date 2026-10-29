@@ -92,7 +92,7 @@ function settings(){
 function render(){
  shell();
  const el=q("#view");
- el.innerHTML={overview,conversations,prospects,connections,settings}[view]();
+ el.innerHTML={overview,conversations,prospects:prospecting,connections,settings}[view]();
  if(view==="conversations"&&selectedThread)loadMessages(selectedThread);
  if(view==="connections"&&!wa)refreshWa(false);
 }
