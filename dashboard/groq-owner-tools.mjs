@@ -219,3 +219,35 @@ export function executeConfirmedOperation(code,actor){
  }
  return {ok:false,error:'Operação não permitida'};
 }
+
+
+// Aggregated, read-only facts that verified owner calls can use even in QA
+// sandbox mode. No contacts, chat transcripts, credentials or mutation tools.
+// This reports runtime operation, NOT a source-code audit or product roadmap.
+export function readVoiceOperationalBriefing({jid,sessionId}={}){
+ const role=classifyContact({jid,sessionId});
+ const exact=verifiedOwnerPhone()+'@s.whatsapp.net';
+ if(role.role!=='OWNER'||role.authorized!==true||jid!==exact)
+  throw Error('VOICE_BRIEFING_UNVERIFIED_OWNER');
+ const n=(sql,...args)=>Number(one(sql,...args)?.n)||0;
+ const sevenDaysAgo=new Date(Date.now()-7*86400000).toISOString();
+ const stats={
+  leads:n('SELECT COUNT(*) n FROM leads'),
+  uncontacted:n("SELECT COUNT(*) n FROM leads WHERE stage='DISCOVERED'"),
+  workflows:n('SELECT COUNT(*) n FROM workflows'),
+  enabledWorkflows:n('SELECT COUNT(*) n FROM workflows WHERE enabled=1'),
+  jobsByStatus:all('SELECT status,COUNT(*) n FROM jobs GROUP BY status ORDER BY status LIMIT 12')
+   .map(x=>({status:String(x.status).slice(0,30),count:Number(x.n)||0})),
+  discoveryFailures7d:n("SELECT COUNT(*) n FROM discoveries WHERE status='FAILED' AND at>?",sevenDaysAgo),
+  latestDiscoveryFailures:all("SELECT at,status,query FROM discoveries WHERE status='FAILED' ORDER BY at DESC LIMIT 3")
+   .map(x=>({at:String(x.at||'').slice(0,28),status:'FAILED',query:String(x.query||'').slice(0,70)})),
+  paused:getSetting('paused',true)===true,
+  automaticInitialEnabled:getSetting('auto_initial',false)===true,
+  discoveryAutoEnabled:getSetting('discovery_auto_enabled',false)===true,
+  ownerNotificationsEnabled:getSetting('owner_notifications_enabled',false)===true
+ };
+ return {observedAt:new Date().toISOString(),
+  source:'Banco operacional do Prospector nesta instância',
+  scope:'Estado operacional parcial: não é auditoria do código, dos deploys nem lista completa do que falta desenvolver',
+  stats};
+}
