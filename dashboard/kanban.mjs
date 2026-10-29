@@ -3,12 +3,12 @@ import {all,one} from './db.mjs';
 import {threeMonthsAfter,latestOutreachAt} from './prospecting-recontact.mjs';
 
 export const KANBAN_STAGES=['approaching','no_interest','interested','conversing'];
-const positive=['INTERESTED','CLOSED_WON'];
+
 function cardStatus(row){
- if(row.stage==='NO_INTEREST')return 'no_interest';
+ if(row.stage==='CLOSED_WON')return null;\n if(row.stage==='NO_INTEREST')return 'no_interest';
  const manual=Boolean(row.manually_replied);
  if(manual||row.stage==='CONVERSING')return 'conversing';
- if(positive.includes(row.stage)||row.hot_notice)return 'interested';
+ if(row.hot_notice)return 'interested';
  if(row.initial_at||row.last_out_at||row.last_batch_at)return 'approaching';
  return null;
 }
