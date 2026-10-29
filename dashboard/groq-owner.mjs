@@ -1,8 +1,10 @@
 import {db,one,all,run,id,now,audit} from './db.mjs';
 import {groqChat,groqCatalog} from './groq-models.mjs';
-import {agentTools,runAgentTool,claimApproval,markApproval} from './groq-owner-tools.mjs';
+import {agentTools,runAgentTool,claimApproval,markApproval,executeConfirmedOperation} from './groq-owner-tools.mjs';
 import {selectedWaSession,waRequest} from './waakg-control.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_owner_history(id TEXT PRIMARY KEY,event_id TEXT UNIQUE NOT NULL,role TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL)");
+db.exec("CREATE TABLE IF NOT EXISTS groq_owner_events(provider_id TEXT PRIMARY KEY,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+const backlog=[];
 let running=false;
 function owner(){return String(process.env.GROQ_OWNER_WHATSAPP||'').replace(/\D/g,'');}
 export function ownerStatus(){return {provider:'GroqCloud',active:!!process.env.GROQ_API_KEY&&owner().length>=12,ownerConfigured:owner().length>=12,ownerSuffix:owner().slice(-4),autoReplyOnlyOwner:true,allowsBulk:false};}
@@ -13,15 +15,15 @@ async function send(session,jid,text){
 }
 async function respondToOwner(e){
  const {sessionId,jid,text,providerId}=e;
- if(running)return;
- running=true;
  try{
   const confirmation=String(text||'').trim().match(/^CONFIRMAR\s+(\d{6})$/i);
   if(confirmation){
+   const operation=executeConfirmedOperation(confirmation[1]);
+   if(operation)return await send(sessionId,jid,operation.ok?operation.message:operation.error);
    const pending=claimApproval(confirmation[1]);
    const message=pending?await send(sessionId,pending.jid,pending.body)?'Mensagem aceita pelo WhatsApp; confira a conversa.':'Envio não confirmado. Confira o WhatsApp antes de repetir.':'Código inválido, expirado ou destinatário não autorizado.';
    if(pending&&message.startsWith('Mensagem aceita'))markApproval(confirmation[1]);
-   await send(sessionId,jid,message);return;
+   return await send(sessionId,jid,message);
   }
   const history=all("SELECT role,body FROM groq_owner_history ORDER BY created_at DESC LIMIT 12").reverse().map(r=>({role:r.role,content:r.body}));
   const prompt='Você é um assistente pessoal no WhatsApp, powered by GroqCloud, para o proprietário do Prospector/Consecom. Responda em português brasileiro a perguntas gerais e comerciais. Para informações e alterações no Prospector, use ferramentas e reporte somente resultados confirmados. Nunca invente dados de clientes. Nunca inicie disparos em massa ou converse com terceiros sem solicitação e confirmação. Ferramentas são limitadas por segurança; explique quando algo não for permitido.';
@@ -46,12 +48,28 @@ async function respondToOwner(e){
    run('INSERT INTO groq_owner_history VALUES(?,?,?,?,?)',id(),'a:'+providerId,'assistant',reply,now());
    audit('GROQ_OWNER_REPLY',null,{provider:'groq',model:response.model});
   }
- }catch(err){console.warn('[groq-owner]',err?.message?.slice(0,120)||'REQUEST_FAILED');}
- finally{running=false;}
+  return confirmed;
+ }catch(err){console.warn('[groq-owner]',err?.message?.slice(0,120)||'REQUEST_FAILED');return false;}
 }
 export function ownerReceived({jid,sessionId,text,providerId}={}){
  if(!ownerStatus().active||sessionId!==selectedWaSession()||jid!==owner()+'@s.whatsapp.net'||typeof text!=='string'||!text.trim()||!providerId)return false;
- if(one('SELECT id FROM groq_owner_history WHERE event_id=?','u:'+providerId))return false;
- setImmediate(()=>respondToOwner({jid,sessionId,text,providerId}));
+ if(one('SELECT provider_id FROM groq_owner_events WHERE provider_id=?',providerId))return false;
+ run('INSERT INTO groq_owner_events(provider_id,state,created_at,updated_at) VALUES(?,?,?,?)',providerId,'QUEUED',now(),now());
+ backlog.push({jid,sessionId,text,providerId});
+ setImmediate(flush);
  return true;
+}
+
+async function flush(){
+ if(running)return;
+ running=true;
+ try{
+  while(backlog.length){
+   const request=backlog.shift();
+   run("UPDATE groq_owner_events SET state='RUNNING',updated_at=? WHERE provider_id=?",now(),request.providerId);
+   const delivered=await respondToOwner(request);
+   // UNKNOWN means a retry would risk duplicate delivery. Never auto-repeat on network errors.
+   run("UPDATE groq_owner_events SET state=?,updated_at=? WHERE provider_id=?",delivered?'DONE':'UNKNOWN',now(),request.providerId);
+  }
+ }finally{running=false;}
 }
