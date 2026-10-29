@@ -16,6 +16,7 @@ function tool(name,description,properties={},required=[]){
 }
 const stages=['DISCOVERED','CONTACTED','REPLIED','INTERESTED','NO_INTEREST','CLOSED_WON'];
 export const agentTools=[
+ tool('list_capabilities','Explain what you can read or change in Prospector, including safety limits'),
  tool('system_status','Read operational health, safe overview metrics, campaign pause state and WA connection'),
  tool('system_diagnostics','Inspect pending jobs, delivery errors, discovery statuses and recent non-secret events'),
  tool('list_prospects','List saved prospects filtered by niche and city and contacted status',{niche:string('Industry'),city:string('City'),status:{type:'string',enum:['all','uncontacted','contacted']},limit:{type:'integer',minimum:1,maximum:40}}),
@@ -87,6 +88,7 @@ function getLeadDetails(a){
 }
 export async function runAgentTool(name,a={}){
  if(!a||typeof a!=='object'||Array.isArray(a))throw Error('Argumentos inválidos');
+ if(name==='list_capabilities')return {available:agentTools.map(t=>({name:t.function.name,description:t.function.description})),limitations:['Sem SQL arbitrário, edição de código do servidor ou leitura de senhas','Sem envios em massa','Enviar mensagem ou bloquear contato exige código de confirmação','Dados pesquisados podem ter cobertura parcial']};
  if(name==='system_status'){
   const wa=await waControlStatus();
   return {leads:one('SELECT COUNT(*) n FROM leads')?.n||0,uncontacted:one("SELECT COUNT(*) n FROM leads WHERE stage='DISCOVERED'")?.n||0,threads:one('SELECT COUNT(*) n FROM threads')?.n||0,meetings:one("SELECT COUNT(*) n FROM meetings WHERE status='SCHEDULED' AND start_at>?",now())?.n||0,settings:safeSettingsRead(),whatsapp:{connected:wa.connected,status:wa.status,hasSession:wa.hasSession},automatedOutreach:false};
