@@ -33,7 +33,7 @@ test('Barge-in needs consecutive microphone voice and preserves interruption aud
  assert.deepEqual(send(d,.004,15,'speaking'),[]);
  assert.deepEqual(send(d,.08,5,'speaking'),[]);
  assert.deepEqual(send(d,.001,5,'speaking'),[]);
- const r=send(d,.05,13,'speaking');
+ const r=send(d,.05,12,'speaking');
  assert.equal(r.length,1);
  assert.equal(r[0].type,'interrupt');
  // At this point caller is speaking; gateway switches to listening immediately.
