@@ -25,7 +25,7 @@ async function readLimited(response,limit=MAX_MEDIA_BYTES){
 }
 export async function fetchPrivateAudio(urlPath,{fetchFn=fetch,apiKey,session=selectedWaSession()}={}){
  const path=safeMediaPath(urlPath);
- if(!path||!session)throw Error('INVALID_AUDIO_PATH');
+ if(!path||!session||!path.split('/').at(-1).startsWith(session+'-'))throw Error('INVALID_AUDIO_PATH');
  const key=apiKey||await getGatewayApiKey();
  const res=await fetchFn(base+path,{headers:{'X-API-Key':key,Accept:'audio/*'},signal:AbortSignal.timeout(18000),redirect:'error'});
  if(!res.ok)throw Error('MEDIA_HTTP_'+res.status);
