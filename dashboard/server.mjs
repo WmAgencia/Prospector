@@ -179,8 +179,16 @@ if(process.env.RUN_FRANCISCA_CALL_PCM_SMOKE==='true'){
    const synthMs=Date.now()-t0;
    const wav=wavFromPcm16(pcm.pcm16k);
    const recognized=await transcribeAudio({buffer:wav,filename:'francisca-call-smoke.wav'});
+   const tModel=Date.now();
+   const answer=await groqChat({task:'voice',messages:[
+    {role:'system',content:'Você é Francisca. Responda em uma frase natural em português brasileiro.'},
+    {role:'user',content:'Olá, você me ouve?'}
+   ],maxTokens:200});
+   const llmMs=Date.now()-tModel;
+   const llmOk=String(answer.choice?.content||'').trim().length>3;
    console.info('[francisca-call-pcm-smoke]',JSON.stringify({
-    ok:/francisca/i.test(recognized.text),synthMs,transcriptionMs:Date.now()-t0-synthMs,
+    ok:/francisca/i.test(recognized.text)&&llmOk,synthMs,
+    transcriptionMs:tModel-t0-synthMs,llmMs,llmOk,model:answer.model,
     durationMs:Math.round(pcm.pcm16k.length/32),format:'pcm_s16le_16000',
     sentToWhatsApp:false
    }));
