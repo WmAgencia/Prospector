@@ -39,6 +39,7 @@ import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
 import {kanbanSnapshot} from './kanban.mjs';
+import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
@@ -73,6 +74,24 @@ if(process.env.RUN_GROQ_FUNCTION_SMOKE==='true'){
  },1800).unref();
 }
 
+// Read-only production smoke: count actual Kanban cards in persisted SQLite
+// and ask Groq about two synthetic messages. Never logs contact data or sends WhatsApp.
+if(process.env.RUN_KANBAN_SMOKE==='true'){
+ setTimeout(async()=>{
+  try{
+   const data=kanbanSnapshot();
+   const yes=await qualifyWithGroq({text:'Quero contratar um site, podemos começar?'});
+   const no=await qualifyWithGroq({text:'Quanto custa um site?'});
+   console.info('[kanban-live-smoke]',JSON.stringify({
+    ok:true,columnKeys:Object.keys(data.columns),counts:data.counts,
+    uniqueIds:new Set(Object.values(data.columns).flat().map(x=>x.id)).size,
+    boardItems:Object.values(data.columns).reduce((a,x)=>a+x.length,0),
+    aiVerifiedInterest:yes.confirmed===true,aiRejectedQuestion:no.confirmed===false,
+    customerMessagesSent:0
+   }));
+  }catch(error){console.warn('[kanban-live-smoke]',JSON.stringify({ok:false,errorType:error?.name||'ERROR',description:String(error?.message||'').slice(0,135)}));}
+ },9000).unref();
+}
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
 // Five-tab mode: no legacy campaign, mass outreach or scheduled discovery on first rollout.
