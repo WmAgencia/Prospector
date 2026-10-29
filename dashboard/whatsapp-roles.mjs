@@ -50,6 +50,10 @@ export function setExistingClientRelationship({leadId,existing=true,evidence=''}
   // Existing customers are not valid targets for initial prospecting.
   if(one("SELECT name FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'"))
    run("UPDATE prospecting_batch_items SET status='CANCELLED',error='Existing client: canceled before send' WHERE lead_id=? AND status='QUEUED'",lead.id);
+  // Also stop pending legacy initial/invitation and scheduled recontact jobs.
+  // Do not touch service delivery steps from already-running contracts.
+  run("UPDATE jobs SET status='CANCELLED',updated_at=?,error='Existing client: marketing send cancelled' WHERE lead_id=? AND status='PENDING' AND (key LIKE 'recontact:%' OR (execution_id IS NOT NULL AND step_index=0))",now(),lead.id);
+  run("UPDATE executions SET state='CANCELLED',updated_at=? WHERE lead_id=? AND next_step=0 AND state NOT IN ('COMPLETE','CANCELLED')",now(),lead.id);
  }else run('DELETE FROM contact_relationships WHERE phone=?',lead.phone);
  audit('CONTACT_RELATIONSHIP_OPERATOR_UPDATED',lead.id,{existing,evidenceProvided:!!reason});
  return {ok:true,phoneSuffix:lead.phone.slice(-4),role:existing?'EXISTING_CLIENT':'RECALCULATE',verifiedBy:'OPERATOR'};
