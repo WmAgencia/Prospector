@@ -141,7 +141,12 @@ function startMapsPolling(){
 async function loadProspects(){
  try{
   const params=new URLSearchParams({niche,city,status:prospectFilter});
-  prospects=await api("/api/prospecting?"+params.toString());
+  const [base,remote]=await Promise.all([api("/api/prospecting?"+params.toString()),api("/api/maps/status").catch(()=>null)]);
+  prospects=base;
+  if(remote?.jobs?.length&&!mapsJob){
+   const previous=remote.jobs.find(j=>j.niche===niche&&j.city===city);
+   if(previous){mapsJob=previous;if(["PENDING","RUNNING"].includes(previous.status))startMapsPolling();}
+  }
   if(view==="prospects")render();
  }catch(e){n(e.message);}
 }
