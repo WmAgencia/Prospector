@@ -37,10 +37,24 @@ import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox
 import {waControlStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
-import {groqCatalog} from './groq-models.mjs';
+import {groqCatalog,groqChat} from './groq-models.mjs';
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
+
+// One-shot synthetic functional test when explicitly enabled. Does not touch customer data.
+if(process.env.RUN_GROQ_FUNCTION_SMOKE==='true'){
+ setTimeout(async()=>{
+  try{
+   const t=agentTools.find(x=>x.function.name==='system_status');
+   const r=await groqChat({task:'actions',
+     messages:[{role:'system',content:'Call the system_status function to respond. Do not guess.'},{role:'user',content:'Please call system_status now, exactly once.'}],
+     tools:[t],maxTokens:150});
+   const call=r.choice?.tool_calls?.[0];
+   console.info('[groq-function-smoke]',JSON.stringify({model:r.model,toolCalled:call?.function?.name==='system_status',hasCallId:!!call?.id}));
+  }catch(e){console.warn('[groq-function-smoke]',JSON.stringify({ok:false,errorType:String(e?.message||'').slice(0,70)}));}
+ },1800).unref();
+}
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
