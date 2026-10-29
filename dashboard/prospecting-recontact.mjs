@@ -21,14 +21,14 @@ export function latestOutreachAt(leadId,phone){
  if(d?.at)dates.push(d.at);
  return dates.map(x=>new Date(x).getTime()).filter(Number.isFinite).reduce((max,x)=>Math.max(max,x),0)||null;
 }
-export function recontactDecision(lead,at=Date.now()){
+export function recontactDecision(lead,at=Date.now(),excludeQueuedItemId=''){
  if(!lead?.id)return {eligible:false,reason:'MISSING'};
  if(lead.phone&&one('SELECT phone FROM suppressions WHERE phone=?',lead.phone))return {eligible:false,reason:'OPT_OUT'};
  if(['INTERESTED','CONVERSING','CLOSED_WON'].includes(lead.stage))return {eligible:false,reason:'ACTIVE_RELATIONSHIP'};
  const thread=one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id);
  if(thread?.manual_takeover===1)return {eligible:false,reason:'HUMAN_TAKEOVER'};
  if(one("SELECT 1 FROM owner_notices WHERE lead_id=? AND kind='GROQ_HOT_LEAD' LIMIT 1",lead.id))return {eligible:false,reason:'CONFIRMED_INTEREST'};
- if(one("SELECT name FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'")&&one("SELECT 1 FROM prospecting_batch_items WHERE lead_id=? AND status IN ('QUEUED','SENDING','UNKNOWN') LIMIT 1",lead.id))return {eligible:false,reason:'PENDING_OR_UNKNOWN'};
+ if(one("SELECT name FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'")&&one("SELECT 1 FROM prospecting_batch_items WHERE lead_id=? AND id<>? AND status IN ('QUEUED','SENDING','UNKNOWN') LIMIT 1",lead.id,excludeQueuedItemId))return {eligible:false,reason:'PENDING_OR_UNKNOWN'};
  const last=latestOutreachAt(lead.id,lead.phone);
  if(!last)return {eligible:lead.stage==='DISCOVERED',fresh:true,reason:lead.stage==='DISCOVERED'?'NEW':'NO_CONTACT'};
  if(lead.stage==='NO_INTEREST'){
