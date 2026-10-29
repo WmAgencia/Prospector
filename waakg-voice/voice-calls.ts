@@ -141,7 +141,8 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
  async function maybeThink(active:Session,generation:number,thinkingId:number){
   if(!same(active.callId)||!active.gate.valid(generation))return;
   if(!active.thinking.due({turnId:thinkingId,replying:active.replying,
-   playing:active.playback||active.cuePlaying,ackBusy:active.ackBusy,ended:active.ended}))return;
+   playing:active.playback||active.cuePlaying,ackBusy:active.ackBusy,ended:active.ended,
+   userSpeaking:active.detector.hasSpeech}))return;
   const kind=active.thinking.claim();
   if(!kind)return;
   try{
