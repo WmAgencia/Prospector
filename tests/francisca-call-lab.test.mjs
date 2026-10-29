@@ -122,6 +122,51 @@ test('Every model-generated tool call gets a tool reply, even above the safe lim
  assert.match(response.spoken,/confirmação por texto/);
  s.end();
 });
+test('Verified owner QA call receives actual read-only operational briefing without admin tools',async()=>{
+ process.env.PROSPECTOR_LIVE_TEST_PHONE=OWNER.jid.split('@')[0];
+ process.env.PROSPECTOR_LIVE_TEST_ENABLED='true';
+ const observed=[];
+ const briefing={source:'Banco operacional do Prospector',scope:'Operação, não auditoria de código',stats:{
+  paused:true,leads:2,discoveryFailures7d:1}};
+ try{
+  const {readVoiceOperationalBriefing}=await import('../dashboard/groq-owner-tools.mjs');
+  const actual=readVoiceOperationalBriefing(OWNER);
+  assert.equal(actual.source,'Banco operacional do Prospector nesta instância');
+  assert(actual.stats.leads>=0);
+  assert.throws(()=>readVoiceOperationalBriefing({...OWNER,jid:'5511999887766@s.whatsapp.net'}),/UNVERIFIED/);
+  const session=newFranciscaCallSession(OWNER,{
+   transcribe:async()=>({text:'Francisca, o que falta implementar no Prospector?'}),
+   readOperationalBriefing:async actor=>{assert.equal(actor.jid,OWNER.jid);return briefing;},
+   chat:async data=>{
+    observed.push(data);
+    assert.equal(data.tools?.length,0); // QA voice MUST NOT get any write-capable tools.
+    return {choice:{content:'A operação está pausada e há falhas de descoberta; para saber o que falta no código preciso auditar o repositório.'}};
+   },
+   synthesize:async()=>({bytes:Buffer.alloc(500),voice:'test'}),
+   convert:async()=>Buffer.alloc(3200)
+  });
+  const reply=await session.reply(pcm);
+  assert.match(reply.spoken,/repositório/);
+  const grounding=observed[0].messages.find(x=>x.role==='system'&&x.content.includes('DADOS OPERACIONAIS REAIS'));
+  assert(grounding);
+  assert.match(grounding.content,/"paused":true/);
+  assert.match(grounding.content,/auditoria de código/);
+  session.end();
+ }finally{process.env.PROSPECTOR_LIVE_TEST_ENABLED='false';delete process.env.PROSPECTOR_LIVE_TEST_PHONE;}
+});
+test('Non-status voice question does not prefetch operational database',async()=>{
+ let reads=0;
+ const session=newFranciscaCallSession(OWNER,{
+  transcribe:async()=>({text:'Olá, tudo bem?'}),
+  readOperationalBriefing:async()=>{reads++;return{};},
+  chat:async()=>({choice:{content:'Tudo ótimo, como posso ajudar?'}}),
+  synthesize:async()=>({bytes:Buffer.alloc(500)}),
+  convert:async()=>Buffer.alloc(3200)
+ });
+ await session.reply(pcm);
+ assert.equal(reads,0);
+ session.end();
+});
 test('Malformed, oversized and extremely short audio segments are refused',()=>{
  assert.throws(()=>wavFromPcm16(Buffer.alloc(9)),/INVALID_DURATION/);
  assert.throws(()=>wavFromPcm16(Buffer.alloc(16_000*2*15)),/INVALID_DURATION/);
