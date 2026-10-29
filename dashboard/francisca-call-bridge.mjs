@@ -7,7 +7,8 @@ const sessions=new Map();
 // Common acknowledgement clips only; no caller content or recordings cached.
 const backchannelClips=new Map();
 const BACKCHANNELS={aham:'Aham.',hum:'Hum.',entendi:'Ah, entendi.',
- pensar:'Hum, deixa eu pensar.',instante:'Certo, só um instante.'};
+ pensar:'Hum, deixa eu pensar.',instante:'Certo, só um instante.',
+ consultar:'Entendi. Vou dar uma conferida nisso.'};
 async function backchannelClip(kind){
  if(!Object.hasOwn(BACKCHANNELS,kind))throw Error('CALL_BACKCHANNEL_UNSUPPORTED');
  let promise=backchannelClips.get(kind);
@@ -54,7 +55,7 @@ export async function processCallBridge(a={}){
   const voice=await makeFranciscaCallPcm(greet);
   // Warm a tiny set sequentially AFTER the greeting has been synthesized.
   // Never delay the first spoken reply or saturate Edge with parallel TTS jobs.
-  void (async()=>{for(const kind of ['pensar','aham','instante']){
+  void (async()=>{for(const kind of ['consultar','pensar','aham','instante']){
    try{await backchannelClip(kind);}catch{}}})();
   return {ok:true,event:'greeting',spoken:greet,rate:16000,pcm16k:voice.pcm16k.toString('base64')};
  }

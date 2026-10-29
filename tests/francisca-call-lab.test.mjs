@@ -86,6 +86,42 @@ test('A spoken interruption carries the last question and unfinished reply into 
  assert(prompts[2].some(m=>m.role==='user'&&/agenda/.test(m.content)));
  s.end();
 });
+test('Groq 400 always produces a truthful spoken error rather than silence',async()=>{
+ let rendered='';
+ const s=newFranciscaCallSession(OWNER,{
+  transcribe:async()=>({text:'Francisca, veja o que falta implementar no Prospector'}),
+  chat:async()=>{throw Error('GROQ_HTTP_400');},
+  synthesize:async(x)=>{rendered=x;return {bytes:Buffer.alloc(512),voice:'test'};},
+  convert:async()=>Buffer.alloc(640)
+ });
+ const result=await s.reply(pcm);
+ assert.match(result.spoken,/não consegui consultar os dados do Prospector/i);
+ assert.equal(rendered,result.spoken);
+ assert(Buffer.isBuffer(result.pcm16k));
+ assert.equal(s.state,'READY');
+ s.end();
+});
+test('Every model-generated tool call gets a tool reply, even above the safe limit',async()=>{
+ let attempts=0,callRound=0;
+ const s=newFranciscaCallSession(OWNER,{
+  transcribe:async()=>({text:'Me explique o que posso fazer no Prospector'}),
+  chat:async({messages})=>{
+   if(++callRound===1)return {choice:{role:'assistant',content:null,tool_calls:[1,2,3].map(n=>({
+    id:'call_'+n,type:'function',function:{name:'request_start_outreach',arguments:'{}'}
+   }))}};
+   const toolMsgs=messages.filter(x=>x.role==='tool');
+   assert.equal(toolMsgs.length,3);
+   assert.match(toolMsgs[2].content,/CALL_TOOL_LIMIT/);
+   return {choice:{content:'Operações que mudam o sistema precisam de confirmação por texto.'}};
+  },
+  readTool:async()=>{attempts++;return {invalid:true};},
+  synthesize:async()=>({bytes:Buffer.alloc(512)}),convert:async()=>Buffer.alloc(400)
+ });
+ const response=await s.reply(pcm);
+ assert.equal(attempts,0);
+ assert.match(response.spoken,/confirmação por texto/);
+ s.end();
+});
 test('Malformed, oversized and extremely short audio segments are refused',()=>{
  assert.throws(()=>wavFromPcm16(Buffer.alloc(9)),/INVALID_DURATION/);
  assert.throws(()=>wavFromPcm16(Buffer.alloc(16_000*2*15)),/INVALID_DURATION/);

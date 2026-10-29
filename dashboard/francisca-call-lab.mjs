@@ -90,23 +90,38 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
      ...context.messages(),{role:'user',content:heard}
     ];
     const chat=deps.chat||groqChat,readTool=deps.readTool||runAgentTool;
-    let result=await chat({task:'voice',messages,tools:availableTools,maxTokens:170});
-    for(let n=0;n<2&&result.choice?.tool_calls?.length;n++){
-     const calls=result.choice.tool_calls.slice(0,2);
-     messages.push(result.choice);
-     for(const call of calls){
-      let output;
-      try{
-       if(!availableTools.some(x=>x.function.name===call.function?.name))throw Error('READ_ONLY_CALL');
-       output=await readTool(call.function.name,JSON.parse(call.function.arguments||'{}'),{jid,sessionId});
-      }catch(e){output={error:String(e.message).slice(0,90)};}
-      messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(output).slice(0,3000)});
+    let spoken='';
+    try{
+     let result=await chat({task:'voice',messages,tools:availableTools,maxTokens:170});
+     for(let n=0;n<2&&result.choice?.tool_calls?.length;n++){
+      const calls=result.choice.tool_calls;
+      messages.push(result.choice);
+      // Every tool_call_id needs a tool response, including skipped calls:
+      // otherwise the next API request is invalid (often HTTP 400).
+      for(let i=0;i<calls.length;i++){
+       const call=calls[i];
+       let output;
+       try{
+        if(i>=2)throw Error('CALL_TOOL_LIMIT');
+        if(!availableTools.some(x=>x.function.name===call.function?.name))throw Error('READ_ONLY_CALL');
+        output=await readTool(call.function.name,JSON.parse(call.function.arguments||'{}'),{jid,sessionId});
+       }catch(e){output={error:String(e.message).slice(0,90)};}
+       messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(output).slice(0,3000)});
+      }
+      result=await chat({task:'voice',messages,tools:availableTools,maxTokens:170});
      }
-     result=await chat({task:'voice',messages,tools:availableTools,maxTokens:170});
+     spoken=String(result.choice?.content||'').trim().slice(0,300);
+     if(spoken.length<2)throw Error('VOICE_LLM_EMPTY');
+    }catch(e){
+     // The caller must NEVER get prolonged silence when a provider rejects
+     // a request. No system state is invented and no actions are attempted.
+     console.warn('[francisca-call-recovery]',JSON.stringify({reason:String(e?.message||e).slice(0,55)}));
+     const wantsStatus=/prospector|sistema|campanha|pend[eê]ncia|implementar|relat[oó]rio|diagn[oó]stico/i.test(heard);
+     spoken=wantsStatus
+      ?'Entendi o que você pediu, mas não consegui consultar os dados do Prospector agora. Posso tentar novamente?'
+      :'Entendi. Tive uma dificuldade para processar a resposta. Pode repetir a pergunta?';
     }
     const llmMs=Date.now()-began-sttMs;
-    let spoken=String(result.choice?.content||'').trim().slice(0,300);
-    if(spoken.length<2)spoken='Não consegui entender. Pode repetir, por favor?';
     spoken=checkVoiceText(spoken);
     // Test fixtures may inject the legacy two-step converter. Production
     // performs one MP3->PCM conversion without the intermediate AAC/M4A.
