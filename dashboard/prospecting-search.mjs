@@ -50,7 +50,7 @@ export function prospectingList({niche="",city="",status="uncontacted",limit=500
  const contacted=matches.filter(l=>l.previously_contacted||l.sent_message||l.stage!=="DISCOVERED"||l.suppressed);
  const uncontacted=matches.filter(l=>!l.previously_contacted&&!l.sent_message&&!l.suppressed&&l.stage==="DISCOVERED");
  const selected=status==="contacted"?contacted:status==="all"?matches:uncontacted;
- const max=Math.min(Math.max(1,Number(limit)||500),500);
+ const max=Math.min(Math.max(1,Number(limit)||500),6000);
  return {total:matches.length,uncontacted:uncontacted.length,contacted:contacted.length,returned:Math.min(selected.length,max),results:selected.slice(0,max).map(({previously_contacted,sent_message,suppressed,notes,...x})=>({
   ...x,contacted:!!(previously_contacted||sent_message||suppressed||x.stage!=="DISCOVERED"),
   selectable:!!x.phone&&!suppressed&&!previously_contacted&&!sent_message&&x.stage==="DISCOVERED",
