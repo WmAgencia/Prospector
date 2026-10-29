@@ -46,6 +46,7 @@ import {prepareApproaches} from './prospecting-approach.mjs';
 import {kanbanSnapshot} from './kanban.mjs';
 import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
+import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
@@ -377,6 +378,19 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:500}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
+  if(req.method==='GET'&&pathname==='/api/whatsapp/contact-role'){
+   const p=phone(url.searchParams.get('phone')||'');
+   if(!p)return respond(res,400,{error:'Número inválido'});
+   const identity=classifyContact({jid:p+'@s.whatsapp.net',sessionId:selectedWaSession()});
+   return respond(res,200,{role:identity.role,reason:identity.reason,ownerTools:identity.ownerTools===true,
+    testSandbox:identity.testSandbox===true,phoneSuffix:p.slice(-4)});
+  }
+  if(req.method==='POST'&&/^\/api\/leads\/[^/]+\/relationship$/.test(pathname)){
+   const leadId=pathname.split('/')[3],v=await json(req);
+   if(v.confirm!==true)return respond(res,400,{error:'Confirmação administrativa é obrigatória'});
+   const result=setExistingClientRelationship({leadId,existing:v.existing,evidence:v.evidence});
+   notify();return respond(res,200,result);
+  }
   if(req.method==='GET'&&pathname==='/api/ai/customer-status')return respond(res,200,agentStatus());
   if(req.method==='GET'&&pathname==='/api/ai/concierge-status')return respond(res,200,statusConcierge());
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
