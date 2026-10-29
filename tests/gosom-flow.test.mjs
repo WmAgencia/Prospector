@@ -13,6 +13,7 @@ const maps=await import('../dashboard/gosom-maps.mjs');
 
 test('Gosom job creation, background completion, confirmed import and deduplication',async()=>{
  const providerId='11111111-1111-4111-8111-111111111111';
+ const missingId='22222222-2222-4222-8222-222222222222';
  let status='running',creates=0,downloads=0,reads=0,timeoutNext=false;
  const csv=[
   'link,title,phone,website,address',
@@ -25,7 +26,7 @@ test('Gosom job creation, background completion, confirmed import and deduplicat
   assert.equal(u.host,'consecom-prospector-maps.onrender.com');
   assert.equal(opts.headers?.['X-Prospector-Maps-Key'],'test-server-only-secret');
   if(u.pathname==='/api/v1/jobs'&&opts.method==='POST'){
-   creates++;return Response.json({id:providerId});
+   creates++;return Response.json({id:creates===1?providerId:missingId});
   }
   if(u.pathname.endsWith('/download')){
    downloads++;return new Response(csv,{status:200,headers:{'Content-Type':'text/csv'}});
@@ -33,6 +34,7 @@ test('Gosom job creation, background completion, confirmed import and deduplicat
   if(u.pathname.endsWith(providerId)){
    reads++;return Response.json({status});
   }
+  if(u.pathname.endsWith(missingId))return new Response('not found',{status:404});
   throw Error('Unexpected mock route '+u.pathname);
  };
  try{
@@ -70,6 +72,16 @@ test('Gosom job creation, background completion, confirmed import and deduplicat
   const second=await maps.importMapsScrape(created.id);
   assert.equal(second.alreadyImported,true);
   assert.equal(downloads,1,'import must be idempotent');
+  // An expired provider job should not block future manual searches forever.
+  const missing=await maps.startMapsScrape({niche:'cafeterias',city:'Sorocaba'});
+  const outcome=await maps.refreshActiveMapsScrapes();
+  assert.equal(outcome[0].status,'FAILED');
+  const state=db.one('SELECT status,error FROM maps_scraper_jobs WHERE id=?',missing.id);
+  assert.equal(state.status,'FAILED');
+  assert.match(state.error,/HTTP 404/);
+  const reissued=await maps.startMapsScrape({niche:'cafeterias',city:'Sorocaba'});
+  assert.equal(reissued.reused,undefined,'new search is possible after lost provider ID');
+  assert.equal(creates,3);
   assert.equal(db.getSetting('paused',true),true,'test must not activate WhatsApp sending');
  }finally{globalThis.fetch=originalFetch;}
 });
