@@ -71,9 +71,16 @@ if(process.env.RUN_MAPS_POLL_SMOKE==='true'){
 export async function pollMapsScrape(jobId){
  const job=row(jobId);if(!job)throw Error('Pesquisa não encontrada');
  if(!['COMPLETED','FAILED','IMPORTED'].includes(job.status)){
-  const res=await request('/api/v1/jobs/'+job.provider_id);
-  const detail=await res.json(),status=jobStatus(detail.status);
-  run("UPDATE maps_scraper_jobs SET status=?,updated_at=?,error=? WHERE id=?",status,now(),status==='FAILED'?'Execução do scraper falhou':null,jobId);
+  try{
+   const res=await request('/api/v1/jobs/'+job.provider_id);
+   const detail=await res.json(),status=jobStatus(detail.status);
+   run("UPDATE maps_scraper_jobs SET status=?,updated_at=?,error=? WHERE id=?",status,now(),status==='FAILED'?'Execução do scraper falhou':null,jobId);
+  }catch(error){
+   if(String(error?.message||'')!=='Scraper HTTP 404')throw error;
+   // A provider-side 404 is not an in-progress job: clear the stuck PENDING/RUNNING
+   // state so the operator may explicitly create a replacement search.
+   run("UPDATE maps_scraper_jobs SET status='FAILED',error=?,updated_at=? WHERE id=?","Pesquisa não encontrada no Gosom (HTTP 404). Inicie uma nova busca.",now(),jobId);
+  }
  }
  const j=row(jobId);
  return {id:j.id,status:j.status,niche:j.niche,city:j.city,added:j.added,processed:j.processed,error:j.error||null,imported:j.status==='IMPORTED',source:'Gosom Google Maps',note:'Dados do Google Maps sujeitos a condições de uso; importação exige confirmação.'};
