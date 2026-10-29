@@ -5,9 +5,9 @@ import os from 'node:os';
 process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/francisca-qa-reply-');
 process.env.WA_AKG_SESSION_ID='consecom-principal';
 process.env.GROQ_API_KEY='unit-test-only';
-const vars=['PROSPECTOR_LIVE_TEST_ENABLED','PROSPECTOR_LIVE_TEST_PHONE','AUDIO_RESPONSE_ENABLED','FRANCISCA_TTS_ENABLED','AI_CONVERSATION_AUTOSEND','PROSPECTOR_INBOUND_AUTOREPLY_ENABLED'];
+const vars=['PROSPECTOR_OWNER_PHONE','PROSPECTOR_LIVE_TEST_ENABLED','PROSPECTOR_LIVE_TEST_PHONE','AUDIO_RESPONSE_ENABLED','FRANCISCA_TTS_ENABLED','AI_CONVERSATION_AUTOSEND','PROSPECTOR_INBOUND_AUTOREPLY_ENABLED'];
 const original=Object.fromEntries(vars.map(k=>[k,process.env[k]]));
-Object.assign(process.env,{PROSPECTOR_LIVE_TEST_ENABLED:'true',PROSPECTOR_LIVE_TEST_PHONE:'5515981817336',
+Object.assign(process.env,{PROSPECTOR_OWNER_PHONE:'5515981817336',PROSPECTOR_LIVE_TEST_ENABLED:'true',PROSPECTOR_LIVE_TEST_PHONE:'5515981817336',
  AUDIO_RESPONSE_ENABLED:'true',FRANCISCA_TTS_ENABLED:'true',AI_CONVERSATION_AUTOSEND:'false',PROSPECTOR_INBOUND_AUTOREPLY_ENABLED:'false'});
 const db=await import('../dashboard/db.mjs');
 const inbound=await import('../dashboard/waakg-audio-inbound.mjs');
