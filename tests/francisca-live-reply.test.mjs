@@ -47,7 +47,7 @@ test('Other customers cannot receive automatic audio or text during the 7336 tri
  const pid='consecom-principal:OTHER0002',jid='5515999888877@s.whatsapp.net';
  const incoming=bridge.recordInboundTranscript({sessionId:'consecom-principal',jid,unique:pid,content:'Olá, como funciona?'});
  assert.equal(incoming.body.processed,true);
- assert.equal(db.one('SELECT provider_id FROM groq_auto_events WHERE provider_id=?',pid),null);
+ assert.ok(!db.one('SELECT provider_id FROM groq_auto_events WHERE provider_id=?',pid));
 });
 test.after(()=>{
  for(const [k,v] of Object.entries(original)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
