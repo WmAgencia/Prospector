@@ -22,10 +22,14 @@ export function prospectSalesContext({business='',segment='',city='',stage=''}={
   'Responda concisamente como conversa real; não inclua JSON, markdown ou cabeçalhos.'
  ].join('\n');
 }
+export function isExplicitOptOut(text=''){
+ const n=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+ return /^(?:pare|parar|stop|sair|remover|cancelar|nao me contate|nao me mande mensagens|nao quero (?:mais )?(?:receber )?(?:mensagens|contato)|nao quero que (?:voce|voces) me (?:mande|mandem|envie|enviem) mensagens)\b/.test(n);
+}
 export function salesEnding(text=''){
  const n=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
- if(/^(?:pare|parar|stop|sair|remover|cancelar|nao me contate|nao quero receber mensagens|nao me mande mensagens)\b/.test(n))return 'OPT_OUT';
- if(/^(?:nao tenho interesse|sem interesse|nao quero|agora nao|nao e o momento|nao preciso|obrigado mas nao|obrigada mas nao|nao obrigado|nao obrigada)\b/.test(n))return 'NO_INTEREST';
+ if(isExplicitOptOut(text))return 'OPT_OUT';
+ if(/^(?:nao tenho interesse|sem interesse|nao quero (?:o |um |uma )?(?:site|proposta|servico)|nao quero[.!? ]*$|agora nao[.!? ]*$|nao e o momento|nao preciso[.!? ]*$|obrigado mas nao|obrigada mas nao|nao obrigado|nao obrigada)\b/.test(n))return 'NO_INTEREST';
  if(/\b(?:quero falar com (?:uma pessoa|alguem|atendente)|me passa (?:para |pra )?(?:um )?humano|quero um atendente|falar com o responsavel)\b/.test(n))return 'HUMAN_REVIEW';
  return null;
 }
