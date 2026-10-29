@@ -7,6 +7,7 @@ import {remoteChats,remoteMessages} from './waakg-conversations.mjs';
 // This is a deliberately restricted, auditable interface to real CRM operations.
 // Never grant raw SQL, arbitrary HTTP fetches, code execution, credential reads, or bulk sends.
 db.exec("CREATE TABLE IF NOT EXISTS groq_owner_approvals(code TEXT PRIMARY KEY,jid TEXT NOT NULL,body TEXT NOT NULL,state TEXT NOT NULL,expires INTEGER NOT NULL)");
+db.exec("CREATE TABLE IF NOT EXISTS groq_owner_confirmations(code TEXT PRIMARY KEY,operation TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL,expires INTEGER NOT NULL)");
 const obj=props=>({type:'object',properties:props,additionalProperties:false});
 const string=(description)=>({type:'string',description});
 const flag=(description)=>({type:'boolean',description});
@@ -135,10 +136,10 @@ export async function runAgentTool(name,a={}){
  }
  if(name==='block_contact'){
   const l=getLead(a.lead_id);if(!l)throw Error('Empresa não encontrada');
-  const reason=a.reason?requiredText(a.reason,160):'Owner asked to stop contact';
-  stopLead(l.id,'GROQ_OWNER_'+reason.slice(0,70));
-  audit('GROQ_OWNER_CONTACT_BLOCKED',l.id,{reason:reason.slice(0,160)});
-  return {blocked:true,id:l.id,recipientSuffix:String(l.phone||'').slice(-4),pendingTasksCancelled:true};
+  const reason=a.reason?requiredText(a.reason,160):'Solicitação do proprietário';
+  const code=String(crypto.randomInt(100000,1000000));
+  run('INSERT INTO groq_owner_confirmations VALUES(?,?,?,?,?)',code,'BLOCK_CONTACT',JSON.stringify({lead_id:l.id,reason}), 'PENDING',Date.now()+600000);
+  return {blocked:false,requiresConfirmation:true,code,company:l.business,phoneSuffix:String(l.phone||'').slice(-4),instruction:'Envie CONFIRMAR '+code+' em até 10 minutos para bloquear o contato e cancelar tarefas pendentes.'};
  }
  if(name==='search_businesses'){
   const niche=requiredText(a.niche,85,2),city=requiredText(a.city,85,2);
@@ -164,3 +165,18 @@ export function claimApproval(code){
  return pending;
 }
 export function markApproval(code){run("UPDATE groq_owner_approvals SET state='SENT' WHERE code=? AND state='UNKNOWN'",code);}
+
+export function executeConfirmedOperation(code){
+ const p=one("SELECT * FROM groq_owner_confirmations WHERE code=? AND state='PENDING' AND expires>?",String(code),Date.now());
+ if(!p)return null;
+ run("UPDATE groq_owner_confirmations SET state='UNKNOWN' WHERE code=? AND state='PENDING'",code);
+ if(p.operation==='BLOCK_CONTACT'){
+  const args=JSON.parse(p.payload),lead=getLead(args.lead_id);
+  if(!lead)return {ok:false,error:'Empresa não encontrada'};
+  stopLead(lead.id,'GROQ_OWNER_CONFIRMED');
+  audit('GROQ_OWNER_CONTACT_BLOCKED',lead.id,{reason:args.reason,confirmation:true});
+  run("UPDATE groq_owner_confirmations SET state='EXECUTED' WHERE code=?",code);
+  return {ok:true,message:'Contato bloqueado e tarefas pendentes canceladas',company:lead.business};
+ }
+ return {ok:false,error:'Operação não permitida'};
+}
