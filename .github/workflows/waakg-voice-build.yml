@@ -18,4 +18,4 @@ jobs:
       - name: Check production image starts without WhatsApp credentials
         run: |
           docker run --rm --entrypoint sh prospector/waakg-voice:ci -c \
-            "test -s /app/src/modules/whatsapp/voice-calls.ts && test -s /app/src/voice-protocol/native/libopus_mlow.so && node -e \"require('koffi'); require('@roamhq/wrtc'); console.log('native voice modules OK')\""
+            "test -s /app/voice-runtime/voice-calls.ts && test -s /app/voice-runtime/voice-protocol/native/libopus_mlow.so && node --import tsx --input-type=module -e \"import('./voice-runtime/voice-calls.ts').then(() => console.log('WA-AKG native call adapter imported successfully'))\""
