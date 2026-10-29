@@ -281,7 +281,7 @@ document.addEventListener("submit",async ev=>{
 
  if(ev.target.id==="send-form"){
   ev.preventDefault();const text=q("#chat-text")?.value.trim();if(!text||!selectedThread)return;
-  const btn=q('#send-form button');if(btn)btn.disabled=true;
+  const btn=q('#send-form button[type="submit"]');if(btn)btn.disabled=true;
   try{const endpoint=selectedThread.startsWith("wa:")?"/api/whatsapp/reply-remote":"/api/whatsapp/reply";const data=selectedThread.startsWith("wa:")?{jid:selectedThread.slice(3),text,requestId:crypto.randomUUID()}:{threadId:selectedThread,text,requestId:crypto.randomUUID()};await post(endpoint,data);q("#chat-text").value="";await loadMessages(selectedThread);n("Mensagem enviada.");}
   catch(e){n(e.message);}finally{if(btn)btn.disabled=false;}
  }
