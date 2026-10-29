@@ -39,7 +39,7 @@ import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inboun
 import {voiceStatus,makeFranciscaVoice} from './francisca-tts.mjs';
 import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
-import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
+import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
