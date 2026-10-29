@@ -5,15 +5,16 @@ import {aiDraft} from './ai-groq.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
+import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {waControlStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_auto_events(provider_id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,at TEXT NOT NULL,error TEXT)");
 run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify before retry' WHERE state IN ('PROCESSING','SENDING')");
 const digits=s=>String(s||'').replace(/\D/g,'');
 const optedOut=s=>/\b(pare|parar|stop|sair|remover|nao me contate|não me contate|sem interesse|nao tenho interesse)\b/i.test(String(s||''));
-export function ownerTarget(){const raw=digits(process.env.PROSPECTOR_HOT_LEAD_PHONE);const val=raw.length===11?'55'+raw:raw;return /^55\d{10,11}$/.test(val)?val:null;}
-export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true};}
+export function ownerTarget(){const preferred=personalPhone();if(preferred)return preferred;const raw=digits(process.env.PROSPECTOR_HOT_LEAD_PHONE);const val=raw.length===11?'55'+raw:raw;return /^55\d{10,11}$/.test(val)?val:null;}
+export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true};}
 export function queueInboundTurn({providerId,jid}={}){
- if((process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!testModeAllowed(String(jid||'').split('@')[0]))||!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
+ if((process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!testModeAllowed(String(jid||'').split('@')[0]))||!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
  return run("INSERT OR IGNORE INTO groq_auto_events(provider_id,jid,state,at) VALUES(?,?,?,?)",providerId,jid,'PENDING',now()).changes>0;
 }
 const active=new Set();
@@ -22,9 +23,9 @@ export async function handleSalesTurn(providerId,deps={}){
  if(!r)return {state:'SKIP'};
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
  const allowTest=testModeAllowed(r.phone);
- if(process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
+ if(process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
  if(r.session_id!==selectedWaSession())return finish('SKIPPED','SESSION');
- if(!allowTest&&(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP)))return finish('SKIPPED','OWNER');
+ if(!allowTest&&(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP)||r.phone===personalPhone()))return finish('SKIPPED','OWNER');
  if(optedOut(r.body)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT');
  if(['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(r.stage))return finish('SKIPPED','ALREADY_HANDOFF');
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
@@ -45,12 +46,19 @@ export async function handleSalesTurn(providerId,deps={}){
  }
  // An apparent commitment which the model cannot verify is left for review.
  if(explicitInterest(r.body))return finish('REVIEW','UNCERTAIN_INTEREST');
- if(process.env.AI_CONVERSATION_AUTOSEND!=='true'&&!allowTest)return finish('REVIEW','AI_AUTOREPLY_DISABLED');
+ if(process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&!allowTest)return finish('REVIEW','AI_AUTOREPLY_DISABLED');
  if(r.inbox_state!=='REVIEW'||r.manual_takeover)return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
  const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
  if(!wa.connected||!session)return finish('REVIEW','WA_OFFLINE');
- const draft=await (deps.draft||aiDraft)({text:r.body,context:history});
+ const incoming=classifyInbound(r.body);
+ if(incoming.human)return finish('HANDOFF','REQUESTED_HUMAN');
+ // A one-word hello never requires an external model call.
+ const draft=incoming.intro?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+   await (deps.draft||aiDraft)({text:r.body,context:history+
+     '\nEste é um contato que iniciou uma conversa. Identifique primeiro o assunto. '+
+     'Se não for sobre Consecom ou não estiver claro, pergunte o que a pessoa precisa. '+
+     'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.'});
  if(!draft.ok||!draft.draft)return finish('REVIEW','GROQ_UNAVAILABLE');
  const review=reviewGroqReply({inbound:r.body,draft:draft.draft});
  if(!review.ok){audit('GROQ_REPLY_REJECTED',r.lead_id,{code:review.code,test:allowTest});return finish('REVIEW','SAFETY_'+review.code);}
