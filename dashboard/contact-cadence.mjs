@@ -2,10 +2,11 @@
 import {one,all,run,id,now,audit} from './db.mjs';
 import {threeMonthsAfter} from './prospecting-recontact.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
+import {hasExistingClientRelationship,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 export const DAYS_90=90*24*3600*1000;
 export function nextEligible(at){return threeMonthsAfter(at);}
 export function allowedToRecontact(row,at=Date.now()){
- return Boolean(row&&row.contact_permission&&row.phone&&!row.suppressed_at&&!['INTERESTED','CONVERSING','CLOSED_WON'].includes(row.stage)&&(row.last_contact_at?Date.parse(nextEligible(row.last_contact_at))<=at:(row.next_contact_at&&Date.parse(row.next_contact_at)<=at)));
+ return Boolean(row&&row.contact_permission&&row.phone&&!row.suppressed_at&&row.phone!==verifiedOwnerPhone()&&!hasExistingClientRelationship(row.phone)&&!['INTERESTED','CONVERSING','CLOSED_WON'].includes(row.stage)&&(row.last_contact_at?Date.parse(nextEligible(row.last_contact_at))<=at:(row.next_contact_at&&Date.parse(row.next_contact_at)<=at)));
 }
 export function rememberOutreach(leadId,source='initial'){
  const l=one('SELECT id,phone FROM leads WHERE id=?',leadId);if(!l?.phone)return false;
