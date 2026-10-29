@@ -1,0 +1,21 @@
+name: WA-AKG voice native build and checks
+on:
+  push:
+    paths:
+      - 'waakg-voice/**'
+      - '.github/workflows/waakg-voice-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-voice-gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned WA-AKG with native call adapter (no WhatsApp credentials)
+        run: docker build --progress=plain -t prospector/waakg-voice:ci waakg-voice
+      - name: Check production image starts without WhatsApp credentials
+        run: |
+          docker run --rm --entrypoint sh prospector/waakg-voice:ci -c \
+            "test -s /app/src/modules/whatsapp/voice-calls.ts && test -s /app/src/voice-protocol/native/libopus_mlow.so && node -e \"require('koffi'); require('@roamhq/wrtc'); console.log('native voice modules OK')\""
