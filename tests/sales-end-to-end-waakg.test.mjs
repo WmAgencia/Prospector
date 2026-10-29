@@ -60,6 +60,7 @@ test('Approved button queue sends once, reply enters Groq and responds naturally
  assert.match(draftContext,/R\$ 550/);
  assert.match(sentText,/R\$ 550/);
  assert.equal(db.one('SELECT COUNT(*) n FROM sales_outcomes').n,0);
+ assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
 });
 test('A hard refusal is terminal, not queued for more AI replies',async()=>{
  const lead=eligible('Estética que recusou');
@@ -72,6 +73,7 @@ test('A hard refusal is terminal, not queued for more AI replies',async()=>{
  assert.equal(db.one('SELECT status FROM sales_outcomes WHERE lead_id=?',lead.id).status,'NO_INTEREST');
  assert.equal(db.one("SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id='consecom-principal:fullsales-2'").n,0);
  assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='SALES_OUTCOME'",lead.id).n,1);
+ assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
 });
 test('Explicit interest transfers to human and records the result once',async()=>{
  const lead=eligible('Padaria interessada');
