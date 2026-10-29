@@ -1,6 +1,7 @@
 // Sample production state machine: ChatGPT authoring is manual, customer delivery requires approval.
 import {one,all,run,tx,id,now,audit,stage,suppressed,getThread} from './db.mjs';
 import {queueNotice} from './notifications.mjs';
+import {recordSalesOutcome} from './sales-outcomes.mjs';
 const statuses=['OFFER_QUEUED','OFFER_SENT','REQUESTED','IN_PROGRESS','READY','SEND_QUEUED','DELIVERED','NEEDS_REVIEW','DECLINED','CANCELLED'];
 export function interpretOfferReply(raw){
  const s=String(raw||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
@@ -115,7 +116,7 @@ export function approveAndQueue(leadId){
 }
 export function closeDeal(leadId){
  const req=get(leadId);if(!req||req.status!=='DELIVERED')throw Error('Conclua a entrega primeiro');
- stage(leadId,'CLOSED_WON','Fechamento confirmado manualmente');audit('SAMPLE_DEAL_CLOSED',leadId,{request:req.id});
+ stage(leadId,'CLOSED_WON','Fechamento confirmado manualmente');recordSalesOutcome({leadId,status:'CLOSED_WON',evidence:'Fechamento confirmado pelo operador',source:'PRODUCTION'});audit('SAMPLE_DEAL_CLOSED',leadId,{request:req.id});
 }
 export function cancelForOptOut(leadId){
  run("UPDATE production_requests SET status='CANCELLED',updated_at=? WHERE lead_id=? AND status NOT IN ('DECLINED','CANCELLED','DELIVERED')",now(),leadId);

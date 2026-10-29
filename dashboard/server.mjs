@@ -28,7 +28,9 @@ import {importOfficial} from './official-import.mjs';
 import {siteAudit} from './site-audit.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
-import {dailyReport,reportText,targetNumber} from './notifications.mjs';
+import {dailyReport,reportText,targetNumber,scheduleReport} from './notifications.mjs';
+import {salesOutcomes} from './sales-outcomes.mjs';
+import {SITE_AVERAGE_PRICE_BRL} from './sales-policy.mjs';
 import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
 import {queueHealth} from './queue-health.mjs';
@@ -423,6 +425,8 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:500}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
+  if(req.method==='GET'&&pathname==='/api/sales/outcomes')return respond(res,200,salesOutcomes({limit:80}));
+  if(req.method==='GET'&&pathname==='/api/sales/status')return respond(res,200,{priceReferenceBrl:SITE_AVERAGE_PRICE_BRL,agent:agentStatus(),queue:approachQueueStatus()});
   if(req.method==='GET'&&pathname==='/api/whatsapp/contact-role'){
    const p=phone(url.searchParams.get('phone')||'');
    if(!p)return respond(res,400,{error:'Número inválido'});
@@ -725,8 +729,9 @@ const audioTranscriptionTimer=setInterval(()=>{
  }).catch(e=>console.warn('[audio transcription] unexpected',String(e?.message||e).slice(0,80)));
 },4000);
 const customerAiTimer=setInterval(()=>{
- if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true'&&process.env.PROSPECTOR_LIVE_TEST_ENABLED!=='true')return;
- tickSalesAgent().then(()=>process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true'?flushInterestAlerts():0).then(async sent=>sent+await flushPersonalNotices()).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
+ if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true'&&process.env.PROSPECTOR_LIVE_TEST_ENABLED!=='true'&&getSetting('sales_followup_enabled',true)!==true&&getSetting('sales_daily_report_enabled',true)!==true)return;
+ try{scheduleReport();}catch(e){console.warn('[daily sales report]',String(e?.message||e).slice(0,70));}
+ tickSalesAgent().then(()=>flushInterestAlerts()).then(async sent=>sent+await flushPersonalNotices()).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
 },6000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();

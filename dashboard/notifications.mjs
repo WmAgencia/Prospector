@@ -21,11 +21,14 @@ export function queueNotice(key,kind,message,leadId=null){
 function localFilter(rows,key,date){return rows.filter(x=>localDay(x[key])===date);}
 export function dailyReport(day=localDay()){
  const sent=localFilter(all("SELECT lead_id,updated_at FROM jobs WHERE status='SENT' AND step_index=0 AND execution_id IS NOT NULL"),'updated_at',day);
+ const batchSent=one("SELECT name FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'")?
+  localFilter(all("SELECT lead_id,attempt_at AS updated_at FROM prospecting_batch_items WHERE status='SENT' AND attempt_at IS NOT NULL"),'updated_at',day):[];
+ const uniqueSent=new Set([...sent,...batchSent].map(x=>x.lead_id));
  const replies=localFilter(all("SELECT t.lead_id,m.at FROM messages m JOIN threads t ON t.id=m.thread_id WHERE m.direction='in'"),'at',day);
  const stageRows=localFilter(all("SELECT lead_id,at,detail FROM audit WHERE action='STAGE'"),'at',day);
  const byStage=(s)=>new Set(stageRows.filter(x=>{try{return JSON.parse(x.detail).to===s;}catch{return false;}}).map(x=>x.lead_id)).size;
  const requests=localFilter(all("SELECT lead_id,accepted_at FROM production_requests WHERE accepted_at IS NOT NULL"),'accepted_at',day);
- return {day,approached:new Set(sent.map(x=>x.lead_id)).size,responded:new Set(replies.map(x=>x.lead_id)).size,
+ return {day,approached:uniqueSent.size,responded:new Set(replies.map(x=>x.lead_id)).size,
  interested:byStage('INTERESTED'),notInterested:byStage('NO_INTEREST'),
  requested:new Set(requests.map(x=>x.lead_id)).size,closed:byStage('CLOSED_WON')};
 }
@@ -37,7 +40,7 @@ export function reportText(s){
  '','Os números contam leads únicos em cada métrica no dia.'].join('\n');
 }
 export function scheduleReport(nowDate=new Date()){
- if(!getSetting('owner_notifications_enabled',false))return false;
+ if(!getSetting('owner_notifications_enabled',false)&&!getSetting('sales_daily_report_enabled',true))return false;
  const hour=Number(getSetting('owner_report_hour',20));
  if(localHour(nowDate)<hour)return false;
  const day=localDay(nowDate);
