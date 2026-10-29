@@ -38,6 +38,7 @@ import {recordInboundTranscript} from './waakg-bridge.mjs';
 import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inbound.mjs';
 import {voiceStatus,makeFranciscaVoice} from './francisca-tts.mjs';
 import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
+import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
 import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
@@ -163,6 +164,13 @@ if(process.env.RUN_FRANCISCA_AUDIO_SMOKE==='true'){
   }catch(error){console.warn('[francisca-whisper-live-smoke]',JSON.stringify({
    ok:false,errorType:error?.name||'ERROR',code:String(error?.message||'').slice(0,80),whatsappMessagesSent:0}));}
  },8500).unref();
+}
+// One explicitly authorized WhatsApp voice test; no restart retry after an
+// ambiguous provider delivery. It is completely separate from prospecting.
+if(process.env.RUN_FRANCISCA_7336_SEND_ONCE==='true'){
+ setTimeout(()=>sendOneTimeFranciscaTrial().then(result=>{
+  console.info('[francisca-7336-one-time]',JSON.stringify(result));
+ }).catch(e=>console.warn('[francisca-7336-one-time]',JSON.stringify({state:'ERROR',errorType:e?.name||'ERROR'}))),12000).unref();
 }
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
