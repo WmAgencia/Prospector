@@ -5,7 +5,8 @@ import {threeMonthsAfter,latestOutreachAt} from './prospecting-recontact.mjs';
 export const KANBAN_STAGES=['approaching','no_interest','interested','conversing'];
 
 function cardStatus(row){
- if(row.stage==='CLOSED_WON')return null;\n if(row.stage==='NO_INTEREST')return 'no_interest';
+ if(row.stage==='CLOSED_WON')return null;
+ if(row.stage==='NO_INTEREST')return 'no_interest';
  const manual=Boolean(row.manually_replied);
  if(manual||row.stage==='CONVERSING')return 'conversing';
  if(row.hot_notice)return 'interested';
