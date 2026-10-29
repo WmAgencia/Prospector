@@ -34,8 +34,8 @@ export async function handleSalesTurn(providerId,deps={}){
  if(r.session_id!==selectedWaSession())return finish('SKIPPED','SESSION');
  if(!allowTest&&(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP)||r.phone===personalPhone()))return finish('SKIPPED','OWNER');
  if(optedOut(r.body)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT');
- if(['INTERESTED','NO_INTEREST'].includes(r.stage)||
-   (r.stage==='CLOSED_WON'&&identity.role!=='EXISTING_CLIENT'))return finish('SKIPPED','ALREADY_HANDOFF');
+ if(identity.role!=='EXISTING_CLIENT'&&['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(r.stage))
+  return finish('SKIPPED','ALREADY_HANDOFF');
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
  const history=all("SELECT direction,body FROM messages WHERE thread_id=? ORDER BY at DESC LIMIT 8",r.thread_id).reverse().map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
  const qualify=deps.qualify||qualifyWithGroq;
