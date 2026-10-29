@@ -14,6 +14,7 @@ const maps=await import('../dashboard/gosom-maps.mjs');
 test('Gosom job creation, background completion, confirmed import and deduplication',async()=>{
  const providerId='11111111-1111-4111-8111-111111111111';
  const missingId='22222222-2222-4222-8222-222222222222';
+ const replacementId='33333333-3333-4333-8333-333333333333';
  let status='running',creates=0,downloads=0,reads=0,timeoutNext=false;
  const csv=[
   'link,title,phone,website,address',
@@ -26,7 +27,7 @@ test('Gosom job creation, background completion, confirmed import and deduplicat
   assert.equal(u.host,'consecom-prospector-maps.onrender.com');
   assert.equal(opts.headers?.['X-Prospector-Maps-Key'],'test-server-only-secret');
   if(u.pathname==='/api/v1/jobs'&&opts.method==='POST'){
-   creates++;return Response.json({id:creates===1?providerId:missingId});
+   creates++;return Response.json({id:creates===1?providerId:creates===2?missingId:replacementId});
   }
   if(u.pathname.endsWith('/download')){
    downloads++;return new Response(csv,{status:200,headers:{'Content-Type':'text/csv'}});
