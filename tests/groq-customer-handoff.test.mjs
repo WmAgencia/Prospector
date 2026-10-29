@@ -68,4 +68,28 @@ test('Unverified apparent interest does not send or notify owner',async()=>{
  assert.equal(res.states[0],'REVIEW');
  assert.equal(sends.length,before);
 });
+test('Interest-only mode silently alerts owner but never auto-responds to customers',async()=>{
+ const oldAuto=process.env.AI_CONVERSATION_AUTOSEND,oldAlerts=process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED;
+ process.env.AI_CONVERSATION_AUTOSEND='false';process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED='true';
+ try{
+  const question=input({number:'15987771115',body:'Quanto custa um site?'});
+  const before=sends.length;
+  const general=await agent.tickSalesAgent({...fake,qualify:async()=>({confirmed:false,reason:'NOT_CONCRETE'})});
+  assert.equal(general.states[0],'REVIEW');
+  assert.equal(sends.length,before,'an ordinary question must remain for human review');
+  const buyer=input({number:'15987771116',body:'Quero contratar esse projeto, podemos começar?'});
+  const result=await agent.tickSalesAgent({...fake,qualify:async()=>({confirmed:true,confidence:0.98,evidence:'Quero contratar'})});
+  assert.equal(result.states[0],'HOT');
+  assert.equal(sends.length,before,'no message should be sent to lead at handoff');
+  assert.equal(db.one('SELECT stage FROM leads WHERE id=?',buyer.lead.id).stage,'INTERESTED');
+  assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='GROQ_HOT_LEAD'",buyer.lead.id).n,1);
+  const sent=await agent.flushInterestAlerts(fake);
+  assert.equal(sent,1);
+  assert.ok(sends.at(-1).route.includes('5515981817336%40s.whatsapp.net'));
+  assert.equal((await agent.flushInterestAlerts(fake)),0);
+ }finally{
+  process.env.AI_CONVERSATION_AUTOSEND=oldAuto;
+  if(oldAlerts===undefined)delete process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED;else process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED=oldAlerts;
+ }
+});
 test.after(()=>{db.db.close();fs.rmSync(dir,{recursive:true,force:true});});
