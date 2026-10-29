@@ -4,6 +4,20 @@ import crypto from 'node:crypto';
 import {newFranciscaCallSession,verifyVoiceOwner,convertM4aToPcm16,callLabStatus} from './francisca-call-lab.mjs';
 import {makeFranciscaCallPcm} from './francisca-tts.mjs';
 const sessions=new Map();
+// Common acknowledgement clips only; no caller content or recordings cached.
+const backchannelClips=new Map();
+const BACKCHANNELS={aham:'Aham.',hum:'Hum.',entendi:'Entendi.'};
+async function backchannelClip(kind){
+ if(!Object.hasOwn(BACKCHANNELS,kind))throw Error('CALL_BACKCHANNEL_UNSUPPORTED');
+ let promise=backchannelClips.get(kind);
+ if(!promise){
+  promise=makeFranciscaCallPcm(BACKCHANNELS[kind]).catch(error=>{
+   backchannelClips.delete(kind);throw error;
+  });
+  backchannelClips.set(kind,promise);
+ }
+ return promise;
+}
 const MAX_SAMPLES=16000*2*14;
 export function callBridgeStatus(){return {...callLabStatus(),bridgeConfigured:(process.env.WA_CALL_BRIDGE_SECRET||'').length>=40,activeCalls:sessions.size};}
 export function authorizeCallBridge(key){
@@ -23,12 +37,17 @@ export async function processCallBridge(a={}){
   if(c){c.session.end();sessions.delete(callId);}
   return {ok:true,ended:true};
  }
- if(!['greeting','turn'].includes(a.event))throw Error('CALL_EVENT_INVALID');
+ if(!['greeting','turn','backchannel'].includes(a.event))throw Error('CALL_EVENT_INVALID');
  if(sessions.size>2&&!sessions.has(callId))throw Error('CALL_CAPACITY');
  let c=sessions.get(callId);
  if(c&&(c.jid!==identity.jid||c.sessionId!==identity.sessionId))throw Error('CALL_IDENTITY_CHANGED');
  if(!c){c={jid:identity.jid,sessionId:identity.sessionId,session:newFranciscaCallSession(identity),updated:Date.now()};sessions.set(callId,c);}
  c.updated=Date.now();
+ if(a.event==='backchannel'){
+  const kind=String(a.kind||'');
+  const voice=await backchannelClip(kind);
+  return {ok:true,event:'backchannel',rate:16000,pcm16k:voice.pcm16k.toString('base64')};
+ }
  if(a.event==='greeting'){
   const greet='Alô! Aqui é a Francisca, da Consecom. Estou ouvindo, pode falar.';
   const voice=await makeFranciscaCallPcm(greet);
@@ -37,6 +56,11 @@ export async function processCallBridge(a={}){
  if(typeof a.pcm16k!=='string'||a.pcm16k.length>Math.ceil(MAX_SAMPLES*4/3)+1024)throw Error('CALL_AUDIO_TOO_LARGE');
  const pcm=Buffer.from(a.pcm16k,'base64');
  if(pcm.length<16000||pcm.length>MAX_SAMPLES||pcm.length%2)throw Error('CALL_AUDIO_INVALID');
- const reply=await c.session.reply(pcm);
- return {ok:true,event:'reply',heard:reply.heard,spoken:reply.spoken,rate:reply.rate,pcm16k:reply.pcm16k.toString('base64')};
+ const interruption=a.interruption&&typeof a.interruption==='object'?{
+  replyId:String(a.interruption.replyId||'').slice(0,60),
+  playedMs:Math.max(0,Math.min(60000,Number(a.interruption.playedMs)||0)),
+  totalMs:Math.max(0,Math.min(60000,Number(a.interruption.totalMs)||0))
+ }:null;
+ const reply=await c.session.reply(pcm,{interruption});
+ return {ok:true,event:'reply',replyId:reply.replyId,heard:reply.heard,spoken:reply.spoken,rate:reply.rate,pcm16k:reply.pcm16k.toString('base64')};
 }
