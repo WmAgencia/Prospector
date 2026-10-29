@@ -6,6 +6,7 @@ import {aiDraft} from "./ai-groq.mjs";
 import {ownerReceived} from "./groq-owner.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
+import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
@@ -54,9 +55,21 @@ export async function receiveWebhook(req){
  if(!/^[\w\-]{5,150}$/.test(providerId))return {status:200,body:{accepted:true,ignored:true}};
  const unique=sid+":"+providerId;
  if(one("SELECT id FROM waakg_inbox WHERE provider_id=?",unique))return {status:200,body:{accepted:true,duplicate:true}};
+ const isAudio=String(data.type||'').toUpperCase()==='AUDIO';
+ if(isAudio){
+  if(process.env.AUDIO_TRANSCRIPTION_ENABLED!=='true')return {status:200,body:{accepted:true,audioPendingSetup:true}};
+  const result=queueInboundAudio({providerId:unique,sessionId:sid,jid,fileUrl:String(data.fileUrl||'')});
+  return {status:200,body:{accepted:true,audioQueued:result.queued,reason:result.reason||null}};
+ }
  const text=typeof data.content==="string"?data.content:typeof data.content?.text==="string"?data.content.text:"";
  if(!text.trim())return {status:200,body:{accepted:true,ignored:true}};
- const content=text.trim().slice(0,2000);
+ return recordInboundTranscript({sessionId:sid,jid,unique,content:text});
+}
+export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,source='TEXT'}={}){
+ if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid||'')||!String(unique||'').includes(':'))return {status:400,body:{accepted:false,error:'INVALID_INBOUND'}};
+ if(one("SELECT id FROM waakg_inbox WHERE provider_id=?",unique))return {status:200,body:{accepted:true,duplicate:true}};
+ const content=String(text||'').trim().slice(0,2000);
+ if(!content)return {status:400,body:{accepted:false,error:'EMPTY_TRANSCRIPT'}};
  const number=phone(jid.split("@")[0]);
  if(!number)return {status:200,body:{accepted:true,ignored:true}};
  const lead=addLead({business:"Contato WhatsApp "+number.slice(-4),phone:number,source:"WHATSAPP_INBOUND",contact_permission:false}).lead;
@@ -73,9 +86,9 @@ export async function receiveWebhook(req){
  }
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
- audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid});
+ audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source});
  ownerReceived({jid,sessionId:sid,text:content,providerId:unique});
- if(firstInbound)queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:"WHATSAPP_INBOUND"});
+ if(firstInbound)queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
  if(state==="REVIEW")queueInboundTurn({providerId:unique,jid});
  return {status:200,body:{accepted:true,processed:true}};
 }
