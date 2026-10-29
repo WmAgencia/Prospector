@@ -1,5 +1,7 @@
 FROM node:22-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates git python3 python3-venv && rm -rf /var/lib/apt/lists/*
+# Dedicated Python venv for Francisca TTS; no third-party service credentials stored in image.
+RUN python3 -m venv /opt/francisca && /opt/francisca/bin/pip install --no-cache-dir edge-tts==7.3.0
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Use the exact dependency set tested locally and in CI.

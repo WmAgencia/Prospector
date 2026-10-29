@@ -34,6 +34,10 @@ import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsApp
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
+import {recordInboundTranscript} from './waakg-bridge.mjs';
+import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inbound.mjs';
+import {voiceStatus,makeFranciscaVoice} from './francisca-tts.mjs';
+import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
 import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
@@ -140,6 +144,25 @@ if(['true','remaining'].includes(process.env.RUN_TEST_7336_GROQ_SMOKE)){
   console.info('[test-7336-model-qa]',JSON.stringify({samples:report,confirmedCommitment:check.confirmed,
     passed:report.every(x=>x.modelResponded&&x.safe)&&check.confirmed===true,customerMessagesSent:0}));
  },12000).unref();
+}
+// One-shot opt-in real voice + transcription verification; no customer data,
+// phone numbers, audio file persistence or WhatsApp requests involved.
+if(process.env.RUN_FRANCISCA_AUDIO_SMOKE==='true'){
+ setTimeout(async()=>{
+  try{
+   const sample='Olá! Sou a Francisca, assistente virtual da Consecom Brasil. Como posso ajudar?';
+   const voice=await makeFranciscaVoice(sample);
+   const recognized=await transcribeAudio({buffer:voice.bytes,filename:'francisca.m4a'});
+   const heard=recognized.text.toLowerCase();
+   const ok=voice.bytes.length>400&&heard.includes('francisca')&&heard.includes('consecom');
+   console.info('[francisca-whisper-live-smoke]',JSON.stringify({
+    ok,voice:'pt-BR-FranciscaNeural',audioBytes:voice.bytes.length,
+    transcribedChars:recognized.text.length,mentionsFrancisca:heard.includes('francisca'),
+    mentionsConsecom:heard.includes('consecom'),whatsappMessagesSent:0
+   }));
+  }catch(error){console.warn('[francisca-whisper-live-smoke]',JSON.stringify({
+   ok:false,errorType:error?.name||'ERROR',code:String(error?.message||'').slice(0,80),whatsappMessagesSent:0}));}
+ },8500).unref();
 }
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.join(here,'public');
@@ -369,6 +392,21 @@ async function handler(req,res){
    const result=await aiDraft({text:"Responda somente OK."});
    // Health-only output; never reveal provider text, credentials, or customer data.
    return respond(res,result.ok?200:result.httpStatus||502,{ok:result.ok,provider:result.provider,model:result.model||null,code:result.code||null,autoSend:false});
+  }
+  if(req.method==='GET'&&pathname==='/api/ai/audio-status')
+   return respond(res,200,{transcription:audioStatus(),francisca:voiceStatus(),manualVoice:true,autoVoiceReplies:process.env.AUDIO_RESPONSE_ENABLED==='true'});
+  if(req.method==='POST'&&pathname==='/api/ai/voice-preview'){
+   const payload=await json(req);
+   try{
+    const voice=await voicePreview(payload.text);
+    res.writeHead(200,{'Content-Type':'audio/mp4','Content-Length':voice.buffer.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+    res.end(voice.buffer);return;
+   }catch(e){return respond(res,502,{error:'Não foi possível gerar a voz Francisca',code:String(e.message).slice(0,70)});}
+  }
+  if(req.method==='POST'&&pathname==='/api/ai/voice-send'){
+   const result=await sendApprovedVoice(await json(req));
+   if(result.status===200)notify();
+   return respond(res,result.status,result.body);
   }
   if(req.method==='POST'&&pathname==='/api/ai/draft'){
    const payload=await json(req);
@@ -611,6 +649,13 @@ const interval=setInterval(()=>{
 // rule: the persisted send clock enforces at least 90 seconds between attempts.
 // Inbound customer messages are handled separately from the 90-second outreach queue.
 // Owner-only interest notifications never trigger customer-facing messages.
+const audioTranscriptionTimer=setInterval(()=>{
+ if(process.env.AUDIO_TRANSCRIPTION_ENABLED!=='true')return;
+ processAudioJobs({deliver:recordInboundTranscript}).then(result=>{
+  if(result.status==='DONE')notify();
+  if(result.status==='REVIEW')console.warn('[audio transcription]',result.error);
+ }).catch(e=>console.warn('[audio transcription] unexpected',String(e?.message||e).slice(0,80)));
+},4000);
 const customerAiTimer=setInterval(()=>{
  if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true')return;
  tickSalesAgent().then(()=>flushInterestAlerts()).then(async sent=>sent+await flushPersonalNotices()).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
@@ -670,4 +715,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
