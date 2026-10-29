@@ -54,9 +54,9 @@ export function setExistingClientRelationship({leadId,existing=true,evidence=''}
  audit('CONTACT_RELATIONSHIP_OPERATOR_UPDATED',lead.id,{existing,evidenceProvided:!!reason});
  return {ok:true,phoneSuffix:lead.phone.slice(-4),role:existing?'EXISTING_CLIENT':'RECALCULATE',verifiedBy:'OPERATOR'};
 }
-export const contactPolicy=role=>{
+export const contactPolicy=(role,{testSandbox=false}={})=>{
  switch(role){
-  case 'OWNER':return {canUseOwnerTools:true,allowMarketing:false,canRequestHuman:false,salesPlaybook:false,customerSupport:false};
+  case 'OWNER':return {canUseOwnerTools:!testSandbox,allowMarketing:false,canRequestHuman:false,salesPlaybook:false,customerSupport:false};
   case 'EXISTING_CLIENT':return {canUseOwnerTools:false,allowMarketing:false,canRequestHuman:true,salesPlaybook:false,customerSupport:true};
   case 'PROSPECT_APPROACHED':return {canUseOwnerTools:false,allowMarketing:false,canRequestHuman:true,salesPlaybook:true,customerSupport:false};
   case 'INBOUND_NEW':return {canUseOwnerTools:false,allowMarketing:false,canRequestHuman:true,salesPlaybook:false,customerSupport:false};
