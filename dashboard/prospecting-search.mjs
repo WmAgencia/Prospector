@@ -106,7 +106,7 @@ export async function prospectingSearch({niche,city}={}){
   const place=await locate(city),tag=category(niche);
   const escaped=norm(niche).replace(/[^a-z0-9 áéíóúãõâêôç-]/g,"").slice(0,60);
   const filter=tag?'["'+tag[0]+'"="'+tag[1]+'"]':'["name"~"'+escaped+'",i]';
-  const q='[out:json][timeout:24];(nwr'+filter+'["name"](around:7500,'+place.lat+','+place.lon+'););out center 220;';
+  const q='[out:json][timeout:24];(nwr'+filter+'["name"](around:4000,'+place.lat+','+place.lon+'););out center 100;';
   const data=await remoteQuery(q),found=Array.isArray(data.elements)?data.elements:[];
   let added=0,skipped=0;
   for(const item of found){
@@ -119,7 +119,7 @@ export async function prospectingSearch({niche,city}={}){
    }catch{skipped++;}
   }
   run("UPDATE discoveries SET found=?,status='COMPLETE',details=? WHERE id=?",added,JSON.stringify({examined:found.length,skipped,source:"OpenStreetMap"}),marker);
-  return {ok:true,added,examined:found.length,partial:true,source:"OpenStreetMap/Overpass",note:tag?"Limite de 220 registros por consulta e raio de 7,5 km; cobertura parcial.":"Nicho livre buscado por nome comercial; cobertura parcial.",...prospectingList({niche,city})};
+  return {ok:true,added,examined:found.length,partial:true,source:"OpenStreetMap/Overpass",note:tag?"Limite de 100 registros por consulta e raio de 4 km; cobertura parcial.":"Nicho livre buscado por nome comercial; cobertura parcial.",...prospectingList({niche,city})};
  }catch(e){
   run("UPDATE discoveries SET status='FAILED',details=? WHERE id=?",JSON.stringify({reason:String(e.message).slice(0,120)}),marker);
   throw e;
