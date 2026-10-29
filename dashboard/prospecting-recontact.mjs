@@ -15,7 +15,7 @@ export function latestOutreachAt(leadId,phone){
  if(a?.at)dates.push(a.at);
  const b=one("SELECT MAX(m.at) at FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out'",leadId);
  if(b?.at)dates.push(b.at);
- const c=one("SELECT MAX(attempt_at) at FROM prospecting_batch_items WHERE (lead_id=? OR phone=?) AND status IN ('SENDING','SENT','UNKNOWN')",leadId,phone);
+ const c=one("SELECT name FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'")?one("SELECT MAX(attempt_at) at FROM prospecting_batch_items WHERE (lead_id=? OR phone=?) AND status IN ('SENDING','SENT','UNKNOWN')",leadId,phone):null;
  if(c?.at)dates.push(c.at);
  const d=one("SELECT last_contact_at at FROM contact_cadence WHERE phone=?",phone);
  if(d?.at)dates.push(d.at);
@@ -28,7 +28,7 @@ export function recontactDecision(lead,at=Date.now()){
  const thread=one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id);
  if(thread?.manual_takeover===1)return {eligible:false,reason:'HUMAN_TAKEOVER'};
  if(one("SELECT 1 FROM owner_notices WHERE lead_id=? AND kind='GROQ_HOT_LEAD' LIMIT 1",lead.id))return {eligible:false,reason:'CONFIRMED_INTEREST'};
- if(one("SELECT 1 FROM prospecting_batch_items WHERE lead_id=? AND status IN ('QUEUED','SENDING','UNKNOWN') LIMIT 1",lead.id))return {eligible:false,reason:'PENDING_OR_UNKNOWN'};
+ if(one("SELECT name FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'")&&one("SELECT 1 FROM prospecting_batch_items WHERE lead_id=? AND status IN ('QUEUED','SENDING','UNKNOWN') LIMIT 1",lead.id))return {eligible:false,reason:'PENDING_OR_UNKNOWN'};
  const last=latestOutreachAt(lead.id,lead.phone);
  if(!last)return {eligible:lead.stage==='DISCOVERED',fresh:true,reason:lead.stage==='DISCOVERED'?'NEW':'NO_CONTACT'};
  if(lead.stage==='NO_INTEREST'){
