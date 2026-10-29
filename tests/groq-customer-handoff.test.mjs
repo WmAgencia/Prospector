@@ -92,4 +92,24 @@ test('Interest-only mode silently alerts owner but never auto-responds to custom
   if(oldAlerts===undefined)delete process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED;else process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED=oldAlerts;
  }
 });
+test('Single-number live QA can reply to 7336 without enabling auto-replies for other customers',async()=>{
+ const prior={auto:process.env.AI_CONVERSATION_AUTOSEND,test:process.env.PROSPECTOR_LIVE_TEST_ENABLED,phone:process.env.PROSPECTOR_LIVE_TEST_PHONE};
+ process.env.AI_CONVERSATION_AUTOSEND='false';process.env.PROSPECTOR_LIVE_TEST_ENABLED='true';process.env.PROSPECTOR_LIVE_TEST_PHONE='5515981817336';
+ try{
+  const other=input({number:'15987771118',body:'Olá, gostaria de saber como funciona o serviço?'});
+  const tester=input({number:'15981817336',body:'Oi, gostaria de saber mais sobre a proposta.'});
+  const initial=sends.length;
+  const result=await agent.tickSalesAgent({...fake,qualify:async()=>({confirmed:false,reason:'NOT_CONCRETE'})});
+  assert.ok(result.states.includes('SENT'),'only the allowlisted test contact may get an automatic reply');
+  assert.ok(result.states.includes('REVIEW'),'non-test inbound stays operator-reviewed');
+  assert.equal(sends.length,initial+1);
+  assert.match(sends.at(-1).route,/5515981817336%40s\.whatsapp\.net/);
+  assert.equal(db.one('SELECT state FROM groq_auto_events WHERE provider_id=?',other.providerId).state,'REVIEW');
+  assert.equal(db.one('SELECT state FROM groq_auto_events WHERE provider_id=?',tester.providerId).state,'SENT');
+ }finally{
+  if(prior.auto===undefined)delete process.env.AI_CONVERSATION_AUTOSEND;else process.env.AI_CONVERSATION_AUTOSEND=prior.auto;
+  if(prior.test===undefined)delete process.env.PROSPECTOR_LIVE_TEST_ENABLED;else process.env.PROSPECTOR_LIVE_TEST_ENABLED=prior.test;
+  if(prior.phone===undefined)delete process.env.PROSPECTOR_LIVE_TEST_PHONE;else process.env.PROSPECTOR_LIVE_TEST_PHONE=prior.phone;
+ }
+});
 test.after(()=>{db.db.close();fs.rmSync(dir,{recursive:true,force:true});});
