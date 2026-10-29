@@ -49,7 +49,8 @@ test('Soft decline is eligible after three months but explicit opt-out never is'
  db.stage(a.id,'NO_INTEREST','SOFT_DECLINE');
  // Move stage audit into the past to validate policy deterministically.
  db.run("UPDATE audit SET at='2025-01-01T00:00:00.000Z' WHERE lead_id=? AND action='STAGE'",a.id);
- const refreshed=db.one('SELECT * FROM leads WHERE id=?',a.id);\n assert.equal(recontactDecision(refreshed,Date.parse('2025-03-31T23:59:00Z')).eligible,false);
+ const refreshed=db.one('SELECT * FROM leads WHERE id=?',a.id);
+ assert.equal(recontactDecision(refreshed,Date.parse('2025-03-31T23:59:00Z')).eligible,false);
  assert.equal(recontactDecision(refreshed,Date.parse('2025-04-01T00:00:00Z')).eligible,true);
  db.run('INSERT INTO suppressions(phone,reason,created_at) VALUES(?,?,?)',a.phone,'OPTOUT',db.now());
  assert.equal(recontactDecision(refreshed,Date.parse('2030-01-01T00:00:00Z')).reason,'OPT_OUT');
