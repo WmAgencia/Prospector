@@ -24,6 +24,8 @@ export const agentTools=[
  tool('list_conversations','List recent saved WhatsApp conversations with names and last message times',{limit:{type:'integer',minimum:1,maximum:35}}),
  tool('read_conversation','Read last 25 messages from a specific saved conversation',{thread_id:string('Exact conversation ID returned by list_conversations')},['thread_id']),
  tool('whatsapp_status','Check real connection status of the WA-AKG session'),
+ tool('list_whatsapp_chats','Read the connected WA-AKG chat list; most recent 20',{limit:{type:'integer',minimum:1,maximum:20}}),
+ tool('read_whatsapp_chat','Read the latest 20 messages from a WA-AKG chat by exact JID',{jid:string('Exact chat JID from list_whatsapp_chats')},['jid']),
  tool('list_meetings','Show upcoming or recent meetings',{limit:{type:'integer',minimum:1,maximum:30}}),
  tool('read_audit_log','Read recent changes and operations (without secret configuration)',{limit:{type:'integer',minimum:1,maximum:30}}),
  tool('discovery_history','Check history of niche/city lookups, errors and discovered counts',{limit:{type:'integer',minimum:1,maximum:25}}),
@@ -110,6 +112,16 @@ export async function runAgentTool(name,a={}){
   return {thread,messages:all('SELECT direction,body,type,status,at FROM messages WHERE thread_id=? ORDER BY at DESC LIMIT 25',thread.id).reverse()};
  }
  if(name==='whatsapp_status'){const wa=await waControlStatus();return {connected:wa.connected,status:wa.status,hasSession:wa.hasSession,totalSessions:wa.totalSessions};}
+ if(name==='list_whatsapp_chats'){
+  const d=await remoteChats();
+  return {connected:d.connected,items:d.items.slice(0,limit(a.limit,20,12))};
+ }
+ if(name==='read_whatsapp_chat'){
+  const jid=requiredText(a.jid,90,12);
+  if(!/^\d{10,15}@(s\.whatsapp\.net|lid|g\.us)$/.test(jid))throw Error('Identificador de conversa inválido');
+  const result=await remoteMessages(jid);
+  return {jid,messages:result.slice(-20)};
+ }
  if(name==='list_meetings')return {meetings:all("SELECT m.id,m.start_at,m.notes,m.status,l.business,l.phone,l.id AS lead_id FROM meetings m JOIN leads l ON l.id=m.lead_id ORDER BY m.start_at DESC LIMIT ?",limit(a.limit,30,15))};
  if(name==='read_audit_log')return {recent:all('SELECT at,action,lead_id,detail FROM audit ORDER BY at DESC LIMIT ?',limit(a.limit,30,15)).map(x=>({at:x.at,action:x.action,lead_id:x.lead_id,details:String(x.detail||'').slice(0,350)}))};
  if(name==='discovery_history')return {recent:all('SELECT at,query,status,found,details FROM discoveries ORDER BY at DESC LIMIT ?',limit(a.limit,25,12)).map(x=>({...x,details:String(x.details||'').slice(0,220)}))};
