@@ -13,6 +13,7 @@ function createHarness(){
  const notice={textContent:'',classList:{toggle(){}},setAttribute(){}};
  const field={value:'',focus(){},selectionStart:0,setSelectionRange(){}};
  const city={value:'',focus(){}};
+ const composer={value:'',focus(){}};
  const document={
   hidden:false,
   addEventListener(name,cb){listeners[name]=cb;},
@@ -22,6 +23,7 @@ function createHarness(){
    if(sel==='#notice')return notice;
    if(sel==='#niche')return field;
    if(sel==='#city')return city;
+   if(sel==='#chat-text')return composer;
    return null;
   }
  };
@@ -36,6 +38,7 @@ function createHarness(){
   else if(route==='/api/maps/status')data={jobs:[]};
   else if(route==='/api/whatsapp/status')data={ok:true,connected:false,status:'DISCONNECTED'};
   else if(route==='/api/prospecting/search')data={ok:true,source:'OpenStreetMap',added:2};
+  else if(route==='/api/ai/draft')data={ok:true,draft:'Claro! Posso explicar melhor?',requiresApproval:true,autoSend:false};
   else if(route==='/api/prospecting/approach-preview')data={ok:true,selected:1,greeting:'boa tarde',message:'Olá, boa tarde, como vai?',ready:0,items:[{id:leads[0].id,business:leads[0].business,phoneSuffix:'9999',status:'NEEDS_PERMISSION',authorized:false}]};
   else if(route==='/api/maps/search')data={id:'sample-id',status:'PENDING',niche:'oficinas mecânicas',city:'Sorocaba'};
   else if(route==='/api/ai/status')data={configured:false};
@@ -51,7 +54,7 @@ function createHarness(){
  const source=app.replace(/await reload\(\);\s*await refreshWa\(\);\s*$/,'');
  assert.notEqual(source,app,'expected app boot sequence was not found');
  vm.runInContext(source,context,{filename:'simple-app.js',timeout:2500});
- return {context,root,viewEl,notice,field,city,fetches,listeners};
+ return {context,root,viewEl,notice,field,city,composer,fetches,listeners};
 }
 
 test('Prospecção starts with no hidden city/niche filter and displays existing leads',async()=>{
@@ -122,4 +125,15 @@ test('Selectable leads show Maps and Instagram; explicit selection only creates 
  assert.match(h.viewEl.innerHTML,/Olá, boa tarde, como vai/);
  await h.listeners.click({target:{closest:()=>({dataset:{action:'clear-selection'}})}});
  assert.match(h.viewEl.innerHTML,/0 selecionadas/);
+});
+
+test('Groq draft button proposes a response without sending',async()=>{
+ const h=createHarness();
+ await vm.runInContext('reload()',h.context);
+ vm.runInContext("selectedThread='thread-test';messages=[{direction:'in',body:'Como funciona?'}];render()",h.context);
+ assert.match(h.viewEl.innerHTML,/data-action="suggest-groq"/);
+ await h.listeners.click({target:{closest:()=>({dataset:{action:'suggest-groq'}})}});
+ assert.equal(h.composer.value,'Claro! Posso explicar melhor?');
+ assert.ok(h.fetches.some(x=>x.route==='/api/ai/draft'&&x.method==='POST'));
+ assert.equal(h.fetches.filter(x=>x.route.includes('/api/whatsapp/reply')).length,0);
 });
