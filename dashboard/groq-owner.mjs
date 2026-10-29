@@ -2,6 +2,7 @@ import {db,one,all,run,id,now,audit} from './db.mjs';
 import {groqChat,groqCatalog} from './groq-models.mjs';
 import {agentTools,runAgentTool,claimApproval,markApproval,executeConfirmedOperation} from './groq-owner-tools.mjs';
 import {selectedWaSession,waRequest} from './waakg-control.mjs';
+import {testModeAllowed} from './groq-live-test-guard.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_owner_history(id TEXT PRIMARY KEY,event_id TEXT UNIQUE NOT NULL,role TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS groq_owner_events(provider_id TEXT PRIMARY KEY,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 const backlog=[];
@@ -65,6 +66,7 @@ async function respondToOwner(e){
  }catch(err){console.warn('[groq-owner]',err?.message?.slice(0,120)||'REQUEST_FAILED');return false;}
 }
 export function ownerReceived({jid,sessionId,text,providerId}={}){
+ if(testModeAllowed(String(jid||'').split('@')[0]))return false; // QA contact belongs only to the sales test assistant.
  if(!ownerStatus().active||sessionId!==selectedWaSession()||jid!==owner()+'@s.whatsapp.net'||typeof text!=='string'||!text.trim()||!providerId)return false;
  if(one('SELECT provider_id FROM groq_owner_events WHERE provider_id=?',providerId))return false;
  run('INSERT INTO groq_owner_events(provider_id,state,created_at,updated_at) VALUES(?,?,?,?)',providerId,'QUEUED',now(),now());
