@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
 import {ownerReceived} from "./groq-owner.mjs";
+import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
@@ -72,6 +73,7 @@ export async function receiveWebhook(req){
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid});
  ownerReceived({jid,sessionId:sid,text:content,providerId:unique});
+ if(state==="REVIEW")queueInboundTurn({providerId:unique,jid});
  return {status:200,body:{accepted:true,processed:true}};
 }
 export async function draftInbox(input){
