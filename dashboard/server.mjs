@@ -398,7 +398,25 @@ async function handler(req,res){
   if(url.pathname==='/api/internal/waakg/call-turn'){
    if(req.method!=='POST')return respond(res,405,{error:'Method not allowed'});
    if(!authorizeCallBridge(req.headers['x-wa-call-bridge-secret']))return respond(res,401,{error:'Unauthorized'});
-   try{return respond(res,200,await processCallBridge(await json(req)));}
+   try{
+    const input=await json(req);
+    if(req.headers['x-voice-stream']==='1'&&input?.event==='turn'){
+     res.writeHead(200,{'Content-Type':'application/x-ndjson; charset=utf-8',
+      'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+     try{
+      await processCallBridge(input,{onSegment:async ({replyId,pcm16k,index,total})=>{
+       if(res.destroyed||res.writableEnded)throw Error('VOICE_STREAM_DISCONNECTED');
+       res.write(JSON.stringify({type:'audio',replyId,index,total,pcm16k:pcm16k.toString('base64')})+'\n');
+      }});
+      if(!res.destroyed)res.end(JSON.stringify({type:'done',ok:true})+'\n');
+     }catch(error){
+      console.warn('[voice-stream]',String(error?.message||error).slice(0,65));
+      if(!res.destroyed)res.end(JSON.stringify({type:'error',code:'VOICE_STREAM_FAILED'})+'\n');
+     }
+     return;
+    }
+    return respond(res,200,await processCallBridge(input));
+   }
    catch(e){console.warn('[voice-call-bridge]',String(e?.message||e).slice(0,70));return respond(res,422,{error:String(e?.message||e).slice(0,100)});}
   }
   if(!protectedAccess(req,res,url.pathname))return;
