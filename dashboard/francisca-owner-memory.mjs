@@ -8,7 +8,7 @@ const nrm=x=>clean(x).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCas
 const authenticated=a=>classifyContact(a||{}).role==='OWNER'&&
   classifyContact(a||{}).ownerTools===true&&a?.jid===verifiedOwnerPhone()+'@s.whatsapp.net';
 const sensitive=s=>/(?:\b\d{8,}\b|@[\w.-]+\.[a-z]{2,}|\b(?:senha|password|token|api.?key|chave privada|cpf|cnpj|cartao|pix|credencial|codigo de acesso)\b)/i.test(s);
-const topics=[['prospectos',/\b(?:lead|prospect|abordagem|clientes)\b/],['campanhas',/\b(?:campanha|anuncio|trafego|ads)\b/],['relatorios',/\b(?:relatorio|diagnostico|metricas|desempenho)\b/],['agenda',/\b(?:reuniao|agenda|agendamento)\b/],['site',/\b(?:site|pagina|seo)\b/],['sistema',/\b(?:prospector|sistema|whatsapp)\b/]];
+const topics=[['prospectos',/\b(?:leads?|prospectos?|abordagens?|clientes?)\b/],['campanhas',/\b(?:campanhas?|anuncios?|trafego|ads)\b/],['relatorios',/\b(?:relatorio|diagnostico|metricas|desempenho)\b/],['agenda',/\b(?:reuniao|agenda|agendamento)\b/],['site',/\b(?:site|pagina|seo)\b/],['sistema',/\b(?:prospector|sistema|whatsapp)\b/]];
 const topicOf=s=>topics.find(([,re])=>re.test(nrm(s)))?.[0]||null;
 function prune(owner){
  run('DELETE FROM francisca_owner_notes WHERE expires_at<?',now());
