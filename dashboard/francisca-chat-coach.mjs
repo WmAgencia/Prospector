@@ -4,7 +4,7 @@ export const CHAT_CONTEXT_VERSION='francisca-adaptive-chat-2026-10-30';
 const norm=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const scenarios=[
  ['stop',/\b(?:pare|parar|stop|nao (?:me mande|me envie|me contate)|remova (?:meu )?(?:numero|contato)|nao quero receber mensagens)\b/,'Não continuar vendas. Respeitar recusa e supressão; isso é decisão do servidor, não do modelo.'],
- ['human',/\b(?:quero (?:falar com |um )?(?:atendente|humano|pessoa)|falar com (?:o )?(?:dono|responsavel|wesley|alguem)|me passa (?:pra|para) (?:uma )?pessoa)\b/,'A pessoa pediu alguém da equipe; encaminhe para humano sem dizer que já transferiu.'],
+ ['human',/\b(?:quero (?:falar com (?:um |uma )?|um )?(?:atendente|humano|pessoa)|falar com (?:o )?(?:dono|responsavel|wesley|alguem)|me passa (?:pra|para) (?:uma )?pessoa)\b/,'A pessoa pediu alguém da equipe; encaminhe para humano sem dizer que já transferiu.'],
  ['identity',/\b(?:quem (?:e voce|esta falando|fala)|voce e (?:uma )?(?:ia|robo)|e (?:uma )?(?:ia|robo)|com quem falo)\b/,'Diga que é Francisca, assistente virtual da Consecom, de modo simples. Não finja ser Wesley nem humana.'],
  ['proposal',/\b(?:sobre o que|do que) (?:se trata|e|seria) (?:a |essa |sua )?(?:proposta|oferta)|qual (?:a |e a )?proposta|qual seria a ideia|o que voces querem propor\b/,'Explique diretamente a proposta de presença digital, sites e soluções adequadas à empresa; não peça autorização para explicar algo que ela já perguntou.'],
  ['service',/\b(?:o que (?:a agencia|voces) (?:faz|fazem|oferece|oferecem)|quais servicos|que tipo de trabalho|voces trabalham com o que)\b/,'Apresente de forma enxuta publicidade, sites e tecnologia sem inventar serviços específicos. Pergunte sobre a necessidade só se contribuir.'],
@@ -27,7 +27,7 @@ const scenarios=[
  ['social',/\b(?:so tenho instagram|tenho (?:so |apenas )?instagram|so uso instagram|apenas uso instagram|uso (?:so |apenas )?instagram|rede(?:s)? socia(?:l|is)|ja tenho whatsapp)\b/,'Responda por complementaridade: redes sociais atraem, site organiza informações e credibilidade; sem desvalorizar redes existentes.'],
  ['already_site',/\b(?:ja tenho (?:um )?site|meu site (?:ja existe|funciona)|tenho (?:um )?site)\b/,'Não insista em vender outro site. Explore ajustes, velocidade, conteúdo, conversão ou nenhuma necessidade.'],
  ['no_site',/\b(?:nao tenho (?:um )?site|preciso de (?:um )?site|quero criar (?:um )?site)\b/,'Investigue objetivo, serviços/produtos e contatos desejados. Proponha alinhamento de escopo.'],
- ['why_me',/\b(?:por que (?:me chamou|nos chamou|a minha empresa|eu)|de onde (?:conseguiu|pegou|tirou) (?:meu numero|contato)|como encontrou)\b/,'Explique com transparência que é um contato comercial, sem afirmar origem, pesquisa ou autorização que não conste nos dados.'],
+ ['why_me',/\b(?:por que (?:voce me chamou|me chamou|nos chamou|a minha empresa|eu)|de onde (?:conseguiu|pegou|tirou) (?:meu numero|contato)|como encontrou)\b/,'Explique com transparência que é um contato comercial, sem afirmar origem, pesquisa ou autorização que não conste nos dados.'],
  ['trust',/\b(?:golpe|fraude|confiavel|seguranca|como sei|tenho medo|cuidado)\b/,'Acolha desconfiança com transparência. Não peça documentos, códigos ou pagamento nem pressione por decisão.'],
  ['competitor',/\b(?:outra agencia|concorrente|outra empresa|me ofereceram|vi mais barato)\b/,'Evite desmerecer concorrentes. Compare objetivos e escopos verificáveis, não valores imaginários.'],
  ['guarantee',/\b(?:garante|garantia de vendas|vender mais|quantos clientes|resultado garantido)\b/,'Explique que presença digital pode ajudar, mas não é garantia de faturamento ou quantidade de clientes.'],
@@ -36,7 +36,7 @@ const scenarios=[
  ['thinking',/\b(?:vou pensar|preciso avaliar|ver com (?:o|a|minha|meu)|vou analisar|mais para frente)\b/,'Deixe espaço para decisão. Responda à dúvida concreta se houver, sem gatilhos de escassez.'],
  ['approval',/\b(?:meu socio|minha socia|meu chefe|diretor|dona da empresa|decidir com)\b/,'Ajude com um resumo curto para compartilhar, sem forçar decisão individual.'],
  ['interest',/\b(?:gostei|tenho interesse|quero fazer|vamos comecar|vamos fechar|quero contratar)\b/,'Diferencie curiosidade de decisão firme. Se for comprometimento comercial, transferência humana; não feche contrato em nome de Wesley.'],
- ['decline',/\b(?:sem interesse|nao preciso|nao quero (?:site|proposta|servico)|obrigad[oa] mas nao)\b/,'Encerrar com respeito. Nunca reagir com outra oferta ou retomada insistente.'],
+ ['decline',/\b(?:sem interesse|nao tenho interesse|nao preciso|nao quero (?:site|proposta|servico)|obrigad[oa] mas nao)\b/,'Encerrar com respeito. Nunca reagir com outra oferta ou retomada insistente.'],
  ['support',/\b(?:suporte|problema no site|site caiu|nao funciona|deu erro|bug|erro 404)\b/,'Se for cliente existente, peça contexto mínimo do problema e encaminhe; não diagnostique sem dados nem prometa conserto já feito.'],
  ['complaint',/\b(?:reclamacao|decepcao|insatisfeito|nao gostei|pessimo|irritado)\b/,'Reconheça a insatisfação sem discutir, ofereça encaminhamento humano se necessário.'],
  ['audio',/\b(?:audio|mensagem de voz|falar em voz|texto em vez de audio|so texto)\b/,'Respeite preferência explícita de canal. Recusar áudio não equivale a recusar contato comercial.'],
