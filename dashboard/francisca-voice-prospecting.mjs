@@ -63,7 +63,7 @@ export function newVoiceProspectingFlow(deps={}){
   const evidence=candidateIds.length?preview({leadIds:candidateIds}):null;
   const authorized=evidence?.items?.filter(x=>x.authorized===true).map(x=>x.id)||[];
   const needsPermission=selectable.length-authorized.length;
-  pending=requestStart&&authorized.length>0&&!oversized?{niche,city,ids:authorized,expires:ttl(),total,eligible:authorized.length}:null;
+  pending=authorized.length>0&&!oversized?{niche,city,ids:authorized,expires:ttl(),total,eligible:authorized.length}:null;
   audit('FRANCISCA_VOICE_PROSPECT_SEARCH',null,{niche,city,newLeads:found,savedTotal:total,authorized:authorized.length,sourceFailed:!!failed});
   const lead='Pesquisa de '+niche+' em '+city+': '+total+' empresas cadastradas'+
    (found?' e '+found+' novas encontradas':'')+'.';
@@ -71,7 +71,8 @@ export function newVoiceProspectingFlow(deps={}){
    cached?' A fonte retornou dados de pesquisa recente.':
    partial?' A fonte tem cobertura parcial.':'';
   if(!requestStart)return lead+suffix+
-   ' Destas, '+authorized.length+' têm autorização documentada para abordagem. Quer que eu prepare a fila dos contatos autorizados?';
+   ' Destas, '+authorized.length+' têm autorização documentada para abordagem. '+
+   (authorized.length?'Posso iniciar a fila dos contatos autorizados? Diga pode iniciar.':'Não iniciei mensagens sem permissão documentada.');
   if(oversized)return lead+suffix+' Há mais de cem contatos selecionáveis; preciso dividir em lotes. Nenhuma abordagem foi iniciada.';
   if(!authorized.length)return lead+suffix+
    ' Nenhuma das '+selectable.length+' empresas selecionáveis tem consentimento de abordagem documentado. Salvei os contatos, mas não iniciei mensagens.';
