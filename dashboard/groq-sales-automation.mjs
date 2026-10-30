@@ -5,6 +5,7 @@ import {aiDraft} from './ai-groq.mjs';
 import {getSetting} from './db.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {prospectSalesContext} from './sales-policy.mjs';
+import {introductionStatus} from './prospecting-introduction.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
@@ -25,11 +26,14 @@ function approvedProspectFollowup(identity,jid){
  if(getSetting('sales_followup_enabled',true)!==true||identity.role!=='PROSPECT_APPROACHED')return false;
  const number=String(jid||'').split('@')[0];
  const lead=one("SELECT id FROM leads WHERE phone=?",number);
- return !!lead&&documentedOptIn(lead.id);
+ return !!lead&&documentedOptIn(lead.id)&&(!introductionStatus(lead.id)||introductionStatus(lead.id).stage==='CONVERSING');
 }
 export function queueInboundTurn({providerId,jid}={}){
  if(!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
  const identity=classifyContact({jid,sessionId:selectedWaSession()});
+ const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
+ const intro=lead?introductionStatus(lead.id):null;
+ if(intro&&intro.stage!=='CONVERSING')return false;
  const allowed=approvedProspectFollowup(identity,jid);
  if(!allowed&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!testModeAllowed(String(jid).split('@')[0]))return false;
  return run("INSERT OR IGNORE INTO groq_auto_events(provider_id,jid,state,at) VALUES(?,?,?,?)",providerId,jid,'PENDING',now()).changes>0;
@@ -42,6 +46,8 @@ export async function handleSalesTurn(providerId,deps={}){
  const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
  const allowTest=identity.role==='OWNER'&&identity.testSandbox===true;
  const salesFollowup=approvedProspectFollowup(identity,r.jid);
+ const intro=introductionStatus(r.lead_id);
+ if(intro&&intro.stage!=='CONVERSING')return finish('SKIPPED','INTRO_NOT_COMPLETE');
  if(identity.role==='UNVERIFIED')return finish('SKIPPED','UNVERIFIED_SENDER');
  if(identity.role==='OWNER'&&!allowTest)return finish('HANDOFF','OWNER_PRIVILEGED_CHANNEL');
  if(!salesFollowup&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
@@ -91,7 +97,7 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('HANDOFF','REQUESTED_HUMAN');
  }
  // A one-word hello never requires an external model call.
- const draft=incoming.intro?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+ const draft=incoming.intro&&!salesFollowup?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,context:history+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
