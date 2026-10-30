@@ -11,6 +11,8 @@ export function splitSpeech(text,{maxChars=175,maxSegments=5}={}){
   line=word;
  }
  if(line)parts.push(line);
+ // Edge TTS rejects one-character text; attach it to the preceding chunk.
+ if(parts.length>1&&parts.at(-1).length<2)parts[parts.length-2]+=' '+parts.pop();
  // Bound TTS calls by merging later sentences, never dropping content.
  while(parts.length>maxSegments){
   const tail=parts.pop();parts[parts.length-1]+=' '+tail;
