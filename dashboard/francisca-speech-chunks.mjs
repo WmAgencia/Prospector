@@ -27,6 +27,8 @@ export async function synthesizeSpeechChunks(text,{synthesize,onSegment,maxSegme
  for(let i=0;i<parts.length;i++){
   const segment=await promise;
   promise=i+1<parts.length?Promise.resolve().then(()=>synthesize(parts[i+1],i+1)):null;
+  // A disconnected stream may abandon lookahead; suppress unhandled rejection.
+  promise?.catch(()=>{});
   const pcm=segment?.pcm16k;
   if(!Buffer.isBuffer(pcm)||pcm.length<2||pcm.length%2||pcm.length>16000*2*65)
    throw Error('CHUNK_PCM_INVALID');
