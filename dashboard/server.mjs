@@ -1,3 +1,4 @@
+import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -381,6 +382,7 @@ async function handler(req,res){
   securityHeaders(res);
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/health'&&req.method==='GET')return respond(res,200,{status:'ok'});
+  if(await handleMcp(req,res,url,{authorized}))return;
   if(!sameOriginWrite(req,res))return;
   if(url.pathname==='/access'&&req.method==='GET')return showAccess(res);
   if(url.pathname==='/api/auth/exchange'&&req.method==='POST')return exchangeAccess(req,res);
@@ -779,6 +781,10 @@ setTimeout(checkOSMDiscovery,12000).unref();
 setTimeout(checkMapsJobs,25000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
+
+if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
+ setTimeout(()=>import('./production-verification.mjs').then(m=>m.runProductionVerification()).then(result=>console.info('[production verification]',JSON.stringify(result))).catch(()=>console.warn('[production verification]',JSON.stringify({state:'FAILED',recipientSuffix:'7336',delivery:'UNVERIFIED_ON_PHONE'}))),6000).unref();
+}
 
 if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  setTimeout(async()=>{

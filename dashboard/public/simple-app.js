@@ -261,13 +261,14 @@ document.addEventListener("click",async ev=>{
  const action=el.dataset.action;
  try{
   if(action==="toggle-existing-client"){
-   const chosen=[...remoteChats,...chats].find(x=>x.id===selectedThread);
-   if(!chosen?.leadId||chosen.contactRole==='OWNER'){n('Este contato não pode ser alterado.');return;}
+   const chosen=[...remoteChats,...(state?.threads||[])].find(x=>x.id===selectedThread);
+   const leadId=chosen?.leadId||chosen?.lead_id;
+   if(!leadId||chosen.contactRole==='OWNER'){n('Este contato não pode ser alterado.');return;}
    const already=chosen.contactRole==='EXISTING_CLIENT';
    const evidence=already?'Revisão manual do vínculo':prompt('Informe a referência do cadastro ou contrato deste cliente existente:');
    if(!evidence||(!already&&evidence.trim().length<8))return;
    if(!confirm(already?'Remover a marcação de cliente deste contato?':'Marcar este contato como cliente existente verificado?'))return;
-   await post('/api/leads/'+encodeURIComponent(chosen.leadId)+'/relationship',{existing:!already,evidence,confirm:true});
+   await post('/api/leads/'+encodeURIComponent(leadId)+'/relationship',{existing:!already,evidence,confirm:true});
    await loadChats();n(already?'Vínculo removido.':'Contato marcado como cliente existente.');
    return;
   }
@@ -304,7 +305,7 @@ document.addEventListener("click",async ev=>{
   }
   if(action==="voice-send"){
    const text=q("#chat-text")?.value.trim(),jid=selectedThread?.startsWith("wa:")?selectedThread.slice(3):"";
-   if(!/^\\d{10,15}@s\\.whatsapp\\.net$/.test(jid)){n("Abra uma conversa individual do WhatsApp para enviar áudio.");return;}
+   if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid)){n("Abra uma conversa individual do WhatsApp para enviar áudio.");return;}
    if(!text||text.length>650){n("Escreva de 2 a 650 caracteres para o áudio.");return;}
    if(!confirm("Enviar esta mensagem como ÁUDIO da Francisca para o contato atual?"))return;
    const out=await post("/api/ai/voice-send",{jid,text,requestId:crypto.randomUUID(),approve:true});

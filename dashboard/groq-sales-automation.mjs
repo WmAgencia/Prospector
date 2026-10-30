@@ -55,6 +55,16 @@ export async function handleSalesTurn(providerId,deps={}){
  if(!allowTest&&(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP)||r.phone===personalPhone()))return finish('SKIPPED','OWNER');
  if(optedOut(r.body)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT');
  if(identity.role!=='EXISTING_CLIENT'&&['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(r.stage))return finish('SKIPPED','ALREADY_HANDOFF');
+ const stale=()=>{
+  const current=one('SELECT l.stage,l.phone,t.manual_takeover,i.state inbox_state,i.body FROM leads l JOIN threads t ON t.lead_id=l.id JOIN waakg_inbox i ON i.provider_id=? WHERE l.id=?',providerId,r.lead_id);
+  if(!current||current.manual_takeover||current.inbox_state!=='REVIEW'||current.stage!==r.stage||current.phone!==r.phone||current.body!==r.body||selectedWaSession()!==r.session_id||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return 'HANDOFF';
+  if(classifyContact({jid:r.jid,sessionId:r.session_id}).role!==identity.role)return 'HANDOFF';
+  const currentIntro=introductionStatus(r.lead_id);
+  if((currentIntro&&currentIntro.stage!=='CONVERSING')||(salesFollowup&&!approvedProspectFollowup(identity,r.jid)))return 'HANDOFF';
+  if(one('SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1',r.jid)?.provider_id!==providerId)return 'SUPERSEDED';
+  return '';
+ };
+ if(stale())return finish(stale());
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
  const history=all("SELECT direction,body FROM messages WHERE thread_id=? ORDER BY at DESC LIMIT 8",r.thread_id).reverse().map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
  const qualify=deps.qualify||qualifyWithGroq;
@@ -62,6 +72,7 @@ export async function handleSalesTurn(providerId,deps={}){
  // their ordinary WhatsApp messages, regardless of how they phrase a request.
  const interest=['EXISTING_CLIENT','OWNER'].includes(identity.role)?
   {confirmed:false,reason:'NOT_A_SALES_PROSPECT'}:await qualify({text:r.body,history});
+ if(stale())return finish(stale());
  if(interest.confirmed){
   tx(()=>{
    if(one('SELECT manual_takeover FROM threads WHERE id=?',r.thread_id)?.manual_takeover!==1){
@@ -87,6 +98,7 @@ export async function handleSalesTurn(providerId,deps={}){
  if(r.inbox_state!=='REVIEW'||r.manual_takeover)return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
  const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
+ if(stale())return finish(stale());
  if(!wa.connected||!session)return finish('REVIEW','WA_OFFLINE');
  const incoming=classifyInbound(r.body);
  if(incoming.human){
@@ -103,6 +115,7 @@ export async function handleSalesTurn(providerId,deps={}){
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+
      (salesFollowup?prospectSalesContext(r):'')});
+ if(stale())return finish(stale());
  if(!draft.ok||!draft.draft){
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});
   return finish('REVIEW','GROQ_UNAVAILABLE');
@@ -136,9 +149,13 @@ export async function handleSalesTurn(providerId,deps={}){
  if(one('SELECT manual_takeover FROM threads WHERE id=?',r.thread_id)?.manual_takeover===1||
     one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
+ if(stale())return finish(stale());
  run("UPDATE groq_auto_events SET state='SENDING' WHERE provider_id=?",providerId);
  const accepted=[];
- const mark=(part)=>{acceptPart(providerId,part);accepted.push(part);};
+ const mark=(part)=>{acceptPart(providerId,part);accepted.push(part);
+  // Record acknowledged delivery before a later transport can fail.
+  addMessage({threadId:r.thread_id,providerId:'groq:'+providerId,direction:'out',body:(part==='VOICE'&&!accepted.includes('TEXT')?'[Áudio Francisca] ':'')+draft.draft,status:'sent'});
+ };
  try{
   if(routing.text){
    if(!reservePart(providerId,'TEXT'))return finish('UNKNOWN','DUPLICATE_TEXT_ATTEMPT');
@@ -148,6 +165,7 @@ export async function handleSalesTurn(providerId,deps={}){
    mark('TEXT');
   }
   if(routing.voice){
+   if(stale())return finish(accepted.length?'PARTIAL':stale(),'STATE_CHANGED');
    if(!reservePart(providerId,'VOICE'))return finish(accepted.length?'PARTIAL':'UNKNOWN','DUPLICATE_VOICE_ATTEMPT');
    const ack=await (deps.sendVoice||sendVoiceMedia)({jid:r.jid,session,bytes:voiceBytes});
    if(ack?.accepted!==true)return finish(accepted.length?'PARTIAL':'UNKNOWN','VOICE_UNCONFIRMED');
@@ -155,8 +173,7 @@ export async function handleSalesTurn(providerId,deps={}){
   }
   const prefix=routing.mode==='VOICE'?'[Áudio Francisca] ':
     routing.mode==='BOTH'?'[Texto + áudio Francisca] ':'';
-  addMessage({threadId:r.thread_id,providerId:'groq:'+providerId,direction:'out',
-    body:prefix+draft.draft,status:'sent'});
+  run('UPDATE messages SET body=? WHERE provider_id=?',prefix+draft.draft,'groq:'+providerId);
   audit('GROQ_AUTOMATED_INBOUND_REPLY',r.lead_id,{inbound:true,testOnly:allowTest,
     replyLength:draft.draft.length,deliveryMode:routing.mode,channelReason:routing.reason,contactRole:identity.role,parts:accepted});
   return finish('SENT');

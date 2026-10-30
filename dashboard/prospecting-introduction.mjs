@@ -5,6 +5,7 @@
 import {db,one,run,now,audit,addMessage} from './db.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
+import {threeMonthsAfter} from './prospecting-recontact.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 
 export const INTRO_DELAY_MS=30_000;
@@ -30,8 +31,13 @@ export function registerGreeting({leadId,greetingId,sessionId}={}){
  if(!lead||!lead.phone||lead.contact_permission!==1||!documentedOptIn(lead.id))return false;
  if(!sessionId||!greetingId)return false;
  const timestamp=now();
- return run("INSERT OR IGNORE INTO prospecting_introductions(lead_id,phone,session_id,greeting_id,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-  leadId,lead.phone,sessionId,greetingId,'GREETING_SENT',timestamp,timestamp).changes===1;
+ const previous=introductionStatus(leadId);
+ if(previous){
+  const eligibleAt=threeMonthsAfter(previous.created_at);
+  if(previous.greeting_id===greetingId||['SENDING','UNKNOWN'].includes(previous.stage)||!eligibleAt||Date.parse(eligibleAt)>Date.parse(timestamp))return false;
+ }
+ return run("INSERT OR IGNORE INTO prospecting_introductions(lead_id,phone,session_id,greeting_id,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(lead_id) DO UPDATE SET phone=excluded.phone,session_id=excluded.session_id,greeting_id=excluded.greeting_id,stage=excluded.stage,first_reply_id=NULL,first_reply_at=NULL,due_at=NULL,attempt_at=NULL,sent_at=NULL,reason=NULL,created_at=excluded.created_at,updated_at=excluded.updated_at WHERE prospecting_introductions.greeting_id<>excluded.greeting_id AND prospecting_introductions.stage NOT IN ('SENDING','UNKNOWN') AND prospecting_introductions.created_at=?",
+  leadId,lead.phone,sessionId,greetingId,'GREETING_SENT',timestamp,timestamp,previous?.created_at||'').changes===1;
 }
 export function cancelIntroduction(leadId,reason='CONTACT_DECLINED'){
  const row=introductionStatus(leadId);
@@ -73,18 +79,26 @@ export async function tickIntroductions(deps={}){
   const at=currentTime();
   const item=one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString());
   if(!item)return {state:'IDLE'};
+  const eligible=()=>{
+  const current=introductionStatus(item.lead_id);
+  const lead=one('SELECT stage,contact_permission,phone FROM leads WHERE id=?',item.lead_id);
+  const takeover=one('SELECT manual_takeover FROM threads WHERE lead_id=?',item.lead_id);
+  if(!current||current.greeting_id!==item.greeting_id||current.stage!=='WAITING'||!lead||lead.phone!==item.phone)return false;
   const identified=classifyContact({jid:item.phone+'@s.whatsapp.net',sessionId:item.session_id});
   const blocked=one('SELECT phone FROM suppressions WHERE phone=?',item.phone);
-  const extra=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id<>? LIMIT 1",
-   item.lead_id,'prospect-queue:'+item.greeting_id);
-  if(item.contact_permission!==1||!documentedOptIn(item.lead_id)||blocked||item.manual_takeover===1||
-    ['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(item.lead_stage)||extra||
+  const extra=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id<>? AND m.rowid>COALESCE((SELECT rowid FROM messages WHERE provider_id=?),0) AND m.at>=? LIMIT 1",
+   item.lead_id,'prospect-queue:'+item.greeting_id,'prospect-queue:'+item.greeting_id,item.created_at);
+  if(lead.contact_permission!==1||!documentedOptIn(item.lead_id)||blocked||takeover?.manual_takeover===1||
+    ['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)||extra||
     identified.role!=='PROSPECT_APPROACHED'||session()!==item.session_id){
-   cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');
-   return {state:'CANCELLED'};
+   return false;
   }
+  return true;
+  };
+  if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
   const wa=await status();
   if(!wa.connected)return {state:'OFFLINE'};
+  if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
   // Reserve before attempting transport; an uncertain result must not be resent.
   if(!run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND stage='WAITING' AND due_at<=?",
    new Date(at).toISOString(),now(),item.lead_id,new Date(at).toISOString()).changes)return {state:'BUSY'};

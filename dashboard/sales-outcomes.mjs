@@ -16,10 +16,19 @@ export function recordSalesOutcome({leadId,status,providerId='',evidence='',sour
  if(!allowed.has(status))throw Error('INVALID_SALES_OUTCOME');
  const lead=one('SELECT id,business,phone,stage FROM leads WHERE id=?',String(leadId||''));
  if(!lead?.phone)return {ok:false,reason:'LEAD_NOT_FOUND'};
- const prior=one('SELECT status FROM sales_outcomes WHERE lead_id=?',lead.id);
- // Terminal refusal and opt-out always win; never re-open them automatically.
- if(prior&&['NO_INTEREST','OPT_OUT','CLOSED_WON'].includes(prior.status)&&prior.status!==status)
-  return {ok:false,reason:'TERMINAL_OUTCOME'};
+ const prior=one('SELECT status,updated_at FROM sales_outcomes WHERE lead_id=?',lead.id);
+ // Opt-out supersedes every commercial result. A sale cannot be downgraded.
+ if(prior&&prior.status!==status&&status!=='OPT_OUT'){
+  if(['OPT_OUT','CLOSED_WON'].includes(prior.status))return {ok:false,reason:'TERMINAL_OUTCOME'};
+  if(prior.status==='NO_INTEREST'){
+   const inbound=providerId&&one("SELECT m.at FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='in'",lead.id,providerId);
+   const renewed=['INTERESTED','CLOSED_WON','HUMAN_REVIEW'].includes(status)&&['CONVERSING','INTERESTED'].includes(lead.stage)&&
+    inbound&&Date.parse(inbound.at)>Date.parse(prior.updated_at)&&!one('SELECT phone FROM suppressions WHERE phone=?',lead.phone);
+   const manualSale=status==='CLOSED_WON'&&source==='PRODUCTION'&&lead.stage==='CLOSED_WON'&&
+    !one('SELECT phone FROM suppressions WHERE phone=?',lead.phone);
+   if(!renewed&&!manualSale)return {ok:false,reason:'TERMINAL_OUTCOME'};
+  }
+ }
  if(prior?.status===status)return {ok:true,duplicate:true,status};
  const note=plain(evidence).slice(0,230);
  const summary=note||status.replaceAll('_',' ');

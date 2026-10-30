@@ -1,7 +1,8 @@
 // Consent-aware, side-effect-free previews for manually selected businesses.
 // Initial greeting is deterministic by Brazil local time; Groq can enrich replies
 // after the operator supplies an approved playbook and example conversations.
-import {one,all} from './db.mjs';
+import {one} from './db.mjs';
+import {recontactDecision} from './prospecting-recontact.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {greetingForProspect} from './prospecting-introduction.mjs';
 
@@ -19,10 +20,9 @@ export function prepareApproaches(input={}){
  const message='Olá, [nome da empresa ou pessoa], tudo bem?';
  const items=[];
  for(const leadId of ids){
-  const row=one("SELECT l.id,l.name,l.business,l.phone,l.contact_permission,l.stage,EXISTS(SELECT 1 FROM initial_contacts WHERE lead_id=l.id) approached, EXISTS(SELECT 1 FROM threads t JOIN messages m ON m.thread_id=t.id WHERE t.lead_id=l.id AND m.direction='out') sent,EXISTS(SELECT 1 FROM suppressions WHERE phone=l.phone) suppressed FROM leads l WHERE l.id=?",leadId);
+  const row=one("SELECT l.id,l.name,l.business,l.phone,l.contact_permission,l.stage,EXISTS(SELECT 1 FROM suppressions WHERE phone=l.phone) suppressed FROM leads l WHERE l.id=?",leadId);
   if(!row){items.push({id:leadId,status:'MISSING',eligible:false});continue;}
-  const contacted=row.approached||row.sent||row.stage!=='DISCOVERED';
-  const eligible=!!row.phone&&!contacted&&!row.suppressed;
+  const eligible=!!row.phone&&!row.suppressed&&recontactDecision(row).eligible;
   const authorized=eligible&&row.contact_permission===1&&documentedOptIn(row.id);
   items.push({id:row.id,business:row.business,phoneSuffix:row.phone?row.phone.slice(-4):null,message:eligible?greetingForProspect(row):null,eligible,authorized,
    // A manual one-to-one link does not call the WA-AKG sender. Only the human
