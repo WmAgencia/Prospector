@@ -33,7 +33,7 @@ export async function selectGroq(task='conversation'){
 }
 export async function groqChat({task='conversation',messages,tools,maxTokens=700}){
  const model=await selectGroq(task);
- const payload={model,messages,temperature:task==='actions'?0.15:0.45,max_completion_tokens:maxTokens};
+ const payload={model,messages,temperature:task==='actions'?0.15:task==='voice'?0.57:0.45,max_completion_tokens:maxTokens};
  if(task==='voice'&&model.startsWith('openai/gpt-oss-'))payload.reasoning_effort='low';
  if(Array.isArray(tools)&&tools.length){payload.tools=tools;payload.tool_choice='auto';payload.parallel_tool_calls=false;}
  else if(task==='voice')payload.tool_choice='none';
