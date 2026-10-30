@@ -140,6 +140,12 @@ test('Voice user can check the last message receipt later without sending again'
  // The regular send path cannot assert receipt, but the read-only follow-up can.
  assert.match(report,/comprovante de entrega|confirm|entrega/);
  assert.equal(sent,1);
+ const {lastVoiceDirectDelivery}=await import('../dashboard/francisca-owner-voice-messages.mjs');
+ const delivered=await lastVoiceDirectDelivery(owner,{request:async()=>({status:true,data:[{
+  keyId:id,remoteJid:phone+'@s.whatsapp.net',fromMe:true,status:'DELIVERED'
+ }]})});
+ assert.match(delivered,/confirma a entrega/);
+ assert.equal(sent,1);
 });
 
 test.after(async()=>{
