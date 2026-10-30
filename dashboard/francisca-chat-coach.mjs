@@ -111,7 +111,9 @@ const normOpening=s=>norm(s).replace(/^[.,!:\s]+/,'').split(/[.!?]/)[0].slice(0,
 export function refineChatReply(text,{state={},incoming=''}={}){
  let output=answerText(text);
  if(!output)return '';
- if(state.hasAssistantReply){
+ // If the user explicitly requests a sample opening, preserve its literal greeting.
+ const literalOpeningRequest=/(?:roteiro|mensagem inicial|mensagem de boas vindas|escrev|redig|como cumpriment|como saud|frase de abertura|texto de abertura)/.test(norm(incoming));
+ if(state.hasAssistantReply&&!literalOpeningRequest){
   output=output.replace(greeting,'').trim();
   // Let Francisca identify herself once when taking over after a human introduction.
   if(state.alreadyIntroduced&&!state.scenarios?.includes('identity'))output=output.replace(identityIntro,'').trim();
