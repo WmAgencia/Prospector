@@ -103,7 +103,7 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
    return pending.text?preview():'Qual é a mensagem que você quer enviar?';
   }
   const name=nameHint||recipientNameInVoice(text,{standalone:true});
-  if(!name)return 'Qual é o nome exato do contato salvo ou o número completo com DDD?';
+  if(!name)return 'Qual é o telefone completo com DDD ou o nome exato do contato salvo?';
   const lookup=await lookupContact(name,{sessionId:actor.sessionId});
   if(lookup.state==='MATCH'){
    pending.phone=lookup.number;pending.contactName=lookup.name;pending.choices=null;
