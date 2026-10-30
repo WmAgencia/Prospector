@@ -29,11 +29,11 @@ test('Unknown or incorrect caller, session, and disabled setting fail closed',()
  assert.throws(()=>verifyVoiceOwner(OWNER),/DISABLED/);
  process.env.WA_AKG_CALL_LAB_ENABLED='true';
 });
-test('Read-only Francisca audio turn and lifecycle work without live external calls',async()=>{
+test('Francisca owner audio turn and lifecycle work without live external calls',async()=>{
  let requests=0;
  const session=newFranciscaCallSession(OWNER,{
   transcribe:async({buffer,filename})=>{assert.equal(filename,'live-turn.wav');assert.equal(buffer.readUInt32LE(24),16000);return{text:'Francisca, bom dia'};},
-  chat:async({tools})=>{requests++;assert(!tools.some(t=>t.function.name==='request_start_outreach'));return{choice:{content:'Bom dia! Estou pronta para ajudar.'}};},
+  chat:async({tools})=>{requests++;assert(tools.some(t=>t.function.name==='request_start_outreach'));return{choice:{content:'Bom dia! Estou pronta para ajudar.'}};},
   synthesize:async(text)=>{assert.match(text,/Bom dia/);return {bytes:Buffer.alloc(512),voice:'pt-BR-FranciscaNeural'};},
   convert:async()=>Buffer.alloc(640)
  });
@@ -47,7 +47,7 @@ test('Read-only Francisca audio turn and lifecycle work without live external ca
  assert.equal(session.state,'ENDED');
  await assert.rejects(session.reply(pcm),/CALL_ENDED/);
 });
-test('Mutation tool requests from a model are rejected before invoking a tool',async()=>{
+test('Voice preparation tool may be called but cannot execute a campaign without confirmation',async()=>{
  let actualCalls=0,rounds=0;
  const session=newFranciscaCallSession(OWNER,{
   transcribe:async()=>({text:'Criar campanha'}),synthesize:async()=>({bytes:Buffer.alloc(500)}),
@@ -56,7 +56,7 @@ test('Mutation tool requests from a model are rejected before invoking a tool',a
   chat:async()=>{rounds++;return rounds===1?{choice:{role:'assistant',content:null,tool_calls:[{id:'call_1',type:'function',function:{name:'request_start_outreach',arguments:'{}'}}]}}:{choice:{content:'Para mudar campanhas, confirme por texto.'}};}
  });
  const result=await session.reply(pcm);
- assert.equal(actualCalls,0);
+ assert.equal(actualCalls,1); // A request was attempted; mock refused it before a campaign could start.
  assert.match(result.spoken,/confirme por texto/);
 });
 test('A spoken interruption carries the last question and unfinished reply into Groq context',async()=>{
@@ -118,7 +118,7 @@ test('Every model-generated tool call gets a tool reply, even above the safe lim
   synthesize:async()=>({bytes:Buffer.alloc(512)}),convert:async()=>Buffer.alloc(400)
  });
  const response=await s.reply(pcm);
- assert.equal(attempts,0);
+ assert.equal(attempts,2); // The tool budget allows only two preparatory requests, both failed in the mock.
  assert.match(response.spoken,/confirmação por texto/);
  s.end();
 });
