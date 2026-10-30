@@ -4,6 +4,7 @@
 import {jidDecode, jidEncode, type BinaryNode} from "@whiskeysockets/baileys";
 import {NativeCallManager,createCallAck} from "./voice-protocol/src/index.js";
 import {TurnDetector,PlaybackGate} from "./turn-taking.mjs";
+import {VoiceAudioConditioner} from "./audio-conditioning.mjs";
 import {InterruptionLedger,BackchannelPolicy,ThinkingCuePolicy} from "./conversation-runtime.mjs";
 import type {WASocket} from "@whiskeysockets/baileys";
 
@@ -16,7 +17,7 @@ const quiet=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));
 type Session={
  callId:string;from:string;startedAt:number;ended:boolean;greeted:boolean;
  replying:boolean;playback:boolean;pending:Buffer|null;
- detector:TurnDetector;gate:PlaybackGate;
+ detector:TurnDetector;gate:PlaybackGate;conditioner:VoiceAudioConditioner;
  ledger:InterruptionLedger;backchannel:BackchannelPolicy;thinking:ThinkingCuePolicy;
  ackBusy:boolean;cuePlaying:boolean;cueDirty:boolean;
 };
@@ -50,6 +51,45 @@ async function bridge(call:Session,sessionId:string,event:"greeting"|"turn"|"end
  if(!answer.ok)throw Error("BRIDGE_NOT_OK");
  return answer;
 }
+
+async function streamBridge(call:Session,sessionId:string,pcm:Buffer,metadata:Record<string,unknown>|undefined,
+ onAudio:(packet:{replyId?:string,pcm16k:string,index:number,total:number})=>Promise<void>){
+ const data={callId:call.callId,jid:owner+"@s.whatsapp.net",sessionId,event:"turn",
+  pcm16k:pcm.toString("base64"),...(metadata||{})};
+ const res=await fetch(BRIDGE_URL,{method:"POST",headers:{"content-type":"application/json",
+  "x-wa-call-bridge-secret":SECRET,"x-voice-stream":"1"},
+  body:JSON.stringify(data),signal:AbortSignal.timeout(95000)});
+ if(!res.ok)throw Error("VOICE_STREAM_HTTP_"+res.status);
+ if(!String(res.headers.get("content-type")||"").includes("application/x-ndjson")){
+  // Backward-compatible rolling deploy: older Prospector responds with JSON.
+  const legacy=await res.json() as {ok:boolean,pcm16k?:string,replyId?:string};
+  if(!legacy.ok||!legacy.pcm16k)throw Error("VOICE_STREAM_FALLBACK_INVALID");
+  await onAudio({replyId:legacy.replyId,pcm16k:legacy.pcm16k,index:0,total:1});
+  return;
+ }
+ if(!res.body)throw Error("VOICE_STREAM_NO_BODY");
+ const decoder=new TextDecoder();let pending="",finished=false,segments=0;
+ for await(const bytes of res.body){
+  pending+=decoder.decode(bytes,{stream:true});
+  if(pending.length>3_200_000)throw Error("VOICE_STREAM_FRAME_OVERSIZE");
+  let index:number;
+  while((index=pending.indexOf("\n"))>=0){
+   const line=pending.slice(0,index).trim();pending=pending.slice(index+1);
+   if(!line)continue;
+   const packet=JSON.parse(line) as {type?:string,replyId?:string,pcm16k?:string,index?:number,total?:number,ok?:boolean};
+   if(packet.type==="error")throw Error("VOICE_STREAM_PROVIDER_FAILED");
+   if(packet.type==="done"){finished=packet.ok===true;continue;}
+   if(packet.type!=="audio"||typeof packet.pcm16k!=="string"||packet.pcm16k.length>3_000_000||
+     !/^[A-Za-z0-9+/]+={0,2}$/.test(packet.pcm16k))throw Error("VOICE_STREAM_PACKET_INVALID");
+   segments++;
+   if(segments>8)throw Error("VOICE_STREAM_TOO_MANY_SEGMENTS");
+   await onAudio({replyId:packet.replyId,pcm16k:packet.pcm16k,
+    index:Number(packet.index)||0,total:Number(packet.total)||1});
+  }
+ }
+ if(!finished||segments===0)throw Error("VOICE_STREAM_INCOMPLETE");
+}
+
 function encodePcm(frames:Float32Array[]):Buffer{
  const length=frames.reduce((x,f)=>x+f.length,0);
  const out=Buffer.alloc(length*2);let offset=0;
@@ -60,7 +100,7 @@ function encodePcm(frames:Float32Array[]):Buffer{
  }
  return out;
 }
-async function renderReply(manager:NativeCallManager,call:Session,audio64:string,generation:number){
+async function renderReply(manager:NativeCallManager,call:Session,audio64:string,generation:number,priorMs=0){
  if(!audio64||audio64.length>16000*2*65*1.4)throw Error("VOICE_REPLY_TOO_LARGE");
  const pcm=Buffer.from(audio64,"base64");
  if(!pcm.length||pcm.length%2)throw Error("VOICE_REPLY_INVALID");
@@ -72,8 +112,9 @@ async function renderReply(manager:NativeCallManager,call:Session,audio64:string
    for(let i=0;i<frame.length;i++)frame[i]=buf.readInt16LE(i*2)/32768;
    // The AudioEngine's external-mode circular playback queue is reset on barge-in.
    if(!call.gate.valid(generation))break;
+   call.conditioner.rememberPlayback(frame);
    manager.feedLiveAudio(frame);
-   call.ledger.progress((offset+buf.length)/32);
+   call.ledger.progress(priorMs+(offset+buf.length)/32);
    await quiet(20);
   }
  }finally{
@@ -90,7 +131,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
  let call:Session|null=null;
  function same(id:string){return call&&!call.ended&&call.callId===id?call:null;}
  const reset=()=>{
-  if(call){call.ended=true;call.pending=null;call.gate.cancel();call.detector.reset();call.ledger.clear();call.cuePlaying=false;}
+  if(call){call.ended=true;call.pending=null;call.gate.cancel();call.detector.reset();call.ledger.clear();call.conditioner.reset();call.cuePlaying=false;}
   call=null;
  };
  async function sendTurn(active:Session,event:"turn"|"greeting",pcm?:Buffer){
@@ -104,6 +145,25 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   thinkingTimer?.unref?.();
   const interruption=event==="turn"?active.ledger.take():null;
   try{
+   if(event==="turn"&&pcm){
+    let audioMs=0,first=true;
+    await streamBridge(active,sessionId,pcm,interruption?{interruption}:undefined,async r=>{
+     if(active.ended||!same(active.callId)||!active.gate.valid(generation))return;
+     if(first){
+      first=false;
+      if(r.replyId)active.ledger.begin(r.replyId,60000);
+      if(active.cueDirty){active.cuePlaying=false;active.cueDirty=false;manager.setExternalAudioMode(true);}
+      console.info("[voice-calls] FIRST_AUDIO_READY","ms",Date.now()-started);
+     }
+     await renderReply(manager,active,r.pcm16k,generation,audioMs);
+     audioMs+=Math.round(Buffer.from(r.pcm16k,"base64").length/32);
+    });
+    if(active.gate.valid(generation)&&!first){
+     active.ledger.completed();
+     console.info("[voice-calls] FRANCISCA_STREAM_FINISHED","ms",Date.now()-started);
+    }
+    return;
+   }
    const r=await bridge(active,sessionId,event,pcm,interruption?{interruption}:undefined);
    if(active.ended||!same(active.callId)||!r.pcm16k)return;
    const durationMs=Math.min(60000,Math.round(Buffer.from(r.pcm16k,"base64").length/32));
@@ -199,7 +259,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   if(call&&!call.ended){console.info("[voice-calls] BUSY");return;}
   if(c.isVideo||c.mediaType==="video"){console.info("[voice-calls] VIDEO_NOT_SUPPORTED");return;}
   const incoming:Session={callId:c.callId,from:pn,startedAt:Date.now(),ended:false,greeted:false,
-   replying:false,playback:false,pending:null,detector:new TurnDetector({stopSilenceMs:660,bargeVoiceMs:320,maxTurnMs:13000}),gate:new PlaybackGate(),
+   replying:false,playback:false,pending:null,detector:new TurnDetector({stopSilenceMs:660,bargeVoiceMs:320,maxTurnMs:13000}),gate:new PlaybackGate(),conditioner:new VoiceAudioConditioner(),
    ledger:new InterruptionLedger(),backchannel:new BackchannelPolicy(),
    thinking:new ThinkingCuePolicy(),ackBusy:false,cuePlaying:false,cueDirty:false};
   call=incoming;
@@ -229,7 +289,8 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   const active=call;
   if(!active||active.ended||!audio.length)return;
   const mode=(active.playback||active.cuePlaying)?"speaking":active.replying?"thinking":"listening";
-  const result=active.detector.push(audio,mode);
+  const conditioned=active.conditioner.process(audio,{playing:mode==='speaking'});
+  const result=active.detector.push(conditioned.frame,mode);
   if(result.type==="interrupt"){
    active.ledger.interrupt();
    active.gate.cancel(); // Only sound stops; previous question and answer draft are retained.
