@@ -21,7 +21,8 @@ export function classifyInbound(text){
  if(/\b(?:contratar|orcamento|proposta|site|pagina|preco|valor|marketing|servico|agendar|reuniao)\b/.test(t))return {category:'commercial',intro:false,human:false,label:'Consulta comercial'};
  return {category:'other',intro:false,human:false,label:'Assunto a esclarecer'};
 }
-export const firstGreeting=()=> 'Olá! Sou o assistente virtual da Consecom. Como posso ajudar?';
+// Used only for the very first inbound greeting; later turns use conversational history.
+export const firstGreeting=()=> 'Olá! Aqui é a Francisca, assistente virtual da Consecom. Como posso ajudar?';
 export function queueInboundBrief({leadId,phone,body,source='WHATSAPP_INBOUND'}={}){
  const dest=personalPhone();
  if(process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true'||!dest||!leadId)return false;
