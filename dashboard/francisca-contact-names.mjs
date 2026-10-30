@@ -22,7 +22,7 @@ export function recipientNameInVoice(text,{standalone=false}={}){
   name=clean(match?.[1]);
  }
  if(!name||name.length<2||name.length>80||/\d{3,}/.test(name)||
-  /^(?:numero(?:\s+informado)?|telefone(?:\s+informado)?|celular|ddd|contato(?:\s+informado)?|pessoa|uma pessoa|um contato|alguem|todos|todos os|grupo)$/i.test(name))return null;
+  /^(?:(?:o|a)\s+)?(?:numero(?:\s+informado)?|telefone(?:\s+informado)?|celular|ddd|contato(?:\s+informado)?|pessoa|uma pessoa|um contato|alguem|todos|todos os|grupo)$/i.test(name))return null;
  if(!/[\p{L}]/u.test(name))return null;
  return name;
 }
