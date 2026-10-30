@@ -20,6 +20,30 @@ import {voiceReplyPlan,voiceStyleInstruction,polishVoiceReply} from './francisca
 import {randomUUID} from 'node:crypto';
 
 const execFile=promisify(execFileCb);
+// Keep a few high-confidence operational counts available even if the model
+// or Groq function calling is temporarily unavailable. Never guess DB values.
+const asksApproachedCount=x=>{
+ const t=String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+ return /(?:quantos|quantas|numero|total|quantidade|qtd|me diz|me fala|sabe quantos)/.test(t)&&
+  /(?:abordad|contatad|contactad|primeiro contato|mensagens enviadas|prospectos abordados)/.test(t);
+};
+function selectVoiceTools(tools,spoken){
+ const norm=String(spoken||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+ let wants;
+ if(/\b(?:envi|manda|mande|mensagem|whatsapp|numero|telefone|recado)\b/.test(norm))
+  wants=['prepare_direct_message','prepare_message','search_leads','list_whatsapp_chats','read_whatsapp_chat'];
+ else if(/(?:lead|abord|prospect|contat|empresa|cliente)/.test(norm))
+  wants=['system_status','list_prospects','search_leads','get_lead','list_conversations','read_conversation'];
+ else if(/(?:campanha|fila|abordagem|automacao|paus|retomar)/.test(norm))
+  wants=['system_status','read_outreach_queue','list_workflows','request_start_outreach','cancel_outreach','request_select_workflow','request_change_setting'];
+ else if(/(?:reuniao|agenda|encontro)/.test(norm))
+  wants=['list_meetings','create_meeting','request_cancel_meeting','search_leads'];
+ else if(/(?:relatorio|diagnost|sistema|status|situacao)/.test(norm))
+  wants=['system_status','system_diagnostics','read_outreach_queue','read_owner_settings','discovery_history'];
+ else wants=['system_status','list_capabilities','search_leads','list_conversations','prepare_direct_message'];
+ const allowed=new Set(wants);
+ return tools.filter(t=>allowed.has(t.function.name));
+}
 export const VOICE_RATE=16000;
 const MAX_INPUT=VOICE_RATE*2*14,MIN_INPUT=VOICE_RATE*2/2;
 // Read tools run during the call. Write tools only prepare an approval code;
@@ -94,13 +118,17 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const heard=String(recognized.text||'').trim().slice(0,650);
     if(heard.length<2)throw Error('CALL_TRANSCRIPTION_EMPTY');
     const verified=verifyVoiceOwner({jid,sessionId});
-    const availableTools=voiceToolsForOwner(agentTools,verified.ownerTools);
+    const availableTools=selectVoiceTools(voiceToolsForOwner(agentTools,verified.ownerTools),heard);
+    console.info('[francisca-voice-owner-access]',JSON.stringify({
+     ownerVerified:verified.ownerTools===true,toolsAvailable:availableTools.length,
+     callMode:'OWNER',stagedActionsOnly:true
+    }));
     if(interruption)context.noteInterruption(interruption);
     // Voice sandbox blocks commands, but a verified owner may inspect safe,
     // aggregate operational facts. Preload these before calling Groq so a
     // malformed model tool call cannot make the reply completely ungrounded.
     let operationalBriefing=null;
-    if(/prospector|(?:situação|status|diagnóstico|pendências|falta implementar|verificar.*sistema|como está o sistema)/i.test(heard)){
+    if(asksApproachedCount(heard)||/prospector|(?:situação|status|diagnóstico|pendências|falta implementar|verificar.*sistema|como está o sistema)/i.test(heard)){
      try{
       operationalBriefing=await (deps.readOperationalBriefing||readVoiceOperationalBriefing)({jid,sessionId});
       console.info('[francisca-voice-briefing]',JSON.stringify({
@@ -114,6 +142,12 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     }
     const spokenHistory=context.messages();
     const replyPlan=voiceReplyPlan(heard,spokenHistory);
+    // Verified owner requests about approach totals are grounded directly
+    // by SQLite and do not depend on Groq picking the correct tool.
+    const directCount=asksApproachedCount(heard)&&operationalBriefing?.stats&&
+     Number.isInteger(operationalBriefing.stats.approached)?
+      'Até este momento, o Prospector registra '+operationalBriefing.stats.approached+
+      ' leads abordados, de '+operationalBriefing.stats.leads+' cadastrados. Esse total considera abordagens confirmadas, não mensagens apenas preparadas.':null;
     const messages=[
      {role:'system',content:voiceStyleInstruction({heard,history:spokenHistory})},
      {role:'system',content:OWNER_PERSONA+'\nLIGAÇÃO DO PROPRIETÁRIO: você pode consultar dados reais e PREPARAR tarefas. Para qualquer envio ou mudança, apresente código de confirmação por TEXTO. Não há acesso irrestrito ao servidor ou segredos.'},
@@ -127,7 +161,8 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const chat=deps.chat||groqChat,readTool=deps.readTool||runAgentTool;
     let spoken='';
     try{
-     let result=await chat({task:'voice',messages,tools:availableTools,maxTokens:Math.max(350,replyPlan.maxTokens)});
+     let result=directCount?{choice:{content:directCount}}:
+      await chat({task:availableTools.length?'actions':'voice',messages,tools:availableTools,maxTokens:Math.max(550,replyPlan.maxTokens)});
      for(let n=0;n<2&&result.choice?.tool_calls?.length;n++){
       const calls=result.choice.tool_calls;
       messages.push(result.choice);
@@ -152,7 +187,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
        }catch(e){output={error:String(e.message).slice(0,90)};}
        messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(output).slice(0,3000)});
       }
-      result=await chat({task:'voice',messages,tools:availableTools,maxTokens:Math.max(350,replyPlan.maxTokens)});
+      result=await chat({task:availableTools.length?'actions':'voice',messages,tools:availableTools,maxTokens:Math.max(550,replyPlan.maxTokens)});
      }
      spoken=polishVoiceReply(result.choice?.content||'',{history:spokenHistory,heard,maxChars:replyPlan.maxChars});
      if(spoken.length<2)throw Error('VOICE_LLM_EMPTY');
@@ -160,10 +195,12 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
      // The caller must NEVER get prolonged silence when a provider rejects
      // a request. No system state is invented and no actions are attempted.
      console.warn('[francisca-call-recovery]',JSON.stringify({reason:String(e?.message||e).slice(0,55)}));
-     const wantsStatus=/prospector|sistema|campanha|pend[eê]ncia|implementar|relat[oó]rio|diagn[oó]stico/i.test(heard);
-     spoken=wantsStatus
-      ?'Entendi o que você pediu, mas não consegui consultar os dados do Prospector agora. Posso tentar novamente?'
-      :'Entendi. Tive uma dificuldade para processar a resposta. Pode repetir a pergunta?';
+     const wantsStatus=/prospector|sistema|campanha|pend[eê]ncia|implementar|relat[oó]rio|diagn[oó]stico|lead|abordado/i.test(heard);
+     spoken=asksApproachedCount(heard)&&operationalBriefing?.stats&&Number.isInteger(operationalBriefing.stats.approached)
+      ? 'O sistema confirma '+operationalBriefing.stats.approached+' leads abordados, de '+operationalBriefing.stats.leads+' cadastrados.'
+      :wantsStatus
+      ?'Recebi sua pergunta, mas a consulta ao sistema não terminou corretamente. Não vou inventar os números nem afirmar que fiz alguma ação.'
+      :'Recebi o que você disse, mas o serviço de respostas está instável neste momento. Nenhuma ação foi executada.';
     }
     const llmMs=Date.now()-began-sttMs;
     spoken=checkVoiceText(spoken);
