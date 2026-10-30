@@ -61,6 +61,22 @@ test('Playback gate revokes outstanding asynchronous audio on interruption and h
  p.cancel();
  assert(!p.valid(b));
 });
+
+test('Live-call voice detector tolerates a thinking pause and requires sustained barge-in',()=>{
+ const d=new TurnDetector({stopSilenceMs:660,bargeVoiceMs:320,maxTurnMs:13000});
+ assert.deepEqual(send(d,.055,25),[]);
+ assert.deepEqual(send(d,.002,29),[]); // 580 ms: conversational pause, not end of turn
+ assert.deepEqual(send(d,.06,10),[]); // caller continues same thought
+ const events=send(d,.001,36);
+ assert.equal(events.length,1);
+ assert.equal(events[0].type,'turn');
+ assert(events[0].voiceMs>=650);
+ const second=new TurnDetector({stopSilenceMs:660,bargeVoiceMs:320});
+ assert.deepEqual(send(second,.08,10,'speaking'),[]); // 200ms echo not enough to interrupt
+ assert.deepEqual(send(second,.002,10,'speaking'),[]);
+ assert.equal(send(second,.08,18,'speaking').filter(x=>x.type==='interrupt').length,1);
+});
+
 test('Malformed samples and noisy silence do not trigger a turn or interruption',()=>{
  const d=new TurnDetector();
  assert.equal(d.push(Buffer.alloc(20)).type,'none');

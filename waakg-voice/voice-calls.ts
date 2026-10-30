@@ -199,7 +199,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   if(call&&!call.ended){console.info("[voice-calls] BUSY");return;}
   if(c.isVideo||c.mediaType==="video"){console.info("[voice-calls] VIDEO_NOT_SUPPORTED");return;}
   const incoming:Session={callId:c.callId,from:pn,startedAt:Date.now(),ended:false,greeted:false,
-   replying:false,playback:false,pending:null,detector:new TurnDetector(),gate:new PlaybackGate(),
+   replying:false,playback:false,pending:null,detector:new TurnDetector({stopSilenceMs:660,bargeVoiceMs:320,maxTurnMs:13000}),gate:new PlaybackGate(),
    ledger:new InterruptionLedger(),backchannel:new BackchannelPolicy(),
    thinking:new ThinkingCuePolicy(),ackBusy:false,cuePlaying:false,cueDirty:false};
   call=incoming;
