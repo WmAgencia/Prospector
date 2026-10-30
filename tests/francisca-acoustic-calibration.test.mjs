@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {TurnDetector,FRANCISCA_LIVE_TURN_CONFIG} from '../waakg-voice/turn-taking.mjs';
 import {VoiceAudioConditioner} from '../waakg-voice/audio-conditioning.mjs';
-const sine=(amp,length=320)=>Float32Array.from({length},(_,i)=>Math.sin(i*.29)*amp);
+const sine=(amp,length=320,frequency=.29)=>Float32Array.from({length},(_,i)=>Math.sin(i*frequency)*amp);
 const frame=(amp=0)=>new Float32Array(320).fill(amp);
 function push(detector,conditioner,signal,count,mode='listening'){
  const out=[];
@@ -36,8 +36,8 @@ test('Short playback echo and transient sound do not interrupt Francisca, sustai
  const muted=c.process(ref,{playing:true});
  assert.equal(muted.echo,true);
  assert.equal(push(d,c,frame(.0003),30,'speaking').length,0);
- assert.equal(push(d,c,sine(.15),12,'speaking').length,0);
+ assert.equal(push(d,c,sine(.15,320,.47),12,'speaking').length,0);
  assert.equal(push(d,c,frame(.0003),8,'speaking').length,0);
- const result=push(d,c,sine(.15),23,'speaking');
+ const result=push(d,c,sine(.15,320,.47),23,'speaking');
  assert(result.some(e=>e.type==='interrupt'));
 });
