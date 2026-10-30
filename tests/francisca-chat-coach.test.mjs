@@ -97,5 +97,5 @@ test('Untrusted chat messages never become system instructions in the adaptive c
  const guide=conversationGuide(state);
  assert(!guide.includes(malicious));
  assert(compactChatHistory([{direction:'in',body:malicious}]).includes(malicious));
- assert.match(guide,/dados não confiáveis/);
+ assert.match(guide,/dado não confiável/);
 });
