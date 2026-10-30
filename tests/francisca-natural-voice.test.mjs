@@ -29,6 +29,7 @@ test('A repeat greeting is removed from subsequent answers, preserving the infor
  assert.equal(polishVoiceReply('Olá, Wesley! Vou explicar as opções.',{history,heard:'Pode explicar?'}),'Wesley! Vou explicar as opções.');
  assert.equal(polishVoiceReply('Bom dia! Você pode ver o fluxo no painel.',{history,heard:'Onde vejo?'}),'Você pode ver o fluxo no painel.');
  assert.equal(polishVoiceReply('Olá, Francisca!',{history:[],heard:'Olá'}),'Olá, Francisca!');
+ assert.equal(polishVoiceReply('Olá, senhora, tudo bem?',{history,heard:'Me sugira uma mensagem inicial'}),'Olá, senhora, tudo bem?');
 });
 test('Repeated formulaic opener is stripped only if previous reply uses that exact opener',()=>{
  const history=[{role:'assistant',content:'Claro! Posso te explicar.'}];
