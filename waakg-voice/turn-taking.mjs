@@ -48,7 +48,10 @@ export class TurnDetector {
   const rms=Math.sqrt(sum/audio.length);
   const voiceThreshold=Math.max(this.baseRms,Math.min(.035,this.noise*2.7));
   const talking=rms>voiceThreshold;
-  if(!talking&&rms<.022)this.noise=Math.max(.0015,Math.min(.012,this.noise*.97+rms*.03));
+  // Do not learn quiet speech as background noise: this previously raised the
+  // threshold during a soft-spoken phrase and caused false turn endings.
+  if(!talking&&rms<Math.min(.012,Math.max(.006,this.noise*1.25)))
+   this.noise=Math.max(.0015,Math.min(.012,this.noise*.97+rms*.03));
   const segment=new Float32Array(audio);
   if(mode==='speaking'){
    // Echo guard: several consecutive loud microphone frames are required
