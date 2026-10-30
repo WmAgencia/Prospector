@@ -29,7 +29,7 @@ test('Single turn full request requires explicit spoken preview and sends exactl
  const sent=[];
  const flow=newVoiceDirectMessageFlow({send:async args=>{sent.push(args);return true;}});
  const answer=await flow.turn('Manda uma mensagem para 15 99999 2244 falando olá, tudo bem?',owner);
- assert.match(answer,/terminado em 2244/);
+ assert.match(answer,/15 999992244/);
  assert.match(answer,/olá, tudo bem\?/);
  assert.match(answer,/Posso enviar\?/);
  assert.equal(sent.length,0);
