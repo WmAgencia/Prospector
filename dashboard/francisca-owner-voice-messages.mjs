@@ -5,8 +5,11 @@ import {randomUUID} from 'node:crypto';
 import {db,one,run,now,audit} from './db.mjs';
 import {classifyContact,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {waRequest} from './waakg-control.mjs';
+import {deliverVoiceDirectMessage,mobileLooksTruncated,checkDeliveryById} from './francisca-message-delivery.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS francisca_voice_manual_sends(id TEXT PRIMARY KEY,jid TEXT NOT NULL,body TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+if(!db.prepare("PRAGMA table_info(francisca_voice_manual_sends)").all().some(x=>x.name==='provider_id'))
+ db.exec("ALTER TABLE francisca_voice_manual_sends ADD COLUMN provider_id TEXT");
 
 const simple=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 const phonePattern=/(?:\+?\d[\d()\s.-]{8,32}\d)/g;
@@ -25,7 +28,7 @@ function phoneCandidate(heard){
  if(!found)return null;
  let value=found.digits;
  if(value.length===10||value.length===11)value='55'+value;
- if(!/^55\d{10,11}$/.test(value))return {invalid:true,raw:found.match};
+ if(!/^55\d{10,11}$/.test(value)||mobileLooksTruncated(value))return {invalid:true,raw:found.match};
  return {number:value,raw:found.match,start:found.start};
 }
 function stripBodyPrefix(input){
@@ -51,9 +54,7 @@ export function interpretVoiceSend(heard){
   text:extractBody(raw,candidate),bulk:antiBulk(raw)};
 }
 async function realSend({jid,sessionId,text}){
- const result=await waRequest('/api/messages/'+encodeURIComponent(sessionId)+'/'+encodeURIComponent(jid)+'/send',
-  {method:'POST',data:{message:{text}}});
- return result.status===true;
+ return deliverVoiceDirectMessage({jid,sessionId,text});
 }
 export function newVoiceDirectMessageFlow({send=realSend}={}){
  let pending=null;
@@ -67,7 +68,7 @@ export function newVoiceDirectMessageFlow({send=realSend}={}){
  };
  function supplyPhone(text){
   const found=phoneCandidate(text);
-  if(found?.invalid)return 'Esse telefone está com a quantidade de dígitos incorreta. Pode informar o DDD e o número completo?';
+  if(found?.invalid)return 'Esse telefone parece incompleto, especialmente se for celular. Pode repetir o DDD e os nove dígitos do telefone?';
   if(!found)return 'Qual é o número completo, com DDD, para enviar a mensagem?';
   pending.phone=found.number;
   pending.stage=pending.text?'confirm':'text';
@@ -87,14 +88,29 @@ export function newVoiceDirectMessageFlow({send=realSend}={}){
   const recent=Number(one('SELECT COUNT(*) n FROM francisca_voice_manual_sends WHERE created_at>?',new Date(Date.now()-86400000).toISOString())?.n)||0;
   if(recent>=8)return 'Limite de oito envios avulsos por dia atingido. Não enviei.';
   const record=randomUUID(),target=item.phone+'@s.whatsapp.net';
-  run('INSERT INTO francisca_voice_manual_sends VALUES(?,?,?,?,?,?)',record,target,item.text,'UNKNOWN',now(),now());
+  run('INSERT INTO francisca_voice_manual_sends(id,jid,body,state,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+   record,target,item.text,'UNKNOWN',now(),now());
   audit('FRANCISCA_VOICE_DIRECT_ATTEMPT',null,{recipientSuffix:item.phone.slice(-4),source:'verified-owner-call'});
   try{
-   const accepted=await send({jid:target,sessionId:actor.sessionId,text:item.text});
-   if(!accepted)return 'O WhatsApp não confirmou o envio. Não vou tentar novamente automaticamente, para evitar duplicidade.';
-   run("UPDATE francisca_voice_manual_sends SET state='ACCEPTED',updated_at=? WHERE id=?",now(),record);
-   audit('FRANCISCA_VOICE_DIRECT_ACCEPTED',null,{recipientSuffix:item.phone.slice(-4),source:'verified-owner-call'});
-   return 'O WhatsApp aceitou a mensagem para o número terminado em '+item.phone.slice(-4)+'. Confira a conversa para verificar a entrega.';
+   const answer=await send({jid:target,sessionId:actor.sessionId,text:item.text});
+   // A legacy test injected true/false; neither value proves delivery.
+   const outcome=answer===true?{state:'ACCEPTED'}:answer===false?{state:'UNKNOWN'}:answer||{state:'UNKNOWN'};
+   const status=String(outcome.state||'UNKNOWN').toUpperCase();
+   const recognized=new Set(['BLOCKED','UNKNOWN','ACCEPTED','DELIVERED','READ']);
+   const finalState=recognized.has(status)?status:'UNKNOWN';
+   const pid=typeof outcome.providerId==='string'&&/^[-_A-Za-z0-9]{6,200}$/.test(outcome.providerId)?outcome.providerId:null;
+   run('UPDATE francisca_voice_manual_sends SET state=?,provider_id=?,updated_at=? WHERE id=?',
+    finalState,pid,now(),record);
+   audit('FRANCISCA_VOICE_DIRECT_RESULT',null,{recipientSuffix:item.phone.slice(-4),
+    state:finalState,hasProviderId:!!pid,source:'verified-owner-call'});
+   if(finalState==='BLOCKED')return 'Não enviei. '+String(outcome.reason||'O destinatário não pôde ser validado.').slice(0,190);
+   if(finalState==='DELIVERED'||finalState==='READ')
+    return 'O WhatsApp confirmou '+(finalState==='READ'?'a leitura':'a entrega')+
+     ' da mensagem no número terminado em '+item.phone.slice(-4)+'.';
+   if(finalState==='ACCEPTED')
+    return 'A mensagem foi aceita pelo WhatsApp, mas a entrega ao número terminado em '+
+     item.phone.slice(-4)+' ainda NÃO foi confirmada. Confira o chat antes de repetir.';
+   return 'Não consegui confirmar se a mensagem chegou ao WhatsApp. Confira a conversa antes de qualquer nova tentativa; não vou repetir automaticamente.';
   }catch{
    return 'Não consegui confirmar o envio. Confira a conversa antes de pedir novamente; não vou repetir automaticamente.';
   }
