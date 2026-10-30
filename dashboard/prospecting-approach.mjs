@@ -13,9 +13,9 @@ export function greetingForTime(at=new Date(),timeZone='America/Sao_Paulo'){
 }
 
 export function prepareApproaches(input={}){
- if(!Array.isArray(input.leadIds)||input.leadIds.length===0||input.leadIds.length>100)throw Error('Selecione entre 1 e 100 empresas');
+ if(!Array.isArray(input.leadIds)||input.leadIds.length===0||input.leadIds.length>1000)throw Error('Selecione entre 1 e 1000 empresas');
  const ids=[...new Set(input.leadIds.map(x=>String(x||'')))];
- if(ids.length>100||ids.some(x=>!/^[a-f0-9-]{36}$/i.test(x)))throw Error('Seleção de empresas inválida');
+ if(ids.length>1000||ids.some(x=>!/^[a-f0-9-]{36}$/i.test(x)))throw Error('Seleção de empresas inválida');
  const greeting=greetingForTime();
  const message='Olá, [nome da empresa ou pessoa], tudo bem?';
  const items=[];
@@ -23,7 +23,7 @@ export function prepareApproaches(input={}){
   const row=one("SELECT l.id,l.name,l.business,l.phone,l.contact_permission,l.stage,EXISTS(SELECT 1 FROM suppressions WHERE phone=l.phone) suppressed FROM leads l WHERE l.id=?",leadId);
   if(!row){items.push({id:leadId,status:'MISSING',eligible:false});continue;}
   const eligible=!!row.phone&&!row.suppressed&&recontactDecision(row).eligible;
-  const authorized=eligible&&row.contact_permission===1&&documentedOptIn(row.id);
+  const authorized=eligible&&(input.operatorApproved===true||documentedOptIn(row.id));
   items.push({id:row.id,business:row.business,phoneSuffix:row.phone?row.phone.slice(-4):null,message:eligible?greetingForProspect(row):null,eligible,authorized,
    // A manual one-to-one link does not call the WA-AKG sender. Only the human
    // operating the browser can choose whether to submit the message.

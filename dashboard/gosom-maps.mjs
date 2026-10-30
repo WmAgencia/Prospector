@@ -111,9 +111,12 @@ export async function importMapsScrape(jobId){
  for(const x of items){
   const url=mapUrl(x),business=String(x.title||x.name||'').trim().slice(0,150);
   if(!business||!url){skipped++;continue;}
+  const cleanCity=s=>String(s||'').split(',')[0].normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+  const listedCity=String(x.city||x.municipality||x.cidade||'').trim();
+  if(listedCity&&cleanCity(listedCity)!==cleanCity(job.city)){skipped++;continue;}
   try{
    // Never confer WhatsApp consent solely from a Maps business listing.
-   const saved=addLead({business,phone:x.phone||undefined,city:job.city,segment:job.niche,website:String(x.website||'').slice(0,400),maps_id:url,source:'maps_extension',contact_permission:false,notes:'Origem: Gosom Google Maps. Endereço: '+String(x.address||'').slice(0,250)});
+   const saved=addLead({business,phone:x.phone||undefined,city:listedCity||job.city,segment:job.niche,website:String(x.website||'').slice(0,400),maps_id:url,source:'maps_extension',contact_permission:false,notes:'Origem: Gosom Google Maps. Endereço: '+String(x.address||'').slice(0,250)+' | Google Maps: '+url});
    recordOrigin(saved.lead.id,'maps_extension',{identity:url,provider:'gosom',jobId:job.id},false);
    if(saved.created)added++;processed++;
   }catch{skipped++;}

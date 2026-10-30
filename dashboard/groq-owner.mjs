@@ -3,6 +3,7 @@ import {groqChat,groqCatalog} from './groq-models.mjs';
 import {agentTools,runAgentTool,claimApproval,markApproval,executeConfirmedOperation} from './groq-owner-tools.mjs';
 import {selectedWaSession,waRequest} from './waakg-control.mjs';
 import {verifiedOwnerPhone,classifyContact} from './whatsapp-roles.mjs';
+import {processPriceDecision} from './owner-price-approvals.mjs';
 import {OWNER_PERSONA} from './francisca-owner-persona.mjs';
 import {confirmOwnerVoiceTool} from './francisca-owner-voice-actions.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_owner_history(id TEXT PRIMARY KEY,event_id TEXT UNIQUE NOT NULL,role TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL)");
@@ -19,6 +20,8 @@ async function send(session,jid,text){
 async function respondToOwner(e){
  const {sessionId,jid,text,providerId}=e;
  try{
+  const priceDecision=await processPriceDecision(e);
+  if(priceDecision.handled)return await send(sessionId,jid,priceDecision.message||'Decisão registrada.');
   const confirmation=String(text||'').trim().match(/^CONFIRMAR\s+(\d{6})$/i);
   if(confirmation){
    const voiceOperation=await confirmOwnerVoiceTool(confirmation[1],{jid,sessionId},runAgentTool);

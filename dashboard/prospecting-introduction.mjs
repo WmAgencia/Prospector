@@ -1,11 +1,13 @@
 // Two-step introduction on an APPROVED WA-AKG prospect campaign.
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
-// The Francisca sales agent starts only once the contact asks about the offer.
+// After the introduction, every incoming reply can continue the sales conversation.
 // No public listing is ever treated as documented WhatsApp opt-in.
 import {db,one,run,now,audit,addMessage} from './db.mjs';
+import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
 import {threeMonthsAfter} from './prospecting-recontact.mjs';
+import {priceQuestion} from './sales-policy.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 
 export const INTRO_DELAY_MS=30_000;
@@ -20,15 +22,17 @@ export function asksAboutProposal(value=''){
  const s=clean(value);
  return /(?:sobre o que|do que) (?:se trata|seria|e) (?:essa |a |sua )?(?:proposta|oferta)|(?:qual|que|como) (?:e |seria )?(?:a |essa |sua )?(?:proposta|oferta)|(?:me explica|pode explicar|explica|me fala|me conte|pode falar).{0,65}(?:proposta|oferta|servico|site|trabalho)|(?:quero|gostaria de) (?:saber|entender|conhecer|ver).{0,45}(?:proposta|oferta)|(?:pode|poderia) (?:me )?(?:contar|explicar|falar) (?:mais|sobre)|(?:quanto (?:custa|fica)|qual (?:o )?(?:valor|preco|investimento)|fazer (?:um )?orcamento)|(?:quero (?:fechar|contratar)|vamos (?:fechar|comecar))/i.test(s);
 }
-export function greetingForProspect(lead={}){
+export function greetingForProspect(lead={},at=new Date()){
+ const hour=Number(new Intl.DateTimeFormat('en-GB',{hour:'2-digit',hourCycle:'h23',timeZone:'America/Sao_Paulo'}).format(at));
+ const period=hour>=5&&hour<12?'bom dia':hour>=12&&hour<18?'boa tarde':'boa noite';
  const cleanName=s=>String(s||'').trim().replace(/[\r\n\t<>]/g,' ').replace(/\s+/g,' ').replace(/[!?.,;:]+$/g,'').slice(0,60);
  const name=cleanName(lead.name)||cleanName(lead.business);
- return name?'Olá, '+name+', tudo bem?':'Olá, tudo bem?';
+ return name?'Olá, '+name+', '+period+'! Tudo bem?':'Olá, '+period+'! Tudo bem?';
 }
 export function introductionStatus(leadId){return one('SELECT * FROM prospecting_introductions WHERE lead_id=?',String(leadId||''))||null;}
 export function registerGreeting({leadId,greetingId,sessionId}={}){
  const lead=one('SELECT id,phone,contact_permission FROM leads WHERE id=?',leadId);
- if(!lead||!lead.phone||lead.contact_permission!==1||!documentedOptIn(lead.id))return false;
+ if(!lead||!lead.phone||(!documentedOptIn(lead.id)&&!operatorSelected(lead.id)))return false;
  if(!sessionId||!greetingId)return false;
  const timestamp=now();
  const previous=introductionStatus(leadId);
@@ -52,6 +56,10 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   cancelIntroduction(leadId,'INBOX_'+inboxState);
   return {managed:true,queueAi:false,state:'CANCELLED'};
  }
+ if(['GREETING_SENT','WAITING'].includes(item.stage)&&priceQuestion(body)){
+  run("UPDATE prospecting_introductions SET stage='CONVERSING',due_at=NULL,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING')",now(),leadId);
+  return {managed:true,queueAi:true,state:'CONVERSING'};
+ }
  if(item.stage==='GREETING_SENT'){
   const received=new Date(receivedAt);
   const timestamp=Number.isFinite(received.getTime())?received: new Date();
@@ -62,7 +70,6 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   return {managed:true,queueAi:false,state:'WAITING'};
  }
  if(item.stage==='WAITING')return {managed:true,queueAi:false,state:'WAITING'};
- if(item.stage==='SENT'&&!asksAboutProposal(body))return {managed:true,queueAi:false,state:'AWAITING_PROPOSAL_QUESTION'};
  if(item.stage==='SENT'){
   run("UPDATE prospecting_introductions SET stage='CONVERSING',updated_at=? WHERE lead_id=? AND stage='SENT'",now(),leadId);
   audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:String(providerId||'').slice(0,120)});
@@ -88,7 +95,7 @@ export async function tickIntroductions(deps={}){
   const blocked=one('SELECT phone FROM suppressions WHERE phone=?',item.phone);
   const extra=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id<>? AND m.rowid>COALESCE((SELECT rowid FROM messages WHERE provider_id=?),0) AND m.at>=? LIMIT 1",
    item.lead_id,'prospect-queue:'+item.greeting_id,'prospect-queue:'+item.greeting_id,item.created_at);
-  if(lead.contact_permission!==1||!documentedOptIn(item.lead_id)||blocked||takeover?.manual_takeover===1||
+  if(!conversationAuthorized(item.lead_id)||blocked||takeover?.manual_takeover===1||
     ['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)||extra||
     identified.role!=='PROSPECT_APPROACHED'||session()!==item.session_id){
    return false;

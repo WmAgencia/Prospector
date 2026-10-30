@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/prospector-full-sales-');
 process.env.WA_AKG_SESSION_ID='consecom-principal';
+process.env.PROSPECTOR_OWNER_PHONE='5515981817336';
+process.env.PROSPECTOR_PERSONAL_PHONE='5515981817336';
 process.env.GROQ_API_KEY='test-only-never-call-network';
 process.env.AI_CONVERSATION_AUTOSEND='false';
 process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED='false';
@@ -59,8 +61,9 @@ test('Approved button queue sends once, reply enters Groq and responds naturally
   send:async(_route,{data})=>{sentText=data.message.text;return {status:true};}
  });
  assert.equal(a.state,'SENT');
- assert.match(draftContext,/R\$ 550/);
- assert.match(sentText,/R\$ 550/);
+ assert.equal(draftContext,'','price request never invokes Groq');
+ assert.doesNotMatch(sentText,/R\$|550/);
+ assert.match(sentText,/confirmar a proposta/);
  assert.equal(db.one('SELECT COUNT(*) n FROM sales_outcomes').n,0);
  assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
 });
@@ -125,13 +128,13 @@ test('Results can be read by UI; daily report counts the new WA-AKG queue',()=>{
  assert.equal(results.interested,1);
  assert.equal(results.notInterested,1);
 });
-test('Only explicitly qualified R$550 is safe: old campaign price and guarantees stay blocked',()=>{
+test('No generated price is safe without individual operator approval',()=>{
  assert.equal(SITE_AVERAGE_PRICE_BRL,550);
  assert.equal(salesEnding('Não quero receber mensagens'),'OPT_OUT');
  assert.equal(salesEnding('Quanto custa?'),null);
  const good='O valor médio de referência é R$ 550, dependendo do escopo.';
- assert(approvedAveragePriceDraft('Qual é o preço?',good));
- assert.equal(reviewGroqReply({inbound:'Quanto custa?',draft:good,allowAveragePrice:true}).ok,true);
+ assert.equal(approvedAveragePriceDraft('Qual é o preço?',good),false);
+ assert.equal(reviewGroqReply({inbound:'Quanto custa?',draft:good,allowAveragePrice:true}).ok,false);
  assert.equal(reviewGroqReply({inbound:'Quanto custa?',draft:good,allowAveragePrice:false}).ok,false);
  assert.equal(reviewGroqReply({inbound:'Quanto custa?',draft:'Só R$ 350, desconto de 80%',allowAveragePrice:true}).ok,false);
 });
@@ -140,7 +143,7 @@ test('Named greeting waits for reply, sends Wesley exactly after 30s and transfe
  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true}).status,202);
  time+=90_000;
  assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
- assert.equal(sent.at(-1).text,'Olá, Mecânica Silva, tudo bem?');
+ assert.match(sent.at(-1).text,/Olá, Mecânica Silva, (?:bom dia|boa tarde|boa noite)! Tudo bem\?/);
  assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
  const incoming=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
   unique:'consecom-principal:proposed-greeting-1',content:'Oi, tudo bem!'});
