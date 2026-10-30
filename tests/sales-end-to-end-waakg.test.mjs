@@ -95,6 +95,7 @@ test('Explicit interest transfers to human and records the result once',async()=
  assert.equal(db.one('SELECT status FROM sales_outcomes WHERE lead_id=?',lead.id).status,'INTERESTED');
  assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='GROQ_HOT_LEAD'",lead.id).n,1);
  assert.equal((await handleSalesTurn('consecom-principal:fullsales-3',{})).state,'SKIP');
+ assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
 });
 test('Preferring text to audio does not create an opt-out or stop the sale',()=>{
  assert.equal(salesEnding('Não quero áudio, prefiro mensagem por escrito'),null);
@@ -117,10 +118,12 @@ test('Results can be read by UI; daily report counts the new WA-AKG queue',()=>{
  assert.equal(statuses.priceReferenceBrl,550);
  assert.equal(statuses.counts.NO_INTEREST,1);
  assert.equal(statuses.counts.INTERESTED,1);
- const d=dailyReport('2026-10-29');
- assert.equal(d.approached,3);
- assert.equal(d.interested,1);
- assert.equal(d.notInterested,1);
+ const campaign=dailyReport('2026-10-29');
+ assert.equal(campaign.approached,3);
+ const actualDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const results=dailyReport(actualDay);
+ assert.equal(results.interested,1);
+ assert.equal(results.notInterested,1);
 });
 test('Only explicitly qualified R$550 is safe: old campaign price and guarantees stay blocked',()=>{
  assert.equal(SITE_AVERAGE_PRICE_BRL,550);
