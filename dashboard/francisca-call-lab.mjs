@@ -13,6 +13,7 @@ import {OWNER_PERSONA} from './francisca-owner-persona.mjs';
 import {newVoiceDirectMessageFlow,interpretVoiceSend} from './francisca-owner-voice-messages.mjs';
 import {parseSpokenBrazilPhone} from './francisca-phone-speech.mjs';
 import {newVoiceProspectingFlow} from './francisca-voice-prospecting.mjs';
+import {applyVoicePreferences,voicePrefsForOwner,voiceRateForPreferences} from './francisca-voice-preferences.mjs';
 import {voiceToolsForOwner,runOwnerVoiceTool} from './francisca-owner-voice-actions.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import {makeFranciscaVoice,makeFranciscaCallPcm,checkVoiceText} from './francisca-tts.mjs';
@@ -65,7 +66,8 @@ async function notifyOwnerApproval({jid,sessionId,name,code,preview}){
 export function callLabStatus(){
  return {enabled:process.env.WA_AKG_CALL_LAB_ENABLED==='true',provider:'WA-AKG/experimental',
   mediaTransportConnected:false,answeringCalls:false,mode:'half-duplex prototype',
-  ownerOnly:true,readOnly:false,requiresWhatsAppTextConfirmation:true,manualMessageVoiceConfirmation:true,pcmHz:VOICE_RATE};
+  ownerOnly:true,readOnly:false,requiresWhatsAppTextConfirmation:true,manualMessageVoiceConfirmation:true,
+  ownerVoicePreferences:true,liveDuplex:false,pcmHz:VOICE_RATE};
 }
 export function wavFromPcm16(pcm){
  if(!Buffer.isBuffer(pcm)||pcm.length%2!==0||pcm.length<MIN_INPUT||pcm.length>MAX_INPUT)
@@ -164,12 +166,14 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     // "pesquisa dentistas e inicia abordagem" must NOT be parsed as an
     // individual message to a phone number.
     const actor={jid,sessionId};
+    const preferenceChange=applyVoicePreferences(heard,actor);
+    const preferences=voicePrefsForOwner(actor);
     const activeIndividual=Boolean(voiceMessages.state);
-    const voiceMessageReply=voiceNumberUncertain?null:
+    const voiceMessageReply=voiceNumberUncertain||preferenceChange?null:
      activeIndividual?await voiceMessages.turn(heard,actor):null;
-    const voiceProspectingReply=voiceNumberUncertain?null:
+    const voiceProspectingReply=voiceNumberUncertain||preferenceChange?null:
      !voiceMessageReply?await voiceProspecting.turn(heard,actor):null;
-    const ownerVoiceReply=voiceNumberUncertain||voiceMessageReply||voiceProspectingReply||
+    const ownerVoiceReply=voiceNumberUncertain||preferenceChange?.spoken||voiceMessageReply||voiceProspectingReply||
      (!activeIndividual?await voiceMessages.turn(heard,actor):null);
     const availableTools=selectVoiceTools(voiceToolsForOwner(agentTools,verified.ownerTools),heard);
     if(!ownerVoiceReply)console.info('[francisca-voice-owner-access]',JSON.stringify({
@@ -194,7 +198,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
      }
     }
     const spokenHistory=context.messages();
-    const replyPlan=voiceReplyPlan(heard,spokenHistory);
+    const replyPlan=voiceReplyPlan(heard,spokenHistory,preferences);
     // Verified owner requests about approach totals are grounded directly
     // by SQLite and do not depend on Groq picking the correct tool.
     const directCount=asksApproachedCount(heard)&&operationalBriefing?.stats&&
@@ -202,7 +206,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
       'Até este momento, o Prospector registra '+operationalBriefing.stats.approached+
       ' leads abordados, de '+operationalBriefing.stats.leads+' cadastrados. Esse total considera abordagens confirmadas, não mensagens apenas preparadas.':null;
     const messages=[
-     {role:'system',content:voiceStyleInstruction({heard,history:spokenHistory})},
+     {role:'system',content:voiceStyleInstruction({heard,history:spokenHistory,preferences})},
      {role:'system',content:OWNER_PERSONA+'\nLIGAÇÃO DO PROPRIETÁRIO: uma mensagem manual individual pode ser enviada SOMENTE após repetição exata da mensagem e autorização verbal explícita na mesma chamada. O módulo determinístico do servidor executa esse fluxo; NÃO use prepare_direct_message por ferramenta de IA. Outras alterações administrativas continuam exigindo confirmação por TEXTO. Não há acesso irrestrito ao servidor ou segredos.'},
      {role:'system',content:context.systemNote(heard)},
      ...(operationalBriefing?[{role:'system',content:
@@ -264,7 +268,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     // performs one MP3->PCM conversion without the intermediate AAC/M4A.
     const pcmGenerator=deps.synthesizePcm||(!deps.synthesize&&!deps.convert?makeFranciscaCallPcm:null);
     let outgoing,voice;
-    if(pcmGenerator){const data=await pcmGenerator(spoken);outgoing=data.pcm16k;voice=data.voice;}
+    if(pcmGenerator){const data=await pcmGenerator(spoken,{rate:voiceRateForPreferences(preferences)});outgoing=data.pcm16k;voice=data.voice;}
     else {const audio=await (deps.synthesize||makeFranciscaVoice)(spoken);
       outgoing=await (deps.convert||convertM4aToPcm16)(audio.bytes);voice=audio.voice;}
     if(!Buffer.isBuffer(outgoing)||outgoing.length===0||outgoing.length%2)
