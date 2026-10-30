@@ -14,6 +14,7 @@ import {newVoiceDirectMessageFlow,interpretVoiceSend} from './francisca-owner-vo
 import {parseSpokenBrazilPhone} from './francisca-phone-speech.mjs';
 import {newVoiceProspectingFlow} from './francisca-voice-prospecting.mjs';
 import {applyVoicePreferences,voicePrefsForOwner,voiceRateForPreferences} from './francisca-voice-preferences.mjs';
+import {newVoiceListeningFlow} from './francisca-voice-listening.mjs';
 import {voiceToolsForOwner,runOwnerVoiceTool} from './francisca-owner-voice-actions.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import {makeFranciscaVoice,makeFranciscaCallPcm,checkVoiceText} from './francisca-tts.mjs';
@@ -109,6 +110,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
  verifyVoiceOwner({jid,sessionId});
  const context=newCallContext();
  const voiceMessages=newVoiceDirectMessageFlow({send:deps.sendDirectMessage});
+ const voiceListening=newVoiceListeningFlow();
  const voiceProspecting=newVoiceProspectingFlow({
   search:deps.searchProspects,list:deps.listProspects,preview:deps.previewProspects,
   enqueue:deps.enqueueApproaches,status:deps.approachQueueStatus
@@ -125,16 +127,23 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const began=Date.now();
     const recognized=await (deps.transcribe||transcribeAudio)({buffer:wav,filename:'live-turn.wav'});
     const sttMs=Date.now()-began;
-    const heard=String(recognized.text||'').trim().slice(0,650);
+    let heard=String(recognized.text||'').trim().slice(0,650);
     if(heard.length<2)throw Error('CALL_TRANSCRIPTION_EMPTY');
     const verified=verifyVoiceOwner({jid,sessionId});
+    // The caller can ask to speak for several turns without interruption.
+    // Buffer only inside this call. A released multi-turn thought is READ-ONLY:
+    // no old, unverified telephone command is allowed to execute.
+    const listen=voiceListening.turn(heard);
+    const releasedThought=typeof listen.answerText==='string';
+    if(listen.handled&&!releasedThought){voiceMessages.end();voiceProspecting.end();}
+    if(releasedThought)heard=listen.answerText;
     // Phone numbers are unusually vulnerable to a single Whisper error.
     // For a phone turn, verify with the more accurate multilingual model.
     // Never pick the plausible result or auto-complete a missing digit.
     // Fixtures that mock the primary STT skip the extra network request
     // unless an explicit second verifier is injected for the test.
     const firstPhone=parseSpokenBrazilPhone(heard);
-    const checkingPhone=!!firstPhone&&(voiceMessages.state?.stage==='phone'||!!interpretVoiceSend(heard));
+    const checkingPhone=!listen.handled&&!!firstPhone&&(voiceMessages.state?.stage==='phone'||!!interpretVoiceSend(heard));
     let voiceNumberUncertain=null;
     if(checkingPhone){
      try{
@@ -166,16 +175,26 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     // "pesquisa dentistas e inicia abordagem" must NOT be parsed as an
     // individual message to a phone number.
     const actor={jid,sessionId};
-    const preferenceChange=applyVoicePreferences(heard,actor);
+    const preferenceChange=listen.handled?null:applyVoicePreferences(heard,actor);
+    if(preferenceChange){voiceMessages.end();voiceProspecting.end();}
     const preferences=voicePrefsForOwner(actor);
+    const last=context.last();
+    const repeatPrevious=!listen.handled&&!preferenceChange&&
+     /^(?:(?:pode|consegue)\s+)?(?:repetir|repete|repita)(?:\s+(?:a\s+)?(?:ultima|sua|essa)\s+(?:resposta|frase|fala))?[.!?\s]*$/i
+      .test(heard.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim())&&
+     !!last?.text;
+
     const activeIndividual=Boolean(voiceMessages.state);
-    const voiceMessageReply=voiceNumberUncertain||preferenceChange?null:
+    const voiceMessageReply=voiceNumberUncertain||preferenceChange||listen.handled||repeatPrevious?null:
      activeIndividual?await voiceMessages.turn(heard,actor):null;
-    const voiceProspectingReply=voiceNumberUncertain||preferenceChange?null:
+    const voiceProspectingReply=voiceNumberUncertain||preferenceChange||listen.handled||repeatPrevious?null:
      !voiceMessageReply?await voiceProspecting.turn(heard,actor):null;
-    const ownerVoiceReply=voiceNumberUncertain||preferenceChange?.spoken||voiceMessageReply||voiceProspectingReply||
-     (!activeIndividual?await voiceMessages.turn(heard,actor):null);
-    const availableTools=selectVoiceTools(voiceToolsForOwner(agentTools,verified.ownerTools),heard);
+    const ownerVoiceReply=listen.spoken||voiceNumberUncertain||preferenceChange?.spoken||
+     (repeatPrevious?last.text:null)||voiceMessageReply||voiceProspectingReply||
+     (!activeIndividual&&!listen.handled?await voiceMessages.turn(heard,actor):null);
+    let availableTools=selectVoiceTools(voiceToolsForOwner(agentTools,verified.ownerTools),heard);
+    if(releasedThought)availableTools=availableTools.filter(t=>
+     /^(?:system_status|system_diagnostics|discovery_history|list_\w+|read_\w+|search_leads|get_lead)$/.test(t.function.name));
     if(!ownerVoiceReply)console.info('[francisca-voice-owner-access]',JSON.stringify({
      ownerVerified:verified.ownerTools===true,toolsAvailable:availableTools.length,
      callMode:'OWNER',stagedActionsOnly:true
@@ -281,7 +300,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     return {heard,spoken,replyId,pcm16k:outgoing,format:'s16le',rate:VOICE_RATE,voice};
    }finally{busy=false;}
   },
-  end(){ended=true;context.clear();voiceMessages.end();voiceProspecting.end();},
+  end(){ended=true;context.clear();voiceMessages.end();voiceProspecting.end();voiceListening.end();},
   get state(){return ended?'ENDED':busy?'BUSY':'READY';}
  };
 }
