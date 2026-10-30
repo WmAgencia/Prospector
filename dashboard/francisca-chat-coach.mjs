@@ -83,7 +83,7 @@ export function conversationGuide(state={}){
   'Se a pessoa já perguntou sobre a proposta, explique-a. Se disse "sim", "pode falar" ou "continua", prossiga de onde parou; não reinicie o roteiro.',
   state.continuation?'CONTINUAÇÃO: "sim", "pode falar", "e o valor?" ou "quanto?" fazem referência à fala anterior. Prossiga no assunto exato. Um "não" isolado não é ordem de bloqueio.':'',
   state.correction?'CORREÇÃO: atualize a interpretação e responda ao ponto ajustado sem repetir sua resposta anterior.':'',
-  state.greetingsOnly&&state.hasAssistantReply?'A pessoa cumprimentou DURANTE uma conversa. Não reinicie apresentação nem discurso comercial.':'',
+  state.greetingsOnly&&state.hasAssistantReply?'CUMPRIMENTO DURANTE O CHAT: a pessoa cumprimentou durante uma conversa. Não reinicie apresentação nem discurso comercial.':'',
   'Combine as pistas quando houver duas questões (preço + prazo, site existente + SEO, suporte + urgência). As orientações são para raciocinar, não para copiar frases prontas.',
   'Responda uma pergunta antes de fazer outra. Só faça UMA pergunta quando for relevante para o próximo passo. Não finalize todas as mensagens com pergunta nem insista após recusa.',
   'Se disser que já tem site ou Instagram, não discuta nem volte ao discurso inicial; procure necessidade real ou respeite se não houver. Não confunda cliente existente, prospect e novo contato.',
