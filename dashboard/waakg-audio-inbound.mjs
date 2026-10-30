@@ -15,7 +15,7 @@ export function queueInboundAudio({providerId,sessionId,jid,fileUrl}={}){
   providerId,sessionId,jid,fileUrl,'PENDING',now(),now());
  return {queued:true};
 }
-export async function transcribeAudio({buffer,filename,fetchFn=fetch}={}){
+export async function transcribeAudio({buffer,filename,fetchFn=fetch,phoneMode=false}={}){
  if(!Buffer.isBuffer(buffer)||buffer.length<100||buffer.length>MAX_MEDIA_BYTES)throw Error('INVALID_AUDIO');
  const key=process.env.GROQ_API_KEY;
  if(!key)throw Error('GROQ_NOT_CONFIGURED');
@@ -26,10 +26,12 @@ export async function transcribeAudio({buffer,filename,fetchFn=fetch}={}){
  const mime=({mp3:'audio/mpeg',m4a:'audio/mp4',mp4:'audio/mp4',ogg:'audio/ogg',
    opus:'audio/ogg',wav:'audio/wav',webm:'audio/webm'})[ext];
  form.append('file',new Blob([buffer],{type:mime}),filename);
- form.append('model','whisper-large-v3-turbo');
+ form.append('model',phoneMode?'whisper-large-v3':'whisper-large-v3-turbo');
  form.append('language','pt');
  form.append('response_format','json');
- form.append('prompt','Conversa da agência Consecom Brasil. A palavra Consecom escreve-se C-O-N-S-E-C-O-M. Francisca é o nome da voz. Termos: Consecom Brasil, site, orçamento, atendimento, WhatsApp.');
+ form.append('prompt',phoneMode?
+  'Áudio brasileiro de telefone e DDD. Transcreva fielmente cada número pronunciado, inclusive números falados em grupos, mantendo a ordem, sem completar nenhum dígito. Não adivinhe o número.':
+  'Conversa da agência Consecom Brasil. A palavra Consecom escreve-se C-O-N-S-E-C-O-M. Francisca é o nome da voz. Termos: Consecom Brasil, site, orçamento, atendimento, WhatsApp, DDD, números de telefone ditados em grupos.');
  const res=await fetchFn('https://api.groq.com/openai/v1/audio/transcriptions',{
   method:'POST',headers:{Authorization:'Bearer '+key,Accept:'application/json'},
   body:form,signal:AbortSignal.timeout(24000)});
@@ -41,7 +43,7 @@ export async function transcribeAudio({buffer,filename,fetchFn=fetch}={}){
  if(content.length<2)throw Error('TRANSCRIPT_EMPTY');
  // Avoid hallucinating common boilerplate for silence.
  if(/^(?:legendas? (?:por|pela)|obrigad[oa] por assistir|inscreva-se no canal)[.!\s]*$/i.test(content))throw Error('TRANSCRIPT_UNCERTAIN');
- return {text:content,model:'whisper-large-v3-turbo',language:'pt'};
+ return {text:content,model:phoneMode?'whisper-large-v3':'whisper-large-v3-turbo',language:'pt'};
 }
 let busy=false;
 export async function processAudioJobs({download=fetchPrivateAudio,transcribe=transcribeAudio,deliver}={}){
