@@ -43,6 +43,25 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
  });
  const response=await send(payload,task==='voice'?14000:45000);
  if(!response.ok){
+  if(task==='actions'&&response.status===400&&Array.isArray(payload.tools)&&payload.tools.length){
+   // Retry once with an active alternative model and reduced compatibility
+   // parameters. No tool execution occurs in this adapter; caller still
+   // validates every suggested function against server-side authorization.
+   const catalog=await availableGroqModels();
+   const alt=['llama-3.3-70b-versatile','openai/gpt-oss-20b','openai/gpt-oss-120b']
+    .find(id=>id!==model&&catalog.ids.includes(id));
+   if(alt){
+    const revised={...payload,model:alt};
+    delete revised.parallel_tool_calls;
+    delete revised.reasoning_effort;
+    try{
+     const rerun=await send(revised,25000);
+     if(rerun.ok){const data=await rerun.json();return {model:alt,
+      choice:data.choices?.[0]?.message||null,usage:data.usage||null,recovered:true};}
+     console.warn('[groq-actions-recovery]',JSON.stringify({status:rerun.status,model:alt}));
+    }catch(error){console.warn('[groq-actions-recovery]',JSON.stringify({error:error?.name||'ERROR'}));}
+   }
+  }
   if(task==='voice'&&response.status===400){
    // Log only provider error category/parameter, never messages or user speech.
    let errorDetail={};
