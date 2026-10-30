@@ -40,7 +40,7 @@ test('Chunked speech preserves all text and delivers ordered PCM increments',asy
  assert.equal(parts.join(' '),input);
  assert(parts.length>=2);
  let send=[],synth=[];
- const x=await synthesizeSpeechChunks(input,{maxSegments:4,synthesize:async(t,i)=>{synth.push({t,i});return {pcm16k:Buffer.alloc(3200,i)};},
+ const x=await synthesizeSpeechChunks(input,{maxSegments:4,maxChars:42,synthesize:async(t,i)=>{synth.push({t,i});return {pcm16k:Buffer.alloc(3200,i)};},
   onSegment:async x=>send.push({index:x.index,total:x.total,length:x.pcm16k.length})});
  assert.equal(send.length,x.segments);
  assert.equal(x.pcm16k.length,x.segments*3200);
