@@ -25,12 +25,12 @@ const execFile=promisify(execFileCb);
 const asksApproachedCount=x=>{
  const t=String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
  return /(?:quantos|quantas|numero|total|quantidade|qtd|me diz|me fala|sabe quantos)/.test(t)&&
-  /(?:abordad|contatad|contactad|primeiro contato|mensagens enviadas|prospectos abordados)/.test(t);
+  /(?:abord\w*|contat\w*|contactad\w*|primeiro contato|mensagens enviadas|prospectos abordados)/.test(t);
 };
 function selectVoiceTools(tools,spoken){
  const norm=String(spoken||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
  let wants;
- if(/\b(?:envi|manda|mande|mensagem|whatsapp|numero|telefone|recado)\b/.test(norm))
+ if(/(?:envi\w*|manda\w*|mande\w*|mensag\w*|whatsapp|numero|telefone|recado)/.test(norm))
   wants=['prepare_direct_message','prepare_message','search_leads','list_whatsapp_chats','read_whatsapp_chat'];
  else if(/(?:lead|abord|prospect|contat|empresa|cliente)/.test(norm))
   wants=['system_status','list_prospects','search_leads','get_lead','list_conversations','read_conversation'];
