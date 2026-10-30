@@ -11,6 +11,7 @@ process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED='false';
 const db=await import('../dashboard/db.mjs');
 const {enqueueApprovedApproaches,tickApproachQueue,approachQueueStatus}=await import('../dashboard/prospecting-queue.mjs');
 const {recordInboundTranscript}=await import('../dashboard/waakg-bridge.mjs');
+const {tickIntroductions,introductionStatus,WESLEY_INTRO,asksAboutProposal}=await import('../dashboard/prospecting-introduction.mjs');
 const {handleSalesTurn}=await import('../dashboard/groq-sales-automation.mjs');
 const {salesOutcomes}=await import('../dashboard/sales-outcomes.mjs');
 const {agentStatus}=await import('../dashboard/groq-sales-automation.mjs');
@@ -43,6 +44,7 @@ test('Approved button queue sends once, reply enters Groq and responds naturally
  assert.equal(send.status,'SENT');
  assert.equal(sent.length,1);
  const lead=db.one("SELECT id,phone FROM leads WHERE business='Auto Center Integração'");
+ db.run("UPDATE prospecting_introductions SET stage='CONVERSING' WHERE lead_id=?",lead.id); // Prior introduction already finished in this legacy sales regression scenario.
  const inbound='Quanto custa o site? Vocês fazem agendamento?';
  const reply=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
  unique:'consecom-principal:fullsales-1',content:inbound});
@@ -70,6 +72,7 @@ test('A hard refusal is terminal, not queued for more AI replies',async()=>{
  unique:'consecom-principal:fullsales-2',content:'Sem interesse, obrigada.'});
  assert.equal(out.status,200);
  assert.equal(db.one('SELECT stage FROM leads WHERE id=?',lead.id).stage,'NO_INTEREST');
+ assert.equal(introductionStatus(lead.id).stage,'CANCELLED');
  assert.equal(db.one('SELECT status FROM sales_outcomes WHERE lead_id=?',lead.id).status,'NO_INTEREST');
  assert.equal(db.one("SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id='consecom-principal:fullsales-2'").n,0);
  assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='SALES_OUTCOME'",lead.id).n,1);
@@ -79,6 +82,7 @@ test('Explicit interest transfers to human and records the result once',async()=
  const lead=eligible('Padaria interessada');
  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true}).status,202);
  time+=90_000;assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
+ db.run("UPDATE prospecting_introductions SET stage='CONVERSING' WHERE lead_id=?",lead.id); // Mature conversation from prior introduction.
  const incoming='Quero fechar um site, podemos começar?';
  recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
   unique:'consecom-principal:fullsales-3',content:incoming});
@@ -127,5 +131,46 @@ test('Only explicitly qualified R$550 is safe: old campaign price and guarantees
  assert.equal(reviewGroqReply({inbound:'Quanto custa?',draft:good,allowAveragePrice:true}).ok,true);
  assert.equal(reviewGroqReply({inbound:'Quanto custa?',draft:good,allowAveragePrice:false}).ok,false);
  assert.equal(reviewGroqReply({inbound:'Quanto custa?',draft:'Só R$ 350, desconto de 80%',allowAveragePrice:true}).ok,false);
+});
+test('Named greeting waits for reply, sends Wesley exactly after 30s and transfers proposal to Francisca',async()=>{
+ const lead=eligible('Mecânica Silva');
+ assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true}).status,202);
+ time+=90_000;
+ assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
+ assert.equal(sent.at(-1).text,'Olá, Mecânica Silva, tudo bem?');
+ assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
+ const incoming=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
+  unique:'consecom-principal:proposed-greeting-1',content:'Oi, tudo bem!'});
+ assert.equal(incoming.status,200);
+ const intro=introductionStatus(lead.id);
+ assert.equal(intro.stage,'WAITING');
+ assert.equal(Date.parse(intro.due_at)-Date.parse(intro.first_reply_at),30000);
+ assert.equal(db.one("SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id='consecom-principal:proposed-greeting-1'").n,0);
+ const due=Date.parse(intro.due_at),delivered=[];
+ const dependencies={session:()=> 'consecom-principal',status:async()=>({connected:true}),
+  send:async(url,opts)=>{delivered.push(opts.data.message.text);return {status:true};}};
+ assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due-1})).state,'IDLE');
+ assert.equal(delivered.length,0);
+ assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due})).state,'SENT');
+ assert.deepEqual(delivered,[WESLEY_INTRO]);
+ assert.equal(WESLEY_INTRO,"Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.");
+ assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due+30000})).state,'IDLE');
+ assert.equal(delivered.length,1);
+ assert.equal(asksAboutProposal('Ah, sobre o que se trata a proposta?'),true);
+ recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
+  unique:'consecom-principal:proposed-greeting-2',content:'Ah, sobre o que se trata a proposta?'});
+ assert.equal(introductionStatus(lead.id).stage,'CONVERSING');
+ assert.equal(db.one("SELECT state FROM groq_auto_events WHERE provider_id='consecom-principal:proposed-greeting-2'").state,'PENDING');
+ let seenContext='',sentMessage='';
+ const response=await handleSalesTurn('consecom-principal:proposed-greeting-2',{
+  qualify:async()=>({confirmed:false}),
+  status:async()=>({connected:true,sessionId:'consecom-principal'}),
+  draft:async(args)=>{seenContext=args.context;return {ok:true,draft:'Sou a Francisca, assistente virtual da Consecom. Criamos sites profissionais para empresas. Posso entender sua necessidade?'};},
+  send:async(route,options)=>{sentMessage=options.data.message.text;return {status:true};}
+ });
+ assert.equal(response.state,'SENT');
+ assert.match(seenContext,/Francisca/);
+ assert.match(sentMessage,/Sou a Francisca/);
+ assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
 });
 test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
