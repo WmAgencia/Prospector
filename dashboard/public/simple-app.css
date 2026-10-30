@@ -142,22 +142,25 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
  .kanban-columns{grid-template-columns:repeat(4,235px);gap:8px}
 }
 
-/* Francisca voice controls: accessible, compact, distinct from text sending. */
-.francisca-button{border:1px solid #d2d9ef;background:#f1f4ff;color:#454a91;min-width:93px;font-weight:750;white-space:nowrap}
-.francisca-button:hover{background:#e4eaff;border-color:#aaaee1}
-.francisca-send-button{border:1px solid #bcdccc;background:#edf8f1;color:#236b4a;min-width:79px;white-space:nowrap}
-.francisca-send-button:hover{background:#d9f0e1}
-.composer{flex-wrap:wrap}
-@media(max-width:750px){
- .composer .francisca-button,.composer .francisca-send-button{flex:1;min-width:0}
+/* Conversations: one mode switch in the header, one text field and Send. */
+.chat-heading>div{min-width:0;flex:1}
+.chat-heading>div strong,.chat-heading>div small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-handoff{flex:none;margin-left:auto;border:1px solid #b8dcc7;background:#ebf7ef;color:#176943;border-radius:11px;padding:11px 15px;font-size:12px;font-weight:750;cursor:pointer;white-space:nowrap;transition:background .18s,border-color .18s}
+.chat-handoff:hover:not(:disabled){background:#d9f0e1;border-color:#88c9a1}
+.chat-handoff.ai-mode{background:#f1f6ff;border-color:#cad6ee;color:#315e90}
+.chat-handoff.ai-mode:hover:not(:disabled){background:#e4efff;border-color:#9ebbe7}
+.chat-handoff:disabled{opacity:.57;cursor:not-allowed}
+.chat-handoff:focus-visible{outline:3px solid #92d2ab;outline-offset:3px}
+.chat-panel .composer{display:flex;flex-wrap:nowrap;align-items:center;gap:10px;padding:16px 18px}
+.chat-panel .composer input{display:block;flex:1;grid-row:auto;grid-column:auto;min-width:0;padding:13px 15px;font-size:13px}
+.chat-panel .composer .primary{flex:none;grid-row:auto;grid-column:auto;min-width:112px;padding:12px 17px}
+@media(max-width:700px){
+ .chat-heading{flex-wrap:wrap;padding:14px;gap:9px}
+ .chat-handoff{margin-left:auto;padding:10px 11px;font-size:11px}
+ .chat-panel .composer{padding:12px;gap:8px}
+ .chat-panel .composer .primary{min-width:85px;padding:12px}
 }
-@media(max-width:520px){
- .composer{grid-template-columns:repeat(4,minmax(0,1fr))}
- .composer>.groq-draft-button{grid-column:1;grid-row:1}
- .composer>.interactive-button{grid-column:2;grid-row:1}
- .composer>.francisca-button{grid-column:3;grid-row:1}
- .composer>.francisca-send-button{grid-column:4;grid-row:1}
- .composer input{grid-column:1/-1;grid-row:2}
- .composer>.primary{grid-column:1/-1;grid-row:3}
- .composer button{padding:9px 5px;font-size:10px;min-width:0}
+@media(max-width:390px){
+ .chat-handoff{width:100%;margin-left:0}
+ .chat-panel .composer .primary{min-width:75px}
 }
