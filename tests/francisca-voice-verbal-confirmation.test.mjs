@@ -80,7 +80,7 @@ test('Missing text, unclear approval, edit and cancel never send',async()=>{
 test('Wrong length phone requires new number; no sending',async()=>{
  const flow=newVoiceDirectMessageFlow({send:async()=>{throw Error('SHOULD_NOT_SEND');}});
  assert.match(await flow.turn('Envie mensagem para 15 9811 8173 36',owner),/telefone completo/);
- assert.match(await flow.turn('15 9811 8173 36',owner),/quantidade de dígitos/);
+ assert.match(await flow.turn('15 9811 8173 36',owner),/telefone parece incompleto/);
  flow.end();
 });
 test('Suppressions prevent verbal one-to-one delivery, even after preview',async()=>{
@@ -127,6 +127,27 @@ test('Real voice session routes number, text, and approval without Groq or owner
   assert.equal(outgoing[0].text,'olá, tudo bem?');
  }finally{session.end();}
 });
+test('Voice user can check the last message receipt later without sending again',async()=>{
+ const id='3EB0VOICE999';
+ let sent=0;
+ const flow=newVoiceDirectMessageFlow({send:async()=>{sent++;return {state:'ACCEPTED',providerId:id};},deliveryLookup:async()=> 'O último envio ainda não possui comprovante de entrega.'});
+ const preview=await flow.turn('Envia uma mensagem para 15 99999 2244 falando olá',owner);
+ assert.match(preview,/Posso enviar/);
+ const ack=await flow.turn('pode enviar',owner);
+ assert.match(ack,/NÃO confirmou a entrega/);
+ assert.equal(sent,1);
+ const report=await flow.turn('verifica a última mensagem',owner);
+ // The regular send path cannot assert receipt, but the read-only follow-up can.
+ assert.match(report,/comprovante de entrega|confirm|entrega/);
+ assert.equal(sent,1);
+ const {lastVoiceDirectDelivery}=await import('../dashboard/francisca-owner-voice-messages.mjs');
+ const delivered=await lastVoiceDirectDelivery(owner,{request:async()=>({status:true,data:[{
+  keyId:id,remoteJid:phone+'@s.whatsapp.net',fromMe:true,status:'DELIVERED'
+ }]})});
+ assert.match(delivered,/confirma a entrega/);
+ assert.equal(sent,1);
+});
+
 test.after(async()=>{
  const {db}=await import('../dashboard/db.mjs');db.close();
  fs.rmSync(dir,{recursive:true,force:true});
