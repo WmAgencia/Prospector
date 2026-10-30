@@ -27,7 +27,7 @@ test('Groq HTTP 400 voice response retries on another model without tools or sec
   assert.equal(calls.length,2);
   assert.equal(calls[0].model,'openai/gpt-oss-20b');
   assert.equal(calls[1].model,'llama-3.3-70b-versatile');
-  assert.equal(calls[1].tool_choice,'none');
+  assert.equal(calls[1].tool_choice,undefined); // The fallback intentionally omits tool_choice to avoid HTTP 400.
   assert(!('tools' in calls[1]));
   assert.equal(out.recovered,true);
   assert.match(out.choice.content,/não consigo verificar/);
