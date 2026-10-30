@@ -8,27 +8,37 @@ import path from 'node:path';
 import {execFile as execFileCb} from 'node:child_process';
 import {promisify} from 'node:util';
 import {verifiedOwnerPhone,classifyContact} from './whatsapp-roles.mjs';
-import {selectedWaSession} from './waakg-control.mjs';
+import {selectedWaSession,waRequest} from './waakg-control.mjs';
+import {OWNER_PERSONA} from './francisca-owner-persona.mjs';
+import {voiceToolsForOwner,runOwnerVoiceTool} from './francisca-owner-voice-actions.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import {makeFranciscaVoice,makeFranciscaCallPcm,checkVoiceText} from './francisca-tts.mjs';
 import {groqChat} from './groq-models.mjs';
 import {agentTools,runAgentTool,readVoiceOperationalBriefing} from './groq-owner-tools.mjs';
 import {newCallContext} from './francisca-voice-context.mjs';
 import {voiceReplyPlan,voiceStyleInstruction,polishVoiceReply} from './francisca-dialogue-style.mjs';
-import {priceAsReference} from './sales-policy.mjs';
 import {randomUUID} from 'node:crypto';
 
 const execFile=promisify(execFileCb);
 export const VOICE_RATE=16000;
 const MAX_INPUT=VOICE_RATE*2*14,MIN_INPUT=VOICE_RATE*2/2;
-const READ_ONLY=new Set(['system_status','system_diagnostics','list_prospects','search_leads','get_lead',
- 'list_workflows','whatsapp_status','list_meetings','discovery_history','safe_settings',
- 'read_outreach_queue','read_owner_settings']);
-const allowedTools=agentTools.filter(x=>READ_ONLY.has(x.function.name));
+// Read tools run during the call. Write tools only prepare an approval code;
+ // the actual change requires a separate message from the owner's verified JID.
+async function notifyOwnerApproval({jid,sessionId,name,code,preview}){
+ const summary=typeof preview==='string'?preview:JSON.stringify(preview||{});
+ const text='Francisca — pedido iniciado por ligação\nAção: '+String(name||'').slice(0,60)+
+  '\nPrévia: '+summary.slice(0,800)+'\nAinda NÃO executado. Para autorizar, responda: CONFIRMAR '+code+
+  '\nPrazo: 10 minutos. Se não reconhecer o pedido, ignore.';
+ try{
+  const ack=await waRequest('/api/messages/'+encodeURIComponent(sessionId)+'/'+encodeURIComponent(jid)+'/send',
+   {method:'POST',data:{message:{text}}});
+  return ack.status===true;
+ }catch{return false;}
+}
 export function callLabStatus(){
  return {enabled:process.env.WA_AKG_CALL_LAB_ENABLED==='true',provider:'WA-AKG/experimental',
   mediaTransportConnected:false,answeringCalls:false,mode:'half-duplex prototype',
-  ownerOnly:true,readOnly:true,pcmHz:VOICE_RATE};
+  ownerOnly:true,readOnly:false,requiresWhatsAppTextConfirmation:true,pcmHz:VOICE_RATE};
 }
 export function wavFromPcm16(pcm){
  if(!Buffer.isBuffer(pcm)||pcm.length%2!==0||pcm.length<MIN_INPUT||pcm.length>MAX_INPUT)
@@ -84,7 +94,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const heard=String(recognized.text||'').trim().slice(0,650);
     if(heard.length<2)throw Error('CALL_TRANSCRIPTION_EMPTY');
     const verified=verifyVoiceOwner({jid,sessionId});
-    const availableTools=verified.ownerTools?allowedTools:[];
+    const availableTools=voiceToolsForOwner(agentTools,verified.ownerTools);
     if(interruption)context.noteInterruption(interruption);
     // Voice sandbox blocks commands, but a verified owner may inspect safe,
     // aggregate operational facts. Preload these before calling Groq so a
@@ -106,7 +116,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const replyPlan=voiceReplyPlan(heard,spokenHistory);
     const messages=[
      {role:'system',content:voiceStyleInstruction({heard,history:spokenHistory})},
-     {role:'system',content:'Conhecimento aprovado da Consecom Brasil: agência de publicidade e tecnologia com sites profissionais, presença digital e automações conforme escopo. '+priceAsReference()+' Não cite preço sem uma pergunta explícita sobre preço. Informações específicas de projetos e operações devem vir de dados realmente consultados.'},
+     {role:'system',content:OWNER_PERSONA+'\nLIGAÇÃO DO PROPRIETÁRIO: você pode consultar dados reais e PREPARAR tarefas. Para qualquer envio ou mudança, apresente código de confirmação por TEXTO. Não há acesso irrestrito ao servidor ou segredos.'},
      {role:'system',content:context.systemNote(heard)},
      ...(operationalBriefing?[{role:'system',content:
       'DADOS OPERACIONAIS REAIS DISPONÍVEIS AGORA (somente leitura): '+
@@ -117,7 +127,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const chat=deps.chat||groqChat,readTool=deps.readTool||runAgentTool;
     let spoken='';
     try{
-     let result=await chat({task:'voice',messages,tools:availableTools,maxTokens:replyPlan.maxTokens});
+     let result=await chat({task:'voice',messages,tools:availableTools,maxTokens:Math.max(350,replyPlan.maxTokens)});
      for(let n=0;n<2&&result.choice?.tool_calls?.length;n++){
       const calls=result.choice.tool_calls;
       messages.push(result.choice);
@@ -128,12 +138,21 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
        let output;
        try{
         if(i>=2)throw Error('CALL_TOOL_LIMIT');
-        if(!availableTools.some(x=>x.function.name===call.function?.name))throw Error('READ_ONLY_CALL');
-        output=await readTool(call.function.name,JSON.parse(call.function.arguments||'{}'),{jid,sessionId});
+        if(!availableTools.some(x=>x.function.name===call.function?.name))throw Error('VOICE_TOOL_NOT_AVAILABLE');
+        const command=await runOwnerVoiceTool(call.function.name,JSON.parse(call.function.arguments||'{}'),
+         {jid,sessionId},readTool);
+        output=command;
+        if(command?.requiresConfirmation&&command.code){
+         const notify=deps.notifyOwnerApproval||notifyOwnerApproval;
+         const delivered=await notify({jid,sessionId,name:call.function.name,code:command.code,
+          preview:command.result?.preview||command.preview});
+         output={...command,confirmationWhatsAppDelivered:delivered===true,
+          nextStep:'Proprietário precisa enviar CONFIRMAR '+command.code+' pelo WhatsApp para efetivar'};
+        }
        }catch(e){output={error:String(e.message).slice(0,90)};}
        messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(output).slice(0,3000)});
       }
-      result=await chat({task:'voice',messages,tools:availableTools,maxTokens:replyPlan.maxTokens});
+      result=await chat({task:'voice',messages,tools:availableTools,maxTokens:Math.max(350,replyPlan.maxTokens)});
      }
      spoken=polishVoiceReply(result.choice?.content||'',{history:spokenHistory,heard,maxChars:replyPlan.maxChars});
      if(spoken.length<2)throw Error('VOICE_LLM_EMPTY');

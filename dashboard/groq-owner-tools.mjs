@@ -9,6 +9,19 @@ import {ownerAdminTools,ownerAdminToolNames,runOwnerAdminTool,executeOwnerAdminC
 // This is a deliberately restricted, auditable interface to real CRM operations.
 // Never grant raw SQL, arbitrary HTTP fetches, code execution, credential reads, or bulk sends.
 db.exec("CREATE TABLE IF NOT EXISTS groq_owner_approvals(code TEXT PRIMARY KEY,jid TEXT NOT NULL,body TEXT NOT NULL,state TEXT NOT NULL,expires INTEGER NOT NULL)");
+db.exec("CREATE TABLE IF NOT EXISTS groq_owner_direct_approvals(code TEXT PRIMARY KEY,jid TEXT NOT NULL,body TEXT NOT NULL,state TEXT NOT NULL,expires INTEGER NOT NULL,created_at TEXT NOT NULL)");
+// Manual one-off messages use an independent ledger; they never grant marketing opt-in.
+function ownerMessageCode(){
+ for(let tries=0;tries<25;tries++){
+  const code=String(crypto.randomInt(100000,1000000));
+  if(!one('SELECT code FROM groq_owner_approvals WHERE code=?',code)&&
+     !one('SELECT code FROM groq_owner_direct_approvals WHERE code=?',code)&&
+     !one('SELECT code FROM groq_owner_confirmations WHERE code=?',code)&&
+     !(one("SELECT name FROM sqlite_master WHERE type='table' AND name='groq_owner_voice_actions'")&&one('SELECT code FROM groq_owner_voice_actions WHERE code=?',code)))
+   return code;
+ }
+ throw Error('Não foi possível gerar código exclusivo');
+}
 db.exec("CREATE TABLE IF NOT EXISTS groq_owner_confirmations(code TEXT PRIMARY KEY,operation TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL,expires INTEGER NOT NULL)");
 const obj=props=>({type:'object',properties:props,additionalProperties:false});
 const string=(description)=>({type:'string',description});
@@ -40,7 +53,8 @@ export const agentTools=[
  tool('create_meeting','Create a meeting record for an existing lead (no Google Calendar invitations)',{lead_id:string('Exact lead ID'),start_at:string('ISO 8601 date with timezone offset, in the future'),notes:string('Optional meeting topic')},['lead_id','start_at']),
  tool('block_contact','Stop future outreach to an existing lead and cancel any pending tasks',{lead_id:string('Exact lead ID'),reason:string('Reason for stopping contact')},['lead_id']),
  tool('search_businesses','Run a live, rate-limited public OpenStreetMap niche/city search and save found businesses; coverage incomplete',{niche:string('Industry, e.g. oficinas mecânicas'),city:string('Brazilian city, e.g. Sorocaba')},['niche','city']),
- tool('prepare_message','Prepare ONE WhatsApp reply to a contact who has already messaged the business; requires a confirmation code',{phone:string('Recipient phone with DDD'),text:string('Exact message, no bulk sends')},['phone','text'])
+ tool('prepare_message','Prepare ONE WhatsApp reply to a contact who has already messaged the business; requires a confirmation code',{phone:string('Recipient phone with DDD'),text:string('Exact message, no bulk sends')},['phone','text']),
+ tool('prepare_direct_message','Prepare ONE owner-directed manual WhatsApp message to an exact Brazilian number; does not send until separate WhatsApp text CONFIRMAR code. No bulk marketing, no opt-out recipients.',{phone:string('Exact recipient Brazilian number with DDD; do not infer from name'),text:string('Exact message personally requested by owner; no unsolicited mass advertising')},['phone','text'])
 ,...ownerAdminTools
 ];
 const requiredText=(v,max=300,min=1)=>{
@@ -181,20 +195,45 @@ export async function runAgentTool(name,a={},actor){
   const number=phone(a.phone),body=requiredText(a.text,1200,1);
   if(!number)throw Error('Telefone inválido');
   if(!permittedRecipient(number))throw Error('Somente contatos que autorizaram ou iniciaram conversa, sem opt-out');
-  const code=String(crypto.randomInt(100000,1000000));
+  const code=ownerMessageCode();
   run('INSERT INTO groq_owner_approvals VALUES(?,?,?,?,?)',code,number+'@s.whatsapp.net',body,'PENDING',Date.now()+600000);
   audit('GROQ_OWNER_MESSAGE_PREPARED',null,{recipientSuffix:number.slice(-4)});
   return {requiresConfirmation:true,code,recipientSuffix:number.slice(-4),preview:body,instruction:'Envie CONFIRMAR '+code+' em até 10 minutos. Não foi enviado.'};
+ }
+ if(name==='prepare_direct_message'){
+  const number=phone(a.phone),body=requiredText(a.text,1200,1);
+  if(!number||!/^55\d{10,11}$/.test(number))throw Error('Número brasileiro com DDD inválido');
+  if(number===verifiedOwnerPhone())throw Error('Não é possível enviar para o próprio número pelo comando avulso');
+  if(one('SELECT phone FROM suppressions WHERE phone=?',number))throw Error('Contato bloqueado: envio não permitido');
+  // Independent manual one-offs are tightly bounded; do not convert them into campaigns.
+  const count=one('SELECT COUNT(*) n FROM groq_owner_direct_approvals WHERE created_at>?',new Date(Date.now()-24*3600000).toISOString())?.n||0;
+  if(count>=8)throw Error('Limite de 8 mensagens avulsas preparadas em 24 horas. Use atendimento direto ou canal autorizado.');
+  const code=ownerMessageCode();
+  run("INSERT INTO groq_owner_direct_approvals VALUES(?,?,?,?,?,?)",code,number+'@s.whatsapp.net',body,'PENDING',Date.now()+600000,now());
+  audit('GROQ_OWNER_DIRECT_PREPARED',null,{recipientSuffix:number.slice(-4)});
+  return {requiresConfirmation:true,code,recipientSuffix:number.slice(-4),preview:body,
+   sendMode:'OWNER_ONE_TO_ONE',marketingOptIn:false,bulk:false,
+   instruction:'Mensagem avulsa NÃO enviada. Confira o número, o texto e responda CONFIRMAR '+code+' neste WhatsApp em até 10 minutos.'};
  }
  throw Error('Ferramenta indisponível: '+String(name).slice(0,60));
 }
 export function claimApproval(code){
  const pending=one("SELECT * FROM groq_owner_approvals WHERE code=? AND state='PENDING' AND expires>?",String(code),Date.now());
- if(!pending||!permittedRecipient(pending.jid.split('@')[0]))return null;
- run("UPDATE groq_owner_approvals SET state='UNKNOWN' WHERE code=? AND state='PENDING'",code);
- return pending;
+ if(pending&&permittedRecipient(pending.jid.split('@')[0])){
+  if(run("UPDATE groq_owner_approvals SET state='UNKNOWN' WHERE code=? AND state='PENDING'",code).changes)return pending;
+ }
+ const direct=one("SELECT * FROM groq_owner_direct_approvals WHERE code=? AND state='PENDING' AND expires>?",String(code),Date.now());
+ if(!direct)return null;
+ const number=direct.jid.split('@')[0];
+ if(!/^55\d{10,11}$/.test(number)||number===verifiedOwnerPhone()||
+    one('SELECT 1 FROM suppressions WHERE phone=?',number))return null;
+ if(!run("UPDATE groq_owner_direct_approvals SET state='UNKNOWN' WHERE code=? AND state='PENDING'",code).changes)return null;
+ return {...direct,ownerDirected:true};
 }
-export function markApproval(code){run("UPDATE groq_owner_approvals SET state='SENT' WHERE code=? AND state='UNKNOWN'",code);}
+export function markApproval(code){
+ run("UPDATE groq_owner_approvals SET state='SENT' WHERE code=? AND state='UNKNOWN'",code);
+ run("UPDATE groq_owner_direct_approvals SET state='SENT' WHERE code=? AND state='UNKNOWN'",code);
+}
 
 export function executeConfirmedOperation(code,actor){
  const role=classifyContact({jid:actor?.jid,sessionId:actor?.sessionId});
