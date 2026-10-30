@@ -20,5 +20,5 @@ export function voiceMetricsSummary(){
 export const voiceMetricsRequested=x=>/(?:latencia|lentidao|velocidade|demora|diagnostico|metricas?|desempenho)\s+(?:das?\s+)?(?:ultimas?\s+)?(?:chamadas?|ligacoes?|conversas?\s+de\s+voz)|(?:como\s+)?(?:estao|est[aá])\s+(?:a\s+)?(?:qualidade|velocidade)\s+das?\s+(?:chamadas?|ligacoes?)/i.test(String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase());
 export function voiceMetricsSpoken(){
  const m=voiceMetricsSummary();
- return m.turns?'Nas últimas sete dias, medi '+m.turns+' respostas. Tempo médio total: '+(m.avgMs/1000).toFixed(1)+' segundos, sendo '+(m.sttMs/1000).toFixed(1)+' na transcrição, '+(m.llmMs/1000).toFixed(1)+' no processamento e '+(m.ttsMs/1000).toFixed(1)+' na voz. O detector registrou '+m.interruptions+' interrupções e '+m.uncertain+' transcrições incertas.':'Ainda não tenho amostras de chamadas suficientes para apresentar tempos medidos.';
+ return m.turns?'Nos últimos sete dias, medi '+m.turns+' respostas. Tempo médio total: '+(m.avgMs/1000).toFixed(1)+' segundos, sendo '+(m.sttMs/1000).toFixed(1)+' na transcrição, '+(m.llmMs/1000).toFixed(1)+' no processamento e '+(m.ttsMs/1000).toFixed(1)+' na voz. O detector registrou '+m.interruptions+' interrupções e '+m.uncertain+' transcrições incertas.':'Ainda não tenho amostras de chamadas suficientes para apresentar tempos medidos.';
 }
