@@ -33,7 +33,7 @@ test('Francisca owner audio turn and lifecycle work without live external calls'
  let requests=0;
  const session=newFranciscaCallSession(OWNER,{
   transcribe:async({buffer,filename})=>{assert.equal(filename,'live-turn.wav');assert.equal(buffer.readUInt32LE(24),16000);return{text:'Francisca, bom dia'};},
-  chat:async({tools})=>{requests++;assert(tools.some(t=>t.function.name==='request_start_outreach'));return{choice:{content:'Bom dia! Estou pronta para ajudar.'}};},
+  chat:async({tools})=>{requests++;assert(tools.some(t=>t.function.name==='system_status'));return{choice:{content:'Bom dia! Estou pronta para ajudar.'}};},
   synthesize:async(text)=>{assert.match(text,/Bom dia/);return {bytes:Buffer.alloc(512),voice:'pt-BR-FranciscaNeural'};},
   convert:async()=>Buffer.alloc(640)
  });
@@ -118,7 +118,7 @@ test('Every model-generated tool call gets a tool reply, even above the safe lim
   synthesize:async()=>({bytes:Buffer.alloc(512)}),convert:async()=>Buffer.alloc(400)
  });
  const response=await s.reply(pcm);
- assert.equal(attempts,2); // The tool budget allows only two preparatory requests, both failed in the mock.
+ assert.equal(attempts,0); // This unrelated prospecting tool is not available for a system-information request.
  assert.match(response.spoken,/confirmação por texto/);
  s.end();
 });
