@@ -24,7 +24,7 @@ const scenarios=[
  ['design',/\b(?:visual|layout|design|personalizado|cores|identidade visual|minha marca|logo)\b/,'Converse sobre referências, identidade da empresa e escolhas visuais, sem prometer recursos fora do escopo.'],
  ['changes',/\b(?:alterar|editar|mudar|trocar (?:foto|imagem|texto)|atualizar (?:o )?site|ajuste)\b/,'Descubra qual ajuste e se já existe contrato; não afirme que a alteração foi feita.'],
  ['portfolio',/\b(?:portfolio|exemplo|trabalhos|case|mostra (?:um|o)|site que voces fizeram)\b/,'Reconheça o pedido por exemplos e ofereça confirmação de portfólio verificado; não invente links, cases nem depoimentos.'],
- ['social',/\b(?:so tenho instagram|tenho (?:so |apenas )?instagram|rede(?:s)? socia(?:l|is)|ja tenho whatsapp)\b/,'Responda por complementaridade: redes sociais atraem, site organiza informações e credibilidade; sem desvalorizar redes existentes.'],
+ ['social',/\b(?:so tenho instagram|tenho (?:so |apenas )?instagram|so uso instagram|apenas uso instagram|uso (?:so |apenas )?instagram|rede(?:s)? socia(?:l|is)|ja tenho whatsapp)\b/,'Responda por complementaridade: redes sociais atraem, site organiza informações e credibilidade; sem desvalorizar redes existentes.'],
  ['already_site',/\b(?:ja tenho (?:um )?site|meu site (?:ja existe|funciona)|tenho (?:um )?site)\b/,'Não insista em vender outro site. Explore ajustes, velocidade, conteúdo, conversão ou nenhuma necessidade.'],
  ['no_site',/\b(?:nao tenho (?:um )?site|preciso de (?:um )?site|quero criar (?:um )?site)\b/,'Investigue objetivo, serviços/produtos e contatos desejados. Proponha alinhamento de escopo.'],
  ['why_me',/\b(?:por que (?:me chamou|nos chamou|a minha empresa|eu)|de onde (?:conseguiu|pegou|tirou) (?:meu numero|contato)|como encontrou)\b/,'Explique com transparência que é um contato comercial, sem afirmar origem, pesquisa ou autorização que não conste nos dados.'],
@@ -89,7 +89,7 @@ export function compactChatHistory(history=[],maxChars=3100){
  while(combined.length>maxChars&&lines.length>2){lines.shift();combined=lines.join('\n');}
  return combined.slice(-maxChars);
 }
-const greeting=/^(?:(?:ola|olá|oi|oie|alo|alô|bom dia|boa tarde|boa noite)(?:[!,.:;\s–—-]+|$))(?:[\s,]*(?:[A-ZÀ-Ü][a-zà-ü]{1,20}[\s,!?.]*)?)?/i;
+const greeting=/^\s*(?:olá|ola|oi|oie|alô|alo|bom dia|boa tarde|boa noite)(?:\s*,\s*(?:[A-ZÀ-Ü][a-zà-ü]{1,20}\s*[!?.]?|tudo bem[!?.]?)|\s*[!,.?:;])\s*/i;
 const filler=/^(?:claro|entendi|perfeito|com certeza|sem problemas|sem problema|maravilha|otimo|ótimo|vamos la|vamos lá)(?:[!,.:;\s–—-]+|$)/i;
 const answerText=t=>String(t||'').replace(/\r/g,'').trim();
 const normOpening=s=>norm(s).replace(/^[.,!:\s]+/,'').split(/[.!?]/)[0].slice(0,45);
