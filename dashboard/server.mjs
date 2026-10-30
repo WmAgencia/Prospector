@@ -43,6 +43,7 @@ import {voiceStatus,makeFranciscaVoice,makeFranciscaCallPcm} from './francisca-t
 import {wavFromPcm16} from './francisca-call-lab.mjs';
 import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
 import {authorizeCallBridge,processCallBridge,callBridgeStatus} from './francisca-call-bridge.mjs';
+import {voiceMetricsSummary} from './francisca-call-observability.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
 import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
@@ -398,7 +399,25 @@ async function handler(req,res){
   if(url.pathname==='/api/internal/waakg/call-turn'){
    if(req.method!=='POST')return respond(res,405,{error:'Method not allowed'});
    if(!authorizeCallBridge(req.headers['x-wa-call-bridge-secret']))return respond(res,401,{error:'Unauthorized'});
-   try{return respond(res,200,await processCallBridge(await json(req)));}
+   try{
+    const input=await json(req);
+    if(req.headers['x-voice-stream']==='1'&&input?.event==='turn'){
+     res.writeHead(200,{'Content-Type':'application/x-ndjson; charset=utf-8',
+      'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+     try{
+      await processCallBridge(input,{onSegment:async ({replyId,pcm16k,index,total})=>{
+       if(res.destroyed||res.writableEnded)throw Error('VOICE_STREAM_DISCONNECTED');
+       res.write(JSON.stringify({type:'audio',replyId,index,total,pcm16k:pcm16k.toString('base64')})+'\n');
+      }});
+      if(!res.destroyed)res.end(JSON.stringify({type:'done',ok:true})+'\n');
+     }catch(error){
+      console.warn('[voice-stream]',String(error?.message||error).slice(0,65));
+      if(!res.destroyed)res.end(JSON.stringify({type:'error',code:'VOICE_STREAM_FAILED'})+'\n');
+     }
+     return;
+    }
+    return respond(res,200,await processCallBridge(input));
+   }
    catch(e){console.warn('[voice-call-bridge]',String(e?.message||e).slice(0,70));return respond(res,422,{error:String(e?.message||e).slice(0,100)});}
   }
   if(!protectedAccess(req,res,url.pathname))return;
@@ -474,6 +493,7 @@ async function handler(req,res){
    return respond(res,result.ok?200:result.httpStatus||502,{ok:result.ok,provider:result.provider,model:result.model||null,code:result.code||null,autoSend:false});
   }
   if(req.method==='GET'&&pathname==='/api/ai/call-bridge-status')return respond(res,200,callBridgeStatus());
+  if(req.method==='GET'&&pathname==='/api/ai/voice-metrics')return respond(res,200,voiceMetricsSummary());
   if(req.method==='GET'&&pathname==='/api/ai/audio-status')
    return respond(res,200,{transcription:audioStatus(),francisca:voiceStatus(),manualVoice:true,autoVoiceReplies:process.env.AUDIO_RESPONSE_ENABLED==='true'});
   if(req.method==='POST'&&pathname==='/api/ai/voice-preview'){

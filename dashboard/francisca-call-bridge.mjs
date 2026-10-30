@@ -28,7 +28,7 @@ export function authorizeCallBridge(key){
  return crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(received));
 }
 function prune(){for(const [id,v] of sessions)if(Date.now()-v.updated>5*60_000){v.session.end();sessions.delete(id);}}
-export async function processCallBridge(a={}){
+export async function processCallBridge(a={},options={}){
  if(!a||typeof a!=='object')throw Error('CALL_BAD_REQUEST');
  const callId=String(a.callId||'');
  if(!/^[a-zA-Z0-9_-]{8,100}$/.test(callId))throw Error('CALL_ID_INVALID');
@@ -43,7 +43,7 @@ export async function processCallBridge(a={}){
  if(sessions.size>2&&!sessions.has(callId))throw Error('CALL_CAPACITY');
  let c=sessions.get(callId);
  if(c&&(c.jid!==identity.jid||c.sessionId!==identity.sessionId))throw Error('CALL_IDENTITY_CHANGED');
- if(!c){c={jid:identity.jid,sessionId:identity.sessionId,session:newFranciscaCallSession(identity),updated:Date.now()};sessions.set(callId,c);}
+ if(!c){c={jid:identity.jid,sessionId:identity.sessionId,session:newFranciscaCallSession({...identity,callId}),updated:Date.now()};sessions.set(callId,c);}
  c.updated=Date.now();
  if(a.event==='backchannel'){
   const kind=String(a.kind||'');
@@ -67,6 +67,8 @@ export async function processCallBridge(a={}){
   playedMs:Math.max(0,Math.min(60000,Number(a.interruption.playedMs)||0)),
   totalMs:Math.max(0,Math.min(60000,Number(a.interruption.totalMs)||0))
  }:null;
- const reply=await c.session.reply(pcm,{interruption});
- return {ok:true,event:'reply',replyId:reply.replyId,heard:reply.heard,spoken:reply.spoken,rate:reply.rate,pcm16k:reply.pcm16k.toString('base64')};
+ const reply=await c.session.reply(pcm,{interruption,onSegment:options.onSegment});
+ return {ok:true,event:'reply',replyId:reply.replyId,heard:reply.heard,spoken:reply.spoken,
+  rate:reply.rate,pcm16k:options.onSegment?'':reply.pcm16k.toString('base64'),
+  streamed:typeof options.onSegment==='function'};
 }
