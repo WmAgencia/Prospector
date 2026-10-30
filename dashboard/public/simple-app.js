@@ -149,7 +149,7 @@ function settings(){
   ['Interrupções',voiceMetrics?.interruptions??'—','Turnos cortados pelo interlocutor'],
   ['Áudio em partes',voiceMetrics?.turns?String(voiceMetrics.avgSegments)+' segmentos':'—','Média de segmentos por resposta']
  ])+
- (voiceMetrics?.turns?'<p class="footnote">Tempo médio por etapa: Whisper '+(voiceMetrics.sttMs/1000).toFixed(1)+' s · processamento '+(voiceMetrics.llmMs/1000).toFixed(1)+' s · voz '+(voiceMetrics.ttsMs/1000).toFixed(1)+' s. Transcrições incertas: '+voiceMetrics.uncertain+'.</p>':'<p class="footnote">Os indicadores aparecerão após as primeiras chamadas na nova versão.</p>')+
+ (voiceMetrics?.turns?'<p class="footnote">Tempo médio por etapa: Whisper '+(voiceMetrics.sttMs/1000).toFixed(1)+' s · processamento '+(voiceMetrics.llmMs/1000).toFixed(1)+' s · voz '+(voiceMetrics.ttsMs/1000).toFixed(1)+' s. Transcrições incertas: '+voiceMetrics.uncertain+' · Falhas de processamento: '+voiceMetrics.failures+'.</p>':'<p class="footnote">Os indicadores aparecerão após as primeiras chamadas na nova versão.</p>')+
  '</section>';
 }
 function render(){
