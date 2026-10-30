@@ -10,6 +10,7 @@ import {promisify} from 'node:util';
 import {verifiedOwnerPhone,classifyContact} from './whatsapp-roles.mjs';
 import {selectedWaSession,waRequest} from './waakg-control.mjs';
 import {OWNER_PERSONA} from './francisca-owner-persona.mjs';
+import {newVoiceDirectMessageFlow} from './francisca-owner-voice-messages.mjs';
 import {voiceToolsForOwner,runOwnerVoiceTool} from './francisca-owner-voice-actions.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import {makeFranciscaVoice,makeFranciscaCallPcm,checkVoiceText} from './francisca-tts.mjs';
@@ -31,7 +32,7 @@ function selectVoiceTools(tools,spoken){
  const norm=String(spoken||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
  let wants;
  if(/(?:envi\w*|manda\w*|mande\w*|mensag\w*|whatsapp|numero|telefone|recado)/.test(norm))
-  wants=['prepare_direct_message','prepare_message','search_leads','list_whatsapp_chats','read_whatsapp_chat'];
+  wants=['search_leads','list_whatsapp_chats','read_whatsapp_chat'];
  else if(/(?:lead|abord|prospect|contat|empresa|cliente)/.test(norm))
   wants=['system_status','list_prospects','search_leads','get_lead','list_conversations','read_conversation'];
  else if(/(?:campanha|fila|abordagem|automacao|paus|retomar)/.test(norm))
@@ -40,7 +41,7 @@ function selectVoiceTools(tools,spoken){
   wants=['list_meetings','create_meeting','request_cancel_meeting','search_leads'];
  else if(/(?:relatorio|diagnost|sistema|status|situacao)/.test(norm))
   wants=['system_status','system_diagnostics','read_outreach_queue','read_owner_settings','discovery_history'];
- else wants=['system_status','list_capabilities','search_leads','list_conversations','prepare_direct_message'];
+ else wants=['system_status','list_capabilities','search_leads','list_conversations'];
  const allowed=new Set(wants);
  return tools.filter(t=>allowed.has(t.function.name));
 }
@@ -62,7 +63,7 @@ async function notifyOwnerApproval({jid,sessionId,name,code,preview}){
 export function callLabStatus(){
  return {enabled:process.env.WA_AKG_CALL_LAB_ENABLED==='true',provider:'WA-AKG/experimental',
   mediaTransportConnected:false,answeringCalls:false,mode:'half-duplex prototype',
-  ownerOnly:true,readOnly:false,requiresWhatsAppTextConfirmation:true,pcmHz:VOICE_RATE};
+  ownerOnly:true,readOnly:false,requiresWhatsAppTextConfirmation:true,manualMessageVoiceConfirmation:true,pcmHz:VOICE_RATE};
 }
 export function wavFromPcm16(pcm){
  if(!Buffer.isBuffer(pcm)||pcm.length%2!==0||pcm.length<MIN_INPUT||pcm.length>MAX_INPUT)
@@ -103,6 +104,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
  // Always validate at creation AND each turn; no unverified caller can use AI tools.
  verifyVoiceOwner({jid,sessionId});
  const context=newCallContext();
+ const voiceMessages=newVoiceDirectMessageFlow({send:deps.sendDirectMessage});
  let busy=false,ended=false;
  return {
   async reply(pcm16k,{interruption}={}){
@@ -118,8 +120,12 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const heard=String(recognized.text||'').trim().slice(0,650);
     if(heard.length<2)throw Error('CALL_TRANSCRIPTION_EMPTY');
     const verified=verifyVoiceOwner({jid,sessionId});
+    // This deterministic per-call state machine handles direct WhatsApp messages,
+    // missing phone/text, spoken preview and exact verbal approval. It never
+    // accepts free-form model tool calls as permission to send.
+    const voiceMessageReply=await voiceMessages.turn(heard,{jid,sessionId});
     const availableTools=selectVoiceTools(voiceToolsForOwner(agentTools,verified.ownerTools),heard);
-    console.info('[francisca-voice-owner-access]',JSON.stringify({
+    if(!voiceMessageReply)console.info('[francisca-voice-owner-access]',JSON.stringify({
      ownerVerified:verified.ownerTools===true,toolsAvailable:availableTools.length,
      callMode:'OWNER',stagedActionsOnly:true
     }));
@@ -150,7 +156,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
       ' leads abordados, de '+operationalBriefing.stats.leads+' cadastrados. Esse total considera abordagens confirmadas, não mensagens apenas preparadas.':null;
     const messages=[
      {role:'system',content:voiceStyleInstruction({heard,history:spokenHistory})},
-     {role:'system',content:OWNER_PERSONA+'\nLIGAÇÃO DO PROPRIETÁRIO: você pode consultar dados reais e PREPARAR tarefas. Para qualquer envio ou mudança, apresente código de confirmação por TEXTO. Não há acesso irrestrito ao servidor ou segredos.'},
+     {role:'system',content:OWNER_PERSONA+'\nLIGAÇÃO DO PROPRIETÁRIO: uma mensagem manual individual pode ser enviada SOMENTE após repetição exata da mensagem e autorização verbal explícita na mesma chamada. O módulo determinístico do servidor executa esse fluxo; NÃO use prepare_direct_message por ferramenta de IA. Outras alterações administrativas continuam exigindo confirmação por TEXTO. Não há acesso irrestrito ao servidor ou segredos.'},
      {role:'system',content:context.systemNote(heard)},
      ...(operationalBriefing?[{role:'system',content:
       'DADOS OPERACIONAIS REAIS DISPONÍVEIS AGORA (somente leitura): '+
@@ -161,6 +167,8 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const chat=deps.chat||groqChat,readTool=deps.readTool||runAgentTool;
     let spoken='';
     try{
+     if(voiceMessageReply){spoken=voiceMessageReply;}
+     else{
      let result=directCount?{choice:{content:directCount}}:
       await chat({task:availableTools.length?'actions':'voice',messages,tools:availableTools,maxTokens:Math.max(550,replyPlan.maxTokens)});
      for(let n=0;n<2&&result.choice?.tool_calls?.length;n++){
@@ -191,6 +199,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
      }
      spoken=polishVoiceReply(result.choice?.content||'',{history:spokenHistory,heard,maxChars:replyPlan.maxChars});
      if(spoken.length<2)throw Error('VOICE_LLM_EMPTY');
+     }
     }catch(e){
      // The caller must NEVER get prolonged silence when a provider rejects
      // a request. No system state is invented and no actions are attempted.
@@ -221,7 +230,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     return {heard,spoken,replyId,pcm16k:outgoing,format:'s16le',rate:VOICE_RATE,voice};
    }finally{busy=false;}
   },
-  end(){ended=true;context.clear();},
+  end(){ended=true;context.clear();voiceMessages.end();},
   get state(){return ended?'ENDED':busy?'BUSY':'READY';}
  };
 }

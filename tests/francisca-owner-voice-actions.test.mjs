@@ -65,39 +65,34 @@ test('Voice one-off message cannot target owner or a suppressed number',async()=
  await assert.rejects(runOwnerVoiceTool('prepare_direct_message',
   {phone:'5515981817336',text:'Self send'},actor,runAgentTool),/próprio/);
 });
-test('Voice model sees owner operational identity and can request approval without network calls',async()=>{
+test('A direct WhatsApp message during a call skips model tools and asks for spoken approval',async()=>{
  const {newFranciscaCallSession}=await import('../dashboard/francisca-call-lab.mjs');
- const pcm=Buffer.alloc(32000);
- const prompts=[],notices=[];
- let rounds=0;
+ const pcm=Buffer.alloc(32000),utterances=[
+  'Manda uma mensagem para o número 15 99911 2255 falando que está tudo certo',
+  'pode enviar'
+ ];
+ const actual=[],notices=[];
+ let modelCalls=0;
  const session=newFranciscaCallSession(actor,{
-  transcribe:async()=>({text:'Manda uma mensagem para o número 15999112255 falando que está tudo certo'}),
-  chat:async ({messages,tools})=>{
-   prompts.push(messages);
-   if(++rounds===1){
-    assert(tools.some(t=>t.function.name==='prepare_direct_message'));
-    return {choice:{role:'assistant',content:null,tool_calls:[{
-     id:'call_1',type:'function',function:{name:'prepare_direct_message',arguments:JSON.stringify({
-      phone:'5515999112255',text:'Está tudo certo.'
-     })}}]}};
-   }
-   assert(messages.some(x=>x.role==='tool'&&x.content.includes('confirmationWhatsAppDelivered')));
-   return {choice:{content:'Preparei a mensagem para o número terminado em 2255. Envie CONFIRMAR com o código recebido por texto no WhatsApp para efetivar.'}};
-  },
+  transcribe:async()=>({text:utterances.shift()}),
+  chat:async()=>{modelCalls++;throw Error('VOICE_SEND_MUST_NOT_CALL_MODEL');},
   notifyOwnerApproval:async value=>{notices.push(value);return true;},
-  readTool:runAgentTool,
+  sendDirectMessage:async args=>{actual.push(args);return true;},
   synthesize:async()=>({bytes:Buffer.alloc(512),voice:'test'}),
   convert:async()=>Buffer.alloc(640)
  });
- const response=await session.reply(pcm);
- assert.match(response.spoken,/Preparei a mensagem/);
- assert.equal(notices.length,1);
- assert.match(notices[0].code,/^\d{6}$/);
- assert(prompts[0].some(x=>x.role==='system'&&/OPERACIONAL/.test(x.content)));
- assert(!prompts[0].some(x=>x.role==='system'&&/preço de site|R\$ 550/.test(x.content)));
- assert.equal(rounds,2);
- session.end();
+ try{
+  const preview=await session.reply(pcm);
+  assert.match(preview.spoken,/Posso enviar/);
+  assert.equal(actual.length,0);
+  const delivered=await session.reply(pcm);
+  assert.match(delivered.spoken,/WhatsApp aceitou/);
+  assert.equal(actual.length,1);
+  assert.equal(modelCalls,0);
+  assert.equal(notices.length,0);
+ }finally{session.end();}
 });
+
 test.after(async()=>{
  const {db}=await import('../dashboard/db.mjs');
  db.close();

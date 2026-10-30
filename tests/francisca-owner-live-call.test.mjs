@@ -54,22 +54,23 @@ test('Voice count question gets actual data without calling Groq (including QA m
   assert.equal(calls,0);
  }finally{session.end();process.env.PROSPECTOR_LIVE_TEST_ENABLED='false';delete process.env.PROSPECTOR_LIVE_TEST_PHONE;}
 });
-test('Voice requests for messages scope available Groq tools and do not send autonomously',async()=>{
- let toolsChosen=[],text=null;
+test('Voice asks for a missing number without Groq and never sends autonomously',async()=>{
+ let calls=0,sends=0;
  const session=newFranciscaCallSession(owner,{
   transcribe:async()=>({text:'Envia uma mensagem pro numero informado falando que está tudo certo'}),
-  chat:async({tools})=>{toolsChosen=tools.map(t=>t.function.name);return{choice:{content:'Qual é o número completo do destinatário?'}};},
-  synthesize:async x=>{text=x;return {bytes:Buffer.alloc(512)};},
+  chat:async()=>{calls++;throw Error('MUST_NOT_CALL_GROQ');},
+  sendDirectMessage:async()=>{sends++;return true;},
+  synthesize:async()=>({bytes:Buffer.alloc(512)}),
   convert:async()=>Buffer.alloc(400)
  });
  try{
   const res=await session.reply(Buffer.alloc(32000));
-  assert(toolsChosen.includes('prepare_direct_message'));
-  assert(!toolsChosen.includes('request_start_outreach'));
-  assert.match(text,/número completo/);
-  assert.match(res.spoken,/número completo/);
+  assert.match(res.spoken,/telefone completo/);
+  assert.equal(calls,0);
+  assert.equal(sends,0);
  }finally{session.end();}
 });
+
 test('A voice model outage is reported accurately without blaming unrecognized caller speech',async()=>{
  const session=newFranciscaCallSession(owner,{
   transcribe:async()=>({text:'Quero saber se meu projeto está sendo vendido'}),

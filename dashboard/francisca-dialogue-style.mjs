@@ -38,7 +38,7 @@ export function voiceStyleInstruction({heard='',history=[]}={}){
    ? 'Isto é CONTINUAÇÃO da mesma chamada, não o início de outro atendimento. Não cumprimente novamente.'
    : 'No primeiro turno você pode retribuir um cumprimento explícito do interlocutor, mas nunca faça uma nova apresentação completa.',
   openerExamples.length?'Aberturas usadas recentemente; evite repeti-las: '+openerExamples.join(' | '):'',
-  'Nunca se passe por uma pessoa humana, invente serviços, dados do sistema, preços ou ações. Ferramentas administrativas exigem identidade verificada. Por voz, faça consultas reais e prepare tarefas; operações que alteram dados ou enviam mensagens exigem CONFIRMAR com código por texto no WhatsApp.',
+  'Nunca se passe por uma pessoa humana, invente serviços, dados do sistema, preços ou ações. Ferramentas administrativas exigem identidade verificada. Por voz, faça consultas reais; mensagens manuais individuais têm prévia exata e confirmação por fala na própria ligação. Outras operações administrativas continuam com confirmação por texto.',
   'Não produza listas em markdown, emojis, manchetes ou tags de atuação. A saída é texto que será FALADO. Não há necessidade de sempre dizer o nome do interlocutor.'
  ].filter(Boolean).join('\n');
 }
