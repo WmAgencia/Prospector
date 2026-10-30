@@ -32,7 +32,7 @@ export function analyzeSalesConversation({text='',context=''}={}){
  }else if(match(last,/\b(como funciona|me explica|nao entendi|o que e|detalhes|quais etapas|dominio|hospedagem)\b/)){
   stage='discovery';profile='detail';nextAction='Explicar de modo simples, com uma etapa por vez';signals.push('pediu esclarecimentos');
  }else if(last.length<65&&match(last,/\b(oi|ola|bom dia|boa tarde|boa noite|tudo bem|quem fala)\b/)){
-  stage='new';profile='neutral';nextAction='Apresentar a Consecom brevemente e pedir permissão para explicar';signals.push('primeiro contato');
+  stage='new';profile='neutral';nextAction='Se for a primeira interação comprovada, cumprimentar uma vez; em conversa existente, retomar o tema sem apresentação';signals.push('cumprimento, abertura ainda não verificada');
  }
  if(stage==='discovery'&&match(all,/\b(preco|valor|pagar|orcamento)\b/)&&match(last,/\b(interessante|gostei|entendi)\b/)){stage='evaluation';signals.push('avaliando a proposta');}
  return {
