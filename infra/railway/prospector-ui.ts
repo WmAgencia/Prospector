@@ -13,15 +13,22 @@ const upstream=(Bun.env.UPSTREAM_URL||"").replace(/\/$/,"");
 const upstreamUser=Bun.env.UPSTREAM_USERNAME||"";
 const upstreamPass=Bun.env.UPSTREAM_PASSWORD||"";
 const upstreamToken=Bun.env.UPSTREAM_ACCESS_TOKEN||"";
-let backendCookie="";
+let backendCookie="",backendCookieExpires=0;
+let backendLogin:Promise<string>|null=null;
 async function getBackendCookie(){
- if(backendCookie)return backendCookie;
+ if(backendCookie&&Date.now()<backendCookieExpires)return backendCookie;
+ if(backendLogin)return backendLogin;
+ backendLogin=(async()=>{
  const response=await fetch(upstream+"/api/auth/exchange",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:upstreamToken}),signal:AbortSignal.timeout(12000)});
  if(!response.ok)throw Error("Backend private session HTTP "+response.status);
  const raw=response.headers.get("set-cookie")||"";
  backendCookie=raw.split(";")[0];
  if(!backendCookie.startsWith("ps_session="))throw Error("Backend did not issue private session");
+ const maxAge=Number(raw.match(/(?:^|;)\s*Max-Age=(\d+)/i)?.[1]||300);
+ backendCookieExpires=Date.now()+Math.max(0,maxAge-60)*1000;
  return backendCookie;
+ })().finally(()=>{backendLogin=null;});
+ return backendLogin;
 }
 if(token.length<40||loginPassword.length<10||secret.length<40||upstreamToken.length<40||!/^https:\/\//.test(upstream))throw new Error("Gateway sem configuração segura");
 const cookieName="prospector_session";
@@ -43,11 +50,14 @@ function establishCookie(){
  return cookieName+"="+data+"."+sign(data)+"; HttpOnly; Secure; SameSite=Strict; Max-Age="+(sessionMs/1000)+"; Path=/";
 }
 function baseHeaders(type:string){return {"Content-Type":type,"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer","X-Frame-Options":"DENY"};}
-const accessPage="<!doctype html>\n<html lang=\"pt-BR\"><head>\n<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<meta name=\"theme-color\" content=\"#f5f8f6\"><title>Entrar • Prospector Consecom</title>\n<style>\n:root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif}\n*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:22px;background:radial-gradient(ellipse at 75% 10%,#dcefe3 0,transparent 44%),#f5f8f6;color:#183629}\nmain{width:min(100%,440px);background:#fff;border:1px solid #e1eae5;box-shadow:0 25px 85px #183b2714;border-radius:25px;padding:clamp(26px,5vw,42px)}\n.mark{width:48px;height:48px;display:grid;place-items:center;background:#21684c;color:white;border-radius:13px;font-weight:900;font-size:28px;margin-bottom:26px}\n.eyebrow{font-size:11px;letter-spacing:.17em;color:#5e9378;font-weight:850;text-transform:uppercase}\nh1{font-size:29px;letter-spacing:-.055em;margin:7px 0 9px;line-height:1.16}p{font-size:14px;line-height:1.6;margin:0 0 23px;color:#738b7e}\nlabel{font-size:13px;font-weight:750;display:block;margin-bottom:9px}\ninput{font:inherit;font-size:15px;padding:15px 16px;height:51px;width:100%;border:1px solid #cbdcd1;border-radius:11px;background:#fbfdfb;outline:none}\ninput:focus{border-color:#287a54;box-shadow:0 0 0 3px #287a5422}\nbutton{width:100%;font:inherit;font-weight:800;background:#246e4e;border:0;color:#fff;height:50px;margin-top:17px;border-radius:11px;cursor:pointer}\nbutton:disabled{opacity:.65;cursor:wait}.alert{min-height:22px;margin-top:15px;margin-bottom:0;font-size:13px;color:#af3e37}\n.foot{border-top:1px solid #e9efeb;padding-top:18px;margin-top:9px;font-size:12px;color:#8ca497;line-height:1.6}\n</style></head><body><main>\n<div class=\"mark\" aria-hidden=\"true\">P.</div><div class=\"eyebrow\">Consecom Brasil</div><h1>Entre no Prospector</h1>\n<p>Seu painel de prospecção, conversas e WhatsApp. Entre com sua senha para continuar. Não é necessário um link privado.</p>\n<form id=\"login\" autocomplete=\"on\"><label for=\"password\">Senha de acesso</label>\n<input id=\"password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" placeholder=\"Digite sua senha\" required minlength=\"10\" autofocus>\n<button id=\"submit\" type=\"submit\">Entrar no Prospector</button><p class=\"alert\" id=\"msg\" role=\"status\" aria-live=\"polite\"></p></form>\n<div class=\"foot\">A sessão fica salva neste navegador por até 60 dias. Se expirar, entre novamente com sua senha.</div>\n</main>\n<script>\n(function(){\n const form=document.getElementById('login'),field=document.getElementById('password'),button=document.getElementById('submit'),msg=document.getElementById('msg');\n const next=new URLSearchParams(location.search).get('next'),destination=next==='connections'?'/#/connections':'/';\n async function exchange(payload){\n   button.disabled=true;msg.textContent='Verificando acesso…';\n   try{\n     const response=await fetch('/_access/exchange',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(payload)});\n     if(response.ok){location.replace(destination);return;}\n     msg.textContent=response.status===429?'Muitas tentativas. Tente novamente mais tarde.':'Senha inválida. Confira e tente novamente.';\n   }catch(e){msg.textContent='Não foi possível conectar ao servidor. Tente novamente.'}\n   finally{button.disabled=false}\n }\n form.addEventListener('submit',e=>{e.preventDefault();const value=field.value;if(value.length>=10)exchange({password:value})});\n const legacy=location.hash.slice(1);\n if(legacy&&legacy.length>=40&&!legacy.startsWith('/')){\n   history.replaceState(null,'',location.pathname+location.search);\n   exchange({token:legacy});\n }\n})();\n</script></body></html>";
+const accessPage="<!doctype html>\n<html lang=\"pt-BR\"><head>\n<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<meta name=\"theme-color\" content=\"#f5f8f6\"><title>Entrar • Prospector Consecom</title>\n<style>\n:root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif}\n*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:22px;background:radial-gradient(ellipse at 75% 10%,#dcefe3 0,transparent 44%),#f5f8f6;color:#183629}\nmain{width:min(100%,440px);background:#fff;border:1px solid #e1eae5;box-shadow:0 25px 85px #183b2714;border-radius:25px;padding:clamp(26px,5vw,42px)}\n.mark{width:48px;height:48px;display:grid;place-items:center;background:#21684c;color:white;border-radius:13px;font-weight:900;font-size:28px;margin-bottom:26px}\n.eyebrow{font-size:11px;letter-spacing:.17em;color:#5e9378;font-weight:850;text-transform:uppercase}\nh1{font-size:29px;letter-spacing:-.055em;margin:7px 0 9px;line-height:1.16}p{font-size:14px;line-height:1.6;margin:0 0 23px;color:#738b7e}\nlabel{font-size:13px;font-weight:750;display:block;margin-bottom:9px}\ninput{font:inherit;font-size:15px;padding:15px 16px;height:51px;width:100%;border:1px solid #cbdcd1;border-radius:11px;background:#fbfdfb;outline:none}\ninput:focus{border-color:#287a54;box-shadow:0 0 0 3px #287a5422}\nbutton{width:100%;font:inherit;font-weight:800;background:#246e4e;border:0;color:#fff;height:50px;margin-top:17px;border-radius:11px;cursor:pointer}\nbutton:disabled{opacity:.65;cursor:wait}.alert{min-height:22px;margin-top:15px;margin-bottom:0;font-size:13px;color:#af3e37}\n.foot{border-top:1px solid #e9efeb;padding-top:18px;margin-top:9px;font-size:12px;color:#8ca497;line-height:1.6}\n</style></head><body><main>\n<div class=\"mark\" aria-hidden=\"true\">P.</div><div class=\"eyebrow\">Consecom Brasil</div><h1>Entre no Prospector</h1>\n<p>Seu painel de prospecção, conversas e WhatsApp. Entre com sua senha para continuar. Não é necessário um link privado.</p>\n<form id=\"login\" autocomplete=\"on\"><label for=\"password\">Senha de acesso</label>\n<input id=\"password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" placeholder=\"Digite sua senha\" required minlength=\"10\" autofocus>\n<button id=\"submit\" type=\"submit\">Entrar no Prospector</button><p class=\"alert\" id=\"msg\" role=\"status\" aria-live=\"polite\"></p></form>\n<div class=\"foot\">A sessão fica salva neste navegador por até 60 dias. Se expirar, entre novamente com sua senha.</div>\n</main>\n<script>\n(function(){\n const form=document.getElementById('login'),field=document.getElementById('password'),button=document.getElementById('submit'),msg=document.getElementById('msg');\n const next=new URLSearchParams(location.search).get('next'),destination=next==='connections'?'/#/connections':next&&next.startsWith('/oauth/authorize?')?next:'/';\n async function exchange(payload){\n   button.disabled=true;msg.textContent='Verificando acesso…';\n   try{\n     const response=await fetch('/_access/exchange',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(payload)});\n     if(response.ok){location.replace(destination);return;}\n     msg.textContent=response.status===429?'Muitas tentativas. Tente novamente mais tarde.':'Senha inválida. Confira e tente novamente.';\n   }catch(e){msg.textContent='Não foi possível conectar ao servidor. Tente novamente.'}\n   finally{button.disabled=false}\n }\n form.addEventListener('submit',e=>{e.preventDefault();const value=field.value;if(value.length>=10)exchange({password:value})});\n const legacy=location.hash.slice(1);\n if(legacy&&legacy.length>=40&&!legacy.startsWith('/')){\n   history.replaceState(null,'',location.pathname+location.search);\n   exchange({token:legacy});\n }\n})();\n</script></body></html>";
 
 async function proxy(req:Request){
  const url=new URL(req.url);
- if(!authorized(req)){
+ const oauthBrowser=url.pathname==="/oauth/authorize"||url.pathname==="/oauth/approve";
+ const publicMcp=new Set(["/mcp","/.well-known/oauth-protected-resource","/.well-known/oauth-protected-resource/mcp","/.well-known/oauth-authorization-server","/oauth/register","/oauth/token"]).has(url.pathname);
+ if(!publicMcp&&!authorized(req)){
+  if(req.method==="GET"&&url.pathname==="/oauth/authorize")return new Response(null,{status:302,headers:{"Location":"/access?next="+encodeURIComponent(url.pathname+url.search),"Cache-Control":"no-store"}});
   if(req.method==="GET"&&url.pathname==="/")return new Response(null,{status:302,headers:{"Location":"/access","Cache-Control":"no-store"}});
   return new Response("Acesso privado necessário",{status:401,headers:baseHeaders("text/plain; charset=utf-8")});
  }
@@ -56,15 +66,30 @@ async function proxy(req:Request){
  if(["POST","PUT","PATCH","DELETE"].includes(method)){const origin=req.headers.get("origin");const allowedOrigins=new Set(["https://"+(Bun.env.RAILWAY_PUBLIC_DOMAIN||"prospector-ui-production.up.railway.app"),...(Bun.env.FRONTEND_ORIGIN||"").split(",").map(s=>s.trim()).filter(Boolean)]);if(origin&&!allowedOrigins.has(origin))return new Response("Origem não autorizada",{status:403});}
  const remote=new URL(url.pathname+url.search,upstream);
  const headers=new Headers();
- for(const name of ["accept","accept-language","content-type","range","last-event-id","if-none-match","if-modified-since"]){const val=req.headers.get(name);if(val)headers.set(name,val);}
- headers.set("Cookie",await getBackendCookie());
- if(["POST","PUT","PATCH","DELETE"].includes(method))headers.set("Origin",new URL(upstream).origin);
+ for(const name of ["accept","accept-language","content-type","range","last-event-id","if-none-match","if-modified-since",...(publicMcp?["authorization","mcp-protocol-version","mcp-session-id","origin"]:[])]){const val=req.headers.get(name);if(val)headers.set(name,val);}
+ if(oauthBrowser){headers.set("X-Forwarded-Host",url.host);headers.set("X-Forwarded-Proto",url.protocol.slice(0,-1));}
+ if(["POST","PUT","PATCH","DELETE"].includes(method)&&!publicMcp)headers.set("Origin",oauthBrowser?(req.headers.get("origin")||url.origin):new URL(upstream).origin);
  headers.set("Accept-Encoding","identity");
  const opts:RequestInit={method,headers,redirect:"manual"};
- if(!["GET","HEAD"].includes(method))opts.body=req.body;
+ const replay=!publicMcp&&!["GET","HEAD"].includes(method)?req.clone():null;
+ if(!["GET","HEAD"].includes(method)){opts.body=req.body;(opts as RequestInit & {duplex:string}).duplex="half";}
  let response:Response;
- try{response=await fetch(remote,opts);}catch(err){
-  console.warn("upstream unavailable",String(err).slice(0,160));
+ try{
+  if(!publicMcp)headers.set("Cookie",await getBackendCookie());
+  // Preserve only the short-lived OAuth approval cookie, never browser session cookies.
+  if(oauthBrowser){const approval=(req.headers.get("cookie")||"").split(";").map(x=>x.trim()).find(x=>x.startsWith("ps_mcp_approval="));if(approval)headers.set("Cookie",headers.get("Cookie")+"; "+approval);}
+  const usedCookie=headers.get("Cookie");
+  response=await fetch(remote,opts);
+  // Backend 401 is issued by its authentication guard before any mutation.
+  // OAuth authorization failures must never be retried as administrator calls.
+  if(!publicMcp&&!oauthBrowser&&response.status===401){
+   if(backendCookie===usedCookie){backendCookie="";backendCookieExpires=0;}
+   headers.set("Cookie",await getBackendCookie());
+   if(replay)opts.body=replay.body;
+   response=await fetch(remote,opts);
+  }
+ }catch(err){
+  console.warn("upstream unavailable");
   return new Response("Painel temporariamente indisponível",{status:502,headers:baseHeaders("text/plain; charset=utf-8")});
  }
  if(method==="GET"&&url.pathname==="/app.js"&&response.ok){
@@ -78,9 +103,10 @@ async function proxy(req:Request){
   return new Response(updated,{status:200,headers:{"Content-Type":"text/javascript; charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});
  }
  const returned=new Headers();
- for(const name of ["content-type","content-disposition","etag","last-modified","accept-ranges","content-range"]){const val=response.headers.get(name);if(val)returned.set(name,val);}
+ for(const name of ["content-type","content-disposition","etag","last-modified","accept-ranges","content-range","www-authenticate","mcp-protocol-version","mcp-session-id","allow"]){const val=response.headers.get(name);if(val)returned.set(name,val);}
+ if(oauthBrowser){for(const value of response.headers.getSetCookie()){if(value.startsWith("ps_mcp_approval="))returned.append("Set-Cookie",value);}}
  returned.set("Cache-Control","no-store");returned.set("X-Content-Type-Options","nosniff");returned.set("X-Frame-Options","DENY");returned.set("Referrer-Policy","no-referrer");
- if(response.status>=300&&response.status<400){const location=response.headers.get("location");if(location){const target=new URL(location,remote);if(target.origin===remote.origin)returned.set("Location",target.pathname+target.search+target.hash);}}
+ if(response.status>=300&&response.status<400){const location=response.headers.get("location");if(location){const target=new URL(location,remote);if(target.origin===remote.origin)returned.set("Location",target.pathname+target.search+target.hash);else if(oauthBrowser)returned.set("Location",target.href);}}
  return new Response(method==="HEAD"?null:response.body,{status:response.status,headers:returned});
 }
 Bun.serve({hostname:"0.0.0.0",port:Number(Bun.env.PORT||3000),async fetch(req:Request){

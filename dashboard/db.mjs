@@ -149,8 +149,26 @@ export function addLead(item){
  const mapsLink=String(item.maps_id||'');
  const validMapsLink=String(item.source)==='maps_extension'&&/^https:\/\/(?:www\.google\.[a-z.]+\/maps\/|maps\.google\.[a-z.]+\/|maps\.app\.goo\.gl\/)/i.test(mapsLink);
  if(!p&&!ig&&!validMapsLink&&!(String(item.source)==='osm'&&String(item.osm_id||'').startsWith('https://www.openstreetmap.org/'))&&!(['cnpj','cnes'].includes(String(item.source))&&String(item.official_id||'').startsWith(String(item.source)+':')))throw Error('Informe Instagram ou WhatsApp válido');
- const existing=(p?one('SELECT * FROM leads WHERE phone=?',p):null)||(ig?one('SELECT * FROM leads WHERE instagram=?',ig):null)||(item.osm_id?one("SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source='osm' AND o.identity=?",item.osm_id):null)||(validMapsLink?one("SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source='maps_extension' AND o.identity=?",mapsLink):null)||(item.official_id?one('SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source=? AND o.identity=?',String(item.source),String(item.official_id)):null);
+ const matches=[p?one('SELECT * FROM leads WHERE phone=?',p):null,ig?one('SELECT * FROM leads WHERE instagram=?',ig):null,
+  ...(item.osm_id?all("SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source='osm' AND o.identity=?",item.osm_id):[]),
+  ...(validMapsLink?all("SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source='maps_extension' AND o.identity=?",mapsLink):[]),
+  ...(item.official_id?all('SELECT l.* FROM leads l JOIN lead_origins o ON o.lead_id=l.id WHERE o.source=? AND o.identity=?',String(item.source),String(item.official_id)):[])].filter(Boolean);
+ if(new Set(matches.map(x=>x.id)).size>1)throw Error('LEAD_IDENTITY_CONFLICT');
+ const existing=matches[0];
  if(existing){
+  // Discovery is enrichment, never an identity merge or consent grant.
+  if((p&&existing.phone&&p!==existing.phone)||(ig&&existing.instagram&&ig!==existing.instagram)||
+   (p&&one('SELECT id FROM leads WHERE phone=? AND id<>?',p,existing.id))||
+   (ig&&one('SELECT id FROM leads WHERE instagram=? AND id<>?',ig,existing.id)))throw Error('LEAD_IDENTITY_CONFLICT');
+  const fields={phone:p,instagram:ig,business:item.business||item.empresa||item.business_name,
+   segment:item.segment||item.segmento,city:item.city||item.cidade,website:item.website||item.site};
+  const updates=[],values=[];
+  for(const [field,value] of Object.entries(fields)){
+   if(!String(existing[field]||'').trim()&&String(value||'').trim()){
+    updates.push(field+'=?');values.push(String(value).trim());
+   }
+  }
+  if(updates.length)run('UPDATE leads SET '+updates.join(',')+' WHERE id=?',...values,existing.id);
   const suppliedName=personalName(item.name||item.contato_nome||item.contact_name);
   if(!personalName(existing.name)&&suppliedName){
    run('UPDATE leads SET name=?,last_seen_at=? WHERE id=?',suppliedName,now(),existing.id);

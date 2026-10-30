@@ -67,9 +67,9 @@ export async function waControlStatus(){
  try{
   const data=await waRequest("/api/sessions");
   const arr=Array.isArray(data.data)?data.data:[];
-  const target=arr.find(x=>x.sessionId===sessionId)||arr.find(x=>x.sessionId==="consecom-principal")||null;
+  const target=(sessionId?arr.find(x=>x.sessionId===sessionId):arr.find(x=>x.sessionId==="consecom-principal"))||null;
   if(target&&!sessionId)setSetting(sessionKey,target.sessionId);
-  const picked=target?.sessionId||"";
+  const picked=target?.sessionId||sessionId;
   return {ok:true,connected:target?.status==="CONNECTED",status:target?.status||"DISCONNECTED",sessionId:picked,hasSession:!!target,totalSessions:arr.length,qrAvailable:!!target&&target.status!=="CONNECTED"};
  }catch(e){return {ok:false,connected:false,status:"ERROR",message:String(e.message).slice(0,180),sessionId,hasSession:!!sessionId};}
 }

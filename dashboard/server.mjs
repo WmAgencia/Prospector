@@ -1,3 +1,4 @@
+import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -381,6 +382,7 @@ async function handler(req,res){
   securityHeaders(res);
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/health'&&req.method==='GET')return respond(res,200,{status:'ok'});
+  if(await handleMcp(req,res,url,{authorized}))return;
   if(!sameOriginWrite(req,res))return;
   if(url.pathname==='/access'&&req.method==='GET')return showAccess(res);
   if(url.pathname==='/api/auth/exchange'&&req.method==='POST')return exchangeAccess(req,res);
