@@ -8,7 +8,7 @@ const sessions=new Map();
 const backchannelClips=new Map();
 const BACKCHANNELS={aham:'Aham.',hum:'Hum.',entendi:'Ah, entendi.',
  pensar:'Hum, deixa eu pensar.',instante:'Certo, só um instante.',
- consultar:'Entendi. Vou dar uma conferida nisso.'};
+ consultar:'Certo, só um segundo.'};
 async function backchannelClip(kind){
  if(!Object.hasOwn(BACKCHANNELS,kind))throw Error('CALL_BACKCHANNEL_UNSUPPORTED');
  let promise=backchannelClips.get(kind);
