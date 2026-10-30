@@ -80,7 +80,7 @@ export function newVoiceDirectMessageFlow({send=realSend}={}){
   const item=pending;
   pending=null; // Consume before any asynchronous work: no duplicate send on interruption.
   if(!verified(actor))return 'Não foi possível validar a autorização da ligação. Nenhuma mensagem foi enviada.';
-  if(!/^55\d{10,11}$/.test(item.phone)||item.text.length>1200||item.text.length<1)
+  if(!/^55\d{10,11}$/.test(item.phone)||item.text.length>430||item.text.length<1)
    return 'O telefone ou a mensagem está inválido. Nenhum envio foi realizado.';
   if(one('SELECT 1 FROM suppressions WHERE phone=?',item.phone))
    return 'Esse número está bloqueado para mensagens. Não enviei.';
@@ -119,7 +119,7 @@ export function newVoiceDirectMessageFlow({send=realSend}={}){
      if(/\b(?:nao|não|altera|alterar|corrig|troca|muda|modifica|outro texto|outra mensagem)\b/.test(simple(raw))){
       const change=raw.match(/(?:para|por|seria|é|eh|seguinte)\s*[:,-]?\s*(.+)$/i);
       if(change&&change[1].length>1){
-       pending.text=stripBodyPrefix(change[1]).slice(0,1200);
+       pending.text=stripBodyPrefix(change[1]).slice(0,430);
        return preview();
       }
       pending.stage='text';
@@ -133,7 +133,7 @@ export function newVoiceDirectMessageFlow({send=realSend}={}){
       return 'Certo, podemos definir o texto depois.';
      const text=stripBodyPrefix(raw);
      if(text.length<2)return 'Qual é a mensagem completa que você quer enviar?';
-     if(text.length>1200)return 'A mensagem está longa demais para esse envio. Pode encurtar?';
+     if(text.length>430)return 'A mensagem está longa demais para esse envio. Pode encurtar?';
      pending.text=text;
      return pending.phone?preview():supplyPhone(raw);
     }
@@ -144,7 +144,7 @@ export function newVoiceDirectMessageFlow({send=realSend}={}){
    pending={phone:instruction.phone,text:instruction.text,stage:'',expires:Date.now()+3*60_000};
    if(instruction.invalidPhone||!instruction.phone){pending.stage='phone';return 'Qual é o telefone completo do destinatário, com DDD?';}
    if(!instruction.text){pending.stage='text';return 'Perfeito. Qual é a mensagem que você quer enviar?';}
-   if(instruction.text.length>1200){pending.stage='text';return 'Pode informar um texto menor para essa mensagem?';}
+   if(instruction.text.length>430){pending.stage='text';return 'Pode informar um texto menor para essa mensagem?';}
    return preview();
   },
   end(){pending=null;},
