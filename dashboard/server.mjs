@@ -43,6 +43,7 @@ import {voiceStatus,makeFranciscaVoice,makeFranciscaCallPcm} from './francisca-t
 import {wavFromPcm16} from './francisca-call-lab.mjs';
 import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
 import {authorizeCallBridge,processCallBridge,callBridgeStatus} from './francisca-call-bridge.mjs';
+import {voiceMetricsSummary} from './francisca-call-observability.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
 import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
@@ -492,6 +493,7 @@ async function handler(req,res){
    return respond(res,result.ok?200:result.httpStatus||502,{ok:result.ok,provider:result.provider,model:result.model||null,code:result.code||null,autoSend:false});
   }
   if(req.method==='GET'&&pathname==='/api/ai/call-bridge-status')return respond(res,200,callBridgeStatus());
+  if(req.method==='GET'&&pathname==='/api/ai/voice-metrics')return respond(res,200,voiceMetricsSummary());
   if(req.method==='GET'&&pathname==='/api/ai/audio-status')
    return respond(res,200,{transcription:audioStatus(),francisca:voiceStatus(),manualVoice:true,autoVoiceReplies:process.env.AUDIO_RESPONSE_ENABLED==='true'});
   if(req.method==='POST'&&pathname==='/api/ai/voice-preview'){
