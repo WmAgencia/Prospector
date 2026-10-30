@@ -3,8 +3,9 @@
 import {db,one,all,run,id,tx,now,stage,addMessage,audit} from './db.mjs';
 import {aiDraft} from './ai-groq.mjs';
 import {getSetting} from './db.mjs';
-import {documentedOptIn} from './outreach-queue.mjs';
-import {prospectSalesContext} from './sales-policy.mjs';
+import {conversationAuthorized,operatorOffer} from './operator-outreach.mjs';
+import {requestPriceApproval,approvedPriceForLead} from './owner-price-approvals.mjs';
+import {prospectSalesContext,priceQuestion} from './sales-policy.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
@@ -22,19 +23,27 @@ run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify befo
 const digits=s=>String(s||'').replace(/\D/g,'');
 const optedOut=s=>/\b(pare|parar|stop|sair|remover|nao me contate|não me contate|sem interesse|nao tenho interesse)\b/i.test(String(s||''));
 export function ownerTarget(){const preferred=personalPhone();if(preferred)return preferred;const raw=digits(process.env.PROSPECTOR_HOT_LEAD_PHONE);const val=raw.length===11?'55'+raw:raw;return /^55\d{10,11}$/.test(val)?val:null;}
+export function interestNotice(lead,evidence){
+ const business=one('SELECT * FROM leads WHERE id=?',lead.lead_id)||lead;
+ const links=[];
+ if(business.instagram){const ig=String(business.instagram);if(/^https:\/\/(?:www\.)?instagram\.com\//i.test(ig))links.push('Instagram: '+ig);else if(/^[a-z0-9._]+$/i.test(ig))links.push('Instagram: https://www.instagram.com/'+ig+'/');}
+ if(/^https?:\/\//i.test(business.website||''))links.push('Site: '+business.website);
+ for(const row of all("SELECT identity FROM lead_origins WHERE lead_id=? AND source='maps_extension'",lead.lead_id))if(/^https:\/\/(?:www\.google\.[a-z.]+\/maps\/|maps\.google\.[a-z.]+\/|maps\.app\.goo\.gl\/)/i.test(row.identity))links.push('Maps: '+row.identity);
+ return ['⭐ Interesse real no Prospector','Empresa: '+business.business,'Contato: '+(business.name||'não informado'),'Telefone: '+business.phone,...links,'Assumir conversa: https://wa.me/'+business.phone,'Interesse: '+String(evidence||lead.body||'Intenção confirmada').slice(0,180),'Próximo passo: assumir atendimento e confirmar escopo.'].join('\n');
+}
 export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',approvedProspectFollowup:getSetting('sales_followup_enabled',true)===true,alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true};}
 function approvedProspectFollowup(identity,jid){
  if(getSetting('sales_followup_enabled',true)!==true||identity.role!=='PROSPECT_APPROACHED')return false;
  const number=String(jid||'').split('@')[0];
  const lead=one("SELECT id FROM leads WHERE phone=?",number);
- return !!lead&&documentedOptIn(lead.id)&&(!introductionStatus(lead.id)||introductionStatus(lead.id).stage==='CONVERSING');
+ return !!lead&&conversationAuthorized(lead.id);
 }
 export function queueInboundTurn({providerId,jid}={}){
  if(!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
  const identity=classifyContact({jid,sessionId:selectedWaSession()});
  const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
  const intro=lead?introductionStatus(lead.id):null;
- if(intro&&intro.stage!=='CONVERSING')return false;
+ if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(lead.id))return false;
  const allowed=approvedProspectFollowup(identity,jid);
  if(!allowed&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!testModeAllowed(String(jid).split('@')[0]))return false;
  return run("INSERT OR IGNORE INTO groq_auto_events(provider_id,jid,state,at) VALUES(?,?,?,?)",providerId,jid,'PENDING',now()).changes>0;
@@ -48,7 +57,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const allowTest=identity.role==='OWNER'&&identity.testSandbox===true;
  const salesFollowup=approvedProspectFollowup(identity,r.jid);
  const intro=introductionStatus(r.lead_id);
- if(intro&&intro.stage!=='CONVERSING')return finish('SKIPPED','INTRO_NOT_COMPLETE');
+ if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))return finish('SKIPPED','INTRO_NOT_COMPLETE');
  if(identity.role==='UNVERIFIED')return finish('SKIPPED','UNVERIFIED_SENDER');
  if(identity.role==='OWNER'&&!allowTest)return finish('HANDOFF','OWNER_PRIVILEGED_CHANNEL');
  if(!salesFollowup&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
@@ -61,7 +70,7 @@ export async function handleSalesTurn(providerId,deps={}){
   if(!current||current.manual_takeover||current.inbox_state!=='REVIEW'||current.stage!==r.stage||current.phone!==r.phone||current.body!==r.body||selectedWaSession()!==r.session_id||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return 'HANDOFF';
   if(classifyContact({jid:r.jid,sessionId:r.session_id}).role!==identity.role)return 'HANDOFF';
   const currentIntro=introductionStatus(r.lead_id);
-  if((currentIntro&&currentIntro.stage!=='CONVERSING')||(salesFollowup&&!approvedProspectFollowup(identity,r.jid)))return 'HANDOFF';
+  if((currentIntro&&currentIntro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))||(salesFollowup&&!approvedProspectFollowup(identity,r.jid)))return 'HANDOFF';
   if(one('SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1',r.jid)?.provider_id!==providerId)return 'SUPERSEDED';
   return '';
  };
@@ -75,10 +84,13 @@ export async function handleSalesTurn(providerId,deps={}){
  const dialogue=analyzeChatTurn({text:r.body,history:recentTurns,role:identity.role});
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
+ const financial=priceQuestion(r.body)&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
+ const approval=financial?(deps.requestPriceApproval||requestPriceApproval)({leadId:r.lead_id,providerId,question:r.body,sessionId:r.session_id}):null;
+ if(financial&&!approval?.ok)return finish('REVIEW','PRICE_APPROVAL_UNAVAILABLE');
  const qualify=deps.qualify||qualifyWithGroq;
  // Existing customers and owner QA NEVER become sales opportunities from
  // their ordinary WhatsApp messages, regardless of how they phrase a request.
- const interest=['EXISTING_CLIENT','OWNER'].includes(identity.role)?
+ const interest=financial||['EXISTING_CLIENT','OWNER'].includes(identity.role)?
   {confirmed:false,reason:'NOT_A_SALES_PROSPECT'}:await qualify({text:r.body,history});
  if(stale())return finish(stale());
  if(interest.confirmed){
@@ -88,14 +100,14 @@ export async function handleSalesTurn(providerId,deps={}){
     recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:interest.evidence||r.body,notify:false});
     run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
     queueNotice('groq-hot:'+r.lead_id,'GROQ_HOT_LEAD',
-     '⭐ *Interesse real no Prospector*\nEmpresa: '+r.business+'\nConversa: https://wa.me/'+r.phone+'\nTrecho de interesse: '+String(interest.evidence||'Intenção confirmada').slice(0,130)+'\nReferência de site: R$ 550 (média, confirmar escopo)\nPróximo passo: assumir negociação e validar proposta.',r.lead_id);
+     interestNotice(r,interest.evidence),r.lead_id);
     audit('GROQ_INTEREST_ALERT_QUEUED',r.lead_id,{model:'groq',confidence:interest.confidence});
    }
   });
   return finish('HOT');
  }
  // An apparent commitment which the model cannot verify is left for review.
- if(identity.role!=='EXISTING_CLIENT'&&identity.role!=='OWNER'&&explicitInterest(r.body)){
+ if(!financial&&identity.role!=='EXISTING_CLIENT'&&identity.role!=='OWNER'&&explicitInterest(r.body)){
   if(salesFollowup){
    run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
    recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'Intenção comercial precisa de confirmação: '+r.body});
@@ -117,12 +129,12 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('HANDOFF','REQUESTED_HUMAN');
  }
  // A one-word hello never requires an external model call.
- const draft=incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+ const draft=financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+
-     (salesFollowup?prospectSalesContext(r):'')});
+     (salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
  if(stale())return finish(stale());
  if(!draft.ok||!draft.draft){
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});
@@ -133,7 +145,7 @@ export async function handleSalesTurn(providerId,deps={}){
   audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});
   return finish('REVIEW','REPEATED_OR_EMPTY_REPLY');
  }
- const review=reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:salesFollowup});
+ const review=reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
  if(!review.ok){
   audit('GROQ_REPLY_REJECTED',r.lead_id,{code:review.code,test:allowTest});
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'Resposta bloqueada para revisão: '+review.code});

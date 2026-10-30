@@ -2,10 +2,12 @@
 // Legacy R$350 campaigns contain original recorded media and must be reviewed.
 export const SITE_AVERAGE_PRICE_BRL=550;
 export const SALES_REFERENCE_VERSION='consecom-site-reference-2026-10-29';
-export function priceAsReference(){
- return 'O investimento médio de referência para um site é R$ 550, sujeito ao escopo e a uma proposta confirmada pela equipe. Não é preço fixo, promoção ou promessa de entrega.';
+export function priceAsReference(){return 'Qualquer preço, orçamento, parcelamento ou condição comercial exige aprovação individual do operador. Confirme que vai consultar a proposta, sem citar valores.';}
+export function priceQuestion(text=''){
+ const n=String(text).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+ return /\b(?:precos?|valor(?:es)?|custa|custaria|custos?|orcamentos?|investimentos?|parcel(?:a|as|ar|amento|amentos)?|pagamentos?|pagar|descontos?|entrada|prestacoes|quanto|cartao|pix|boleto|a vista|quantas vezes)\b/.test(n);
 }
-export function prospectSalesContext({business='',segment='',city='',stage=''}={}){
+export function prospectSalesContext({business='',segment='',city='',stage='',offerType=null}={}){
  const clean=x=>String(x||'').replace(/[\r\n<>]/g,' ').slice(0,95);
  return [
   'Você atende por WhatsApp como assistente virtual da Consecom Brasil.',
@@ -15,8 +17,7 @@ export function prospectSalesContext({business='',segment='',city='',stage=''}={
   'Seu objetivo é ouvir as necessidades e responder dúvidas com naturalidade, uma pergunta de cada vez. Nunca insista após recusa.',
   'Negócio: '+clean(business)+'; ramo: '+clean(segment)+'; cidade: '+clean(city)+'; estágio: '+clean(stage)+'.',
   priceAsReference(),
-  'Se a pessoa perguntar quanto custa, mencione R$ 550 APENAS como média aproximada, e explique que a proposta depende do escopo.',
-  'Nunca ofereça o valor antigo de R$ 350, descontos, 80% ou 90% off, garantia de resultados, prazos ou links que não foram aprovados.',
+  offerType==='portfolio'?'O operador escolheu a abordagem de portfólio: explique naturalmente que a Consecom busca pequenos negócios para compor seu portfólio de sites. Não invente vagas limitadas nem cite preço antes da aprovação.':offerType==='promotion'?'O operador escolheu a oferta promocional: descubra as necessidades da empresa sem inventar descontos ou condições.':offerType==='corporate'?'O operador escolheu uma proposta para empresa maior: entenda escopo, funcionalidades e necessidades antes da aprovação comercial.':'Não há tipo de oferta confirmado; entenda a necessidade sem presumir porte ou campanha.',
   'Se perguntar por portfólio, explique que um humano pode compartilhar exemplos verdadeiros e links revisados.',
   'Não afirme que verificou o site, Instagram ou Google Maps sem uma verificação real registrada.',
   'Não prometa que a venda foi fechada. Um sim explícito exige encaminhamento ao operador para validar escopo, contrato e pagamento.',
@@ -37,9 +38,4 @@ export function salesEnding(text=''){
 }
 // This can be used only for APPROVED first-contact sales conversations.
 // We reject prices in all other contexts and any unsupported price claims.
-export function approvedAveragePriceDraft(text='',draft=''){
- const figures=[...String(draft).matchAll(/r\$\s*([\d.,]+)/gi)].map(x=>x[1].replace(/\./g,'').replace(',','.'));
- if(figures.length!==1||Number(figures[0])!==SITE_AVERAGE_PRICE_BRL)return false;
- if(!/\b(?:media|medio|media aproximada|referencia|aproximad|em torno|costuma|dependendo do escopo|escopo)\b/i.test(String(draft).normalize('NFD').replace(/[\u0300-\u036f]/g,'')))return false;
- return /(?:preco|valor|custa|investimento|quanto|orcamento|reais|r\$)/i.test(String(text).normalize('NFD').replace(/[\u0300-\u036f]/g,''));
-}
+export function approvedAveragePriceDraft(){return false;}

@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const app=fs.readFileSync(new URL('../dashboard/public/simple-app.js',import.meta.url),'utf8');
 const css=fs.readFileSync(new URL('../dashboard/public/simple-app.css',import.meta.url),'utf8');
 
-function createHarness(){
+function createHarness({mapsConfigured=false,previewReady=0}={}){
  const fetches=[];
  const listeners={};
  let pendingSubmit=null;
@@ -45,13 +45,16 @@ function createHarness(){
     interested:[{id:'test3',business:'Oficina Interessada',phone:'5515999888875',city:'Sorocaba'}],
     conversing:[{id:'test4',business:'Oficina Em Conversa',phone:'5515999888874',city:'Sorocaba'}]}};
   else if(route.startsWith('/api/prospecting?'))data=base;
-  else if(route==='/api/maps/status')data={jobs:[]};
-  else if(route==='/api/prospecting/queue')data={active:false,waiting:0,intervalSeconds:90};
+  else if(route==='/api/maps/status')data={configured:mapsConfigured,jobs:[]};
+  else if(route==='/api/prospecting/queue'&&opts.method!=='POST')data={active:false,waiting:0,intervalSeconds:90};
   else if(route==='/api/whatsapp/status')data={ok:true,connected:false,status:'DISCONNECTED'};
   else if(route==='/api/prospecting/search')data={ok:true,source:'OpenStreetMap',added:2};
   else if(route==='/api/ai/draft')data={ok:true,draft:'Claro! Posso explicar melhor?',profile:{profileLabel:'Quer entender os detalhes',nextAction:'Explicar de modo simples',confidence:'moderate'},requiresApproval:true,autoSend:false};
   else if(route.startsWith('/api/whatsapp/interactive-preview'))data={ok:true,mode:'introduction',title:'Consecom Brasil',body:'Gostaria de conhecer nossa proposta?',buttons:[{displayText:'Quero saber mais'},{displayText:'Ver um exemplo'},{displayText:'Falar com alguém'}]};
-  else if(route==='/api/prospecting/approach-preview')data={ok:true,selected:1,greeting:'boa tarde',message:'Olá, boa tarde, como vai?',ready:0,items:[{id:leads[0].id,business:leads[0].business,phoneSuffix:'9999',status:'NEEDS_PERMISSION',authorized:false}]};
+  else if(route==='/api/prospecting/approach-preview')data={ok:true,selected:1,ready:previewReady,items:[]};
+  else if(route==='/api/prospecting/queue'&&opts.method==='POST')data={ok:true,queued:1,excluded:0};
+  else if(route.startsWith('/api/maps/job?'))data={id:'sample-id',status:'COMPLETED'};
+  else if(route==='/api/maps/import')data={added:3};
   else if(route==='/api/maps/search')data={id:'sample-id',status:'PENDING',niche:'oficinas mecânicas',city:'Sorocaba'};
   else if(route==='/api/ai/status')data={configured:false};
   else if(route==='/api/whatsapp/handoff'&&opts.method==='POST')data={ok:true,chatId:JSON.parse(opts.body).chatId,manualTakeover:JSON.parse(opts.body).manual,canTakeover:true,canDeliverToAi:true,reason:'READY'};
@@ -86,8 +89,14 @@ test('Prospecção starts with no hidden city/niche filter and displays existing
  assert.match(h.root.innerHTML,/data-tab="prospects"/);
  assert.match(h.root.innerHTML,/data-tab="connections"/);
 });
+test('clicking Abordar is the approval and does not require a second browser confirmation',async()=>{
+ const h=createHarness({previewReady:1});await vm.runInContext('reload()',h.context);
+ vm.runInContext("selectedLeadIds.add('11111111-1111-4111-8111-111111111111');confirm=()=>{throw Error('Redundant confirmation')}",h.context);
+ await h.listeners.click({target:{closest:()=>({dataset:{action:'approach-selected'}})}});
+ assert.ok(h.fetches.some(f=>f.route==='/api/prospecting/queue'&&f.method==='POST'));
+});
 
-test('Main search calls the on-demand OSM API; Gosom stays optional',async()=>{
+test('Main search explicitly uses OSM when Google Maps is not configured',async()=>{
  const h=createHarness();
  await vm.runInContext('reload()',h.context);
  h.field.value='oficinas mecânicas';h.city.value='Sorocaba';
@@ -203,4 +212,17 @@ test('Home shows compact four-column Kanban with verified hot leads and operator
  assert.match(css,/\.body:has\(\.kanban-dashboard\).*height:100dvh/);
  assert.match(css,/\.kanban-column-items\{[^}]*overflow-y:auto/);
  assert.ok(!h.fetches.some(x=>x.method==='POST'),'Board is read-only, never sends WhatsApp');
+});
+
+test('Configured Google Maps is the main search, imports completed results and never sends messages',async()=>{
+ const h=createHarness({mapsConfigured:true});await vm.runInContext('reload()',h.context);
+ vm.runInContext("selectedLeadIds.add('previous-city-selection')",h.context);
+ h.field.value='oficinas';h.city.value='Sorocaba';
+ await h.listeners.submit({target:{id:'search-form'},preventDefault(){}});
+ assert.equal(vm.runInContext('selectedLeadIds.size',h.context),0,'a new city search must not retain old selected recipients');
+ assert.ok(h.fetches.some(f=>f.route==='/api/maps/search'&&f.method==='POST'));
+ assert.ok(h.fetches.some(f=>f.route==='/api/maps/import'&&f.method==='POST'));
+ assert.ok(!h.fetches.some(f=>f.route==='/api/prospecting/search'));
+ assert.ok(!h.fetches.some(f=>f.route.includes('/api/whatsapp/reply')));
+ assert.match(h.viewEl.innerHTML,/Google Maps: IMPORTED/);
 });

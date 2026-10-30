@@ -3,6 +3,7 @@ const q=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
 const tabs={overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",settings:"Configurações"};
+let offerType='portfolio';
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
 let view=["overview","conversations","prospects","connections","settings"].includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
 let salesResults=null,state=null,wa=null,ai=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false;
@@ -121,14 +122,16 @@ function prospecting(){
  return '<div class="prospect-simple">'+
   '<section class="panel prospect-search-simple"><div class="heading"><div><h2>Pesquisar empresas</h2><p>Informe o ramo e a cidade para encontrar oportunidades.</p></div></div>'+
   '<form id="search-form" class="search-form"><label>Ramo de atividade<input id="niche" class="field" name="niche" value="'+esc(niche)+'" placeholder="Ex.: oficina mecânica" maxlength="85" autocomplete="off"></label><label>Cidade<input id="city" class="field" name="city" value="'+esc(city)+'" placeholder="Ex.: Sorocaba" maxlength="85" autocomplete="address-level2"></label><button type="submit" class="primary" '+(busy?'disabled':'')+'>'+glyph('search')+' '+(busy?'Pesquisando...':'Pesquisar')+'</button></form>'+
+  (mapsJob?'<p role="status">Google Maps: '+esc(mapsJob.status)+(mapsJob.error?' · '+esc(mapsJob.error):'')+'. A pesquisa não garante cobertura completa.</p>':'')+
   (prospectError?'<p class="prospect-search-error" role="alert">'+esc(prospectError)+'</p>':'')+'</section>'+
-  '<section class="panel prospect-results-simple"><div class="heading"><div><h2>Empresas não abordadas</h2><p>'+count+' resultado'+(count===1?'':'s')+' na base'+(niche||city?' para esta pesquisa':'')+'. Empresas já abordadas não aparecem.</p></div></div>'+
-  '<div class="selection-toolbar"><div class="selection-left"><button type="button" class="secondary" data-action="toggle-all" '+(available.length?'':'disabled')+'>'+glyph('check')+' '+(allSelected?'Desmarcar todas':'Selecionar todas')+'</button><span class="selection-count">'+selectedLeadIds.size+' selecionada'+(selectedLeadIds.size===1?'':'s')+'</span></div><button type="button" class="primary" data-action="approach-selected" '+(!selectedLeadIds.size||active?'disabled':'')+'>Abordar '+glyph('arrow')+'</button></div>'+
+  '<section class="panel prospect-results-simple"><div class="heading"><div><h2>Empresas não abordadas</h2><p>'+count+' resultado'+(count===1?'':'s')+' na base'+(niche||city?' para esta pesquisa':'')+'. Selecionar todas inclui somente esta lista carregada; limite de 1000 empresas por fila. A fonte não garante todas as empresas da cidade.</p></div></div>'+
+  '<label>Abordagem desta lista<select id="approach-offer" class="field">'+[['portfolio','Portfólio · referência para aprovação R$ 350'],['promotion','Oferta promocional · referência R$ 550'],['corporate','Empresa maior · referência R$ 1.500']].map(([key,label])=>'<option value="'+key+'" '+(offerType===key?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+  '<div class="selection-toolbar"><div class="selection-left"><button type="button" class="secondary" data-action="toggle-all" '+(available.length?'':'disabled')+'>'+glyph('check')+' '+(allSelected?'Desmarcar todas':'Selecionar todas da lista carregada')+'</button><span class="selection-count">'+selectedLeadIds.size+' selecionada'+(selectedLeadIds.size===1?'':'s')+'</span></div><button type="button" class="primary" data-action="approach-selected" '+(!selectedLeadIds.size||active?'disabled':'')+'>Abordar '+glyph('arrow')+'</button></div>'+
   (active?'<div class="prospect-queue-strip" role="status"><span>Fila de abordagens: '+waiting+' aguardando · intervalo mínimo de 90 segundos</span><button class="secondary compact" type="button" data-action="cancel-approach-queue">Cancelar fila</button></div>':'')+
-  (records.length?'<div class="table-wrap"><table class="result-table"><thead><tr><th class="check-col">SEL.</th><th>EMPRESA</th><th>CIDADE / RAMO</th><th>TELEFONE</th><th>ENVIO AUTOMÁTICO</th><th>CONTATO / CONSULTA</th></tr></thead><tbody>'+records.map(p=>
-  '<tr class="'+(selectedLeadIds.has(p.id)?'selected-row':'')+'"><td><input type="checkbox" class="lead-checkbox" data-select-lead="'+esc(p.id)+'" '+(selectedLeadIds.has(p.id)?'checked':'')+' '+(p.selectable?'':'disabled')+' aria-label="Selecionar '+esc(p.business)+'"></td><td><strong>'+esc(p.business)+'</strong><small>'+esc(p.website||'')+'</small></td><td>'+esc(p.city||'—')+'<small>'+esc(p.segment||'—')+'</small></td><td>'+esc(p.phone||'Sem telefone')+'</td><td>'+esc(p.authorized?'Liberado':'Exige autorização')+'</td><td><div class="external-actions">'+(p.manual_contact_url?'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.manual_contact_url)+'">WhatsApp manual ↗</a>':'')+'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.maps_url||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.business+' '+(p.city||'')))+'">Maps ↗</a>'+(p.instagram_url?'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.instagram_url)+'">Instagram ↗</a>':'')+'</div></td></tr>'
+  (records.length?'<div class="table-wrap"><table class="result-table"><thead><tr><th class="check-col">SEL.</th><th>EMPRESA</th><th>CIDADE / RAMO</th><th>TELEFONE</th><th>PRIMEIRA ABORDAGEM</th><th>CONTATO / CONSULTA</th></tr></thead><tbody>'+records.map(p=>
+  '<tr class="'+(selectedLeadIds.has(p.id)?'selected-row':'')+'"><td><input type="checkbox" class="lead-checkbox" data-select-lead="'+esc(p.id)+'" '+(selectedLeadIds.has(p.id)?'checked':'')+' '+(p.selectable?'':'disabled')+' aria-label="Selecionar '+esc(p.business)+'"></td><td><strong>'+esc(p.business)+'</strong><small>'+esc(p.website||'')+'</small></td><td>'+esc(p.city||'—')+'<small>'+esc(p.segment||'—')+'</small></td><td>'+esc(p.phone||'Sem telefone')+'</td><td>'+esc(p.authorized?'Liberado':'Aprovar ao abordar')+'</td><td><div class="external-actions">'+(p.manual_contact_url?'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.manual_contact_url)+'">WhatsApp manual ↗</a>':'')+'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.maps_url||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.business+' '+(p.city||'')))+'">Maps ↗</a>'+(p.instagram_url?'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.instagram_url)+'">Instagram ↗</a>':'')+'</div></td></tr>'
   ).join('')+'</tbody></table></div>':'<div class="empty prospect-empty"><span class="empty-mark">'+glyph('search')+'</span><h4>Nenhuma empresa encontrada</h4><p>Pesquise um ramo e uma cidade. Se as fontes externas não responderem, a lista mostrará apenas registros já salvos.</p></div>')+
-  '<p class="prospect-disclaimer">Você pode iniciar contatos individuais com empresas públicas pelo link WhatsApp manual; a mensagem só é enviada quando você decide enviá-la no aplicativo. A fila automática continua restrita a contatos autorizados, respeitando bloqueios e solicitações de não contato.</p>'+
+  '<p class="prospect-disclaimer">Selecionar empresas e clicar Abordar aprova somente essa lista, com 90 segundos entre contatos. A IA continua após respostas; bloqueios e pedidos de não contato são respeitados.</p>'+
   '</section></div>';
 }
 function connections(){
@@ -137,7 +140,7 @@ function connections(){
 }
 function settings(){
  const s=state?.settings||{};
- return '<section class="panel settings"><span class="kicker">PREFERÊNCIAS</span><h2>Configurações</h2><p class="intro">Opções essenciais da operação, sem ferramentas extras.</p><div class="setting-line"><div><strong>Prospecção pausada</strong><small>Não iniciar campanhas ou envios automaticamente.</small></div><label class="switch"><input id="s-paused" type="checkbox" '+(s.paused?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>Descoberta automática</strong><small>Pesquisa pública programada no OpenStreetMap.</small></div><label class="switch"><input id="s-discovery" type="checkbox" '+(s.discovery_auto_enabled?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>IA de conversação</strong><small>Groq gera rascunhos; não envia mensagens sem intervenção humana.</small></div><span class="tag '+(ai?.configured?"green":"")+'">'+(ai?.configured?"Configurada":"Não configurada")+'</span></div><div class="setting-line"><div><strong>Integração WhatsApp</strong><small>Conexão via WA-AKG administrada pelo Prospector.</small></div><button class="secondary compact" data-tab="connections">Gerenciar conexão</button></div><p class="footnote">O envio automático permanece desativado por segurança até a integração de mensagens ser validada.</p></section>';
+ return '<section class="panel settings"><span class="kicker">PREFERÊNCIAS</span><h2>Configurações</h2><p class="intro">Opções essenciais da operação, sem ferramentas extras.</p><div class="setting-line"><div><strong>Prospecção pausada</strong><small>Não iniciar campanhas ou envios automaticamente.</small></div><label class="switch"><input id="s-paused" type="checkbox" '+(s.paused?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>Descoberta automática</strong><small>Pesquisa pública programada no OpenStreetMap.</small></div><label class="switch"><input id="s-discovery" type="checkbox" '+(s.discovery_auto_enabled?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>IA de conversação</strong><small>Groq continua as conversas das empresas abordadas. Valores de propostas exigem sua aprovação pelo WhatsApp.</small></div><span class="tag '+(ai?.configured?"green":"")+'">'+(ai?.configured?"Configurada":"Não configurada")+'</span></div><div class="setting-line"><div><strong>Integração WhatsApp</strong><small>Conexão via WA-AKG administrada pelo Prospector.</small></div><button class="secondary compact" data-tab="connections">Gerenciar conexão</button></div><p class="footnote">As abordagens começam quando você seleciona empresas e confirma Abordar. Interessados são encaminhados ao seu WhatsApp pessoal.</p></section>';
 }
 function render(){
  shell();
@@ -224,12 +227,19 @@ async function importMapsCSV(){
 
 async function updateMapsJob(){
  if(!mapsJob?.id||["IMPORTED","FAILED"].includes(mapsJob.status)||mapsPolling)return;
+ const pollingId=mapsJob.id;
  mapsPolling=true;
- try{const updated=await api("/api/maps/job?id="+encodeURIComponent(mapsJob.id));mapsJob=updated;if(updated.status==="FAILED")n("O scraper não concluiu esta pesquisa.");if(view==="prospects")render();}catch(e){mapsJob={...mapsJob,error:e.message};n("Scraper: "+e.message);if(view==="prospects")render();}finally{mapsPolling=false;}
+ try{const updated=await api("/api/maps/job?id="+encodeURIComponent(pollingId));if(mapsJob?.id!==pollingId)return;mapsJob=updated;
+ if(updated.status==='COMPLETED'){
+  const out=await post('/api/maps/import',{id:updated.id});if(mapsJob?.id!==pollingId)return;mapsJob={...updated,status:'IMPORTED',added:out.added};
+  n('Google Maps: '+Number(out.added||0)+' empresas novas salvas. Selecione e clique Abordar para aprovar contatos.');
+  await loadProspects();
+ }
+ if(updated.status==="FAILED")n("O scraper não concluiu esta pesquisa.");if(view==="prospects")render();}catch(e){mapsJob={...mapsJob,error:e.message};n("Scraper: "+e.message);if(view==="prospects")render();}finally{mapsPolling=false;}
 }
 function startMapsPolling(){
  if(mapsTimer)clearInterval(mapsTimer);
- mapsTimer=setInterval(async()=>{if(!mapsJob||["IMPORTED","FAILED","COMPLETED"].includes(mapsJob.status)){clearInterval(mapsTimer);mapsTimer=null;return;}await updateMapsJob();},12000);
+ mapsTimer=setInterval(async()=>{if(!mapsJob||["IMPORTED","FAILED"].includes(mapsJob.status)){clearInterval(mapsTimer);mapsTimer=null;return;}await updateMapsJob();},12000);
 }
 async function loadProspects(){
  prospectLoading=true;
@@ -306,14 +316,12 @@ document.addEventListener("click",async ev=>{
   }
   if(action==="approach-selected"){
    if(!selectedLeadIds.size){n("Selecione ao menos uma empresa.");return;}
-   const preview=await post("/api/prospecting/approach-preview",{leadIds:[...selectedLeadIds].slice(0,100)});
-   if(preview.ready===0){n((preview.manualReady||0)+" empresa(s) disponíveis para contato individual pelo botão WhatsApp manual. A fila automática exige autorização registrada.");return;}
-   const yes=confirm("Adicionar "+preview.ready+" contato(s) autorizado(s) à fila automática? "+(preview.manualReady||0)+" contato(s) ficarão disponíveis somente para abordagem individual. Intervalo mínimo de 90 segundos. Confirmar?");
-   if(!yes)return;
-   const result=await post("/api/prospecting/queue",{leadIds:[...selectedLeadIds].slice(0,100),approve:true});
+   const preview=await post("/api/prospecting/approach-preview",{leadIds:[...selectedLeadIds],operatorApproved:true});
+   if(preview.ready===0){n((preview.manualReady||0)+" empresa(s) elegíveis. Nenhuma pode entrar nesta fila agora.");return;}
+   const result=await post("/api/prospecting/queue",{leadIds:[...selectedLeadIds],approve:true,operatorApproved:true,offerType});
    selectedLeadIds.clear();
    await loadProspects();
-   n("Fila automática: "+result.queued+" empresa(s) autorizada(s); "+result.excluded+" sem envio automático. Para as demais, use o botão WhatsApp manual. Primeiro envio somente após validação do servidor.");
+   n("Fila automática: "+result.queued+" empresa(s) selecionada(s); "+result.excluded+" excluída(s) por elegibilidade.");
    return;
   }
   if(action==="cancel-approach-queue"){
@@ -342,14 +350,21 @@ document.addEventListener("submit",async ev=>{
   ev.preventDefault();
   const a=q("#niche")?.value.trim(),b=q("#city")?.value.trim();
   if(!a||!b){n("Informe um nicho e uma cidade para pesquisar. Para navegar na base, use Filtrar base.");return;}
-  niche=a;city=b;busy=true;prospectError="";render();
-  n("Consultando o OpenStreetMap. A pesquisa pode levar alguns segundos...");
+  niche=a;city=b;selectedLeadIds.clear();approachPreview=null;prospectFilter='uncontacted';busy=true;prospectError="";render();
+
   try{
+   const maps=await api('/api/maps/status');
+   if(maps.configured){
+    searchSource='maps';mapsJob=await post('/api/maps/search',{niche,city});
+    n('Google Maps: pesquisa em processamento. Os resultados serão salvos automaticamente; mensagens exigem selecionar e Abordar.');
+    startMapsPolling();await updateMapsJob();return;
+   }
+   searchSource='osm';n('Google Maps não configurado. Consultando a fonte alternativa OpenStreetMap.');
    const result=await post("/api/prospecting/search",{niche,city});
    prospectFilter="uncontacted";selectedLeadIds.clear();approachPreview=null;
    n("Pesquisa concluída. "+Number(result.added||0)+" empresas novas adicionadas à base.");
   }catch(e){
-   prospectError=e.message;n("Fonte OpenStreetMap: "+e.message);
+   prospectError=e.message;n((searchSource==='maps'?"Google Maps: ":"OpenStreetMap: ")+e.message);
   }finally{
    busy=false;
    if(view==="prospects"){await loadProspects();if(prospectError)render();}
@@ -373,6 +388,7 @@ document.addEventListener("submit",async ev=>{
 });
 document.addEventListener("change",async e=>{
  const t=e.target;
+ if(t.id==='approach-offer'){offerType=t.value;return;}
  if(t.dataset?.selectLead){
   const leadId=t.dataset.selectLead;
   if(t.checked)selectedLeadIds.add(leadId);else selectedLeadIds.delete(leadId);

@@ -71,4 +71,4 @@ test('The real call-turn pipeline remembers context and stops repetitive greetin
   assert(!second.spoken.startsWith('Olá'));
  }finally{session.end();}
 });
-test.after(()=>{fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
+test.after(async()=>{(await import('../dashboard/db.mjs')).db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

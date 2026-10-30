@@ -2,6 +2,7 @@
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
 import {db,id,one,all,run,tx,now,audit,addLead,getThread,addMessage} from './db.mjs';
+import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision} from './prospecting-recontact.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
@@ -16,11 +17,12 @@ run("INSERT OR IGNORE INTO prospecting_send_clock(id,last_attempt_ms) VALUES(1,0
 // Crash safety: an interrupted network send may have been delivered.
 run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interrompido; conferir no WhatsApp' WHERE status='SENDING'");
 
-function eligibleLead(leadId,ignoreQueueItemId=''){
+function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false){
  const l=one("SELECT id,business,phone,stage,contact_permission FROM leads WHERE id=?",leadId);
- if(!l||!l.phone||l.contact_permission!==1)return null;
+ if(!l||!l.phone)return null;
+ if(ignoreQueueItemId&&one('SELECT phone FROM prospecting_batch_items WHERE id=?',ignoreQueueItemId)?.phone!==l.phone)return null;
  if(!recontactDecision(l,Date.now(),ignoreQueueItemId).eligible)return null;
- if(!documentedOptIn(l.id))return null;
+ if(!documentedOptIn(l.id)&&!operatorApproved&&!(ignoreQueueItemId&&operatorSelected(l.id)))return null;
  if(one('SELECT phone FROM suppressions WHERE phone=?',l.phone))return null;
 
 
@@ -38,18 +40,23 @@ export function approachQueueStatus(){
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
  return {active:!!b,batchId:b?.id||null,waiting,sent,unknown,
   intervalSeconds:90,nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),clock+APPROACH_INTERVAL_MS)).toISOString():null,
-  status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:true};
+  status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:false,requiresOperatorApproval:true};
 }
 export function enqueueApprovedApproaches(input={}){
+ if(input.operatorApproved===true&&input.offerType!==undefined&&!['portfolio','promotion','corporate'].includes(input.offerType))return {status:400,body:{error:'Tipo de oferta inválido'}};
  const ids=Array.isArray(input.leadIds)?[...new Set(input.leadIds.map(v=>String(v||'')))]:[];
- if(input.approve!==true||ids.length<1||ids.length>100||ids.some(v=>!/^[a-f0-9-]{36}$/i.test(v)))return {status:400,body:{error:'Selecione empresas e confirme a inclusão na fila'}};
+ if(input.approve!==true||ids.length<1||ids.length>1000||ids.some(v=>!/^[a-f0-9-]{36}$/i.test(v)))return {status:400,body:{error:'Selecione empresas e confirme a inclusão na fila'}};
  const result=tx(()=>{
   if(currentBatch())return {status:409,body:{error:'Já existe uma fila em andamento. Conclua ou cancele antes de iniciar outra.'}};
-  const approved=ids.map(eligibleLead).filter(Boolean);
-  if(!approved.length)return {status:403,body:{error:'Nenhuma selecionada tem autorização de contato documentada. Não é permitido iniciar disparos a contatos encontrados publicamente.'}};
+  const approved=ids.map(leadId=>eligibleLead(leadId,'',input.operatorApproved===true)).filter(Boolean);
+  if(!approved.length)return {status:403,body:{error:input.operatorApproved===true?'Nenhuma selecionada está elegível para abordagem. Confira bloqueios, contatos anteriores e atendimento humano.':'Nenhuma selecionada tem autorização de contato documentada. Confirme a seleção manual no painel para aprovar a primeira abordagem.'}};
   const batchId=id(),at=now();
   run('INSERT INTO prospecting_batches(id,status,created_at,updated_at) VALUES(?,?,?,?)',batchId,'ACTIVE',at,at);
-  for(const l of approved)run('INSERT INTO prospecting_batch_items(id,batch_id,lead_id,phone,status,created_at) VALUES(?,?,?,?,?,?)',id(),batchId,l.id,l.phone,'QUEUED',at);
+  for(const l of approved){
+   const itemId=id();
+   run('INSERT INTO prospecting_batch_items(id,batch_id,lead_id,phone,status,created_at) VALUES(?,?,?,?,?,?)',itemId,batchId,l.id,l.phone,'QUEUED',at);
+   if(input.operatorApproved===true)recordOperatorSelection({itemId,batchId,leadId:l.id,offerType:input.offerType||'portfolio'});
+  }
   audit('PROSPECTING_BATCH_APPROVED',null,{batchId,selected:ids.length,queued:approved.length,excluded:ids.length-approved.length,intervalSeconds:90});
   return {status:202,body:{ok:true,batchId,queued:approved.length,excluded:ids.length-approved.length,intervalSeconds:90,started:false}};
  });
@@ -101,7 +108,7 @@ export async function tickApproachQueue(deps={}){
   });
   if(!reserved)return {status:'WAITING'};
   const recipient=one('SELECT name,business FROM leads WHERE id=?',next.lead_id);
-  const message=greetingForProspect(recipient);
+  const message=greetingForProspect(recipient,new Date(time));
   try{
    const result=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/send',{method:'POST',data:{message:{text:message}}});
    if(result.status!==true)throw Error('Gateway não confirmou entrega');

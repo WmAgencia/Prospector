@@ -63,6 +63,7 @@ import {groqCatalog,groqChat} from './groq-models.mjs';
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
+import {flushPriceApprovals} from './owner-price-approvals.mjs';
 
 // Explicitly authorized one-shot production discovery check for Sorocaba mechanics.
 // Writes only sourced business leads, with contact_permission=false; no messages.
@@ -430,7 +431,7 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/whatsapp/qr')return respond(res,200,await waGetQR());
   if(req.method==='POST'&&pathname==='/api/whatsapp/connect'){try{return respond(res,200,await waConnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/disconnect'){try{return respond(res,200,await waDisconnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
-  if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:500}));}
+  if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:1000}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
   if(req.method==='GET'&&pathname==='/api/sales/outcomes')return respond(res,200,salesOutcomes({limit:80}));
@@ -739,7 +740,7 @@ const audioTranscriptionTimer=setInterval(()=>{
 const customerAiTimer=setInterval(()=>{
  if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true'&&process.env.PROSPECTOR_LIVE_TEST_ENABLED!=='true'&&getSetting('sales_followup_enabled',true)!==true&&getSetting('sales_daily_report_enabled',true)!==true)return;
  try{scheduleReport();}catch(e){console.warn('[daily sales report]',String(e?.message||e).slice(0,70));}
- tickSalesAgent().then(()=>flushInterestAlerts()).then(async sent=>sent+await flushPersonalNotices()).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
+ tickSalesAgent().then(async()=>{const prices=await flushPriceApprovals();return Number(prices.sent||0)+await flushInterestAlerts()+await flushPersonalNotices();}).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
 },6000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
@@ -789,6 +790,9 @@ server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if
 
 if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
  setTimeout(()=>import('./production-verification.mjs').then(m=>m.runProductionVerification()).then(result=>console.info('[production verification]',JSON.stringify(result))).catch(()=>console.warn('[production verification]',JSON.stringify({state:'FAILED',recipientSuffix:'7336',delivery:'UNVERIFIED_ON_PHONE'}))),6000).unref();
+}
+if(process.env.PROSPECTOR_OWNER_APPROVAL_DEMO_ENABLED==='true'){
+ setTimeout(()=>import('./owner-price-approvals.mjs').then(m=>m.sendOwnerPriceDemo(process.env.PROSPECTOR_OWNER_APPROVAL_DEMO_ID)).then(result=>console.info('[owner price demo]',JSON.stringify(result))).catch(()=>console.warn('[owner price demo]',JSON.stringify({state:'FAILED',customerMessagesSent:0}))),6000).unref();
 }
 
 if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){

@@ -55,17 +55,17 @@ test('Soft decline is eligible after three months but explicit opt-out never is'
  db.run('INSERT INTO suppressions(phone,reason,created_at) VALUES(?,?,?)',a.phone,'OPTOUT',db.now());
  assert.equal(recontactDecision(refreshed,Date.parse('2030-01-01T00:00:00Z')).reason,'OPT_OUT');
 });
-test('A company displayed in an earlier session can only reappear after contact and 3 calendar months',()=>{
+test('Visibility follows actual contact cooldown, not prior page views',()=>{
  const a=lead('Oficina Vista','15933330007');
  const first='11111111-1111-4111-8111-111111111111';
  const second='22222222-2222-4222-8222-222222222222';
  assert.equal(listUnseenCompanies({session:first,niche:'oficina mecânica',city:'Sorocaba'}).results.filter(x=>x.id===a.id).length,1);
- assert.equal(listUnseenCompanies({session:second,niche:'oficina mecânica',city:'Sorocaba'}).results.filter(x=>x.id===a.id).length,0,'first exposure is permanent without contact');
+ assert.equal(listUnseenCompanies({session:second,niche:'oficina mecânica',city:'Sorocaba'}).results.filter(x=>x.id===a.id).length,1,'viewing alone does not consume a prospect');
  contacted(a,'2024-01-01T00:00:00Z');
  db.run("UPDATE prospecting_viewed_keys SET shown_at='2025-01-01T00:00:00Z' WHERE lead_id=?",a.id);
  const returned=listUnseenCompanies({session:second,niche:'oficina mecânica',city:'Sorocaba'});
  assert.equal(returned.results.filter(x=>x.id===a.id).length,1);
  const third='33333333-3333-4333-8333-333333333333';
- assert.equal(listUnseenCompanies({session:third,niche:'oficina mecânica',city:'Sorocaba'}).results.filter(x=>x.id===a.id).length,0,'new exposure resets three-month visibility clock');
+ assert.equal(listUnseenCompanies({session:third,niche:'oficina mecânica',city:'Sorocaba'}).results.filter(x=>x.id===a.id).length,1,'viewing does not reset contact cooldown');
 });
 test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

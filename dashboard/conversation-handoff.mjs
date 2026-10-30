@@ -2,7 +2,7 @@
 // This controls automatic responses, not authorization to send unsolicited messages.
 import {one,run,now,audit,phone,addLead,getThread} from './db.mjs';
 import {getSetting} from './db.mjs';
-import {documentedOptIn} from './outreach-queue.mjs';
+import {conversationAuthorized} from './operator-outreach.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
 import {selectedWaSession,waControlStatus} from './waakg-control.mjs';
@@ -36,7 +36,7 @@ export function conversationHandoffStatus(chatId){
  const eligibleStage=!['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(row.lead?.stage);
  const genericAi=process.env.AI_CONVERSATION_AUTOSEND==='true'||process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true';
  const intro=row.lead?introductionStatus(row.lead.id):null;
- const approved=role.role==='PROSPECT_APPROACHED'&&row.lead&&documentedOptIn(row.lead.id)&&
+ const approved=role.role==='PROSPECT_APPROACHED'&&row.lead&&conversationAuthorized(row.lead.id,{ignoreTakeover:true})&&
   getSetting('sales_followup_enabled',true)===true&&(!intro||intro.stage==='CONVERSING');
  const canTakeover=valid&&role.role!=='OWNER'&&role.role!=='UNVERIFIED'&&!suppressed;
  const canDeliverToAi=!!(canTakeover&&eligibleStage&&(approved||genericAi)&&process.env.GROQ_API_KEY);

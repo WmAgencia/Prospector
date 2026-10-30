@@ -33,7 +33,7 @@ test('Two initial greetings are never attempted less than 90 seconds apart',asyn
  const first=await queue.tickApproachQueue(deps);
  assert.equal(first.status,'SENT');
  assert.equal(sent.length,1);
- assert.match(sent[0].body.message.text,/^Olá, Mecânica [AB], tudo bem\?$/);
+ assert.match(sent[0].body.message.text,/^Olá, Mecânica [AB], boa noite! Tudo bem\?$/);
  nowMs+=89_999;
  const early=await queue.tickApproachQueue(deps);
  assert.equal(early.status,'WAITING');
@@ -42,7 +42,7 @@ test('Two initial greetings are never attempted less than 90 seconds apart',asyn
  const second=await queue.tickApproachQueue(deps);
  assert.equal(second.status,'SENT');
  assert.equal(sent.length,2);
- assert.deepEqual(new Set(sent.map(x=>x.body.message.text)),new Set(['Olá, Mecânica A, tudo bem?','Olá, Mecânica B, tudo bem?']));
+ assert.deepEqual(new Set(sent.map(x=>x.body.message.text)),new Set(['Olá, Mecânica A, boa noite! Tudo bem?','Olá, Mecânica B, boa noite! Tudo bem?']));
  assert.equal(sent[1].time-sent[0].time,90_000);
  assert.equal(db.one("SELECT COUNT(*) n FROM initial_contacts WHERE status='SENT'").n,2);
  assert.equal(db.one("SELECT COUNT(*) n FROM messages WHERE direction='out'").n,2);
