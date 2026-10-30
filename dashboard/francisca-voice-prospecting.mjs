@@ -27,7 +27,7 @@ export function parseVoiceProspecting(text){
  // "pesquisa pra mim dentistas na cidade de Sorocaba e pode selecionar todos e iniciar a abordagem"
  const after=raw.replace(/^.*?\b(?:pesquis\w*|busc\w*|procur\w*|encontr\w*|levant\w*|localiz\w*)\b\s*/,'')
   .replace(/^(?:(?:para|pra)\s+mim\s+|(?:uns|umas|os|as|todos|todas)\s+)+/,'');
- const parts=after.match(/^(.+?)\s+(?:na\s+cidade\s+de|no\s+municipio\s+de|em\s+|na\s+|no\s+)\s+(.+)$/);
+ const parts=after.match(/^(.+?)\s+(?:na\s+cidade\s+de|no\s+municipio\s+de|em|na|no)\s+(.+)$/);
  if(!parts)return {wantsSearch:true,wantsStart,niche:null,city:null};
  const niche=safeTerm(parts[1].replace(/\s+(?:para|pra)\s+mim$/,''));
  const city=safeTerm(parts[2].replace(cityTail,''));
