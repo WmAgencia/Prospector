@@ -59,7 +59,9 @@ export function polishVoiceReply(text,{history=[],heard='',maxChars}={}){
  const plan=voiceReplyPlan(heard,history);
  const earlier=history.filter(m=>m.role==='assistant').map(m=>String(m.content||''));
  let output=original.replace(/^\s*[-*]\s+/,'');
- if(earlier.length){
+ // A requested literal greeting or script must not be rewritten.
+ const quoting=/como (?:eu )?(?:cumpriment|saud|apresent)|roteiro|mensagem inicial|o que dizer|fala literalmente|citar exatamente|texto exato/.test(normalize(heard));
+ if(earlier.length&&!quoting){
   output=output.replace(leadIn,'').trim();
   // Remove a crutch only when the same crutch opened the previous answer.
   const current=output.match(genericLead)?.[1];
