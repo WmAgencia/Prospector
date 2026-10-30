@@ -41,7 +41,7 @@ export function parseSpokenBrazilPhone(raw){
  if(keys.length){
   const last=keys.at(-1);offset=last.index+last[0].length;
  }else{
-  const prefix=new RegExp('\\b(?:para|pro|pra|ao)\\s+(?=(?:\\d|'+phoneWordStart+')\\b)').exec(normalized);
+  const prefix=new RegExp('\\b(?:para|pro|pra|ao)\\s+(?=(?:\\d+|'+phoneWordStart+')\\b)').exec(normalized);
   if(prefix)offset=prefix.index+prefix[0].length;
   else if(!new RegExp('^\\s*(?:\\+?\\d|'+phoneWordStart+')\\b').test(normalized))return null;
  }
