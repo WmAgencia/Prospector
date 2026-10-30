@@ -1,3 +1,5 @@
+// Calibrated for phone speech: a thoughtful pause is not the end of the turn.
+export const FRANCISCA_LIVE_TURN_CONFIG=Object.freeze({stopSilenceMs:1050,bargeVoiceMs:400,maxTurnMs:13000,minVoiceMs:240});
 // Sample-clock voice activity/turn taking for PCM float32 mono, 16 kHz.
 // Pure module: no WhatsApp credentials, no audio recordings, no wall-clock timers.
 export class TurnDetector {
