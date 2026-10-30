@@ -16,7 +16,7 @@ Base: `35c6d44ba7913419603eecadba9056b74da6830d`.
 
 ## Evidência de teste
 
-- `node --test`: **266 testes aprovados**, zero falhas, cancelados ou ignorados. Base anterior: 238 testes. Chave Groq removida apenas do processo de teste.
+- `node --test`: **274 testes aprovados**, zero falhas, cancelados ou ignorados, incluindo oito testes do verificador de produção autorizado. Base anterior: 238 testes. Chave Groq removida apenas do processo de teste.
 - Sintaxe: **151 arquivos JavaScript/ES modules** verificados sem falhas.
 - `bun build infra/railway/prospector-ui.ts --target=bun`: compilação concluída.
 - `git diff --check`: sem erros.
@@ -38,3 +38,9 @@ Após aprovação de publicação:
 6. Conectar o cliente MCP e conceder somente os escopos desejados. Envio requer autorização separada `prospector:outreach`, aprovação explícita e consentimento já documentado dos contatos.
 
 Não é possível afirmar entrega real de WhatsApp ou compatibilidade com uma conta específica do cliente sem concluir sua conexão e fazer um teste com destinatário autorizado. Os testes desta entrega não contactam clientes.
+
+## Teste real autorizado pelo operador
+
+O operador aprovou a publicação e um teste para seu telefone em 30/10/2026. O módulo `dashboard/production-verification.mjs` exige `PROSPECTOR_PRODUCTION_VERIFY_ENABLED=true` e um UUID em `PROSPECTOR_PRODUCTION_VERIFY_ID`. O destinatário é fixo; a rotina não altera consentimento, clientes, campanhas ou filas. Confere a identidade completa do remetente e a sessão antes do envio, respeita supressões e reserva as duas partes em SQLite antes de qualquer tentativa. Um UUID já reservado não é repetido, mesmo depois de reiniciar ou variar a capitalização. Síntese indisponível é detectada antes da reserva. Falhas e resultados incertos não são reenviados automaticamente.
+
+O teste solicita um texto e um áudio Francisca. O log distingue aceitação pelo provedor de confirmação no aparelho. Após executar, desativar `PROSPECTOR_PRODUCTION_VERIFY_ENABLED` e os antigos flags `RUN_*` de smoke para não programar novos testes em reinícios.

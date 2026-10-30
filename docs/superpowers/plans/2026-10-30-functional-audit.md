@@ -32,7 +32,8 @@
 - [x] MCP: implement OAuth discovery/registration/PKCE approval/token and authenticated JSON-RPC tools, with temporary HTTP integration tests and operator documentation.
 - [x] Gateway: reproduce and fix backend cookie expiry/rotation recovery and proxy MCP headers/routes.
 - [x] Run full test suite, syntax and HTTP smoke; independent final review. 266 tests pass; Chrome smoke passed without real sends.
-- [ ] Prepare reviewable GitHub delivery and obtain production publication approval.
+- [x] Prepare reviewable GitHub delivery and obtain production publication approval. PR #59; user approved production and the owned-phone test.
+- [ ] Deploy backend/gateway, configure MCP, verify one authorized text/audio attempt and report provider results separately from phone confirmation.
 
 Ruling: MCP outbound access uses a separate optional OAuth scope plus explicit per-call approval and existing documented consent gates; no arbitrary owner impersonation or removal of delivery safeguards.
 
