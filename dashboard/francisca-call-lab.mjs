@@ -199,7 +199,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
      spoken=asksApproachedCount(heard)&&operationalBriefing?.stats&&Number.isInteger(operationalBriefing.stats.approached)
       ? 'O sistema confirma '+operationalBriefing.stats.approached+' leads abordados, de '+operationalBriefing.stats.leads+' cadastrados.'
       :wantsStatus
-      ?'Recebi sua pergunta, mas a consulta ao sistema não terminou corretamente. Não vou inventar os números nem afirmar que fiz alguma ação.'
+      ?'Não consegui consultar os dados do Prospector agora. Não vou inventar os números nem afirmar que fiz alguma ação.'
       :'Recebi o que você disse, mas o serviço de respostas está instável neste momento. Nenhuma ação foi executada.';
     }
     const llmMs=Date.now()-began-sttMs;
