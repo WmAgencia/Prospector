@@ -176,4 +176,35 @@ test('Named greeting waits for reply, sends Wesley exactly after 30s and transfe
  assert.match(sentMessage,/Sou a Francisca/);
  assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
 });
+test('Francisca never treats a second hello as a new conversation, even on an inbound-only chat',async()=>{
+ const previous=process.env.AI_CONVERSATION_AUTOSEND;
+ process.env.AI_CONVERSATION_AUTOSEND='true';
+ const p=nextPhone(),jid=p+'@s.whatsapp.net';
+ const sent=[],draftCalls=[];
+ const deps={qualify:async()=>({confirmed:false}),status:async()=>({connected:true,sessionId:'consecom-principal'}),
+  draft:async(args)=>{draftCalls.push(args);return {ok:true,draft:'Olá! A Consecom pode organizar melhor seus serviços num site e facilitar o contato com clientes.'};},
+  send:async(_path,{data})=>{sent.push(data.message.text);return {status:true};}
+ };
+ try{
+  const greetingId='consecom-principal:dynamic-hello-1';
+  const first=recordInboundTranscript({sessionId:'consecom-principal',jid,unique:greetingId,content:'Oi'});
+  assert.equal(first.status,200);
+  assert.equal((await handleSalesTurn(greetingId,deps)).state,'SENT');
+  assert.match(sent[0],/^Olá!/);
+  assert.equal(draftCalls.length,0,'one initial greeting needs no generative call');
+  const laterId='consecom-principal:dynamic-hello-2';
+  const second=recordInboundTranscript({sessionId:'consecom-principal',jid,unique:laterId,content:'Oi, pode me explicar melhor?'});
+  assert.equal(second.status,200);
+  assert.equal((await handleSalesTurn(laterId,deps)).state,'SENT');
+  assert.equal(sent[1],'A Consecom pode organizar melhor seus serviços num site e facilitar o contato com clientes.');
+  assert.equal(draftCalls.length,1);
+  assert.equal(draftCalls[0].dialogueState.hasAssistantReply,true);
+  assert.match(draftCalls[0].context,/Cliente: Oi/);
+  assert.match(draftCalls[0].context,/Consecom: Olá/);
+  assert.equal(db.one("SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id=m.thread_id JOIN leads l ON l.id=t.lead_id WHERE l.phone=? AND m.direction='out'",p).n,2);
+ }finally{
+  if(previous===undefined)delete process.env.AI_CONVERSATION_AUTOSEND;
+  else process.env.AI_CONVERSATION_AUTOSEND=previous;
+ }
+});
 test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

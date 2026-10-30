@@ -13,6 +13,6 @@ export const BUSINESS_GUIDANCE = [
  "PRIVACIDADE: não pedir CPF, RG, senhas, documentos pessoais ou pagamento por WhatsApp.",
  "RECUSA: quando a pessoa disser que não quer mensagens, agradecer e encerrar, sem novas ofertas.",
  "ATENDIMENTO HUMANO: quando a pessoa pedir um atendente ou houver negociação, conflito, reclamação ou dados de contrato, priorizar revisão humana.",
- "TOM: 'Olá! Posso entender rapidamente o que você precisa?' é aceitável; não repetir frases artificiais ou longos textos comerciais.",
+ "TOM: cumprimente somente na abertura da conversa. Em respostas seguintes, vá direto ao assunto, sem repetir oi, olá, posso explicar ou meu nome é.",
  "STATUS: todo texto gerado aqui é um rascunho pendente de aprovação, sem envio automático."
 ].join("\n");

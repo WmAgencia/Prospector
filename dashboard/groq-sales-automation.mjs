@@ -11,6 +11,7 @@ import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
+import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
@@ -66,7 +67,14 @@ export async function handleSalesTurn(providerId,deps={}){
  };
  if(stale())return finish(stale());
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
- const history=all("SELECT direction,body FROM messages WHERE thread_id=? ORDER BY at DESC LIMIT 8",r.thread_id).reverse().map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
+ const recentTurns=all("SELECT direction,body,at FROM messages WHERE thread_id=? ORDER BY at DESC,rowid DESC LIMIT 22",r.thread_id).reverse();
+ const history=recentTurns.slice(-8).map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
+ // A chat is a continuous exchange. Read the real server-side thread rather
+ // than asking the model to infer whether it has greeted the contact before.
+ const hasOutbound=!!one("SELECT 1 FROM messages WHERE thread_id=? AND direction='out' LIMIT 1",r.thread_id);
+ const dialogue=analyzeChatTurn({text:r.body,history:recentTurns,role:identity.role});
+ dialogue.hasAssistantReply=hasOutbound;
+ dialogue.isFirstContact=!hasOutbound;
  const qualify=deps.qualify||qualifyWithGroq;
  // Existing customers and owner QA NEVER become sales opportunities from
  // their ordinary WhatsApp messages, regardless of how they phrase a request.
@@ -109,8 +117,8 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('HANDOFF','REQUESTED_HUMAN');
  }
  // A one-word hello never requires an external model call.
- const draft=incoming.intro&&!salesFollowup?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
-   await (deps.draft||aiDraft)({text:r.body,audience:identity.role,context:history+
+ const draft=incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+   await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+
@@ -120,7 +128,12 @@ export async function handleSalesTurn(providerId,deps={}){
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});
   return finish('REVIEW','GROQ_UNAVAILABLE');
  }
- const review=reviewGroqReply({inbound:r.body,draft:draft.draft,allowAveragePrice:salesFollowup});
+ const replyText=refineChatReply(draft.draft,{state:dialogue,incoming:r.body});
+ if(!replyText){
+  audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});
+  return finish('REVIEW','REPEATED_OR_EMPTY_REPLY');
+ }
+ const review=reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:salesFollowup});
  if(!review.ok){
   audit('GROQ_REPLY_REJECTED',r.lead_id,{code:review.code,test:allowTest});
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'Resposta bloqueada para revisão: '+review.code});
@@ -130,7 +143,7 @@ export async function handleSalesTurn(providerId,deps={}){
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
  const audioTable=!!one("SELECT name FROM sqlite_master WHERE type='table' AND name='inbound_audio_jobs'");
  const wasAudio=audioTable&&!!one("SELECT provider_id FROM inbound_audio_jobs WHERE provider_id=? AND state='DONE'",providerId);
- const routing=chooseReplyChannel({inbound:r.body,draft:draft.draft,wasAudio,isOperatorTest:allowTest,
+ const routing=chooseReplyChannel({inbound:r.body,draft:replyText,wasAudio,isOperatorTest:allowTest,
   preferredMode:channelPreference(r.jid),
   voiceAvailable:process.env.AUDIO_RESPONSE_ENABLED==='true'&&process.env.FRANCISCA_TTS_ENABLED==='true'});
  if(routing.preference)saveChannelPreference(r.jid,routing.preference);
@@ -138,7 +151,7 @@ export async function handleSalesTurn(providerId,deps={}){
  // complete written response instead of leaving the contact without a reply.
  let voiceBytes=null;
  if(routing.voice){
-  try{const speech=await (deps.voice||makeFranciscaVoice)(draft.draft);voiceBytes=speech.bytes;
+  try{const speech=await (deps.voice||makeFranciscaVoice)(replyText);voiceBytes=speech.bytes;
    if(!Buffer.isBuffer(voiceBytes)||voiceBytes.length<256)throw Error('INVALID_VOICE');
   }catch(e){
    audit('GROQ_VOICE_FALLBACK',r.lead_id,{reason:'SYNTHESIS_FAILED',channel:routing.mode,test:allowTest});
@@ -154,13 +167,13 @@ export async function handleSalesTurn(providerId,deps={}){
  const accepted=[];
  const mark=(part)=>{acceptPart(providerId,part);accepted.push(part);
   // Record acknowledged delivery before a later transport can fail.
-  addMessage({threadId:r.thread_id,providerId:'groq:'+providerId,direction:'out',body:(part==='VOICE'&&!accepted.includes('TEXT')?'[Áudio Francisca] ':'')+draft.draft,status:'sent'});
+  addMessage({threadId:r.thread_id,providerId:'groq:'+providerId,direction:'out',body:(part==='VOICE'&&!accepted.includes('TEXT')?'[Áudio Francisca] ':'')+replyText,status:'sent'});
  };
  try{
   if(routing.text){
    if(!reservePart(providerId,'TEXT'))return finish('UNKNOWN','DUPLICATE_TEXT_ATTEMPT');
    const ack=await (deps.send||waRequest)('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(r.jid)+'/send',
-    {method:'POST',data:{message:{text:draft.draft}}});
+    {method:'POST',data:{message:{text:replyText}}});
    if(ack.status!==true)return finish('UNKNOWN','TEXT_UNCONFIRMED');
    mark('TEXT');
   }
@@ -173,9 +186,9 @@ export async function handleSalesTurn(providerId,deps={}){
   }
   const prefix=routing.mode==='VOICE'?'[Áudio Francisca] ':
     routing.mode==='BOTH'?'[Texto + áudio Francisca] ':'';
-  run('UPDATE messages SET body=? WHERE provider_id=?',prefix+draft.draft,'groq:'+providerId);
+  run('UPDATE messages SET body=? WHERE provider_id=?',prefix+replyText,'groq:'+providerId);
   audit('GROQ_AUTOMATED_INBOUND_REPLY',r.lead_id,{inbound:true,testOnly:allowTest,
-    replyLength:draft.draft.length,deliveryMode:routing.mode,channelReason:routing.reason,contactRole:identity.role,parts:accepted});
+    replyLength:replyText.length,deliveryMode:routing.mode,channelReason:routing.reason,contactRole:identity.role,parts:accepted});
   return finish('SENT');
  }catch(e){
   // If the written part was accepted but a voice send fails, NEVER send it again.
