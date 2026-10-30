@@ -36,7 +36,7 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
  const payload={model,messages,temperature:task==='actions'?0.15:task==='voice'?0.57:0.45,max_completion_tokens:maxTokens};
  if(task==='voice'&&model.startsWith('openai/gpt-oss-'))payload.reasoning_effort='low';
  if(Array.isArray(tools)&&tools.length){payload.tools=tools;payload.tool_choice='auto';payload.parallel_tool_calls=false;}
- else if(task==='voice')payload.tool_choice='none';
+ // Omit tool_choice entirely when no tools are supplied: some Groq models reject it with HTTP 400.
  const send=async(body,timeoutMs=20000)=>fetch(BASE+'/chat/completions',{
   method:'POST',headers:{Authorization:'Bearer '+process.env.GROQ_API_KEY,'Content-Type':'application/json'},
   body:JSON.stringify(body),signal:AbortSignal.timeout(timeoutMs)
@@ -44,6 +44,10 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
  const response=await send(payload,task==='voice'?14000:45000);
  if(!response.ok){
   if(task==='voice'&&response.status===400){
+   // Log only provider error category/parameter, never messages or user speech.
+   let errorDetail={};
+   try{const e=(await response.json())?.error||{};
+    errorDetail={code:String(e.code||'').slice(0,65),type:String(e.type||'').slice(0,65),param:String(e.param||'').slice(0,65)};}catch{}
    // Groq may reject malformed model-generated tool calls as HTTP 400.
    // Retry once on a different active model WITHOUT any tools, never writing data.
    // Do not log user transcripts, tool arguments or the raw provider response.
@@ -51,11 +55,15 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
    const alternative=['llama-3.3-70b-versatile','llama-3.1-8b-instant','openai/gpt-oss-120b']
      .find(id=>id!==model&&available.ids.includes(id));
    console.warn('[groq-voice-recovery]',JSON.stringify({status:400,primary:model,
-    alternative:alternative||'none',toolsEnabled:Boolean(payload.tools?.length)}));
+    alternative:alternative||'none',toolsEnabled:Boolean(payload.tools?.length),errorDetail}));
    if(alternative){
+    // The recovery request MUST exclude tool-call-role messages if the
+    // preceding model turn contained tool calls; otherwise a second 400 occurs.
+    const safeMessages=messages.filter(m=>['system','user','assistant'].includes(m?.role)&&
+     typeof m?.content==='string'&&m.content.trim()&&!m?.tool_calls).slice(-20);
     const retry={model:alternative,
-     messages:[{role:'system',content:'Você está respondendo por voz. Se uma informação atual não estiver comprovada pelos dados disponíveis, diga claramente que não conseguiu verificar. Não invente status, tarefas pendentes, ações ou resultados.'},...messages],
-     temperature:0.2,max_completion_tokens:maxTokens,tool_choice:'none'};
+     messages:[{role:'system',content:'Você está respondendo por voz. Se uma informação atual não estiver comprovada pelos dados disponíveis, diga claramente que não conseguiu verificar. Não invente status, tarefas pendentes, ações ou resultados.'},...safeMessages],
+     temperature:0.2,max_completion_tokens:Math.max(500,maxTokens)};
     try{
      const recovered=await send(retry,12000);
      if(recovered.ok){const data=await recovered.json();
