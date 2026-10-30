@@ -35,8 +35,10 @@ test('new actual inbound permits a later interested result after refusal',()=>{
 });
 test('audio validates individual JIDs and relationship action uses declared chat state',()=>{
  const source=fs.readFileSync(new URL('../dashboard/public/simple-app.js',import.meta.url),'utf8');
- const match=source.match(/if\(!\/(.*?)\/\.test\(jid\)\)/);assert.ok(match);
- assert.equal(new RegExp(match[1]).test('5515999112233@s.whatsapp.net'),true);
- assert.equal(new RegExp(match[1]).test('5515999112233@g.us'),false);
+ const transport=fs.readFileSync(new URL('../dashboard/conversation-handoff.mjs',import.meta.url),'utf8');
+ assert.match(transport,/const validJid=jid=>/);
+ assert.match(transport,/@s\\\.whatsapp\\\.net/);
+ assert.match(transport,/role\.role==='OWNER'/);
+ assert.match(transport,/role\.role==='UNVERIFIED'/);
  assert.ok(!source.includes('[...remoteChats,...chats]'));
 });
