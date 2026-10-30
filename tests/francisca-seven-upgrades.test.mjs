@@ -17,6 +17,7 @@ const {ownerMemoryCommand,rememberCallTopic,recentOwnerMemory}=await import('../
 const {chooseVoiceWorkflow,runVoiceReadWorkflow}=await import('../dashboard/francisca-voice-orchestrator.mjs');
 const {newFranciscaCallSession}=await import('../dashboard/francisca-call-lab.mjs');
 const {VoiceAudioConditioner}=await import('../waakg-voice/audio-conditioning.mjs');
+const {db}=await import('../dashboard/db.mjs');
 const pcm=Buffer.alloc(32000);
 const synthesized=async()=>({pcm16k:Buffer.alloc(640),voice:'test'});
 
@@ -65,7 +66,6 @@ test('Diagnostic records only time and aggregate counters, no transcripts',()=>{
  const stats=voiceMetricsSummary();
  assert(stats.turns>=1);assert(stats.avgMs>0);assert(stats.interruptions>=1);
  assert.match(voiceMetricsSpoken(),/Tempo médio total/);
- const {db}=await import('../dashboard/db.mjs');
  const columns=Object.keys(db.prepare('SELECT * FROM francisca_call_metrics LIMIT 1').get());
  assert(!columns.some(x=>/phone|transcript|message|audio|pcm|jid|text/.test(x)));
 });
@@ -97,7 +97,7 @@ test('Conservative acoustic conditioner removes silence and playback echo withou
 });
 test('Owner call emits sequential streamed PCM segments before turn resolution',async()=>{
  let segments=[],spoken=[],responses=0;
- const reply='Aqui está um resumo dos resultados. A primeira informação é relevante. A segunda informação ajuda a compreender a próxima etapa.';
+ const reply='Aqui está um resumo dos resultados. A primeira informação é relevante para analisar o comportamento das campanhas e identificar melhorias possíveis. A segunda informação ajuda a compreender a próxima etapa e organizar os leads que já responderam.';
  const c=newFranciscaCallSession(actor,{transcribe:async()=>({text:'Me explica como funciona o nosso sistema'}),chat:async()=>{responses++;return {choice:{content:reply}};},
   synthesizePcm:async text=>{spoken.push(text);return {pcm16k:Buffer.alloc(3200),voice:'test'};}});
  try{
