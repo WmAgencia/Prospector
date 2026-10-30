@@ -9,6 +9,9 @@ const css=fs.readFileSync(new URL('../dashboard/public/simple-app.css',import.me
 function createHarness(){
  const fetches=[];
  const listeners={};
+ let pendingSubmit=null;
+ const sendButton={disabled:false};
+ const sendForm={requestSubmit(){pendingSubmit=listeners.submit({target:{id:'send-form'},preventDefault(){}});return pendingSubmit;}};
  const root={innerHTML:''},viewEl={innerHTML:''};
  const notice={textContent:'',classList:{toggle(){}},setAttribute(){}};
  const field={value:'',focus(){},selectionStart:0,setSelectionRange(){}};
@@ -24,6 +27,8 @@ function createHarness(){
    if(sel==='#niche')return field;
    if(sel==='#city')return city;
    if(sel==='#chat-text')return composer;
+   if(sel==='#send-form')return sendForm;
+   if(sel==='#send-form button[type="submit"]')return sendButton;
    return null;
   }
  };
@@ -31,7 +36,7 @@ function createHarness(){
  const state={leads,threads:[],settings:{paused:true,discovery_auto_enabled:false},stats:{found:1}};
  const base={total:1,uncontacted:1,contacted:0,returned:1,results:[{...leads[0],contacted:false,selectable:true,maps_url:'https://www.google.com/maps/search/?api=1&query=Oficina',instagram_url:'https://www.instagram.com/oficina.teste/',manual_contact_url:'https://wa.me/5515999999999?text=Ol%C3%A1'}],partial:false};
  const fetch=async (url,opts={})=>{
-  const route=String(url);fetches.push({route,method:opts.method||'GET'});
+  const route=String(url);fetches.push({route,method:opts.method||'GET',body:opts.body?JSON.parse(opts.body):null});
   let data={};
   if(route==='/api/state')data=state;
   else if(route==='/api/kanban')data={counts:{approaching:1,no_interest:1,interested:1,conversing:1},columns:{
@@ -49,6 +54,12 @@ function createHarness(){
   else if(route==='/api/prospecting/approach-preview')data={ok:true,selected:1,greeting:'boa tarde',message:'Olá, boa tarde, como vai?',ready:0,items:[{id:leads[0].id,business:leads[0].business,phoneSuffix:'9999',status:'NEEDS_PERMISSION',authorized:false}]};
   else if(route==='/api/maps/search')data={id:'sample-id',status:'PENDING',niche:'oficinas mecânicas',city:'Sorocaba'};
   else if(route==='/api/ai/status')data={configured:false};
+  else if(route==='/api/whatsapp/handoff'&&opts.method==='POST')data={ok:true,chatId:JSON.parse(opts.body).chatId,manualTakeover:JSON.parse(opts.body).manual,canTakeover:true,canDeliverToAi:true,reason:'READY'};
+  else if(route.startsWith('/api/whatsapp/handoff?'))data={chatId:'wa:5515999992222@s.whatsapp.net',manualTakeover:true,canTakeover:true,canDeliverToAi:true,reason:'READY'};
+  else if(route==='/api/whatsapp/reply-remote')data={ok:true,delivery:'ACCEPTED'};
+  else if(route.startsWith('/api/whatsapp/chat-messages?'))data=[{direction:'in',body:'Olá, como funciona?',at:'2026-10-30T12:00:00.000Z'}];
+  else if(route==='/api/threads/thread-test/messages')data=[];
+  else if(route==='/api/threads/thread-test/read')data={ok:true};
   else return {ok:false,status:404,json:async()=>({error:'unknown route '+route})};
   return {ok:true,status:200,json:async()=>data};
  };
@@ -61,7 +72,7 @@ function createHarness(){
  const source=app.replace(/await reload\(\);\s*await refreshWa\(\);\s*$/,'');
  assert.notEqual(source,app,'expected app boot sequence was not found');
  vm.runInContext(source,context,{filename:'simple-app.js',timeout:2500});
- return {context,root,viewEl,notice,field,city,composer,fetches,listeners};
+ return {context,root,viewEl,notice,field,city,composer,fetches,listeners,sendForm,sendButton,getPendingSubmit:()=>pendingSubmit};
 }
 
 test('Prospecção starts with no hidden city/niche filter and displays existing leads',async()=>{
@@ -134,30 +145,54 @@ test('Selectable leads show Maps and Instagram; explicit selection only creates 
  assert.ok(!h.fetches.some(x=>x.method==='POST'),'selection must not call outbound API');
 });
 
-test('Groq draft button proposes a response without sending',async()=>{
+test('Conversations have exactly one human/AI handoff in header and one simple input/send form',async()=>{
  const h=createHarness();
  await vm.runInContext('reload()',h.context);
- vm.runInContext("selectedThread='thread-test';messages=[{direction:'in',body:'Como funciona?'}];render()",h.context);
- assert.match(app,/data-action="suggest-groq"/);
- await h.listeners.click({target:{closest:()=>({dataset:{action:'suggest-groq'}})}});
- assert.equal(h.composer.value,'Claro! Posso explicar melhor?');
- assert.ok(h.fetches.some(x=>x.route==='/api/ai/draft'&&x.method==='POST'));
- assert.equal(h.fetches.filter(x=>x.route.includes('/api/whatsapp/reply')).length,0);
+ vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Contato teste',phone:'5515999992222',contactRole:'INBOUND_NEW',handoff:{manualTakeover:false,canTakeover:true,canDeliverToAi:true,reason:'READY'}}];selectedThread='wa:5515999992222@s.whatsapp.net';messages=[{direction:'in',body:'Tudo bem?'}];render()",h.context);
+ assert.match(h.viewEl.innerHTML,/data-action="toggle-chat-handoff"/);
+ assert.match(h.viewEl.innerHTML,/Assumir conversa/);
+ assert.match(h.viewEl.innerHTML,/id="chat-text"/);
+ assert.match(h.viewEl.innerHTML,/id="send-form"/);
+ assert.match(h.viewEl.innerHTML,/type="submit">Enviar/);
+ assert.doesNotMatch(h.viewEl.innerHTML,/data-action="suggest-groq"|data-action="show-options"|data-action="voice-preview"|data-action="voice-send"/);
+ assert.doesNotMatch(h.viewEl.innerHTML,/under-chat|Groq · Perfil comercial|Revisar mensagem interativa|WhatsApp offline/);
+ assert.match(css,/\.chat-panel \.composer\{display:flex;flex-wrap:nowrap/);
 });
-
-test('WhatsApp interactive options open a preview and do not send without confirmation',async()=>{
+test('Header action toggles human and IA ownership with a server-side request',async()=>{
  const h=createHarness();
  await vm.runInContext('reload()',h.context);
- vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Contato teste',phone:'5515999992222'}];selectedThread='wa:5515999992222@s.whatsapp.net';messages=[{direction:'in',body:'Pode me explicar?'}];render()",h.context);
- assert.match(h.viewEl.innerHTML,/data-action="show-options"/);
- await h.listeners.click({target:{closest:()=>({dataset:{action:'show-options'}})}});
- assert.match(h.viewEl.innerHTML,/Quero saber mais/);
- assert.match(h.viewEl.innerHTML,/Ver um exemplo/);
- assert.match(h.viewEl.innerHTML,/Falar com alguém/);
- await h.listeners.click({target:{closest:()=>({dataset:{action:'send-options'}})}});
- assert.ok(!h.fetches.some(x=>x.route==='/api/whatsapp/interactive-send'),'Confirmation rejected: never send');
+ vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Cliente Teste',phone:'5515999992222',handoff:{manualTakeover:false,canTakeover:true,canDeliverToAi:true,reason:'READY'}}];selectedThread='wa:5515999992222@s.whatsapp.net';render()",h.context);
+ const hit={dataset:{action:'toggle-chat-handoff'}};
+ await h.listeners.click({target:{closest:()=>hit}});
+ assert.match(h.viewEl.innerHTML,/Entregar para IA/);
+ assert.ok(h.fetches.some(x=>x.route==='/api/whatsapp/handoff'&&x.method==='POST'&&x.body.manual===true));
+ await h.listeners.click({target:{closest:()=>hit}});
+ assert.match(h.viewEl.innerHTML,/Assumir conversa/);
+ assert.ok(h.fetches.some(x=>x.route==='/api/whatsapp/handoff'&&x.method==='POST'&&x.body.manual===false));
 });
-
+test('Pressing Enter in the composer sends a message exactly once',async()=>{
+ const h=createHarness();
+ await vm.runInContext('reload()',h.context);
+ vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Contato Teste',phone:'5515999992222',handoff:{manualTakeover:false,canTakeover:true,canDeliverToAi:true,reason:'READY'}}];selectedThread='wa:5515999992222@s.whatsapp.net';render()",h.context);
+ h.composer.value='Mensagem com Enter';
+ let prevented=0;
+ h.listeners.keydown({target:{id:'chat-text'},key:'Enter',isComposing:false,preventDefault(){prevented++;}});
+ await h.getPendingSubmit();
+ assert.equal(prevented,1);
+ const sends=h.fetches.filter(x=>x.route==='/api/whatsapp/reply-remote'&&x.method==='POST');
+ assert.equal(sends.length,1);
+ assert.equal(sends[0].body.text,'Mensagem com Enter');
+ assert.equal(h.composer.value,'');
+ assert.ok(h.fetches.some(x=>x.route.startsWith('/api/whatsapp/handoff?')&&x.method==='GET'));
+});
+test('Owner chat is displayed without promising an unsupported handoff to customer AI',async()=>{
+ const h=createHarness();
+ await vm.runInContext('reload()',h.context);
+ vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515981817336@s.whatsapp.net',name:'Proprietário',phone:'5515981817336',handoff:{manualTakeover:false,canTakeover:false,canDeliverToAi:false,reason:'OWNER_PRIVATE'}}];selectedThread='wa:5515981817336@s.whatsapp.net';render()",h.context);
+ assert.match(h.viewEl.innerHTML,/data-action="toggle-chat-handoff" disabled/);
+ assert.match(h.viewEl.innerHTML,/Assumir conversa/);
+ assert.match(h.viewEl.innerHTML,/O proprietário utiliza um canal especial/);
+});
 test('Home shows compact four-column Kanban with verified hot leads and operator conversation actions',async()=>{
  const h=createHarness();
  await vm.runInContext("view='overview';reload()",h.context);
