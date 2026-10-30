@@ -7,6 +7,7 @@ import {classifyContact,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {waRequest} from './waakg-control.mjs';
 import {deliverVoiceDirectMessage,checkDeliveryById} from './francisca-message-delivery.mjs';
 import {parseSpokenBrazilPhone,readBackPhoneDigits} from './francisca-phone-speech.mjs';
+import {recipientNameInVoice,findContactByName,contactChoiceFromSpeech} from './francisca-contact-names.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS francisca_voice_manual_sends(id TEXT PRIMARY KEY,jid TEXT NOT NULL,body TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 if(!db.prepare("PRAGMA table_info(francisca_voice_manual_sends)").all().some(x=>x.name==='provider_id'))
@@ -42,7 +43,7 @@ export function interpretVoiceSend(heard){
  if(!command.test(simple(raw)))return null;
  const candidate=phoneCandidate(raw);
  return {phone:candidate?.number||null,invalidPhone:Boolean(candidate?.invalid),
-  text:extractBody(raw,candidate),bulk:antiBulk(raw)};
+  contactName:candidate?null:recipientNameInVoice(raw),text:extractBody(raw,candidate),bulk:antiBulk(raw)};
 }
 async function realSend({jid,sessionId,text}){
  return deliverVoiceDirectMessage({jid,sessionId,text});
@@ -82,24 +83,47 @@ export async function lastVoiceDirectDelivery(actor,{request=waRequest}={}){
   '. O estado informado pelo WhatsApp é '+result.status+
   ', mas ainda não há comprovante de entrega. Confira o chat antes de repetir.';
 }
-export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoiceDirectDelivery}={}){
+export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoiceDirectDelivery,lookupContact=findContactByName}={}){
  let pending=null;
  const expires=()=>pending&&Date.now()>pending.expires;
  const preview=()=>{
   if(!pending?.phone||!pending?.text)return null;
   pending.stage='confirm';
   pending.expires=Date.now()+3*60_000;
-  return 'Confirma o telefone: '+readBackPhoneDigits(pending.phone)+'. A mensagem é: "'+
+  return (pending.contactName?'Encontrei o contato '+pending.contactName+'. ':'')+
+   'Confirma o telefone: '+readBackPhoneDigits(pending.phone)+'. A mensagem é: "'+
    pending.text+'". Está correto? Posso enviar?';
  };
- function supplyPhone(text){
+ async function supplyPhone(text,actor,{nameHint=null,allowStandalone=true}={}){
   const found=phoneCandidate(text);
   if(found?.invalid)return 'Ouvi '+found.digits.replace(/^55/,'')+'. Se for celular, parece faltar um dígito. Pode dizer novamente o DDD e cada dígito do número, sem pressa?';
-  if(!found)return 'Qual é o número completo, com DDD, para enviar a mensagem?';
-  pending.phone=found.number;
-  pending.stage=pending.text?'confirm':'text';
+  if(found?.number){
+   pending.phone=found.number;pending.contactName=null;pending.choices=null;
+   pending.stage=pending.text?'confirm':'text';pending.expires=Date.now()+3*60_000;
+   return pending.text?preview():'Qual é a mensagem que você quer enviar?';
+  }
+  const name=nameHint||(allowStandalone?recipientNameInVoice(text,{standalone:true}):null);
+  if(!name)return 'Qual é o telefone completo com DDD ou o nome exato do contato salvo?';
+  const lookup=await lookupContact(name,{sessionId:actor.sessionId});
+  if(lookup.state==='MATCH'){
+   pending.phone=lookup.number;pending.contactName=lookup.name;pending.choices=null;
+   pending.stage=pending.text?'confirm':'text';pending.expires=Date.now()+3*60_000;
+   return pending.text?preview():'Encontrei o contato '+lookup.name+
+    ', com telefone de final '+lookup.number.slice(-4)+'. Qual mensagem quer enviar?';
+  }
+  pending.phone=null;pending.contactName=null;
   pending.expires=Date.now()+3*60_000;
-  return pending.text?preview():'Perfeito. Qual é a mensagem que você quer enviar?';
+  if(lookup.state==='AMBIGUOUS'){
+   pending.choices=lookup.matches||[];
+   pending.stage=pending.choices.length?'chooseContact':'phone';
+   return pending.choices.length?'Encontrei mais de um contato com esse nome: '+
+    pending.choices.map(x=>x.name+', final '+x.number.slice(-4)).join('; ')+
+    '. Qual final você quer? Vou confirmar o telefone completo antes do envio.':
+    'Há muitos contatos com esse nome. Diga o número completo com DDD, para evitar um destinatário errado.';
+  }
+  pending.choices=null;pending.stage='phone';
+  return lookup.state==='UNAVAILABLE'?'Não consegui consultar os contatos do WhatsApp agora. Diga o número completo com DDD; não vou adivinhar.':
+   'Não encontrei um contato sincronizado com esse nome exato. Pode repetir o nome salvo ou informar o telefone com DDD?';
  }
  async function approve(actor){
   if(!pending||pending.stage!=='confirm'||!pending.phone||!pending.text)
@@ -152,16 +176,16 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
     const fresh=interpretVoiceSend(raw);
     if(fresh){
      if(fresh.bulk)return 'Consigo enviar uma mensagem individual, não um disparo em massa.';
-     pending={phone:fresh.phone,text:fresh.text,stage:'',expires:Date.now()+3*60_000};
-     if(fresh.invalidPhone||!fresh.phone)return supplyPhone(raw);
+     pending={phone:fresh.phone,text:fresh.text,contactName:null,choices:null,stage:'',expires:Date.now()+3*60_000};
+     if(fresh.invalidPhone||!fresh.phone)return supplyPhone(raw,actor,{nameHint:fresh.contactName,allowStandalone:false});
      if(!fresh.text){pending.stage='text';return 'Qual é a mensagem que você quer enviar?';}
      return preview();
     }
     if(pending.stage==='confirm'){
      if(approval.test(simple(raw)))return approve(actor);
-     if(/\b(?:numero|telefone|celular|ddd)\b/.test(simple(raw))){
-      pending.stage='phone';pending.phone=null;
-      return supplyPhone(raw);
+     if(/\b(?:numero|telefone|celular|ddd|contato|nome)\b/.test(simple(raw))){
+      pending.stage='phone';pending.phone=null;pending.contactName=null;
+      return supplyPhone(raw,actor);
      }
      if(/\b(?:nao|não|altera|alterar|corrig|troca|muda|modifica|outro texto|outra mensagem)\b/.test(simple(raw))){
       const change=raw.match(/(?:para|por|seria|é|eh|seguinte)\s*[:,-]?\s*(.+)$/i);
@@ -174,7 +198,17 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
      }
      return 'Ainda não enviei. Quer autorizar exatamente essa mensagem? Diga "pode enviar" ou "cancela".';
     }
-    if(pending.stage==='phone')return supplyPhone(raw);
+    if(pending.stage==='chooseContact'){
+     const choice=contactChoiceFromSpeech(raw,pending.choices||[]);
+     if(choice){
+      pending.phone=choice.number;pending.contactName=choice.name;pending.choices=null;
+      pending.stage=pending.text?'confirm':'text';
+      return pending.text?preview():'Contato '+choice.name+', final '+choice.number.slice(-4)+'. Qual mensagem quer enviar?';
+     }
+     if(phoneCandidate(raw)?.number)return supplyPhone(raw,actor);
+     return 'Diga o final de quatro dígitos de um dos contatos que encontrei, ou o número completo com DDD.';
+    }
+    if(pending.stage==='phone')return supplyPhone(raw,actor);
     if(pending.stage==='text'){
      if(/^(?:nao sei|não sei|depois|mais tarde|ainda nao|ainda não)$/i.test(simple(raw)))
       return 'Certo, podemos definir o texto depois.';
@@ -182,14 +216,14 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
      if(text.length<2)return 'Qual é a mensagem completa que você quer enviar?';
      if(text.length>430)return 'A mensagem está longa demais para esse envio. Pode encurtar?';
      pending.text=text;
-     return pending.phone?preview():supplyPhone(raw);
+     return pending.phone?preview():supplyPhone(raw,actor);
     }
    }
    const instruction=interpretVoiceSend(raw);
    if(!instruction)return null;
    if(instruction.bulk)return 'Consigo enviar uma mensagem individual, não um disparo em massa.';
-   pending={phone:instruction.phone,text:instruction.text,stage:'',expires:Date.now()+3*60_000};
-   if(instruction.invalidPhone||!instruction.phone){pending.stage='phone';return instruction.invalidPhone?'Esse número parece incompleto. Repita o DDD e os nove dígitos do celular, um de cada vez.':'Qual é o telefone completo do destinatário, com DDD?';}
+   pending={phone:instruction.phone,text:instruction.text,contactName:null,choices:null,stage:'',expires:Date.now()+3*60_000};
+   if(instruction.invalidPhone||!instruction.phone){pending.stage='phone';return instruction.invalidPhone?'Esse número parece incompleto. Repita o DDD e os nove dígitos do celular, um de cada vez.':supplyPhone(raw,actor,{nameHint:instruction.contactName,allowStandalone:false});}
    if(!instruction.text){pending.stage='text';return 'Perfeito. Qual é a mensagem que você quer enviar?';}
    if(instruction.text.length>430){pending.stage='text';return 'Pode informar um texto menor para essa mensagem?';}
    return preview();

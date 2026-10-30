@@ -3,7 +3,7 @@
 // Compatible with the pinned community voice-protocol (typechecked in CI).
 import {jidDecode, jidEncode, type BinaryNode} from "@whiskeysockets/baileys";
 import {NativeCallManager,createCallAck} from "./voice-protocol/src/index.js";
-import {TurnDetector,PlaybackGate} from "./turn-taking.mjs";
+import {TurnDetector,PlaybackGate,FRANCISCA_LIVE_TURN_CONFIG} from "./turn-taking.mjs";
 import {VoiceAudioConditioner} from "./audio-conditioning.mjs";
 import {InterruptionLedger,BackchannelPolicy,ThinkingCuePolicy} from "./conversation-runtime.mjs";
 import type {WASocket} from "@whiskeysockets/baileys";
@@ -262,7 +262,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   if(call&&!call.ended){console.info("[voice-calls] BUSY");return;}
   if(c.isVideo||c.mediaType==="video"){console.info("[voice-calls] VIDEO_NOT_SUPPORTED");return;}
   const incoming:Session={callId:c.callId,from:pn,startedAt:Date.now(),ended:false,greeted:false,
-   replying:false,playback:false,pending:null,detector:new TurnDetector({stopSilenceMs:660,bargeVoiceMs:320,maxTurnMs:13000}),gate:new PlaybackGate(),conditioner:new VoiceAudioConditioner(),
+   replying:false,playback:false,pending:null,detector:new TurnDetector(FRANCISCA_LIVE_TURN_CONFIG),gate:new PlaybackGate(),conditioner:new VoiceAudioConditioner(),
    ledger:new InterruptionLedger(),backchannel:new BackchannelPolicy(),
    thinking:new ThinkingCuePolicy(),ackBusy:false,cuePlaying:false,cueDirty:false,streamAbort:null};
   call=incoming;

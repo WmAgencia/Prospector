@@ -2,7 +2,7 @@
 // Avoids overaggressive noise cancellation and preserves speech dynamics.
 // Playback correlation is only a high-confidence echo hint, not biometric ID.
 export class VoiceAudioConditioner{
- constructor({minGate=.003,echoSimilarity=.94}={}){
+ constructor({minGate=.0025,echoSimilarity=.94}={}){
   this.floor=.002;this.gain=1;this.minGate=minGate;
   this.echoSimilarity=echoSimilarity;this.played=[];
  }
@@ -34,7 +34,8 @@ export class VoiceAudioConditioner{
    }
   }
   // Gentle, slow AGC; cap boosted amplitude to avoid clipping and distortion.
-  const desired=Math.max(.83,Math.min(1.7,.055/Math.max(.02,rms)));
+  // Gentle extra gain for quiet phone microphones. Never amplify gated silence.
+  const desired=Math.max(.83,Math.min(2.2,.055/Math.max(.018,rms)));
   this.gain=this.gain*.9+desired*.1;
   const limit=peak>0?Math.min(this.gain,.92/peak):this.gain;
   for(let i=0;i<frame.length;i++)out[i]=Math.max(-.95,Math.min(.95,out[i]*limit));
