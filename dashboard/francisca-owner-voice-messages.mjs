@@ -56,7 +56,42 @@ export function interpretVoiceSend(heard){
 async function realSend({jid,sessionId,text}){
  return deliverVoiceDirectMessage({jid,sessionId,text});
 }
-export function newVoiceDirectMessageFlow({send=realSend}={}){
+const askForDelivery=x=>/(?:ultim[ao]s?\s+mensage|ultim[ao]\s+envio|mensagem\s+(?:chegou|entregue|foi\s+entregue)|(?:verific\w*|chec\w*|confir\w*)\s+(?:a\s+)?(?:mensagem|entrega|envio)|nao\s+(?:chegou|recebeu|entregou)|nao\s+foi\s+entregue)/.test(simple(x));
+export async function lastVoiceDirectDelivery(actor,{request=waRequest}={}){
+ if(!verified(actor))return 'Não consegui verificar a identidade do proprietário nessa chamada.';
+ const row=one('SELECT * FROM francisca_voice_manual_sends ORDER BY created_at DESC LIMIT 1');
+ if(!row)return 'Não há mensagens individuais recentes registradas por esta função.';
+ const suffix=String(row.jid||'').split('@')[0].slice(-4);
+ if(row.state==='BLOCKED')return 'O último envio para o número terminado em '+suffix+' foi bloqueado antes da entrega.';
+ let id=String(row.provider_id||'');
+ if(!id){
+  // Old calls did not persist provider IDs. Reconcile ONLY if a unique exact
+  // outgoing message has the same body, JID and timestamp within 90 seconds.
+  try{
+   const history=await request('/api/chat/'+encodeURIComponent(actor.sessionId)+'/'+encodeURIComponent(row.jid));
+   const messages=Array.isArray(history?.data)?history.data:[];
+   const timestamp=Date.parse(row.created_at);
+   const candidates=messages.filter(m=>m?.fromMe===true&&m?.remoteJid===row.jid&&
+    m?.content===row.body&&m?.keyId&&
+    Math.abs(Date.parse(m.timestamp)-timestamp)<90000);
+   if(candidates.length===1)id=String(candidates[0].keyId);
+  }catch{}
+  if(id&&/^[-_A-Za-z0-9]{6,200}$/.test(id))
+   run('UPDATE francisca_voice_manual_sends SET provider_id=? WHERE id=?',id,row.id);
+ }
+ if(!id)return 'O último pedido para o número terminado em '+suffix+
+  ' não possui comprovante de entrega identificável. Confira a conversa; não vou enviar novamente automaticamente.';
+ const result=await checkDeliveryById({jid:row.jid,sessionId:actor.sessionId,messageId:id},{request});
+ if(result.proof){
+  run('UPDATE francisca_voice_manual_sends SET state=?,updated_at=? WHERE id=?',result.status,now(),row.id);
+  return 'Agora o WhatsApp confirma '+(result.status==='READ'?'que a mensagem foi lida':'a entrega da mensagem')+
+   ' no número terminado em '+suffix+'.';
+ }
+ return 'Conferi a última mensagem para o número terminado em '+suffix+
+  '. O estado informado pelo WhatsApp é '+result.status+
+  ', mas ainda não há comprovante de entrega. Confira o chat antes de repetir.';
+}
+export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoiceDirectDelivery}={}){
  let pending=null;
  const expires=()=>pending&&Date.now()>pending.expires;
  const preview=()=>{
@@ -120,6 +155,7 @@ export function newVoiceDirectMessageFlow({send=realSend}={}){
    const raw=String(heard||'').trim();
    if(!verified(actor)){pending=null;return null;}
    if(expires())pending=null;
+   if(!pending&&askForDelivery(raw))return deliveryLookup(actor);
    if(pending){
     if(clear.test(simple(raw))){pending=null;return 'Certo, cancelei o envio. Nenhuma mensagem foi enviada.';}
     const fresh=interpretVoiceSend(raw);
