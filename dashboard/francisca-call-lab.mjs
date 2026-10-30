@@ -121,6 +121,7 @@ export function newFranciscaCallSession({jid,sessionId,callId}={},deps={}){
   search:deps.searchProspects,list:deps.listProspects,preview:deps.previewProspects,
   enqueue:deps.enqueueApproaches,status:deps.approachQueueStatus
  });
+ const metricCallId=callId||randomUUID();
  let busy=false,ended=false;
  return {
   async reply(pcm16k,{interruption,onSegment}={}){
@@ -329,7 +330,7 @@ export function newFranciscaCallSession({jid,sessionId,callId}={},deps={}){
     const ttsMs=Date.now()-began-sttMs-llmMs;
     console.info('[francisca-call-turn-timing]',JSON.stringify({sttMs,llmMs,ttsMs,totalMs:Date.now()-began,
       inputMs:Math.round(pcm16k.length/32),outputMs:Math.round(outgoing.length/32)}));
-    recordVoiceMetrics({callId:callId||jid,sttMs,llmMs,ttsMs,totalMs:Date.now()-began,
+    recordVoiceMetrics({callId:metricCallId,sttMs,llmMs,ttsMs,totalMs:Date.now()-began,
       segments,interrupted:Boolean(interruption),uncertain:Boolean(voiceNumberUncertain),toolCalls});
     if(!ownerVoiceReply&&!workflowNames.length&&!releasedThought&&!memoryReply)
      rememberCallTopic(heard,{jid,sessionId});
