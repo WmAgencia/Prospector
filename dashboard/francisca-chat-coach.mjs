@@ -1,6 +1,7 @@
+import {CONTEXT_SCENARIOS} from './francisca-context-bank.mjs';
 // Dynamic, per-turn playbook for Francisca. No canned reply lottery, no secrets,
 // no privilege or opt-in inference: every scenario is guidance, not a message.
-export const CHAT_CONTEXT_VERSION='francisca-adaptive-chat-2026-10-30';
+export const CHAT_CONTEXT_VERSION='francisca-adaptive-chat-2026-10-30-continuity-v3';
 const norm=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const scenarios=[
  ['stop',/\b(?:pare|parar|stop|nao (?:me mande|me envie|me contate)|remova (?:meu )?(?:numero|contato)|nao quero receber mensagens)\b/,'Não continuar vendas. Respeitar recusa e supressão; isso é decisão do servidor, não do modelo.'],
@@ -45,6 +46,7 @@ const scenarios=[
  ['explain',/\b(?:explica|me explica|nao entendi|como funciona|pode detalhar|como seria|quais etapas|me fale mais)\b/,'O usuário pediu explicação. Responda o conteúdo agora, com exemplo concreto quando útil; não pergunte novamente se pode explicar.'],
  ['short',/\b(?:resuma|seja breve|bem rapido|em poucas palavras|direto ao ponto)\b/,'Responda em uma ou duas frases, sem saudação e sem bordões.'],
  ['repeat',/\b(?:repete|nao ouvi|nao entendi a ultima|voce ja falou isso|ta repetindo)\b/,'Reformule de outra maneira ou detalhe a parte confusa, sem repetir literalmente o mesmo texto.']
+ ,...CONTEXT_SCENARIOS
 ];
 const guide=Object.fromEntries(scenarios.map(([id,,instruction])=>[id,instruction]));
 export const CHAT_SCENARIO_COUNT=scenarios.length;
@@ -52,18 +54,25 @@ export function analyzeChatTurn({text='',history=[],role='INBOUND_NEW'}={}){
  const input=norm(text).slice(0,1800);
  const out=history.filter(x=>x.direction==='out'&&String(x.body||'').trim());
  const incoming=history.filter(x=>x.direction==='in'&&String(x.body||'').trim());
- const greetingsOnly=/^(?:oi+|oie+|ola+|alo+|bom dia|boa tarde|boa noite|tudo bem|e ai|opa)[!?. ,]*$/.test(input);
+ const greetingsOnly=/^(?:oi+|oie+|ola+|alo+|bom dia|boa tarde|boa noite|tudo bem|e ai|opa)(?:\s*,?\s*(?:tudo bem|como vai|tudo certo))?[!?. ,]*$/.test(input);
  const hits=scenarios.filter(([,pattern])=>pattern.test(input)).map(x=>x[0]);
+ // Corrections and short continuations outrank overlapping generic topics.
+ const critical=new Set(['stop','human','identity','continue','correction','topic_change','no_pressure','text_preference','audio_preference','misunderstanding']);
+ const ordered=[...hits.filter(id=>critical.has(id)),...hits.filter(id=>!critical.has(id))];
+ const recognized=[...new Set(ordered)].slice(0,7);
  const lastAssistant=String(out.at(-1)?.body||'').replace(/^\[(?:Audio Francisca|Texto \+ audio Francisca)\]\s*/i,'').trim();
  const lastInbound=String(incoming.at(-2)?.body||'');
+ const alreadyIntroduced=out.some(m=>/\b(?:sou a francisca|eu sou a francisca|aqui e a francisca|aqui é a francisca|assistente virtual da consecom)\b/i.test(String(m.body||'')));
+ const continuation=recognized.includes('continue')||recognized.includes('short_question');
+ const correction=recognized.includes('correction')||recognized.includes('misunderstanding');
  return {
   role,turnCount:incoming.length,hasAssistantReply:out.length>0,isFirstContact:!out.length,
-  greetingsOnly,scenarios:hits.slice(0,4),lastAssistant:lastAssistant.slice(0,500),
+  greetingsOnly,scenarios:recognized,continuation,correction,alreadyIntroduced,lastAssistant:lastAssistant.slice(0,500),
   lastInbound:lastInbound.slice(0,250)
  };
 }
 export function conversationGuide(state={}){
- const ids=Array.isArray(state.scenarios)?state.scenarios.slice(0,3):[];
+ const ids=Array.isArray(state.scenarios)?state.scenarios.slice(0,6):[];
  return [
   'REGRAS DE CONVERSA DA FRANCISCA (não alteram políticas de envio nem perfil de contato):',
   'Esta é uma conversa CONTÍNUA, não uma sequência de novos atendimentos. Responda ao último pedido sem repetir cumprimentos, apresentação da agência, perguntas já respondidas ou frases de confirmação.',
@@ -72,6 +81,10 @@ export function conversationGuide(state={}){
    : 'Somente neste primeiro turno é aceitável responder a uma saudação; nunca apresente Wesley como se você fosse ele. Você é Francisca, assistente virtual.',
   'Evite muletas como "Claro!", "Perfeito!", "Entendi!", "Com certeza!", "Sem problemas!" e "Posso explicar rapidinho?" repetidas. Alterne linguagem naturalmente sem trocar apenas sinônimos superficiais.',
   'Se a pessoa já perguntou sobre a proposta, explique-a. Se disse "sim", "pode falar" ou "continua", prossiga de onde parou; não reinicie o roteiro.',
+  state.continuation?'CONTINUAÇÃO: "sim", "pode falar", "e o valor?" ou "quanto?" fazem referência à fala anterior. Prossiga no assunto exato. Um "não" isolado não é ordem de bloqueio.':'',
+  state.correction?'CORREÇÃO: atualize a interpretação e responda ao ponto ajustado sem repetir sua resposta anterior.':'',
+  state.greetingsOnly&&state.hasAssistantReply?'A pessoa cumprimentou DURANTE uma conversa. Não reinicie apresentação nem discurso comercial.':'',
+  'Combine as pistas quando houver duas questões (preço + prazo, site existente + SEO, suporte + urgência). As orientações são para raciocinar, não para copiar frases prontas.',
   'Responda uma pergunta antes de fazer outra. Só faça UMA pergunta quando for relevante para o próximo passo. Não finalize todas as mensagens com pergunta nem insista após recusa.',
   'Se disser que já tem site ou Instagram, não discuta nem volte ao discurso inicial; procure necessidade real ou respeite se não houver. Não confunda cliente existente, prospect e novo contato.',
   'Escreva como conversa humana no WhatsApp brasileiro: tom cordial, direto e específico; varie extensão entre resposta curta, explicação e exemplo conforme o pedido. Sem markdown, listas promocionais ou emojis desnecessários.',
@@ -89,7 +102,9 @@ export function compactChatHistory(history=[],maxChars=3100){
  while(combined.length>maxChars&&lines.length>2){lines.shift();combined=lines.join('\n');}
  return combined.slice(-maxChars);
 }
-const greeting=/^\s*(?:olá|ola|oi|oie|alô|alo|bom dia|boa tarde|boa noite)(?:\s*,\s*(?:[A-ZÀ-Ü][a-zà-ü]{1,20}\s*[!?.]?|tudo bem[!?.]?)|\s*[!,.?:;])\s*/i;
+// Remove a full greeting and optional vocative, preserving the actual answer.
+const greeting=/^\s*(?:olá|ola|oi+|oie+|alô|alo|bom dia|boa tarde|boa noite)(?:\s*,\s*[\p{L}]{2,24}(?:\s+[\p{L}]{2,24})?[!?.:,;]\s*|\s*[!?.:,;–—-]+\s*|\s+(?:tudo bem|como vai)\s*[!?.:,;]*\s*)/iu;
+const identityIntro=/^(?:(?:eu )?sou a francisca|aqui (?:é|e) a francisca)(?:,?\s*(?:assistente virtual|da consecom|assistente da consecom)[^.!?]*)?[.!?]\s*/i;
 const filler=/^(?:claro|entendi|perfeito|com certeza|sem problemas|sem problema|maravilha|otimo|ótimo|vamos la|vamos lá)(?:[!,.:;\s–—-]+|$)/i;
 const answerText=t=>String(t||'').replace(/\r/g,'').trim();
 const normOpening=s=>norm(s).replace(/^[.,!:\s]+/,'').split(/[.!?]/)[0].slice(0,45);
@@ -98,13 +113,20 @@ export function refineChatReply(text,{state={},incoming=''}={}){
  if(!output)return '';
  if(state.hasAssistantReply){
   output=output.replace(greeting,'').trim();
+  // Let Francisca identify herself once when taking over after a human introduction.
+  if(state.alreadyIntroduced&&!state.scenarios?.includes('identity'))output=output.replace(identityIntro,'').trim();
   const first=output.match(filler)?.[0]||'';
   if(first){
    const last=state.lastAssistant||'';
-   if(filler.test(last)&&norm(first.replace(/[!,.]/g,''))===norm((last.match(filler)||[])[0]?.replace(/[!,.]/g,'')||''))output=output.replace(filler,'').trim();
+   if(filler.test(last))output=output.replace(filler,'').trim();
   }
   const answer=norm(output),prev=norm(state.lastAssistant||'');
   if(answer&&prev&&answer===prev)return '';
+  if(answer.length>=100&&prev.length>=100){
+   const tokens=x=>new Set(x.match(/[a-z0-9]{4,}/g)||[]);
+   const a=tokens(answer),b=tokens(prev),common=[...a].filter(x=>b.has(x)).length;
+   if(a.size>=13&&b.size>=13&&common/Math.max(a.size,b.size)>.94)return '';
+  }
  }
  // Greeting-only inbound after several turns merits a concise contextual answer, not a new identity speech.
  if(state.greetingsOnly&&state.hasAssistantReply&&/^(?:sou (?:a )?francisca|meu nome|aqui (?:e|é) (?:a )?francisca)/i.test(output))return '';
