@@ -5,14 +5,14 @@ import {randomUUID} from 'node:crypto';
 import {db,one,run,now,audit} from './db.mjs';
 import {classifyContact,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {waRequest} from './waakg-control.mjs';
-import {deliverVoiceDirectMessage,mobileLooksTruncated,checkDeliveryById} from './francisca-message-delivery.mjs';
+import {deliverVoiceDirectMessage,checkDeliveryById} from './francisca-message-delivery.mjs';
+import {parseSpokenBrazilPhone,readBackPhoneDigits} from './francisca-phone-speech.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS francisca_voice_manual_sends(id TEXT PRIMARY KEY,jid TEXT NOT NULL,body TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 if(!db.prepare("PRAGMA table_info(francisca_voice_manual_sends)").all().some(x=>x.name==='provider_id'))
  db.exec("ALTER TABLE francisca_voice_manual_sends ADD COLUMN provider_id TEXT");
 
 const simple=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
-const phonePattern=/(?:\+?\d[\d()\s.-]{8,32}\d)/g;
 const command=/\b(?:envi\w*|mand\w*|dispar\w*|encaminh\w*|escrev\w*|passa\w*)\b[\s\S]{0,100}\b(?:mensage\w*|recado|whatsapp|texto)\b|\b(?:mensage\w*|whatsapp|recado)\b[\s\S]{0,90}\b(?:para|pro|pra|ao|no numero|nesse numero)\b/i;
 const clear=/^(?:nao|não|cancela|cancelar|deixa pra la|deixa para la|desiste|esquece|para|nao envia|não envia)[\s.,!]*$/i;
 const approval=/^(?:sim[,!.\s]*(?:pode|manda|envia|envie)?(?:\s+enviar)?|pode\s+enviar(?:\s+sim)?|pode\s+mandar(?:\s+sim)?|pode\s+sim|pode\s+enviar\s+agora|envia(?:\s+agora)?|envie(?:\s+agora)?|manda(?:\s+agora)?|mande(?:\s+agora)?|autorizo(?:\s+o\s+envio)?|confirmo(?:\s+o\s+envio)?|confirmado|isso\s+mesmo[,!.\s]*(?:pode\s+enviar)?|t[aá]\s+autorizado)[.!?\s]*$/i;
@@ -21,16 +21,7 @@ function verified(actor){
  return role.role==='OWNER'&&role.authorized===true&&role.ownerTools===true&&
   actor?.jid===verifiedOwnerPhone()+'@s.whatsapp.net';
 }
-function phoneCandidate(heard){
- const found=[...String(heard||'').matchAll(phonePattern)]
-  .map(match=>({match:match[0],start:match.index,digits:match[0].replace(/\D/g,'')}))
-  .find(x=>x.digits.length>=10&&x.digits.length<=15);
- if(!found)return null;
- let value=found.digits;
- if(value.length===10||value.length===11)value='55'+value;
- if(!/^55\d{10,11}$/.test(value)||mobileLooksTruncated(value))return {invalid:true,raw:found.match};
- return {number:value,raw:found.match,start:found.start};
-}
+function phoneCandidate(heard){return parseSpokenBrazilPhone(heard);}
 function stripBodyPrefix(input){
  return String(input||'').replace(/^\s*(?:a\s+mensagem(?:\s+que\s+eu\s+quero)?\s+(?:e|eh|é|seria)|o\s+texto\s+(?:e|eh|é|seria)|fala(?:ndo)?(?:\s+que)?|diz(?:endo)?(?:\s+que)?|escreve(?:ndo)?|com\s+(?:o\s+)?texto|com\s+(?:a\s+)?mensagem)\s*[:,-]?\s*/i,'')
   .replace(/^\s*(?:é\s+o\s+seguinte|o\s+seguinte)\s*[:,-]?\s*/i,'').trim();
@@ -98,12 +89,12 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
   if(!pending?.phone||!pending?.text)return null;
   pending.stage='confirm';
   pending.expires=Date.now()+3*60_000;
-  return 'A mensagem para o número '+pending.phone.slice(2,4)+' '+pending.phone.slice(4)+' é: "'+
-   pending.text+'". Posso enviar?';
+  return 'Confirma o telefone: '+readBackPhoneDigits(pending.phone)+'. A mensagem é: "'+
+   pending.text+'". Está correto? Posso enviar?';
  };
  function supplyPhone(text){
   const found=phoneCandidate(text);
-  if(found?.invalid)return 'Esse telefone parece incompleto, especialmente se for celular. Pode repetir o DDD e os nove dígitos do telefone?';
+  if(found?.invalid)return 'Ouvi '+found.digits.replace(/^55/,'')+'. Se for celular, parece faltar um dígito. Pode dizer novamente o DDD e cada dígito do número, sem pressa?';
   if(!found)return 'Qual é o número completo, com DDD, para enviar a mensagem?';
   pending.phone=found.number;
   pending.stage=pending.text?'confirm':'text';
@@ -168,6 +159,10 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
     }
     if(pending.stage==='confirm'){
      if(approval.test(simple(raw)))return approve(actor);
+     if(/\b(?:numero|telefone|celular|ddd)\b/.test(simple(raw))){
+      pending.stage='phone';pending.phone=null;
+      return supplyPhone(raw);
+     }
      if(/\b(?:nao|não|altera|alterar|corrig|troca|muda|modifica|outro texto|outra mensagem)\b/.test(simple(raw))){
       const change=raw.match(/(?:para|por|seria|é|eh|seguinte)\s*[:,-]?\s*(.+)$/i);
       if(change&&change[1].length>1){
@@ -194,7 +189,7 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
    if(!instruction)return null;
    if(instruction.bulk)return 'Consigo enviar uma mensagem individual, não um disparo em massa.';
    pending={phone:instruction.phone,text:instruction.text,stage:'',expires:Date.now()+3*60_000};
-   if(instruction.invalidPhone||!instruction.phone){pending.stage='phone';return 'Qual é o telefone completo do destinatário, com DDD?';}
+   if(instruction.invalidPhone||!instruction.phone){pending.stage='phone';return instruction.invalidPhone?'Esse número parece incompleto. Repita o DDD e os nove dígitos do celular, um de cada vez.':'Qual é o telefone completo do destinatário, com DDD?';}
    if(!instruction.text){pending.stage='text';return 'Perfeito. Qual é a mensagem que você quer enviar?';}
    if(instruction.text.length>430){pending.stage='text';return 'Pode informar um texto menor para essa mensagem?';}
    return preview();
