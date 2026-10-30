@@ -130,8 +130,8 @@ export function newFranciscaCallSession({jid,sessionId,callId}={},deps={}){
    verifyVoiceOwner({jid,sessionId});
    const wav=wavFromPcm16(pcm16k);
    busy=true;
+   const began=Date.now();let errorType=null;
    try{
-    const began=Date.now();
     const recognized=await (deps.transcribe||transcribeAudio)({buffer:wav,filename:'live-turn.wav'});
     const sttMs=Date.now()-began;
     let heard=String(recognized.text||'').trim().slice(0,650);
@@ -299,6 +299,7 @@ export function newFranciscaCallSession({jid,sessionId,callId}={},deps={}){
     }catch(e){
      // The caller must NEVER get prolonged silence when a provider rejects
      // a request. No system state is invented and no actions are attempted.
+     errorType='LLM_RECOVERED';
      console.warn('[francisca-call-recovery]',JSON.stringify({reason:String(e?.message||e).slice(0,55)}));
      const wantsStatus=/prospector|sistema|campanha|pend[eê]ncia|implementar|relat[oó]rio|diagn[oó]stico|lead|abordado/i.test(heard);
      spoken=asksApproachedCount(heard)&&operationalBriefing?.stats&&Number.isInteger(operationalBriefing.stats.approached)
@@ -331,11 +332,14 @@ export function newFranciscaCallSession({jid,sessionId,callId}={},deps={}){
     console.info('[francisca-call-turn-timing]',JSON.stringify({sttMs,llmMs,ttsMs,totalMs:Date.now()-began,
       inputMs:Math.round(pcm16k.length/32),outputMs:Math.round(outgoing.length/32)}));
     recordVoiceMetrics({callId:metricCallId,sttMs,llmMs,ttsMs,totalMs:Date.now()-began,
-      segments,interrupted:Boolean(interruption),uncertain:Boolean(voiceNumberUncertain),toolCalls});
+      segments,interrupted:Boolean(interruption),uncertain:Boolean(voiceNumberUncertain),toolCalls,errorType});
     if(!ownerVoiceReply&&!workflowNames.length&&!releasedThought&&!memoryReply)
      rememberCallTopic(heard,{jid,sessionId});
     context.remember({heard,spoken,replyId,totalMs:Math.round(outgoing.length/32)});
     return {heard,spoken,replyId,pcm16k:outgoing,format:'s16le',rate:VOICE_RATE,voice};
+   }catch(error){
+    recordVoiceMetrics({callId:metricCallId,totalMs:Date.now()-began,errorType:'CALL_FAILED'});
+    throw error;
    }finally{busy=false;}
   },
   end(){ended=true;context.clear();voiceMessages.end();voiceProspecting.end();voiceListening.end();semanticTurns.reset();},
