@@ -62,7 +62,7 @@ export function newVoiceDirectMessageFlow({send=realSend}={}){
   if(!pending?.phone||!pending?.text)return null;
   pending.stage='confirm';
   pending.expires=Date.now()+3*60_000;
-  return 'A mensagem para o número terminado em '+pending.phone.slice(-4)+' é: "'+
+  return 'A mensagem para o número '+pending.phone.slice(2,4)+' '+pending.phone.slice(4)+' é: "'+
    pending.text+'". Posso enviar?';
  };
  function supplyPhone(text){
