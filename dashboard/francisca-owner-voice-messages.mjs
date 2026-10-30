@@ -94,7 +94,7 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
    'Confirma o telefone: '+readBackPhoneDigits(pending.phone)+'. A mensagem é: "'+
    pending.text+'". Está correto? Posso enviar?';
  };
- async function supplyPhone(text,actor,{nameHint=null}={}){
+ async function supplyPhone(text,actor,{nameHint=null,allowStandalone=true}={}){
   const found=phoneCandidate(text);
   if(found?.invalid)return 'Ouvi '+found.digits.replace(/^55/,'')+'. Se for celular, parece faltar um dígito. Pode dizer novamente o DDD e cada dígito do número, sem pressa?';
   if(found?.number){
@@ -102,7 +102,7 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
    pending.stage=pending.text?'confirm':'text';pending.expires=Date.now()+3*60_000;
    return pending.text?preview():'Qual é a mensagem que você quer enviar?';
   }
-  const name=nameHint||recipientNameInVoice(text,{standalone:true});
+  const name=nameHint||(allowStandalone?recipientNameInVoice(text,{standalone:true}):null);
   if(!name)return 'Qual é o telefone completo com DDD ou o nome exato do contato salvo?';
   const lookup=await lookupContact(name,{sessionId:actor.sessionId});
   if(lookup.state==='MATCH'){
@@ -177,7 +177,7 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
     if(fresh){
      if(fresh.bulk)return 'Consigo enviar uma mensagem individual, não um disparo em massa.';
      pending={phone:fresh.phone,text:fresh.text,contactName:null,choices:null,stage:'',expires:Date.now()+3*60_000};
-     if(fresh.invalidPhone||!fresh.phone)return supplyPhone(raw,actor,{nameHint:fresh.contactName});
+     if(fresh.invalidPhone||!fresh.phone)return supplyPhone(raw,actor,{nameHint:fresh.contactName,allowStandalone:false});
      if(!fresh.text){pending.stage='text';return 'Qual é a mensagem que você quer enviar?';}
      return preview();
     }
@@ -223,7 +223,7 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
    if(!instruction)return null;
    if(instruction.bulk)return 'Consigo enviar uma mensagem individual, não um disparo em massa.';
    pending={phone:instruction.phone,text:instruction.text,contactName:null,choices:null,stage:'',expires:Date.now()+3*60_000};
-   if(instruction.invalidPhone||!instruction.phone){pending.stage='phone';return instruction.invalidPhone?'Esse número parece incompleto. Repita o DDD e os nove dígitos do celular, um de cada vez.':supplyPhone(raw,actor,{nameHint:instruction.contactName});}
+   if(instruction.invalidPhone||!instruction.phone){pending.stage='phone';return instruction.invalidPhone?'Esse número parece incompleto. Repita o DDD e os nove dígitos do celular, um de cada vez.':supplyPhone(raw,actor,{nameHint:instruction.contactName,allowStandalone:false});}
    if(!instruction.text){pending.stage='text';return 'Perfeito. Qual é a mensagem que você quer enviar?';}
    if(instruction.text.length>430){pending.stage='text';return 'Pode informar um texto menor para essa mensagem?';}
    return preview();
