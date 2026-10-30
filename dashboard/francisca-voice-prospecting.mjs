@@ -11,7 +11,7 @@ const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLo
 const startRequest=/\b(?:inici\w*|comec\w*|ativ\w*|coloc\w*|execut\w*|dispar\w*|abord\w*)\b/;
 const searchRequest=/\b(?:pesquis\w*|busc\w*|procur\w*|encontr\w*|levant\w*|localiz\w*)\b/;
 const cancel=/^(?:nao|não|cancela|cancelar|deixa pra la|deixa para la|desiste|esquece|nao inicia|não inicia)[.!?\s]*$/i;
-const approval=/^(?:sim[,.!\s]*(?:pode\s+)?(?:iniciar|começar|comecar|ativar|prosseguir|inicia|começa|comeca)|pode\s+(?:iniciar|comecar|começar|selecionar\s+todos\s+e\s+iniciar)|inicia(?:\s+a\s+abordagem)?|iniciar(?:\s+a\s+abordagem)?|comec(?:a|ar)(?:\s+a\s+abordagem)?|autorizo(?:\s+a\s+abordagem)?|confirmo(?:\s+a\s+abordagem)?|pode\s+prosseguir)[.!?\s]*$/i;
+const approval=/^(?:sim[,.!\s]*(?:pode\s+)?(?:iniciar|começar|comecar|ativar|prosseguir|inicia|começa|comeca)(?:\s+a\s+abordagem)?|pode\s+(?:iniciar|comecar|começar|selecionar\s+todos\s+e\s+iniciar)(?:\s+a\s+abordagem)?|inicia(?:\s+a\s+abordagem)?|iniciar(?:\s+a\s+abordagem)?|comec(?:a|ar)(?:\s+a\s+abordagem)?|autorizo(?:\s+a\s+abordagem)?|confirmo(?:\s+a\s+abordagem)?|pode\s+prosseguir)[.!?\s]*$/i;
 const cityTail=/\s+(?:e\s+)?(?:pode\s+|depois\s+|agora\s+)?(?:selecion\w*|inici\w*|comec\w*|abord\w*|coloc\w*|ativ\w*|envi\w*|mand\w*|mostr\w*|me\s+fal\w*|por\s+favor)\b[\s\S]*$/;
 const safeTerm=x=>String(x||'').trim().replace(/^[\s.,:;]+|[\s.,:;]+$/g,'').slice(0,85);
 function verified(actor){
