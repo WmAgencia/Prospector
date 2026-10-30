@@ -29,7 +29,7 @@ test('Single turn full request requires explicit spoken preview and sends exactl
  const sent=[];
  const flow=newVoiceDirectMessageFlow({send:async args=>{sent.push(args);return true;}});
  const answer=await flow.turn('Manda uma mensagem para 15 99999 2244 falando olá, tudo bem?',owner);
- assert.match(answer,/15 999992244/);
+ assert.match(answer,/DDD um, cinco, número nove/);
  assert.match(answer,/olá, tudo bem\?/);
  assert.match(answer,/Posso enviar\?/);
  assert.equal(sent.length,0);
@@ -79,8 +79,8 @@ test('Missing text, unclear approval, edit and cancel never send',async()=>{
 });
 test('Wrong length phone requires new number; no sending',async()=>{
  const flow=newVoiceDirectMessageFlow({send:async()=>{throw Error('SHOULD_NOT_SEND');}});
- assert.match(await flow.turn('Envie mensagem para 15 9811 8173 36',owner),/telefone completo/);
- assert.match(await flow.turn('15 9811 8173 36',owner),/telefone parece incompleto/);
+ assert.match(await flow.turn('Envie mensagem para 15 9811 8173 36',owner),/número parece incompleto/);
+ assert.match(await flow.turn('15 9811 8173 36',owner),/parece faltar um dígito/);
  flow.end();
 });
 test('Suppressions prevent verbal one-to-one delivery, even after preview',async()=>{

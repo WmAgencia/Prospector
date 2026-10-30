@@ -10,7 +10,8 @@ import {promisify} from 'node:util';
 import {verifiedOwnerPhone,classifyContact} from './whatsapp-roles.mjs';
 import {selectedWaSession,waRequest} from './waakg-control.mjs';
 import {OWNER_PERSONA} from './francisca-owner-persona.mjs';
-import {newVoiceDirectMessageFlow} from './francisca-owner-voice-messages.mjs';
+import {newVoiceDirectMessageFlow,interpretVoiceSend} from './francisca-owner-voice-messages.mjs';
+import {parseSpokenBrazilPhone} from './francisca-phone-speech.mjs';
 import {newVoiceProspectingFlow} from './francisca-voice-prospecting.mjs';
 import {voiceToolsForOwner,runOwnerVoiceTool} from './francisca-owner-voice-actions.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
@@ -125,6 +126,36 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const heard=String(recognized.text||'').trim().slice(0,650);
     if(heard.length<2)throw Error('CALL_TRANSCRIPTION_EMPTY');
     const verified=verifyVoiceOwner({jid,sessionId});
+    // Phone numbers are unusually vulnerable to a single Whisper error.
+    // For a phone turn, verify with the more accurate multilingual model.
+    // Never pick the plausible result or auto-complete a missing digit.
+    // Fixtures that mock the primary STT skip the extra network request
+    // unless an explicit second verifier is injected for the test.
+    const firstPhone=parseSpokenBrazilPhone(heard);
+    const checkingPhone=!!firstPhone&&(voiceMessages.state?.stage==='phone'||!!interpretVoiceSend(heard));
+    let voiceNumberUncertain=null;
+    if(checkingPhone){
+     try{
+      const verify=deps.verifyPhoneTranscription||
+       (deps.transcribe?async()=>({text:heard}):
+        ({buffer,filename})=>transcribeAudio({buffer,filename,phoneMode:true}));
+      const another=await verify({buffer:wav,filename:'live-turn.wav',phoneMode:true});
+      const nextPhone=parseSpokenBrazilPhone(another.text);
+      const match=!!nextPhone&&nextPhone.digits===firstPhone.digits;
+      console.info('[francisca-phone-transcription-verified]',JSON.stringify({
+       match,firstLength:firstPhone.digits.length,secondLength:nextPhone?.digits.length||0,
+       extraPass:!deps.transcribe||!!deps.verifyPhoneTranscription
+      }));
+      if(!match)voiceNumberUncertain=
+       'As duas transcrições não concordaram sobre os dígitos do telefone. Não vou preparar nem enviar nada. Pode repetir o DDD e cada número, um por um?';
+     }catch(error){
+      console.warn('[francisca-phone-transcription-verified]',JSON.stringify({
+       ok:false,code:String(error?.message||error).slice(0,48)
+      }));
+      voiceNumberUncertain=
+       'Não consegui confirmar todos os dígitos com segurança. Nenhum envio foi feito. Pode repetir o pedido e o número completo?';
+     }
+    }
     // This deterministic per-call state machine handles direct WhatsApp messages,
     // missing phone/text, spoken preview and exact verbal approval. It never
     // accepts free-form model tool calls as permission to send.
@@ -134,9 +165,11 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     // individual message to a phone number.
     const actor={jid,sessionId};
     const activeIndividual=Boolean(voiceMessages.state);
-    const voiceMessageReply=activeIndividual?await voiceMessages.turn(heard,actor):null;
-    const voiceProspectingReply=!voiceMessageReply?await voiceProspecting.turn(heard,actor):null;
-    const ownerVoiceReply=voiceMessageReply||voiceProspectingReply||
+    const voiceMessageReply=voiceNumberUncertain?null:
+     activeIndividual?await voiceMessages.turn(heard,actor):null;
+    const voiceProspectingReply=voiceNumberUncertain?null:
+     !voiceMessageReply?await voiceProspecting.turn(heard,actor):null;
+    const ownerVoiceReply=voiceNumberUncertain||voiceMessageReply||voiceProspectingReply||
      (!activeIndividual?await voiceMessages.turn(heard,actor):null);
     const availableTools=selectVoiceTools(voiceToolsForOwner(agentTools,verified.ownerTools),heard);
     if(!ownerVoiceReply)console.info('[francisca-voice-owner-access]',JSON.stringify({
