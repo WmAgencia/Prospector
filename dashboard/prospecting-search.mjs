@@ -4,6 +4,7 @@ import {recordOrigin} from "./discovery.mjs";
 import {resolveLocation} from "./osm-discovery.mjs";
 import {recontactDecision} from "./prospecting-recontact.mjs";
 import {documentedOptIn} from "./outreach-queue.mjs";
+import {greetingForProspect} from "./prospecting-introduction.mjs";
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 const map=[
  [/oficina|mecanica|automotiva|auto center|auto.?eletric/,["shop","car_repair"]],
@@ -42,7 +43,7 @@ function phoneFrom(tags){for(const key of ["contact:whatsapp","contact:phone","p
 function category(niche){return map.find(([re])=>re.test(norm(niche)))?.[1]||null;}
 function valid(v){return typeof v==="string"&&v.length>=2&&v.length<=85&&!/[\r\n<>\\]/.test(v);}
 export function prospectingList({niche="",city="",status="uncontacted",limit=500}={}){
- const allRows=all("SELECT l.id,l.business,l.phone,l.city,l.segment,l.website,l.instagram,l.contact_permission,l.stage,l.source,l.website_status,l.created_at,l.notes, EXISTS(SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id) AS previously_contacted, EXISTS(SELECT 1 FROM threads t JOIN messages m ON m.thread_id=t.id WHERE t.lead_id=l.id AND m.direction='out') AS sent_message, EXISTS(SELECT 1 FROM suppressions s WHERE s.phone=l.phone) AS suppressed FROM leads l ORDER BY l.created_at DESC LIMIT 6000");
+ const allRows=all("SELECT l.id,l.name,l.business,l.phone,l.city,l.segment,l.website,l.instagram,l.contact_permission,l.stage,l.source,l.website_status,l.created_at,l.notes, EXISTS(SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id) AS previously_contacted, EXISTS(SELECT 1 FROM threads t JOIN messages m ON m.thread_id=t.id WHERE t.lead_id=l.id AND m.direction='out') AS sent_message, EXISTS(SELECT 1 FROM suppressions s WHERE s.phone=l.phone) AS suppressed FROM leads l ORDER BY l.created_at DESC LIMIT 6000");
  const words=norm(niche).split(/\s+/).filter(w=>w.length>=4),targetCity=norm(city),cat=category(niche);
  const matches=allRows.filter(l=>{
   const loc=!targetCity||norm(l.city).includes(targetCity);
@@ -67,9 +68,7 @@ export function prospectingList({niche="",city="",status="uncontacted",limit=500
   // operator, but this does NOT authorize automated WA-AKG dispatch.
   // Suppressed, active and otherwise ineligible records never get a link.
   manual_contact_url:x.phone&&!suppressed&&recontactDecision(x).eligible?
-   'https://wa.me/'+encodeURIComponent(x.phone)+'?text='+encodeURIComponent(
-    'Olá! Sou da Consecom Brasil. Posso conversar sobre soluções de presença digital para sua empresa? Se preferir não receber contatos, é só me avisar.'
-   ):null,
+   'https://wa.me/'+encodeURIComponent(x.phone)+'?text='+encodeURIComponent(greetingForProspect(x)):null,
   needs_permission:x.contact_permission!==1||!documentedOptIn(x.id)
  })),partial:allRows.length===6000,source:"Base do Prospector",note:"Não contatada significa sem envio registrado, desconsiderando números bloqueados. O sistema não conhece contatos feitos fora do Prospector."};
 }

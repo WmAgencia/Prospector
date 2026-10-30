@@ -33,7 +33,7 @@ test('Prospection lists only unapproached contacts; no phone stays visible but d
  assert.ok(list.results.find(x=>x.business==='Mecânica Ativa').selectable);
  const manual=list.results.find(x=>x.business==='Mecânica Ativa').manual_contact_url;
  assert.match(manual,/^https:\/\/wa\.me\/5515988887777\?text=/);
- assert.match(decodeURIComponent(manual.split('text=')[1]),/Consecom Brasil/);
+ assert.equal(decodeURIComponent(manual.split('text=')[1]),'Olá, Mecânica Ativa, tudo bem?');
  assert.equal(db.one('SELECT COUNT(*) n FROM messages').n,0,'generating a link never sends messages');
 
  assert.ok(!list.results.find(x=>x.business==='Mecânica sem telefone').selectable);

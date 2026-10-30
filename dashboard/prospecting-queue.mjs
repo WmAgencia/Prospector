@@ -4,7 +4,7 @@
 import {db,id,one,all,run,tx,now,audit,addLead,getThread,addMessage} from './db.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision} from './prospecting-recontact.mjs';
-import {greetingForTime} from './prospecting-approach.mjs';
+import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
 import {waRequest,selectedWaSession,waControlStatus} from './waakg-control.mjs';
 
 export const APPROACH_INTERVAL_MS=90_000;
@@ -100,7 +100,8 @@ export async function tickApproachQueue(deps={}){
    return true;
   });
   if(!reserved)return {status:'WAITING'};
-  const message='Olá, '+greetingForTime(new Date(currentTime()))+', como vai?';
+  const recipient=one('SELECT name,business FROM leads WHERE id=?',next.lead_id);
+  const message=greetingForProspect(recipient);
   try{
    const result=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/send',{method:'POST',data:{message:{text:message}}});
    if(result.status!==true)throw Error('Gateway não confirmou entrega');
@@ -109,6 +110,7 @@ export async function tickApproachQueue(deps={}){
    const lead=one('SELECT * FROM leads WHERE id=?',next.lead_id);
    const thread=getThread(lead.id,next.phone+'@s.whatsapp.net');
    addMessage({threadId:thread.id,providerId:'prospect-queue:'+next.id,direction:'out',body:message,status:'sent'});
+   registerGreeting({leadId:lead.id,greetingId:next.id,sessionId:session});
    if(lead.stage==='NO_INTEREST')run("UPDATE leads SET stage='CONTACTED',last_activity_at=? WHERE id=?",now(),lead.id);
    audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:90});
    return {status:'SENT',batchId:batch.id};

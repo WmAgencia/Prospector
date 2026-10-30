@@ -53,6 +53,7 @@ import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-autom
 import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
+import {tickIntroductions} from './prospecting-introduction.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
@@ -737,6 +738,10 @@ const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
 }).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160))),1000);
+const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=>{
+ if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
+ if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
+}).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160))),1000);
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
 setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
 setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
