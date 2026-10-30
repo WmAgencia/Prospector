@@ -19,7 +19,10 @@ export function classifyContact({jid,sessionId}={}){
  if(!number||!sessionId||sessionId!==selectedWaSession())return {role:'UNVERIFIED',authorized:false,reason:'UNVERIFIED_SESSION'};
  const owner=verifiedOwnerPhone();
  if(owner&&number===owner)return {
-  role:'OWNER',authorized:true,ownerTools:!testModeAllowed(number),
+  role:'OWNER',authorized:true,
+  // Explicitly enabled owner operations require an EXACT verified owner JID and
+  // current WA-AKG session. QA mode alone must never grant these privileges.
+  ownerTools:!testModeAllowed(number)||process.env.PROSPECTOR_OWNER_OPERATIONS_ENABLED==='true',
   testSandbox:testModeAllowed(number),reason:'OWNER_JID_EXACT'};
  const relationship=one("SELECT kind FROM contact_relationships WHERE phone=? AND kind='EXISTING_CLIENT'",number);
  const lead=one("SELECT id,stage FROM leads WHERE phone=?",number);

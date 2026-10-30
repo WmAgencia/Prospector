@@ -67,6 +67,18 @@ const getLead=x=>one('SELECT * FROM leads WHERE id=?',leadId(x));
 const cleanLead=x=>x?({id:x.id,business:x.business,name:x.name,phone:x.phone,instagram:x.instagram,segment:x.segment,city:x.city,website:x.website,website_status:x.website_status,stage:x.stage,contact_permission:x.contact_permission===1,notes:x.notes,source:x.source,last_activity_at:x.last_activity_at,created_at:x.created_at}):null;
 const safeSettings=['paused','auto_initial','automation_enabled','discovery_auto_enabled','discovery_target_daily','discovery_start_hour','daily_limit','business_start','business_end','owner_notifications_enabled','owner_report_hour','decision_engine_enabled','discovery_sources'];
 function safeSettingsRead(){return Object.fromEntries(safeSettings.map(k=>[k,getSetting(k,null)]));}
+// Count confirmed unique approaches across modern and legacy queues, not just
+// a mutable CRM stage. Avoid reading raw messages or claiming pending sends happened.
+export function approachedLeadsSnapshot(){
+ const sources=["SELECT id AS lead_id FROM leads WHERE stage IN ('CONTACTED','REPLIED','INTERESTED','NO_INTEREST','CLOSED_WON')"];
+ const table=t=>!!one("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",t);
+ if(table('initial_contacts'))sources.push("SELECT lead_id FROM initial_contacts WHERE status='SENT'");
+ if(table('prospecting_batch_items'))sources.push("SELECT lead_id FROM prospecting_batch_items WHERE status='SENT'");
+ if(table('jobs'))sources.push("SELECT lead_id FROM jobs WHERE status='SENT' AND step_index=0 AND execution_id IS NOT NULL");
+ if(table('messages')&&table('threads'))sources.push("SELECT t.lead_id AS lead_id FROM messages m JOIN threads t ON t.id=m.thread_id WHERE m.direction='out' AND m.status IN ('sent','accepted') AND m.provider_id LIKE 'prospect-queue:%'");
+ const approached=Number(one("SELECT COUNT(DISTINCT lead_id) n FROM ("+sources.join(' UNION ALL ')+")")?.n)||0;
+ return {total:Number(one('SELECT COUNT(*) n FROM leads')?.n)||0,approached,uncontacted:Number(one("SELECT COUNT(*) n FROM leads WHERE stage='DISCOVERED'")?.n)||0,method:'Confirmed outbound evidence and contacted CRM stages'};
+}
 function permittedRecipient(number){
  const row=one('SELECT id,contact_permission FROM leads WHERE phone=?',number);
  if(!row||one('SELECT 1 FROM suppressions WHERE phone=?',number))return false;
@@ -113,7 +125,7 @@ export async function runAgentTool(name,a={},actor){
  if(name==='list_capabilities')return {available:agentTools.map(t=>({name:t.function.name,description:t.function.description})),limitations:['Sem shell, SQL arbitrário ou leitura de senhas pelo WhatsApp','Filas de abordagem exigem opt-in documentado, intervalo de 90 segundos e confirmação','Envios incertos não são repetidos automaticamente','Buscas públicas têm cobertura parcial']};
  if(name==='system_status'){
   const wa=await waControlStatus();
-  return {leads:one('SELECT COUNT(*) n FROM leads')?.n||0,uncontacted:one("SELECT COUNT(*) n FROM leads WHERE stage='DISCOVERED'")?.n||0,threads:one('SELECT COUNT(*) n FROM threads')?.n||0,meetings:one("SELECT COUNT(*) n FROM meetings WHERE status='SCHEDULED' AND start_at>?",now())?.n||0,settings:safeSettingsRead(),whatsapp:{connected:wa.connected,status:wa.status,hasSession:wa.hasSession},automatedOutreach:false};
+  return {...approachedLeadsSnapshot(),leads:one('SELECT COUNT(*) n FROM leads')?.n||0,uncontacted:one("SELECT COUNT(*) n FROM leads WHERE stage='DISCOVERED'")?.n||0,threads:one('SELECT COUNT(*) n FROM threads')?.n||0,meetings:one("SELECT COUNT(*) n FROM meetings WHERE status='SCHEDULED' AND start_at>?",now())?.n||0,settings:safeSettingsRead(),whatsapp:{connected:wa.connected,status:wa.status,hasSession:wa.hasSession},automatedOutreach:false};
  }
  if(name==='system_diagnostics'){
   const jobs=all('SELECT status,COUNT(*) n FROM jobs GROUP BY status').map(x=>({status:x.status,count:x.n}));
@@ -272,6 +284,7 @@ export function readVoiceOperationalBriefing({jid,sessionId}={}){
  const sevenDaysAgo=new Date(Date.now()-7*86400000).toISOString();
  const stats={
   leads:n('SELECT COUNT(*) n FROM leads'),
+  approached:approachedLeadsSnapshot().approached,
   uncontacted:n("SELECT COUNT(*) n FROM leads WHERE stage='DISCOVERED'"),
   workflows:n('SELECT COUNT(*) n FROM workflows'),
   enabledWorkflows:n('SELECT COUNT(*) n FROM workflows WHERE enabled=1'),
