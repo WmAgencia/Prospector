@@ -5,20 +5,20 @@ const normalize=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]
 const leadIn=/^\s*(?:ol[aá](?:\s+de\s+novo)?|oi|al[oô]|bom dia|boa tarde|boa noite)(?:[!.,:;\s\u2013\u2014-]+|$)/i;
 const genericLead=/^\s*(claro|entendi|perfeito|com certeza|sem problema|vamos l[aá]|ótimo|otimo)(?:[!.,:;\s\u2013\u2014-]+|$)/i;
 const longForm=/(?:explique|explica(?:r)?|detalh|aprofund|analise|an[aá]lise|comp[ae]r|quais (?:s[aã]o|seriam)|o que falta|por que|por qu[eê]|como funciona|como melhorar|me ensina|estrat[eé]gia|possibilidades|alternativas|passo a passo|quero entender|me fala mais|contexto inteiro|tudo sobre)/;
-export function voiceReplyPlan(heard='',history=[]){
+export function voiceReplyPlan(heard='',history=[],preferences={}){
  const n=normalize(heard);
- const detailed=longForm.test(n)||n.length>120;
+ const detailed=preferences.detail==='detailed'||(preferences.detail!=='brief'&&(longForm.test(n)||n.length>120));
  const backAndForth=history.some(x=>x.role==='assistant');
  return {
   detailed,
   backAndForth,
   maxTokens:detailed?290:175,
-  maxChars:detailed?610:390,
+  maxChars:detailed?610:preferences.detail==='brief'?260:390,
   maxSentences:detailed?4:2
  };
 }
-export function voiceStyleInstruction({heard='',history=[]}={}){
- const p=voiceReplyPlan(heard,history);
+export function voiceStyleInstruction({heard='',history=[],preferences={}}={}){
+ const p=voiceReplyPlan(heard,history,preferences);
  const previous=history.filter(x=>x.role==='assistant').slice(-3).map(x=>String(x.content||''));
  const openerExamples=previous.map(x=>{
   const cleaned=x.replace(/^[\s"'“”]+/,'').match(/^.{1,48}?(?=[,.!?]|$)/)?.[0]||'';
@@ -30,6 +30,7 @@ export function voiceStyleInstruction({heard='',history=[]}={}){
   'Não repita a pergunta recebida, nem a apresentação da agência, nem respostas anteriores. Se a pessoa disser "continua", retome o ponto em andamento sem recomeçar do zero.',
   'Se fizerem uma correção, aceite e ajuste o raciocínio sem pedir desculpas repetidas. Se mudarem de assunto, responda ao assunto novo.',
   'Fale como numa conversa real: alternar frases diretas, observações pertinentes, exemplos breves e uma pergunta de seguimento APENAS se ajudar; não encerre toda resposta com a mesma pergunta.',
+  preferences.detail==='brief'?'O proprietário escolheu RESPOSTAS CURTAS nesta e nas próximas chamadas. Não faça uma explicação longa sem pedido explícito.':preferences.detail==='detailed'?'O proprietário escolheu RESPOSTAS COM MAIS DETALHES nesta e nas próximas chamadas. Explique fatos úteis, sem inventar.':'',
   'Para brainstorming, apresente ideias realmente distintas; para uma pergunta factual, dê a resposta primeiro. Se a informação depender de dados não consultados, diga que não verificou.',
   p.detailed
    ? 'A pergunta pede explicação: ofereça conteúdo suficiente em até quatro frases faláveis, organizadas em sequência natural. Pode explicar o porquê, um exemplo e um próximo passo, sem leitura de lista.'
