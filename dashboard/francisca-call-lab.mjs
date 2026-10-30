@@ -11,6 +11,7 @@ import {verifiedOwnerPhone,classifyContact} from './whatsapp-roles.mjs';
 import {selectedWaSession,waRequest} from './waakg-control.mjs';
 import {OWNER_PERSONA} from './francisca-owner-persona.mjs';
 import {newVoiceDirectMessageFlow} from './francisca-owner-voice-messages.mjs';
+import {newVoiceProspectingFlow} from './francisca-voice-prospecting.mjs';
 import {voiceToolsForOwner,runOwnerVoiceTool} from './francisca-owner-voice-actions.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import {makeFranciscaVoice,makeFranciscaCallPcm,checkVoiceText} from './francisca-tts.mjs';
@@ -105,6 +106,10 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
  verifyVoiceOwner({jid,sessionId});
  const context=newCallContext();
  const voiceMessages=newVoiceDirectMessageFlow({send:deps.sendDirectMessage});
+ const voiceProspecting=newVoiceProspectingFlow({
+  search:deps.searchProspects,list:deps.listProspects,preview:deps.previewProspects,
+  enqueue:deps.enqueueApproaches,status:deps.approachQueueStatus
+ });
  let busy=false,ended=false;
  return {
   async reply(pcm16k,{interruption}={}){
@@ -123,9 +128,18 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     // This deterministic per-call state machine handles direct WhatsApp messages,
     // missing phone/text, spoken preview and exact verbal approval. It never
     // accepts free-form model tool calls as permission to send.
-    const voiceMessageReply=await voiceMessages.turn(heard,{jid,sessionId});
+    // If already dictating a single message, finish or cancel that before
+    // interpreting new commands. Otherwise owner prospecting takes priority:
+    // "pesquisa dentistas e inicia abordagem" must NOT be parsed as an
+    // individual message to a phone number.
+    const actor={jid,sessionId};
+    const activeIndividual=Boolean(voiceMessages.state);
+    const voiceMessageReply=activeIndividual?await voiceMessages.turn(heard,actor):null;
+    const voiceProspectingReply=!voiceMessageReply?await voiceProspecting.turn(heard,actor):null;
+    const ownerVoiceReply=voiceMessageReply||voiceProspectingReply||
+     (!activeIndividual?await voiceMessages.turn(heard,actor):null);
     const availableTools=selectVoiceTools(voiceToolsForOwner(agentTools,verified.ownerTools),heard);
-    if(!voiceMessageReply)console.info('[francisca-voice-owner-access]',JSON.stringify({
+    if(!ownerVoiceReply)console.info('[francisca-voice-owner-access]',JSON.stringify({
      ownerVerified:verified.ownerTools===true,toolsAvailable:availableTools.length,
      callMode:'OWNER',stagedActionsOnly:true
     }));
@@ -167,7 +181,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     const chat=deps.chat||groqChat,readTool=deps.readTool||runAgentTool;
     let spoken='';
     try{
-     if(voiceMessageReply){spoken=voiceMessageReply;}
+     if(ownerVoiceReply){spoken=ownerVoiceReply;}
      else{
      let result=directCount?{choice:{content:directCount}}:
       await chat({task:availableTools.length?'actions':'voice',messages,tools:availableTools,maxTokens:Math.max(550,replyPlan.maxTokens)});
@@ -230,7 +244,7 @@ export function newFranciscaCallSession({jid,sessionId}={},deps={}){
     return {heard,spoken,replyId,pcm16k:outgoing,format:'s16le',rate:VOICE_RATE,voice};
    }finally{busy=false;}
   },
-  end(){ended=true;context.clear();voiceMessages.end();},
+  end(){ended=true;context.clear();voiceMessages.end();voiceProspecting.end();},
   get state(){return ended?'ENDED':busy?'BUSY':'READY';}
  };
 }
