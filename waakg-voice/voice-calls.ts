@@ -19,7 +19,7 @@ type Session={
  replying:boolean;playback:boolean;pending:Buffer|null;
  detector:TurnDetector;gate:PlaybackGate;conditioner:VoiceAudioConditioner;
  ledger:InterruptionLedger;backchannel:BackchannelPolicy;thinking:ThinkingCuePolicy;
- ackBusy:boolean;cuePlaying:boolean;cueDirty:boolean;
+ ackBusy:boolean;cuePlaying:boolean;cueDirty:boolean;streamAbort:AbortController|null;
 };
 function requireReady(sessionId:string){
  return !!owner&&/^55\d{10,11}$/.test(owner)&&sessionId===correctSession&&
@@ -53,12 +53,12 @@ async function bridge(call:Session,sessionId:string,event:"greeting"|"turn"|"end
 }
 
 async function streamBridge(call:Session,sessionId:string,pcm:Buffer,metadata:Record<string,unknown>|undefined,
- onAudio:(packet:{replyId?:string,pcm16k:string,index:number,total:number})=>Promise<void>){
+ onAudio:(packet:{replyId?:string,pcm16k:string,index:number,total:number})=>Promise<void>,signal?:AbortSignal){
  const data={callId:call.callId,jid:owner+"@s.whatsapp.net",sessionId,event:"turn",
   pcm16k:pcm.toString("base64"),...(metadata||{})};
  const res=await fetch(BRIDGE_URL,{method:"POST",headers:{"content-type":"application/json",
   "x-wa-call-bridge-secret":SECRET,"x-voice-stream":"1"},
-  body:JSON.stringify(data),signal:AbortSignal.timeout(95000)});
+  body:JSON.stringify(data),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(95000)]):AbortSignal.timeout(95000)});
  if(!res.ok)throw Error("VOICE_STREAM_HTTP_"+res.status);
  if(!String(res.headers.get("content-type")||"").includes("application/x-ndjson")){
   // Backward-compatible rolling deploy: older Prospector responds with JSON.
@@ -131,7 +131,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
  let call:Session|null=null;
  function same(id:string){return call&&!call.ended&&call.callId===id?call:null;}
  const reset=()=>{
-  if(call){call.ended=true;call.pending=null;call.gate.cancel();call.detector.reset();call.ledger.clear();call.conditioner.reset();call.cuePlaying=false;}
+  if(call){call.ended=true;call.pending=null;call.gate.cancel();call.detector.reset();call.ledger.clear();call.conditioner.reset();call.streamAbort?.abort();call.streamAbort=null;call.cuePlaying=false;}
   call=null;
  };
  async function sendTurn(active:Session,event:"turn"|"greeting",pcm?:Buffer){
@@ -147,6 +147,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   try{
    if(event==="turn"&&pcm){
     let audioMs=0,first=true;
+    const controller=new AbortController();active.streamAbort=controller;
     await streamBridge(active,sessionId,pcm,interruption?{interruption}:undefined,async r=>{
      if(active.ended||!same(active.callId)||!active.gate.valid(generation))return;
      if(first){
@@ -157,7 +158,8 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
      }
      await renderReply(manager,active,r.pcm16k,generation,audioMs);
      audioMs+=Math.round(Buffer.from(r.pcm16k,"base64").length/32);
-    });
+    },controller.signal);
+    active.streamAbort=null;
     if(active.gate.valid(generation)&&!first){
      active.ledger.completed();
      console.info("[voice-calls] FRANCISCA_STREAM_FINISHED","ms",Date.now()-started);
@@ -184,9 +186,10 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
     console.info("[voice-calls] FRANCISCA_AUDIO_SENT",event);
    }
   }catch(e){
-   if(!active.ended)console.warn("[voice-calls] TURN_ERROR",String((e as Error).message).slice(0,75));
+   if(!active.ended&&active.gate.valid(generation))console.warn("[voice-calls] TURN_ERROR",String((e as Error).message).slice(0,75));
   }finally{
    if(thinkingTimer)clearTimeout(thinkingTimer);
+   active.streamAbort=null;
    active.cuePlaying=false;
    active.playback=false;
    active.replying=false;
@@ -261,7 +264,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   const incoming:Session={callId:c.callId,from:pn,startedAt:Date.now(),ended:false,greeted:false,
    replying:false,playback:false,pending:null,detector:new TurnDetector({stopSilenceMs:660,bargeVoiceMs:320,maxTurnMs:13000}),gate:new PlaybackGate(),conditioner:new VoiceAudioConditioner(),
    ledger:new InterruptionLedger(),backchannel:new BackchannelPolicy(),
-   thinking:new ThinkingCuePolicy(),ackBusy:false,cuePlaying:false,cueDirty:false};
+   thinking:new ThinkingCuePolicy(),ackBusy:false,cuePlaying:false,cueDirty:false,streamAbort:null};
   call=incoming;
   try{
    manager.setExternalAudioMode(true);
@@ -294,6 +297,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
   if(result.type==="interrupt"){
    active.ledger.interrupt();
    active.gate.cancel(); // Only sound stops; previous question and answer draft are retained.
+   active.streamAbort?.abort();
    active.playback=false;active.cuePlaying=false;active.cueDirty=false;
    // Flush unread TTS samples from the same already-authenticated WA-AKG socket.
    manager.setExternalAudioMode(true);
@@ -308,7 +312,7 @@ export function installFranciscaCalls(sock:WASocket,sessionId:string){
     const separator=Buffer.alloc(16000*2/5); // 200 ms, mono PCM16
     const combined=active.pending?Buffer.concat([active.pending,separator,pcm]):pcm;
     active.pending=combined.length<=16000*2*13?combined:combined.subarray(combined.length-16000*2*13);
-    active.gate.cancel();
+    active.gate.cancel();active.streamAbort?.abort();
    }else void sendTurn(active,"turn",pcm);
   }else if(result.type==="none"&&mode==="listening"&&!active.ackBusy&&
    active.backchannel.canPlay({voicedSamples:active.detector.voiced,replying:active.replying,
