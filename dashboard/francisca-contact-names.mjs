@@ -21,7 +21,8 @@ export function recipientNameInVoice(text,{standalone=false}={}){
   const match=raw.match(/\b(?:para|pra|pro|ao)\s+(?:o\s+contato\s+|a\s+contato\s+|o\s+whatsapp\s+(?:de|da|do)\s+|a\s+|o\s+)?(.+?)(?=\s+(?:falando|dizendo|escrevendo|que\s+diga|com\s+(?:a\s+)?mensagem|com\s+(?:o\s+)?texto|mensagem\s+(?:e|é)|texto\s+(?:e|é))\b|[.!?]*$)/i);
   name=clean(match?.[1]);
  }
- if(!name||name.length<2||name.length>80||/\d{3,}/.test(name)||/^(?:numero|telefone|celular|ddd|contato|pessoa|alguem|todos|todos os|grupo)$/i.test(name))return null;
+ if(!name||name.length<2||name.length>80||/\d{3,}/.test(name)||
+  /^(?:numero(?:\s+informado)?|telefone(?:\s+informado)?|celular|ddd|contato(?:\s+informado)?|pessoa|uma pessoa|um contato|alguem|todos|todos os|grupo)$/i.test(name))return null;
  if(!/[\p{L}]/u.test(name))return null;
  return name;
 }
