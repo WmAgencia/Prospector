@@ -143,8 +143,8 @@ export function newVoiceDirectMessageFlow({send=realSend,deliveryLookup=lastVoic
     return 'O WhatsApp confirmou '+(finalState==='READ'?'a leitura':'a entrega')+
      ' da mensagem no número terminado em '+item.phone.slice(-4)+'.';
    if(finalState==='ACCEPTED')
-    return 'A mensagem foi aceita pelo WhatsApp, mas a entrega ao número terminado em '+
-     item.phone.slice(-4)+' ainda NÃO foi confirmada. Confira o chat antes de repetir.';
+    return 'O WhatsApp aceitou a solicitação para o número terminado em '+
+     item.phone.slice(-4)+', mas ainda NÃO confirmou a entrega da mensagem. Confira o chat antes de repetir.';
    return 'Não consegui confirmar se a mensagem chegou ao WhatsApp. Confira a conversa antes de qualquer nova tentativa; não vou repetir automaticamente.';
   }catch{
    return 'Não consegui confirmar o envio. Confira a conversa antes de pedir novamente; não vou repetir automaticamente.';
