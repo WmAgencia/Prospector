@@ -8,6 +8,7 @@ import {classifyContact} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
+import {routeIntroductionReply} from "./prospecting-introduction.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
@@ -106,7 +107,9 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
  // The owner has already been routed above, including the sandbox exception.
  if(firstInbound)queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
- if(state==="REVIEW")queueInboundTurn({providerId:unique,jid});
+ const introRoute=identity.role==='PROSPECT_APPROACHED'?
+  routeIntroductionReply({leadId:lead.id,providerId:unique,body:content,inboxState:state,receivedAt:at}):{managed:false,queueAi:true};
+ if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid});
  return {status:200,body:{accepted:true,processed:true}};
 }
 export async function draftInbox(input){
