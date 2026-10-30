@@ -33,7 +33,7 @@ test('Two initial greetings are never attempted less than 90 seconds apart',asyn
  const first=await queue.tickApproachQueue(deps);
  assert.equal(first.status,'SENT');
  assert.equal(sent.length,1);
- assert.match(sent[0].body.message.text,/Olá, (bom dia|boa tarde|boa noite), como vai\?/);
+ assert.equal(sent[0].body.message.text,'Olá, Mecânica A, tudo bem?');
  nowMs+=89_999;
  const early=await queue.tickApproachQueue(deps);
  assert.equal(early.status,'WAITING');
