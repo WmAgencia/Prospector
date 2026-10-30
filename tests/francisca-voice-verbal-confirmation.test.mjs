@@ -127,6 +127,21 @@ test('Real voice session routes number, text, and approval without Groq or owner
   assert.equal(outgoing[0].text,'olá, tudo bem?');
  }finally{session.end();}
 });
+test('Voice user can check the last message receipt later without sending again',async()=>{
+ const id='3EB0VOICE999';
+ let sent=0;
+ const flow=newVoiceDirectMessageFlow({send:async()=>{sent++;return {state:'ACCEPTED',providerId:id};},deliveryLookup:async()=> 'O último envio ainda não possui comprovante de entrega.'});
+ const preview=await flow.turn('Envia uma mensagem para 15 99999 2244 falando olá',owner);
+ assert.match(preview,/Posso enviar/);
+ const ack=await flow.turn('pode enviar',owner);
+ assert.match(ack,/NÃO confirmou a entrega/);
+ assert.equal(sent,1);
+ const report=await flow.turn('verifica a última mensagem',owner);
+ // The regular send path cannot assert receipt, but the read-only follow-up can.
+ assert.match(report,/comprovante de entrega|confirm|entrega/);
+ assert.equal(sent,1);
+});
+
 test.after(async()=>{
  const {db}=await import('../dashboard/db.mjs');db.close();
  fs.rmSync(dir,{recursive:true,force:true});
