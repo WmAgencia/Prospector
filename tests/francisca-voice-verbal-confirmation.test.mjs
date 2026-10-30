@@ -80,7 +80,7 @@ test('Missing text, unclear approval, edit and cancel never send',async()=>{
 test('Wrong length phone requires new number; no sending',async()=>{
  const flow=newVoiceDirectMessageFlow({send:async()=>{throw Error('SHOULD_NOT_SEND');}});
  assert.match(await flow.turn('Envie mensagem para 15 9811 8173 36',owner),/número parece incompleto/);
- assert.match(await flow.turn('15 9811 8173 36',owner),/telefone parece incompleto/);
+ assert.match(await flow.turn('15 9811 8173 36',owner),/parece faltar um dígito/);
  flow.end();
 });
 test('Suppressions prevent verbal one-to-one delivery, even after preview',async()=>{
