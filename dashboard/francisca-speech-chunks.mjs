@@ -17,9 +17,9 @@ export function splitSpeech(text,{maxChars=175,maxSegments=5}={}){
  }
  return parts;
 }
-export async function synthesizeSpeechChunks(text,{synthesize,onSegment,maxSegments=5}={}){
+export async function synthesizeSpeechChunks(text,{synthesize,onSegment,maxSegments=5,maxChars=175}={}){
  if(typeof synthesize!=='function')throw Error('CHUNK_TTS_REQUIRED');
- const parts=splitSpeech(text,{maxSegments});
+ const parts=splitSpeech(text,{maxSegments,maxChars});
  if(!parts.length)throw Error('CHUNK_TEXT_EMPTY');
  const buffers=[];let total=0;
  // Start the next synthesis while the caller is hearing the current segment.
