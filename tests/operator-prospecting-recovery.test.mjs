@@ -43,7 +43,7 @@ test('Only fully valid preselected campaign can be unpaused',()=>{
  for(const [id,kind,ext] of [[a,'audio','ogg'],[v,'video','mp4']]){
   fs.writeFileSync(path.join(mediaDir,id+'.'+ext),'file');
   db.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)',
-  id,kind,kind==='audio'?'audio/ogg':'video/mp4',id+'.'+ext,4,db.now());
+  id,kind+' test',kind,kind==='audio'?'audio/ogg':'video/mp4',id+'.'+ext,4,db.now());
  }
  const flow=db.id();db.run('INSERT INTO workflows(id,name,is_default,version,steps,created_at,updated_at,segments_json,enabled) VALUES(?,?,?,?,?,?,?,?,?)',
  flow,'Campanha revisada',0,1,JSON.stringify(buildConsecomSteps({audioId:a,videoId:v})),db.now(),db.now(),'[]',1);
