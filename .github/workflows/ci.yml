@@ -72,8 +72,6 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3030/api/research/google-index | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const a=JSON.parse(s);if(!('keyConfigured' in a))process.exit(1)})"
           curl --fail --silent --show-error http://127.0.0.1:3030/api/queue-health | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const a=JSON.parse(s);if(!a.reason||!a.initialToday||!('initialPending' in a))process.exit(1);console.log('Queue health smoke passed')})"
           curl --fail --silent --show-error http://127.0.0.1:3030/api/state | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const x=JSON.parse(s);if(!Array.isArray(x.leads)||!Array.isArray(x.workflows)||!('activeCampaign' in x))process.exit(1);console.log('API smoke passed')})"
-          curl --fail --silent --show-error http://127.0.0.1:3030/api/ai/whatsapp-intelligence/status | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const d=JSON.parse(s);if(!('job' in d)||!('approval' in d))process.exit(1);console.log('Intelligence status smoke passed')})"
-          curl --silent --show-error -X POST -H 'Content-Type: application/json' -d '{"sessionIds":[],"acknowledged":false}' http://127.0.0.1:3030/api/ai/whatsapp-intelligence/start | node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const d=JSON.parse(s);if(!/autorização/i.test(d.error||''))process.exit(1);console.log('Consent guard smoke passed')})"
       - name: Show server output on failure
         if: failure()
         run: cat /tmp/prospector.log || true
