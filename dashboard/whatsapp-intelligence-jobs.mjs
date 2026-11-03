@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import {db,one,all,run,now} from './db.mjs';
 import {waRequest,selectedWaSession} from './waakg-control.mjs';
-import {analyzeAuthorizedConversations} from './whatsapp-intelligence.mjs';
+import {analyzeAuthorizedConversations,summarizeConversationSignals} from './whatsapp-intelligence.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS wa_intelligence_jobs(id TEXT PRIMARY KEY, company_id TEXT NOT NULL, state TEXT NOT NULL, percent INTEGER NOT NULL, processed INTEGER NOT NULL, total INTEGER NOT NULL, skipped INTEGER NOT NULL, failed INTEGER NOT NULL, session_count INTEGER NOT NULL, report_md TEXT, playbook_md TEXT, summary_json TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS wa_intelligence_approvals(company_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, reviewed_at TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)))");
@@ -55,11 +55,13 @@ export async function collectReadOnly({request=waRequest,sessionIds,onProgress=(
     // Never persist any raw WhatsApp text, user names, phone numbers or chat identifiers.
     const messages=res.data.slice(-5000).filter(m=>m&&typeof m==='object')
       .map(m=>({id:m.id||m.keyId||undefined,direction:m.fromMe?'out':'in',
-        body:typeof m.content==='string'?m.content:String(m.caption||'').slice(0,2000)}));
+        body:(typeof m.content==='string'?m.content:String(m.caption||'')).slice(0,2000)}));
+    const signals=summarizeConversationSignals(messages);
     const fromCrm=outcomeForPhone(chat.jid.split('@')[0]);
     const outcome=fromCrm!=='unclassified'?fromCrm:
-      messages.some(x=>x.direction==='out')&&!messages.some(x=>x.direction==='in')?'no_response':'unclassified';
-    conversations.push({tenantId:COMPANY,outcome,messages,isGroup:false});
+      signals.outbound>0&&signals.inbound===0?'no_response':'unclassified';
+    // Keep only non-identifying statistics, not message bodies or chat identifiers.
+    conversations.push({tenantId:COMPANY,outcome,signals,isGroup:false});
    }catch(e){failed++;}
    processed++;
    if(processed%2===0||processed===total)onProgress({processed,total,failed,skipped,percent:total?Math.floor(processed*100/total):100});
