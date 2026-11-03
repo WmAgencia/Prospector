@@ -16,9 +16,11 @@ export function budgetConfig(input=new Date()){
  const configuredStart=Number(getSetting('business_start',WINDOW_START)),end=Number(getSetting('business_end',WINDOW_END));
  const override=getSetting('today_start_override',null);
  const start=override?.day===daySP(input)?Math.max(configuredStart,Number(override.hour)||0):configuredStart;
- const minimumSeconds=Math.ceil(Math.max(1,end-start)*3600/limit);
- const normalSeconds=Math.max(1,Number(getSetting('initial_interval_seconds',TARGET_INTERVAL_SECONDS))||TARGET_INTERVAL_SECONDS);
- return {limit,start,end,intervalSeconds:override?.day===daySP(input)?Math.max(minimumSeconds,144):Math.max(minimumSeconds,normalSeconds)};
+ // A daily maximum is a cap, not a requirement to spread every attempt over
+ // the full business window. The operator's fixed 90-second cadence must not
+ // be silently overridden to 240 seconds by the 150/day budget.
+ const normalSeconds=Math.max(90,Number(getSetting('initial_interval_seconds',TARGET_INTERVAL_SECONDS))||TARGET_INTERVAL_SECONDS);
+ return {limit,start,end,intervalSeconds:normalSeconds};
 }
 export function initialEvents(){
  return all("SELECT status,updated_at FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('SENT','UNKNOWN','SENDING') AND updated_at>=?",new Date(Date.now()-48*3600000).toISOString());
