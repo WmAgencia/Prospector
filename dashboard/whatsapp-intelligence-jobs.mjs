@@ -127,6 +127,7 @@ export function reviewIntelligence({jobId,approve,acknowledged=false}={}){
  const job=jobRow(jobId);
  if(!job||!['REVIEW','PARTIAL','APPROVED'].includes(job.state)||!job.playbook_md)return {status:409,body:{error:'Nenhum relatório concluído para aprovar.'}};
  if(approve&&job.state==='PARTIAL')return {status:409,body:{error:'Análise parcial: revise falhas e execute novamente antes de aplicar.'}};
+ if(approve&&(!job.summary_json||JSON.parse(job.summary_json).total<1))return {status:409,body:{error:'Não há conversas analisadas para aprovar.'}};
  if(approve){
   run("INSERT INTO wa_intelligence_approvals(company_id,job_id,reviewed_at,enabled) VALUES(?,?,?,1) ON CONFLICT(company_id) DO UPDATE SET job_id=excluded.job_id,reviewed_at=excluded.reviewed_at,enabled=1",
     COMPANY,jobId,now());
@@ -141,5 +142,5 @@ export function approvedIntelligenceGuidance(){
  const row=one("SELECT j.playbook_md FROM wa_intelligence_approvals a JOIN wa_intelligence_jobs j ON j.id=a.job_id WHERE a.company_id=? AND a.enabled=1 AND j.state='APPROVED' LIMIT 1",COMPANY);
  if(!row)return '';
  // Static, operator-approved content: NEVER include raw chat text or arbitrary model instructions.
- return String(row.playbook_md).slice(0,2500);
+ return String(row.playbook_md).replace('PENDENTE_DE_APROVACAO','APROVADO_PELO_OPERADOR').slice(0,2500);
 }
