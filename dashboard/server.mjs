@@ -47,6 +47,7 @@ import {authorizeCallBridge,processCallBridge,callBridgeStatus} from './francisc
 import {voiceMetricsSummary} from './francisca-call-observability.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
 import {waRequest,waControlStatus,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
+import {gatewayConnectionView,refreshGatewayConnection} from './waakg-live-status.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
@@ -328,7 +329,7 @@ function snapshot(){
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
  const stats={profiles_analyzed:all('SELECT details FROM discoveries').reduce((total,row)=>{try{return total+(JSON.parse(row.details||'{}').examined||0);}catch{return total;}},0),qualified:leads.filter(l=>l.website_status==='NO_WEBSITE'&&l.phone).length,meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:one('SELECT COUNT(*) AS total FROM leads')?.total||0,contacted:one("SELECT COUNT(*) AS total FROM initial_contacts WHERE status='SENT'")?.total||0,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
- return {radar:radarSnapshot(),catalog:catalogSummary(),googleIndex:googleIndexStatus(),outreachQueue:outreachQueueSnapshot(),activeCampaign:selectedCampaign(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:connection(),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
+ return {radar:radarSnapshot(),catalog:catalogSummary(),googleIndex:googleIndexStatus(),outreachQueue:outreachQueueSnapshot(),activeCampaign:selectedCampaign(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:gatewayConnectionView(connection()),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
 }
 async function upload(req,url,res){
  const kind=url.searchParams.get('kind'),name=String(url.searchParams.get('name')||'mídia').slice(0,100);
@@ -721,6 +722,19 @@ async function handler(req,res){
 }
 const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
+// Read-only remote state: prevents false offline badges in the Prospector UI.
+if(process.env.WHATSAPP_TRANSPORT==='waakg'){
+ const watch=async()=>{
+  const state=await refreshGatewayConnection();
+  if(state.connected!==lastDisplayedWaConnected||state.status!==lastDisplayedWaStatus){
+   console.info('[wa gateway status]',JSON.stringify({status:state.status,connected:state.connected,ok:state.ok}));
+   lastDisplayedWaConnected=state.connected;lastDisplayedWaStatus=state.status;
+  }
+ };
+ let lastDisplayedWaConnected=null,lastDisplayedWaStatus='';
+ setInterval(watch,15000).unref();
+ setTimeout(watch,2000).unref();
+}
 const activation=enableAuthorizedOutreach();
 const invitationActivation=enableInvitationCampaign();
 if(process.env.PROSPECTOR_ENABLE_SAFE_PROSPECTING_NOV03==='true'){

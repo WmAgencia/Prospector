@@ -23,17 +23,18 @@ export function gatewayStatus(){
 }
 export async function gatewayRemoteStatus(){
  const status=gatewayStatus();
- const apiKey=process.env.WA_AKG_API_KEY||"";
- if(!status.configuredBase||!apiKey)return {...status,reason:"MISSING_API_KEY_OR_URL"};
- try{
-  const res=await fetch(base+"/api/sessions",{method:"GET",headers:{"X-API-Key":apiKey,"Accept":"application/json"},signal:AbortSignal.timeout(6500)});
-  if(!res.ok)return {...status,connected:false,connectionNotTested:false,reason:res.status===401?"INVALID_API_KEY":"WA_AKG_UNAVAILABLE",upstreamHttp:res.status};
-  const data=await res.json().catch(()=>({}));
-  const list=Array.isArray(data.data)?data.data:[];
-  const selected=process.env.WA_AKG_SESSION_ID||"";
-  const connected=list.some(s=>(!selected||s.sessionId===selected)&&["CONNECTED","OPEN","connected","open"].includes(s.status));
-  return {...status,connected,connectionNotTested:false,totalSessions:list.length,reason:connected?"CONNECTED":selected?"SESSION_NOT_CONNECTED":"SESSION_NOT_SELECTED"};
- }catch{return {...status,connected:false,connectionNotTested:true,reason:"NETWORK_ERROR"};}
+ if(!status.configuredBase)return {...status,connected:false,connectionNotTested:false,reason:'MISSING_URL'};
+ // WA-AKG may not expose a fixed API key in Railway: waRequest obtains its
+ // authenticated key from the configured admin login. Use that same authority
+ // instead of falsely reporting MISSING_API_KEY for a connected service.
+ const remote=await waControlStatus();
+ return {...status,connected:remote.connected===true,
+  connectionNotTested:remote.ok!==true,
+  sessionConfigured:Boolean(remote.sessionId),
+  totalSessions:remote.totalSessions||0,
+  reason:remote.ok?remote.connected?'CONNECTED':remote.hasSession?'SESSION_NOT_CONNECTED':'SESSION_NOT_FOUND':
+   'WA_AKG_UNAVAILABLE',
+  gatewayStatus:remote.status};
 }
 
 export function gatewayInbox(){
