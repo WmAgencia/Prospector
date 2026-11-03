@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveLocation,resolveSegment,extractPhone,extractInstagram,makeQuery,prioritizeOSMResults} from '../dashboard/osm-discovery.mjs';
+import {resolveLocation,resolveSegment,extractPhone,extractInstagram,makeQuery,prioritizeOSMResults,overpassEndpoints,DEFAULT_OVERPASS_ENDPOINT,FALLBACK_OVERPASS_ENDPOINT} from '../dashboard/osm-discovery.mjs';
 test('cidades, acentos e segmentos suportados',()=>{
  assert.equal(resolveLocation('São Paulo').label,'São Paulo');
  assert.equal(resolveLocation('Votorantim').label,'Votorantim');
@@ -28,4 +28,13 @@ test('prioritiza telefone publicado sem descartar registros sem contato',()=>{
  assert.deepEqual(ordered.map(x=>x.id),[2,4,3,1]);
  assert.deepEqual(items.map(x=>x.id),[1,2,3,4]);
  assert.equal(ordered.length,4);
+});
+
+test('mirrors Overpass têm endpoints distintos e verificáveis, sem o alias legado desativado',()=>{
+ const defaultHosts=overpassEndpoints('');
+ assert.deepEqual(defaultHosts,[DEFAULT_OVERPASS_ENDPOINT,FALLBACK_OVERPASS_ENDPOINT]);
+ assert.deepEqual(overpassEndpoints(DEFAULT_OVERPASS_ENDPOINT),defaultHosts);
+ assert.deepEqual(overpassEndpoints('https://overpass-api.de/api/interpreter'),[
+  'https://overpass-api.de/api/interpreter',DEFAULT_OVERPASS_ENDPOINT,FALLBACK_OVERPASS_ENDPOINT]);
+ assert(defaultHosts.every(x=>!x.includes('kumi.systems')));
 });
