@@ -1,11 +1,12 @@
-// Prospector: five focused views. Deliberately no legacy campaign modules.
+// Prospector: focused operational views and opt-in read-only intelligence.
 const q=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
-const tabs={overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",settings:"Configurações"};
+const tabs={overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",intelligence:"Inteligência artificial",settings:"Configurações"};
 let offerType='portfolio';
-const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
-let view=["overview","conversations","prospects","connections","settings"].includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
+let intelligenceData=null,intelligenceSessions=[],intelligenceSelection=new Set(),intelligenceLoaded=false,intelligenceBusy=false;
+const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",intelligence:"✦",settings:"⚙"};
+let view=["overview","conversations","prospects","connections","intelligence","settings"].includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
 let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false;
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
 function newProspectSession(){
@@ -31,11 +32,12 @@ async function api(path,opts={}){
  return data;
 }
 const post=(path,data)=>api(path,{method:"POST",body:JSON.stringify(data||{})});
-function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections"){refreshWa();refreshGroq();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="settings"){refreshAI();refreshVoiceMetrics();}}
+function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections"){refreshWa();refreshGroq();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="settings"){refreshAI();refreshVoiceMetrics();}if(view==="intelligence")refreshIntelligence(true);}
 
 function glyph(key){
  const paths={
  overview:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+ intelligence:'<circle cx="12" cy="12" r="9"/><path d="M12 5v3m-4 4h8m-4 4v3M5 12h3m8 0h3"/>',
  prospects:'<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5M8 11h6M11 8v6"/>',
  conversations:'<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-4-.9L3 21l1.9-5.5A9 9 0 1 1 21 11.5Z"/><path d="M8 11.5h9M8 14.5h5"/>',
  connections:'<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 8h.01M12 8h4M8 12h8M8 16h8"/>',
@@ -152,10 +154,81 @@ function settings(){
  (voiceMetrics?.turns?'<p class="footnote">Tempo médio por etapa: Whisper '+(voiceMetrics.sttMs/1000).toFixed(1)+' s · processamento '+(voiceMetrics.llmMs/1000).toFixed(1)+' s · voz '+(voiceMetrics.ttsMs/1000).toFixed(1)+' s. Transcrições incertas: '+voiceMetrics.uncertain+' · Falhas de processamento: '+voiceMetrics.failures+'.</p>':'<p class="footnote">Os indicadores aparecerão após as primeiras chamadas na nova versão.</p>')+
  '</section>';
 }
+
+function intelligence(){
+ const status=intelligenceData||{};
+ const job=status.job,approval=status.approval,working=job&&['RUNNING','CANCELLING'].includes(job.state);
+ const label={RUNNING:'Analisando',CANCELLING:'Cancelando',REVIEW:'Aguardando aprovação',APPROVED:'Playbook aprovado',PARTIAL:'Análise parcial',FAILED:'Falha na análise',CANCELLED:'Cancelada',INTERRUPTED:'Interrompida'}[job?.state]||'Sem análise';
+ const choices=intelligenceSessions.map(x=>'<label class="intelligence-session"><input type="checkbox" data-intel-session="'+esc(x.id)+'" '+(intelligenceSelection.has(x.id)?'checked':'')+' '+(!x.connected||working?'disabled':'')+'><span><strong>'+esc(x.name)+'</strong><small>'+esc(x.connected?'Conectado':'Desconectado')+'</small></span></label>').join('');
+ const approved=approval?.enabled&&approval.jobId===job?.id;
+ const canApprove=job?.state==='REVIEW'&&!approved;
+ return '<section class="panel"><span class="kicker">FRANCISCA · INTELIGÊNCIA DE CONVERSAS</span><h2>Aprendizado a partir dos atendimentos</h2>'+
+ '<p class="intro">Analise conversas dos WhatsApps autorizados, identifique padrões de atendimento e gere um relatório e um PLAYBOOK.md. A análise é somente leitura, não envia mensagens e não modifica o comportamento da Francisca sem sua aprovação.</p>'+
+ '<div class="heading"><div><h3>WhatsApps disponíveis para análise</h3><p>Somente sessões liberadas pelo administrador do servidor.</p></div><button class="secondary compact" data-action="intel-refresh" '+(intelligenceBusy?'disabled':'')+'>Atualizar</button></div>'+
+ (choices||'<p class="footnote">'+esc(intelligenceLoaded?'Nenhuma sessão liberada e conectada para análise. Confira a conexão e a lista de permissões.':'Carregando sessões autorizadas...')+'</p>')+
+ '<label class="intelligence-consent"><input id="intel-consent" type="checkbox" '+(working?'disabled':'')+'> Confirmo que tenho autorização para analisar essas conversas para melhoria do atendimento.</label>'+
+ '<div class="actions"><button class="primary" data-action="intel-start" '+(!intelligenceSelection.size||working||intelligenceBusy?'disabled':'')+'>Iniciar análise</button>'+
+ (working?'<button class="secondary" data-action="intel-cancel">Cancelar análise</button>':'')+'</div></section>'+
+ '<section class="panel"><div class="heading"><div><h3>Progresso da análise</h3><p>'+esc(label)+'</p></div><strong>'+Number(job?.percent||0)+'%</strong></div>'+
+ '<div class="intelligence-track" role="progressbar" aria-label="Progresso da análise" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+Number(job?.percent||0)+'"><span style="width:'+Number(job?.percent||0)+'%"></span></div>'+
+ '<p class="footnote">'+(job?esc(job.processed+' de '+job.total+' conversas processadas · '+job.failed+' falhas · '+job.sessionCount+' sessão(ões)'):'Nenhuma análise foi iniciada.')+'</p>'+
+ (job?.error?'<p class="intelligence-error" role="alert">'+esc(job.error)+'</p>':'')+
+ (job?.summary?cards([['Conversas analisadas',job.summary.total,'Atendimentos disponíveis'],['Com resposta',job.summary.replied,'Conversas com mensagens recebidas'],['Interessados',job.summary.outcomes?.interested||0,'Classificações do CRM'],['Vendas',job.summary.outcomes?.sale||0,'Resultados comprovados no CRM']]):'')+
+ (job?.hasReport?'<div class="actions"><button class="secondary" data-action="intel-report">Relatório.md</button><button class="secondary" data-action="intel-playbook">PLAYBOOK.md</button></div>':'')+
+ (canApprove?'<p class="footnote">Revise primeiro o PLAYBOOK.md. Ao aprovar, ele passa a orientar os rascunhos comerciais da Francisca, sem autorizar envios.</p><button class="primary" data-action="intel-approve">Aprovar playbook</button>':'')+
+ (approval?.enabled?'<p class="footnote">Orientação aprovada em '+esc(stamp(approval.reviewedAt))+'.</p><button class="secondary" data-action="intel-revoke">Desativar aprendizado aprovado</button>':'')+
+ (job?.state==='PARTIAL'?'<p class="intelligence-error">Há conversas não lidas. Corrija a conexão e analise novamente antes da aprovação.</p>':'')+
+ '</section>';
+}
+async function refreshIntelligence(fetchSessions=false){
+ try{
+  const [status,sessions]=await Promise.all([api('/api/ai/whatsapp-intelligence/status'),fetchSessions?api('/api/ai/whatsapp-intelligence/sessions'):Promise.resolve(null)]);
+  intelligenceData=status;
+  if(sessions){
+   intelligenceSessions=sessions.sessions||[];
+   if(!intelligenceLoaded){intelligenceSelection=new Set(intelligenceSessions.filter(x=>x.connected).map(x=>x.id));}
+   else intelligenceSelection=new Set([...intelligenceSelection].filter(id=>intelligenceSessions.some(x=>x.id===id&&x.connected)));
+   intelligenceLoaded=true;
+  }
+  if(view==='intelligence')render();
+ }catch(e){n('Inteligência: '+e.message);}
+}
+async function intelligenceAction(action){
+ if(action==='intel-refresh'){await refreshIntelligence(true);return;}
+ if(action==='intel-start'){
+  if(!q('#intel-consent')?.checked)throw Error('Confirme que possui autorização para analisar as conversas.');
+  if(!intelligenceSelection.size)throw Error('Selecione pelo menos uma sessão conectada.');
+  const ids=[...intelligenceSelection];
+  if(!confirm('Analisar '+ids.length+' sessão(ões) autorizada(s)? As mensagens serão lidas somente para gerar métricas agregadas.'))return;
+  await post('/api/ai/whatsapp-intelligence/start',{sessionIds:ids,acknowledged:true});
+  n('Análise iniciada. Nenhuma mensagem será enviada.');
+  await refreshIntelligence();return;
+ }
+ if(action==='intel-cancel'){if(!confirm('Cancelar a análise em andamento?'))return;await post('/api/ai/whatsapp-intelligence/cancel',{});n('Cancelamento solicitado.');await refreshIntelligence();return;}
+ if(action==='intel-report'||action==='intel-playbook'){
+  const job=intelligenceData?.job;if(!job?.id)throw Error('Nenhum documento disponível.');
+  const kind=action==='intel-report'?'report':'playbook';
+  const {markdown}=await api('/api/ai/whatsapp-intelligence/document?job='+encodeURIComponent(job.id)+'&kind='+kind);
+  const blob=new Blob([markdown],{type:'text/markdown;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const anchor=document.createElement('a');anchor.href=url;anchor.download=kind==='report'?'RELATORIO_CONVERSAS.md':'PLAYBOOK.md';document.body.append(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
+  return;
+ }
+ if(action==='intel-approve'||action==='intel-revoke'){
+  const jobId=action==='intel-approve'?intelligenceData?.job?.id:intelligenceData?.approval?.jobId;
+  if(!jobId)throw Error('Nenhum playbook para revisar.');
+  const approve=action==='intel-approve';
+  if(!confirm(approve?'Você revisou o PLAYBOOK.md e aprova sua utilização como orientação nos rascunhos da Francisca?':'Desativar o playbook aprovado?'))return;
+  await post('/api/ai/whatsapp-intelligence/review',{jobId,approve,acknowledged:true});
+  n(approve?'Playbook aprovado. A Francisca poderá usá-lo como orientação, sem envio automático.':'Playbook desativado.');
+  await refreshIntelligence();return;
+ }
+}
+
 function render(){
  shell();
  const el=q("#view");
- el.innerHTML={overview,conversations,prospects:prospecting,connections,settings}[view]();
+ el.innerHTML={overview,conversations,prospects:prospecting,connections,intelligence,settings}[view]();
  if(view==="conversations"&&selectedThread)loadMessages(selectedThread);
  if(view==="connections"&&!wa)refreshWa(false);
 }
@@ -277,7 +350,7 @@ async function loadKanban(){try{kanban=await api('/api/kanban');salesResults=awa
 async function reload(){
  try{
   state=await api("/api/state");lastRefresh=Date.now();
-  if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else render();
+  if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else if(view==="intelligence")await refreshIntelligence(true);else render();
  }catch(e){if(!state)root.innerHTML='<main class="load-error"><h2>Não foi possível abrir o Prospector</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';else n(e.message);}
 }
 document.addEventListener("click",async ev=>{
@@ -298,6 +371,7 @@ document.addEventListener("click",async ev=>{
  if(el.dataset.filter){prospectFilter=el.dataset.filter;selectedLeadIds.clear();approachPreview=null;await loadProspects();return;}
  const action=el.dataset.action;
  try{
+  if(action?.startsWith("intel-")){intelligenceBusy=true;try{await intelligenceAction(action);}finally{intelligenceBusy=false;}return;}
   if(action==="toggle-chat-handoff"){
    const chatId=selectedThread;
    const chosen=[...remoteChats,...(state?.threads||[])].find(x=>x.id===chatId);
@@ -399,6 +473,7 @@ document.addEventListener("submit",async ev=>{
 });
 document.addEventListener("change",async e=>{
  const t=e.target;
+ if(t.dataset?.intelSession){if(t.checked)intelligenceSelection.add(t.dataset.intelSession);else intelligenceSelection.delete(t.dataset.intelSession);return;}
  if(t.id==='approach-offer'){offerType=t.value;return;}
  if(t.dataset?.selectLead){
   const leadId=t.dataset.selectLead;
@@ -413,6 +488,6 @@ document.addEventListener("change",async e=>{
 });
 document.addEventListener("input",e=>{if(e.target.id==="chat-search"){chatFilter=e.target.value;const cursor=e.target.selectionStart;render();const input=q("#chat-search");if(input){input.focus();input.setSelectionRange(cursor,cursor);}}});
 window.addEventListener("hashchange",()=>{const tab=location.hash.split("/")[1];if(tabs[tab]&&tab!==view)nav(tab);});
-setInterval(async()=>{if(document.hidden||busy||q("input:focus,textarea:focus,select:focus"))return;if(view==="connections"){await refreshWa();}else if(view==="conversations"&&Date.now()-lastRefresh>24000){await refreshWa(false);await reload();}else if(Date.now()-lastRefresh>45000&&state){await reload();}},7000);
+setInterval(async()=>{if(document.hidden||busy||q("input:focus,textarea:focus,select:focus"))return;if(view==="intelligence"){await refreshIntelligence();return;}if(view==="connections"){await refreshWa();}else if(view==="conversations"&&Date.now()-lastRefresh>24000){await refreshWa(false);await reload();}else if(Date.now()-lastRefresh>45000&&state){await reload();}},7000);
 await reload();
 await refreshWa();
