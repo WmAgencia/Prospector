@@ -25,6 +25,7 @@ import {outreachQueueSnapshot} from './outreach-queue.mjs';
 import {queueOperatorTest,refreshOperatorReplies,runOperatorDeliveryRetry} from './operator-campaign-check.mjs';
 import {enableInvitationCampaign} from './permission-invitation.mjs';
 import {enableAuthorizedOutreach} from './authorized-outreach.mjs';
+import {activateRequestedProspecting} from './operator-prospecting-recovery.mjs';
 import {importOfficial} from './official-import.mjs';
 import {siteAudit} from './site-audit.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
@@ -722,6 +723,10 @@ const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
 const activation=enableAuthorizedOutreach();
 const invitationActivation=enableInvitationCampaign();
+if(process.env.PROSPECTOR_ENABLE_SAFE_PROSPECTING_NOV03==='true'){
+ try{console.info('[prospecting activation]',JSON.stringify(activateRequestedProspecting()));}
+ catch(err){console.error('[prospecting activation]',String(err?.message||err).slice(0,150));}
+}
 const invitationQueue=outreachQueueSnapshot();
 console.log('[invitation campaign]',JSON.stringify({...invitationActivation,ready:invitationQueue.ready,waiting:invitationQueue.awaitingConsent,paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}));
 console.log('[authorized outreach]',activation.status,'ready='+activation.ready,'waiting='+activation.awaitingConsent);

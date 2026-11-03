@@ -2,10 +2,20 @@
 # The original Baileys socket and Prisma database remain unchanged.
 FROM node:22-bookworm-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends git python3 make g++ ca-certificates openssl libc6 libstdc++6 libnss3 libglib2.0-0 libx11-6 libxext6 libasound2 libgbm1 && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 https://github.com/mrifqidaffaaditya/WA-AKG.git /app \
- && cd /app && git checkout 40dc3f14b51bdc9e7b0ad96003594adeabb85b34
-RUN git clone --depth 1 https://github.com/paulohsilvestre/wa-node-call-ba.git /tmp/voice-source \
- && cd /tmp/voice-source && git checkout f9db8e52f8c0d915f1a1c29f009506e7ec2bf02c
+# Pin the exact commits: shallow-cloning default HEAD then checking out an older
+# SHA fails when upstream moves. GitHub accepts an explicit SHA fetch.
+RUN git init /app \
+ && cd /app \
+ && git remote add origin https://github.com/mrifqidaffaaditya/WA-AKG.git \
+ && git -c protocol.version=2 fetch --depth=1 origin 40dc3f14b51bdc9e7b0ad96003594adeabb85b34 \
+ && git checkout --detach FETCH_HEAD \
+ && test "$(git rev-parse HEAD)" = "40dc3f14b51bdc9e7b0ad96003594adeabb85b34"
+RUN git init /tmp/voice-source \
+ && cd /tmp/voice-source \
+ && git remote add origin https://github.com/paulohsilvestre/wa-node-call-ba.git \
+ && git -c protocol.version=2 fetch --depth=1 origin f9db8e52f8c0d915f1a1c29f009506e7ec2bf02c \
+ && git checkout --detach FETCH_HEAD \
+ && test "$(git rev-parse HEAD)" = "f9db8e52f8c0d915f1a1c29f009506e7ec2bf02c"
 WORKDIR /app
 COPY patch.py /tmp/patch.py
 RUN python3 /tmp/patch.py
