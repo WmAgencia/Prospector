@@ -164,3 +164,17 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
  .chat-handoff{width:100%;margin-left:0}
  .chat-panel .composer .primary{min-width:75px}
 }
+
+
+/* WhatsApp intelligence: opt-in analytics and review */
+.intelligence-session{display:flex;align-items:center;gap:13px;border:1px solid var(--border);padding:13px 15px;border-radius:12px;margin:9px 0;background:#f9fcf9;cursor:pointer}
+.intelligence-session input{width:17px;height:17px;accent-color:#227950}
+.intelligence-session span{display:grid;gap:3px}
+.intelligence-session strong{font-weight:760;font-size:12px}
+.intelligence-session small{font-size:11px;color:var(--muted)}
+.intelligence-consent{display:flex;align-items:flex-start;gap:10px;margin:20px 0 15px;max-width:670px;font-size:12px;color:var(--ink2);line-height:1.6}
+.intelligence-consent input{accent-color:#227950;width:17px;height:17px;flex:none;margin-top:2px}
+.intelligence-track{height:12px;width:100%;border-radius:30px;background:#e6efe8;overflow:hidden;margin:16px 0 12px}
+.intelligence-track>span{display:block;height:100%;background:linear-gradient(90deg,#227950,#6ccf95);border-radius:30px;transition:width .35s ease}
+.intelligence-error{margin:14px 0;color:#8f452e;background:#fff5ef;border:1px solid #f0d4c7;border-radius:9px;padding:11px 13px;font-size:12px}
+@media(max-width:640px){.intelligence-session{padding:12px}.intelligence-consent{font-size:11px}}
