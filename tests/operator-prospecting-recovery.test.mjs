@@ -8,6 +8,7 @@ process.env.PROSPECTOR_DATA_DIR=dir;
 const db=await import('../dashboard/db.mjs');
 const {activateRequestedProspecting}=await import('../dashboard/operator-prospecting-recovery.mjs');
 const {budgetConfig}=await import('../dashboard/radar.mjs');
+const {buildConsecomSteps}=await import('../dashboard/consecom-flow.mjs');
 test('One-shot activation starts research and 90 second spacing but never picks arbitrary campaign or sends',()=>{
  db.setSetting('paused',true);db.setSetting('automation_enabled',false);
  db.setSetting('discovery_auto_enabled',false);
@@ -44,7 +45,6 @@ test('Only fully valid preselected campaign can be unpaused',()=>{
   db.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)',
   id,kind,kind==='audio'?'audio/ogg':'video/mp4',id+'.'+ext,4,db.now());
  }
- const {buildConsecomSteps}=await import('../dashboard/consecom-flow.mjs');
  const flow=db.id();db.run('INSERT INTO workflows(id,name,is_default,version,steps,created_at,updated_at,segments_json,enabled) VALUES(?,?,?,?,?,?,?,?,?)',
  flow,'Campanha revisada',0,1,JSON.stringify(buildConsecomSteps({audioId:a,videoId:v})),db.now(),db.now(),'[]',1);
  db.setSetting('autonomous_campaign_id',flow);
