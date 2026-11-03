@@ -14,6 +14,25 @@ const flags = s => {
   };
 };
 const percentage = (n,d) => d ? Math.round(n*100/d) : 0;
+export function summarizeConversationSignals(messages){
+ if(!Array.isArray(messages)||messages.length>5000)throw Error('Quantidade de mensagens inválida');
+ let inbound=0,outbound=0,first=true,repeated=0,prices=0,short=0,question=false,cta=false;
+ const seen=new Set();
+ for(const m of messages){
+  if(!m||!['in','out'].includes(m.direction))continue;
+  if(m.id!=null){if(seen.has(String(m.id)))continue;seen.add(String(m.id));}
+  if(m.direction==='in'){inbound++;continue;}
+  outbound++;
+  const s=typeof m.body==='string'?m.body:'';
+  const f=flags(s);
+  question ||= f.question;cta ||= f.cta;short+=Number(f.concise);
+  if(!first&&f.greeting)repeated++;
+  first=false;
+  if(/(?:r\$ ?\d|\bpreço\b|\bpreco\b|\bvalor\b|\bdesconto\b)/iu.test(s))prices++;
+ }
+ return {inbound,outbound,repeated,prices,question,cta,concise:outbound>0&&short/outbound>=0.75};
+}
+
 export function analyzeAuthorizedConversations({
   tenantId,authorized,conversations,generatedAt=new Date().toISOString(),onProgress=()=>{}
 }={}) {
@@ -31,34 +50,22 @@ export function analyzeAuthorizedConversations({
     if (!chat || chat.tenantId !== tenantId) throw Error('Violação de isolamento entre empresas');
     if (!chat.isGroup) {
       if (!labels.includes(chat.outcome || 'unclassified')) throw Error('Classificação de resultado inválida');
-      if (!Array.isArray(chat.messages) || chat.messages.length > 5000) throw Error('Quantidade de mensagens inválida');
+      const stats=chat.signals || summarizeConversationSignals(chat.messages);
+      for(const n of ['inbound','outbound','repeated','prices']){
+       if(!Number.isSafeInteger(stats?.[n])||stats[n]<0||stats[n]>5000)throw Error('Métricas da conversa inválidas');
+      }
+      for(const k of ['question','cta','concise'])if(typeof stats[k]!=='boolean')throw Error('Sinal inválido');
       result.total++;
       const outcome = chat.outcome || 'unclassified';
       outcomes[outcome]++;
-      let inbound=0,outbound=0,first=true,repeated=0,prices=0,short=0;
-      let question=false,cta=false;
-      const seen=new Set();
-      for (const m of chat.messages) {
-        if (!m || !['in','out'].includes(m.direction)) continue;
-        if (m.id != null) {if(seen.has(String(m.id)))continue;seen.add(String(m.id));}
-        if(m.direction==='in'){inbound++;continue;}
-        outbound++;
-        const s=String(typeof m.body==='string'?m.body:'');
-        const f=flags(s);
-        question ||= f.question;
-        cta ||= f.cta;
-        short+=Number(f.concise);
-        if(!first && f.greeting)repeated++;
-        first=false;
-        if(/(?:r\$ ?\d|\bpreço\b|\bpreco\b|\bvalor\b|\bdesconto\b)/iu.test(s))prices++;
-      }
+      const {inbound,outbound,repeated,prices,question,cta,concise}=stats;
       result.messagesIn+=inbound;
       result.messagesOut+=outbound;
       result.replied+=Number(inbound>0);
       result.repeatGreetings+=repeated;
       result.pricingMessages+=prices;
       const success=outcome==='interested'||outcome==='sale';
-      for (const [name,used] of Object.entries({question,cta,concise:outbound>0 && short/outbound>=0.75})) {
+      for (const [name,used] of Object.entries({question,cta,concise})) {
         if(used){tactics[name].count++;tactics[name].success+=Number(success);}
       }
     }
@@ -86,6 +93,18 @@ export function analyzeAuthorizedConversations({
       '- '+name+': '+t.success+'/'+t.count+' conversas com interesse/venda ('+percentage(t.success,t.count)+'%).');
   }
   lines.push('','## Privacidade','Somente estatísticas agregadas. Sem nomes, telefones, identificadores nem trechos de mensagens. Grupos excluídos. Revisão humana obrigatória.','');
+  const safeSuggestions=[];
+  const positives=outcomes.interested+outcomes.sale;
+  for(const [key,t] of Object.entries(tactics)){
+   const rest=result.total-t.count;
+   const otherSuccess=positives-t.success;
+   if(t.count<5||rest<5)continue;
+   const used=t.success/t.count,notUsed=otherSuccess/rest;
+   if(used-notUsed>=0.15){
+    const guidance={question:'Perguntas relevantes antes de sugerir soluções',cta:'Convite claro para conversar ou agendar',concise:'Mensagens concisas e objetivas'}[key];
+    safeSuggestions.push('- '+guidance+': associado a '+percentage(t.success,t.count)+'% de interesse/vendas em '+t.count+' conversas, vs. '+percentage(otherSuccess,rest)+'% sem o sinal. Validar em teste controlado; não trate como causal.');
+   }
+  }
   const playbook=[
     '# PLAYBOOK.md (rascunho; aprovação humana obrigatória)',
     '',
@@ -94,6 +113,7 @@ export function analyzeAuthorizedConversations({
     '- Respeite opt-out; não envie mensagens com base neste documento.',
     '- Resultados do CRM são associações, não provas de causalidade.',
     '- Conversas analisadas: '+result.total,
+    ...(safeSuggestions.length?safeSuggestions:['- Dados insuficientes para apontar uma tática superior; manter linguagem contextual e realizar avaliação controlada.']),
     '- Status: PENDENTE_DE_APROVACAO',''
   ].join('\n');
   return {status:'PENDING_HUMAN_REVIEW',progress:100,summary:result,reportMarkdown:lines.join('\n'),playbookMarkdown:playbook};
