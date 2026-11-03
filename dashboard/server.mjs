@@ -721,12 +721,12 @@ async function handler(req,res){
 }
 const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
+const activation=enableAuthorizedOutreach();
+const invitationActivation=enableInvitationCampaign();
 if(process.env.PROSPECTOR_ENABLE_SAFE_PROSPECTING_NOV03==='true'){
  try{console.info('[prospecting activation]',JSON.stringify(activateRequestedProspecting()));}
  catch(err){console.error('[prospecting activation]',String(err?.message||err).slice(0,150));}
 }
-const activation=enableAuthorizedOutreach();
-const invitationActivation=enableInvitationCampaign();
 const invitationQueue=outreachQueueSnapshot();
 console.log('[invitation campaign]',JSON.stringify({...invitationActivation,ready:invitationQueue.ready,waiting:invitationQueue.awaitingConsent,paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}));
 console.log('[authorized outreach]',activation.status,'ready='+activation.ready,'waiting='+activation.awaitingConsent);
