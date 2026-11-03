@@ -37,6 +37,7 @@ import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
+import {intelligenceSessions,intelligenceStatus,startIntelligence,cancelIntelligence,intelligenceDocument,reviewIntelligence} from './whatsapp-intelligence-jobs.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
 import {recordInboundTranscript} from './waakg-bridge.mjs';
 import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inbound.mjs';
@@ -448,6 +449,15 @@ async function handler(req,res){
   }
   if(req.method==='GET'&&pathname==='/api/whatsapp/interactive-preview'){try{return respond(res,200,interactivePreview({mode:url.searchParams.get('mode')||'introduction'}));}catch(e){return respond(res,400,{error:e.message});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/interactive-send'){const result=await sendApprovedInteractive(await json(req));if(result.status===200)notify();return respond(res,result.status,result.body);}
+  if(req.method==='GET'&&pathname==='/api/ai/whatsapp-intelligence/sessions')return respond(res,200,await intelligenceSessions());
+  if(req.method==='GET'&&pathname==='/api/ai/whatsapp-intelligence/status')return respond(res,200,intelligenceStatus());
+  if(req.method==='POST'&&pathname==='/api/ai/whatsapp-intelligence/start'){const r=await startIntelligence(await json(req));return respond(res,r.status,r.body);}
+  if(req.method==='POST'&&pathname==='/api/ai/whatsapp-intelligence/cancel'){const r=cancelIntelligence();return respond(res,r.status,r.body);}
+  if(req.method==='POST'&&pathname==='/api/ai/whatsapp-intelligence/review'){const r=reviewIntelligence(await json(req));return respond(res,r.status,r.body);}
+  if(req.method==='GET'&&pathname==='/api/ai/whatsapp-intelligence/document'){
+   const markdown=intelligenceDocument(url.searchParams.get('job')||'',url.searchParams.get('kind')||'');
+   return markdown===null?respond(res,404,{error:'Documento não encontrado'}):respond(res,200,{markdown});
+  }
   if(req.method==='GET'&&pathname==='/api/whatsapp/status')return respond(res,200,await waControlStatus());
   if(req.method==='GET'&&pathname==='/api/whatsapp/qr')return respond(res,200,await waGetQR());
   if(req.method==='POST'&&pathname==='/api/whatsapp/connect'){try{return respond(res,200,await waConnect());}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
