@@ -181,7 +181,6 @@ function intelligence(){
  '</section>';
 }
 async function refreshIntelligence(fetchSessions=false){
- if(intelligenceBusy)return;
  try{
   const [status,sessions]=await Promise.all([api('/api/ai/whatsapp-intelligence/status'),fetchSessions?api('/api/ai/whatsapp-intelligence/sessions'):Promise.resolve(null)]);
   intelligenceData=status;
