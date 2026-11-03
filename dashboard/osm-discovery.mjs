@@ -64,7 +64,13 @@ export const SEGMENTS={
   papelaria:{label:'Papelarias',filter:'shop',value:'stationery'},
   hamburgueria:{label:'Fast food',filter:'amenity',value:'fast_food'}
 };
-const base='https://overpass-api.de/api/interpreter';
+// Public Overpass is best-effort. Prefer the maintained Private.coffee
+// endpoint; the old overpass.kumi.systems alias can hang indefinitely.
+export const DEFAULT_OVERPASS_ENDPOINT='https://overpass.private.coffee/api/interpreter';
+export const FALLBACK_OVERPASS_ENDPOINT='https://maps.mail.ru/osm/tools/overpass/api/interpreter';
+export function overpassEndpoints(configured=process.env.OVERPASS_ENDPOINT){
+ return [...new Set([configured||DEFAULT_OVERPASS_ENDPOINT,DEFAULT_OVERPASS_ENDPOINT,FALLBACK_OVERPASS_ENDPOINT])].slice(0,3);
+}
 const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function resolveLocation(s){return LOCATIONS[normalize(s)]||null;}
 export function resolveSegment(s){
@@ -123,21 +129,26 @@ export async function discoverLocal(payload={},automatic=false){
   // Registre ANTES da requisição: também conta falhas e protege a API comunitária.
   const attemptId=id();run('INSERT INTO discoveries VALUES(?,?,?,?,?,?)',attemptId,searchKey,0,now(),'RUNNING',JSON.stringify({examined:0,automatic}));
   // Evite tratar falha temporária de um endpoint comunitário como inexistência de empresas.
-  // Uma tentativa por provedor, até dois provedores no total, sem repetição em HTTP 429.
-  const endpoints=[process.env.OVERPASS_ENDPOINT||base,'https://overpass.kumi.systems/api/interpreter']
-   .filter((v,i,a)=>a.indexOf(v)===i);
+  // A single request per host, with two independent providers as fallback.
+  // 429 must never be retried at the same provider.
+  const endpoints=overpassEndpoints();
   let response=null;
-  for(const endpoint of endpoints.slice(0,2)){
+  for(const [index,endpoint] of endpoints.entries()){
    try{
     response=await fetch(endpoint,{
      method:'POST',
      headers:{'Content-Type':'application/x-www-form-urlencoded; charset=utf-8','User-Agent':'ConsecomProspector/1.2 (business research; contact: wmagenciasuporte@gmail.com)','Accept':'application/json'},
      body:new URLSearchParams({data:makeQuery(location,segment)}),
-     signal:AbortSignal.timeout(31000)
+     signal:AbortSignal.timeout(26000)
     });
-    if(response.ok||!([502,503,504].includes(response.status)))break;
-    console.warn('[osm discovery] Upstream temporarily unavailable:',response.status);
-   }catch(err){if(endpoint===endpoints[Math.min(endpoints.length,2)-1])throw err;response=null;}
+    if(response.ok)break;
+    if(response.status===429)throw Error('Overpass respondeu HTTP 429 (limite da API comunitária)');
+    if(![502,503,504].includes(response.status)||index===endpoints.length-1)break;
+    console.warn('[osm discovery] upstream temporarily unavailable:',response.status);
+   }catch(err){
+    if(index===endpoints.length-1)throw err;
+    response=null;
+   }
   }
   if(!response)throw Error('Fontes comunitárias do Overpass indisponíveis');
   if(!response.ok)throw Error('Overpass respondeu HTTP '+response.status+(response.status===429?' (limite da API comunitária)':''));
