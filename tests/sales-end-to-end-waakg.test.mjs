@@ -140,7 +140,7 @@ test('No generated price is safe without individual operator approval',()=>{
 });
 test('Named greeting waits for reply, sends Wesley exactly after 30s and transfers proposal to Francisca',async()=>{
  const lead=eligible('Mecânica Silva');
- assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true}).status,202);
+ assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
  time+=90_000;
  assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
  assert.match(sent.at(-1).text,/Olá, (?:bom dia|boa tarde|boa noite)! Tudo bem\?/);
