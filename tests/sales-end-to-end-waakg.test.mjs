@@ -211,4 +211,46 @@ test('Francisca never treats a second hello as a new conversation, even on an in
   else process.env.AI_CONVERSATION_AUTOSEND=previous;
  }
 });
+
+test('Integrated WA bridge ignores a fictional automated menu and does not schedule Wesley introduction',async()=>{
+ const lead=eligible('Oficina Menu Automático Fictícia');
+ assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
+ time+=90000;
+ assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
+ assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
+ const unique='consecom-principal:fictional-autoreply-001';
+ const response=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',unique,content:'Mensagem automática: digite 1 orçamento, 2 suporte.'});
+ assert.equal(response.status,200);
+ assert.equal(db.one('SELECT state FROM waakg_inbox WHERE provider_id=?',unique).state,'AUTO_REPLY');
+ assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
+ assert.equal(db.one('SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id=?',unique).n,0);
+ assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
+});
+test('Integrated Francisca falls back safely when Groq fabricates R$350, 90% and four-day terms',async()=>{
+ const lead=eligible('Buffet Fictício Guardrail');
+ assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
+ time+=90000;
+ assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
+ const first='consecom-principal:fictional-guardrail-hello';
+ assert.equal(recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',unique:first,content:'Oi, tudo bem?'}).status,200);
+ const due=Date.parse(introductionStatus(lead.id).due_at);
+ const mock={session:()=> 'consecom-principal',status:async()=>({connected:true}),send:async()=>({status:true})};
+ assert.equal((await tickIntroductions({...mock,currentTime:()=>due})).state,'SENT');
+ const second='consecom-principal:fictional-guardrail-ads';
+ assert.equal(recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',unique:second,content:'Vocês trabalham com anúncios e tráfego pago também?'}).status,200);
+ assert.equal(introductionStatus(lead.id).stage,'CONVERSING');
+ let draftCalls=0;let sentText='';
+ const result=await handleSalesTurn(second,{
+  qualify:async()=>({confirmed:false,reason:'NO_COMMITMENT'}),
+  status:async()=>({connected:true,sessionId:'consecom-principal'}),
+  draft:async()=>{draftCalls++;return {ok:true,draft:'Fechamos por R$ 350, com 90% de desconto, pagamento 50% antes e entrega garantida em 4 dias.'};},
+  send:async(_path,{data})=>{sentText=data.message.text;return {status:true};}
+ });
+ assert.equal(result.state,'SENT');
+ assert.equal(draftCalls,1);
+ assert.match(sentText,/publicidade e tecnologia|gestão de anúncios/i);
+ assert.doesNotMatch(sentText,/R\$\s*350|90\s*%|50\s*%|garantida em 4 dias/i);
+ assert.ok(db.one("SELECT 1 FROM audit WHERE action='FRANCISCA_SAFE_FALLBACK' AND lead_id=?",lead.id));
+ assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
+});
 test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
