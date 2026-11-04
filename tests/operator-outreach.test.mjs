@@ -63,8 +63,8 @@ test('operator approval cannot bypass owner, client, optout or human takeover',(
 });
 test('greeting uses Sao Paulo day period and cleans the recipient name',async()=>{
  const {greetingForProspect}=await import('../dashboard/prospecting-introduction.mjs');
- assert.equal(greetingForProspect({name:'Ana'},new Date('2026-10-30T12:00:00Z')),'Olá, Ana, bom dia! Tudo bem?');
- assert.match(greetingForProspect({business:'Empresa'},new Date('2026-10-30T19:00:00Z')),/boa tarde/);
+ assert.equal(greetingForProspect({name:'Ana',name_verified:true},new Date('2026-10-30T12:00:00Z')),'Olá, Ana, bom dia! Tudo bem?');
+ assert.equal(greetingForProspect({name:'Ana',business:'Empresa'},new Date('2026-10-30T19:00:00Z')),'Olá, boa tarde! Tudo bem?');
  assert.match(greetingForProspect({business:'Empresa'},new Date('2026-10-30T23:00:00Z')),/boa noite/);
 });
 test.after(()=>{db.db.close();fs.rmSync(dir,{recursive:true,force:true});});
