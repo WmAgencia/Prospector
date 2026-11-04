@@ -6,7 +6,7 @@ const tabs={overview:"Visão geral",conversations:"Conversas",prospects:"Prospec
 let offerType='portfolio';
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
 let view=["overview","conversations","prospects","connections","settings"].includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
-let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false;
+let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false;
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
 function newProspectSession(){
  const token=crypto.randomUUID();
@@ -119,7 +119,12 @@ function prospecting(){
  const records=d.results||[],available=records.filter(p=>p.selectable);
  const allSelected=available.length>0&&available.every(p=>selectedLeadIds.has(p.id));
  const count=records.length,waiting=approachQueue?.waiting||0,active=!!approachQueue?.active;
+ const intelligence=mapsResearch?.intelligence||null,stock=intelligence?.stock||null,plan=intelligence?.lastPlan||null;
  return '<div class="prospect-simple">'+
+  '<section class="panel"><div class="heading"><div><h2>Pesquisa inteligente com Groq</h2><p>Busca empresas sozinha desde as 5h e repõe contatos para sua seleção.</p></div><span class="tag '+(intelligence?.enabled?'green':'')+'">'+(intelligence?.enabled?'Pesquisa automática ativa':'Verificando')+'</span></div>'+
+  '<p class="footnote">'+(stock?'Contatos elegíveis com telefone: <strong>'+Number(stock.ready||0)+'</strong> · Meta de estoque: '+Number(stock.target||60)+'. ':'')+
+  (plan?'Última prioridade: <strong>'+esc(plan.niche||'')+' em '+esc(plan.city||'')+'</strong> ('+(plan.source==='groq'?'Groq':'prioridade local')+').':'A inteligência comercial escolhe os nichos conforme os resultados confirmados.')+
+  '</p><p class="footnote">Você continua escolhendo quem abordar. Nenhuma mensagem é enviada durante a pesquisa.</p></section>'+
   '<section class="panel prospect-search-simple"><div class="heading"><div><h2>Pesquisar empresas</h2><p>Informe o ramo e a cidade para encontrar oportunidades.</p></div></div>'+
   '<form id="search-form" class="search-form"><label>Ramo de atividade<input id="niche" class="field" name="niche" value="'+esc(niche)+'" placeholder="Ex.: oficina mecânica" maxlength="85" autocomplete="off"></label><label>Cidade<input id="city" class="field" name="city" value="'+esc(city)+'" placeholder="Ex.: Sorocaba" maxlength="85" autocomplete="address-level2"></label><button type="submit" class="primary" '+(busy?'disabled':'')+'>'+glyph('search')+' '+(busy?'Pesquisando...':'Pesquisar')+'</button></form>'+
   (mapsJob?'<p role="status">Google Maps: '+esc(mapsJob.status)+(mapsJob.error?' · '+esc(mapsJob.error):'')+'. A pesquisa não garante cobertura completa.</p>':'')+
@@ -256,9 +261,10 @@ async function loadProspects(){
  prospectLoading=true;
  try{
   const params=new URLSearchParams({niche,city,status:prospectFilter,session:prospectSession});
-  const [base,queue]=await Promise.all([api("/api/prospecting?"+params.toString()),api("/api/prospecting/queue").catch(()=>null)]);
+  const [base,queue,maps]=await Promise.all([api("/api/prospecting?"+params.toString()),api("/api/prospecting/queue").catch(()=>null),api("/api/maps/status").catch(()=>null)]);
   prospects=base;
   approachQueue=queue;
+  mapsResearch=maps;
   if(view==="prospects")render();
  }catch(e){prospectError=e.message;if(view==="prospects")render();n(e.message);}finally{prospectLoading=false;}
 }
