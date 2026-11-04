@@ -51,14 +51,20 @@ export function prospectingList({niche="",city="",status="uncontacted",limit=500
   return loc&&nicheOK;
  });
  const contacted=matches.filter(l=>l.previously_contacted||l.sent_message||l.stage!=="DISCOVERED"||l.suppressed);
- const uncontacted=matches.filter(l=>recontactDecision(l).eligible);
- const selected=status==="contacted"?contacted:status==="all"?matches:uncontacted;
+ const decisionByLead=new Map(matches.map(l=>[l.id,recontactDecision(l)]));
+ const uncontacted=matches.filter(l=>decisionByLead.get(l.id).eligible);
+ // Business records without phone remain visible, but put actionable contacts
+ // at the top so the operator can select them without wading through records
+ // whose WhatsApp destination cannot yet be verified.
+ const actionable=uncontacted.filter(l=>Boolean(l.phone)).length;
+ const selected=status==="contacted"?contacted:status==="all"?matches:
+  [...uncontacted].sort((a,b)=>Number(Boolean(b.phone))-Number(Boolean(a.phone)));
  const max=Math.min(Math.max(1,Number(limit)||500),6000);
- return {total:matches.length,uncontacted:uncontacted.length,contacted:contacted.length,returned:Math.min(selected.length,max),results:selected.slice(0,max).map(({previously_contacted,sent_message,suppressed,notes,...x})=>({
+ return {total:matches.length,uncontacted:uncontacted.length,actionable,missingPhone:uncontacted.length-actionable,contacted:contacted.length,returned:Math.min(selected.length,max),results:selected.slice(0,max).map(({previously_contacted,sent_message,suppressed,notes,...x})=>({
   ...x,contacted:!!(previously_contacted||sent_message||suppressed||x.stage!=="DISCOVERED"),
-  selectable:!!x.phone&&recontactDecision(x).eligible,
-  recontactEligible:recontactDecision(x).eligible&&!recontactDecision(x).fresh,
-  nextEligibleAt:recontactDecision(x).eligibleAt||null,
+  selectable:!!x.phone&&decisionByLead.get(x.id).eligible,
+  recontactEligible:decisionByLead.get(x.id).eligible&&!decisionByLead.get(x.id).fresh,
+  nextEligibleAt:decisionByLead.get(x.id).eligibleAt||null,
   // Links open for operator review. Google Maps search is used when the source
   // does not provide a verified place URL; no fake place ID is invented.
   maps_url:(String(notes||"").match(/https:\/\/(?:www\.)?google\.[a-z.]+\/maps[^\s|]*/i)||[])[0]||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(x.business+' '+(x.city||'')),
@@ -67,7 +73,7 @@ export function prospectingList({niche="",city="",status="uncontacted",limit=500
   // Public commercial records can be reviewed and contacted individually by the
   // operator, but this does NOT authorize automated WA-AKG dispatch.
   // Suppressed, active and otherwise ineligible records never get a link.
-  manual_contact_url:x.phone&&!suppressed&&recontactDecision(x).eligible?
+  manual_contact_url:x.phone&&!suppressed&&decisionByLead.get(x.id).eligible?
    'https://wa.me/'+encodeURIComponent(x.phone)+'?text='+encodeURIComponent(greetingForProspect(x)):null,
   needs_permission:x.contact_permission!==1||!documentedOptIn(x.id)
  })),partial:allRows.length===6000,source:"Base do Prospector",note:"Não contatada significa sem envio registrado, desconsiderando números bloqueados. O sistema não conhece contatos feitos fora do Prospector."};
