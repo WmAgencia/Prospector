@@ -4,6 +4,7 @@ import {selectedWaSession,waControlStatus,waRequest} from './waakg-control.mjs';
 import {verifiedOwnerPhone,classifyContact,hasExistingClientRelationship} from './whatsapp-roles.mjs';
 import {personalPhone} from './personal-concierge.mjs';
 import {conversationAuthorized,operatorOffer} from './operator-outreach.mjs';
+import {fixedOfferPriceReply} from './portfolio-offer-550.mjs';
 
 const TARGET='5515981817336';
 db.exec("CREATE TABLE IF NOT EXISTS owner_price_demos(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT NOT NULL,choice TEXT,created_at TEXT NOT NULL)");
@@ -39,15 +40,16 @@ export function requestPriceApproval(input={},deps={}){
  if(pending&&eligible(pending,deps))return {ok:true,request:pending};
  if(pending)run("UPDATE owner_price_approvals SET state='INVALIDATED',updated_at=? WHERE id=? AND state='PENDING'",now(),pending.id);
  const requestId=id(),at=new Date(clock(deps)).toISOString();
- const suggested=({portfolio:350,promotion:550,corporate:1500})[operatorOffer(lead.id)]||550;
+ const suggested=({portfolio:550,promotion:550,corporate:1500})[operatorOffer(lead.id)]||550;
  run('INSERT INTO owner_price_approvals(id,lead_id,provider_id,session_id,phone,lead_stage,question,suggested_price,created_at,expires_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',requestId,lead.id,String(input.providerId),session,lead.phone,lead.stage,String(input.question||input.inbound||'Pedido de proposta').slice(0,1200),[350,550,1500].includes(input.suggestedPrice)?input.suggestedPrice:suggested,at,new Date(clock(deps)+24*3600000).toISOString(),at);
  audit('PRICE_APPROVAL_REQUESTED',lead.id,{requestId});
  return {ok:true,request:one('SELECT * FROM owner_price_approvals WHERE id=?',requestId)};
 }
 export function approvedPriceForLead(leadId){return one("SELECT price FROM owner_price_approvals WHERE lead_id=? AND state='APPROVED' ORDER BY rowid DESC LIMIT 1",leadId)?.price??null;}
-export function priceQuote(price){
+export function priceQuote(price,offerType=null){
  if(![350,550,1500].includes(price))throw Error('Preço inválido');
- return `Para o seu projeto, a proposta é de R$ ${price}, com 50% para iniciar (R$ ${price/2}) e 50% na entrega (R$ ${price/2}). O prazo mínimo é de 4 dias; o prazo final depende do escopo combinado. Podemos alinhar os detalhes?`;
+ if(offerType==='portfolio'&&price===550)return fixedOfferPriceReply();
+ return `Para este projeto, o valor aprovado é de R$ ${price}. A forma de pagamento, os itens incluídos e o prazo precisam ser confirmados com o responsável antes de iniciarmos. Podemos alinhar os detalhes?`;
 }
 const pathFor=(session,jid,kind)=>'/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(jid)+'/'+kind;
 const safeUrl=value=>{try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)?u.href:null;}catch{return null;}};
@@ -79,7 +81,7 @@ export async function flushPriceApprovals(deps={}){
   let number;try{number=await businessPhone(r.session_id,deps);}catch{continue;}if(!number)continue;
   const lead=one('SELECT * FROM leads WHERE id=?',r.lead_id);
   const link=choice=>'https://wa.me/'+number+'?text='+encodeURIComponent('PRECO '+r.id+' '+choice);
-  const body=`${lead.business}\nContato: ${lead.name||lead.business}\nTelefone: ${r.phone}\nhttps://wa.me/${r.phone}\n${leadLinks(lead)}\nPergunta: ${r.question}\nSugestão: R$ ${r.suggested_price} (portfólio: R$ 350; confirmar escopo).\n50% para iniciar, 50% na entrega. Prazo mínimo: 4 dias, conforme escopo.\n`+[350,550,1500,'RECUSAR','ASSUMIR'].map(x=>x+': '+link(x)).join('\n');
+  const body=`${lead.business}\nContato: ${lead.name||lead.business}\nTelefone: ${r.phone}\nhttps://wa.me/${r.phone}\n${leadLinks(lead)}\nPergunta: ${r.question}\nSugestão: R$ ${r.suggested_price} (site de portfólio base: R$ 550; domínio por um ano; prazo previsto até três dias após materiais e escopo).\nParcelamento e serviços fora do site base exigem confirmação do responsável.\n`+[350,550,1500,'RECUSAR','ASSUMIR'].map(x=>x+': '+link(x)).join('\n');
   if(!run("UPDATE owner_price_approvals SET notice_state='SENDING' WHERE id=? AND notice_state='PENDING' AND state='PENDING'",r.id).changes)continue;
   try{
    // Plain-text links are an intentional first part: they remain available even
@@ -127,7 +129,7 @@ export async function processPriceDecision(event={},deps={}){
  }
  const status=await (deps.getStatus||waControlStatus)();
  if(!status.connected||status.sessionId!==r.session_id||selected(deps)!==r.session_id||!eligible(r,deps))return fail('WhatsApp ou conversa indisponível.');
- const price=Number(choice),quote=priceQuote(price);
+ const price=Number(choice),quote=priceQuote(price,operatorOffer(r.lead_id));
  if(!run("UPDATE owner_price_approvals SET state='SENDING',price=?,decision_provider_id=?,updated_at=? WHERE id=? AND state='PENDING'",price,event.providerId,now(),r.id).changes)return fail('Pedido já utilizado.');
  try{
   // Recheck after reservation and immediately before entering transport.
