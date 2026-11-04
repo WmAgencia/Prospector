@@ -70,7 +70,16 @@ export async function waControlStatus(){
   const target=(sessionId?arr.find(x=>x.sessionId===sessionId):arr.find(x=>x.sessionId==="consecom-principal"))||null;
   if(target&&!sessionId)setSetting(sessionKey,target.sessionId);
   const picked=target?.sessionId||sessionId;
-  return {ok:true,connected:target?.status==="CONNECTED",status:target?.status||"DISCONNECTED",sessionId:picked,hasSession:!!target,totalSessions:arr.length,qrAvailable:!!target&&target.status!=="CONNECTED"};
+  if(!target)return {ok:true,connected:false,status:"DISCONNECTED",sessionId:picked,hasSession:false,totalSessions:arr.length,qrAvailable:false};
+  // The session LIST is backed by persisted DB state; it can keep saying
+  // CONNECTED after the actual WA-AKG socket disappears. Confirm a live
+  // instance and its authenticated identity before reporting online.
+  const detail=await waRequest("/api/sessions/"+encodeURIComponent(picked));
+  const live=detail?.data||{};
+  const status=String(live.status||target.status||"DISCONNECTED");
+  const connected=status==="CONNECTED"&&live.hasInstance===true&&Boolean(live.me?.id||live.me?.jid);
+  return {ok:true,connected,status:connected?"CONNECTED":status==="CONNECTED"?"DISCONNECTED":status,
+   sessionId:picked,hasSession:true,totalSessions:arr.length,qrAvailable:!connected};
  }catch(e){return {ok:false,connected:false,status:"ERROR",message:String(e.message).slice(0,180),sessionId,hasSession:!!sessionId};}
 }
 export async function waConnect(){
@@ -108,9 +117,26 @@ export async function waGetQR(){
  }
 }
 export async function waDisconnect(){
- const sid=selectedWaSession();if(!sid)return {ok:true,connected:false};
- await waRequest("/api/sessions/"+encodeURIComponent(sid)+"/stop",{method:"POST",data:{}});
- return {ok:true,connected:false};
+ const current=await waControlStatus();
+ if(!current.ok)throw Error("Não foi possível verificar o WhatsApp antes da desconexão. Confira a conexão do gateway.");
+ if(!current.hasSession)return {ok:true,connected:false,status:"DISCONNECTED",verified:true};
+ const sid=current.sessionId;
+ // stop only pauses the socket; logout revokes the pairing and requires a
+ // fresh QR Code. Never claim success before read-back verification.
+ setSetting("paused",true);
+ setSetting("waakg_disconnect_requested_at",new Date().toISOString());
+ if(current.status!=="LOGGED_OUT"){
+  await waRequest("/api/sessions/"+encodeURIComponent(sid)+"/logout",{method:"POST",data:{}});
+ }
+ for(let attempt=0;attempt<7;attempt++){
+  const check=await waControlStatus();
+  if(check.ok&&!check.connected&&check.status==="LOGGED_OUT"){
+   setSetting("waakg_disconnect_verified_at",new Date().toISOString());
+   return {ok:true,connected:false,status:check.status,verified:true,reconnectRequiresQr:true};
+  }
+  if(attempt<6)await new Promise(resolve=>setTimeout(resolve,400));
+ }
+ throw Error("O gateway não confirmou a desconexão. O envio foi pausado; confira a sessão antes de continuar.");
 }
 
 export async function waIdentityStatus(){
