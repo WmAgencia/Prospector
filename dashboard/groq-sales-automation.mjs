@@ -6,7 +6,7 @@ import {getSetting} from './db.mjs';
 import {conversationAuthorized,operatorOffer} from './operator-outreach.mjs';
 import {requestPriceApproval,approvedPriceForLead} from './owner-price-approvals.mjs';
 import {prospectSalesContext,priceQuestion,salesEnding} from './sales-policy.mjs';
-import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup} from './portfolio-offer-550.mjs';
+import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup,safeGeneralReply} from './portfolio-offer-550.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
@@ -146,13 +146,20 @@ export async function handleSalesTurn(providerId,deps={}){
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});
   return finish('REVIEW','GROQ_UNAVAILABLE');
  }
- const replyText=refineChatReply(draft.draft,{state:dialogue,incoming:r.body});
+ let replyText=refineChatReply(draft.draft,{state:dialogue,incoming:r.body});
  if(!replyText){
   audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});
   return finish('REVIEW','REPEATED_OR_EMPTY_REPLY');
  }
  // Only a server-authored fixed portfolio template bypasses the generic price filter.
- const review=fixedOffer?{ok:true,code:'OPERATOR_APPROVED_FIXED_OFFER'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
+ let review=fixedOffer?{ok:true,code:'OPERATOR_APPROVED_FIXED_OFFER'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
+ // If the model invented commercial terms or claimed an unperformed action,
+ // replace it with deterministic, operator-safe information rather than falling silent.
+ if(!review.ok&&portfolioAllowed&&['UNVERIFIED_PRICE','UNAPPROVED_TERMS','UNVERIFIED_ACTION'].includes(review.code)){
+  const fallback=safeGeneralReply(r.body,{business:r.business,segment:r.segment});
+  const verified=reviewGroqReply({inbound:r.body,draft:fallback,allowAveragePrice:false});
+  if(verified.ok){audit('FRANCISCA_SAFE_FALLBACK',r.lead_id,{rejected:review.code});replyText=fallback;review=verified;}
+ }
  if(!review.ok){
   audit('GROQ_REPLY_REJECTED',r.lead_id,{code:review.code,test:allowTest});
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'Resposta bloqueada para revisão: '+review.code});
