@@ -78,6 +78,24 @@ if(process.env.RUN_PROSPECTING_LIVE_SMOKE==='true'){
   }catch(error){console.warn('[prospecting-live-smoke]',JSON.stringify({ok:false,message:String(error?.message||error).slice(0,200)}));}
  },7000).unref();
 }
+// Optional, persistent one-time recovery search requested by the operator.
+// Adds ONLY publicly sourced business records. Sending is never enabled.
+if(process.env.RUN_OSM_DISCOVERY_RECOVERY_ONCE==='true'){
+ setTimeout(async()=>{
+  const key='osm_recovery_one_shot_20261104';
+  if(getSetting(key,false))return;
+  setSetting(key,true);
+  try{
+   const result=await discoverLocal({city:'Sorocaba',segment:'oficina'},true);
+   console.info('[osm recovery search]',JSON.stringify({status:'COMPLETE',
+    city:result.city,segment:result.segment,added:result.added,withPhone:result.withPhone,
+    examined:result.examined,tileIndex:result.tileIndex,cached:!!result.cached}));
+  }catch(error){
+   console.warn('[osm recovery search]',JSON.stringify({status:'FAILED',reason:String(error?.message||error).slice(0,140)}));
+  }
+ },5000).unref();
+}
+
 // One-shot synthetic functional test when explicitly enabled. Does not touch customer data.
 if(process.env.RUN_GROQ_FUNCTION_SMOKE==='true'){
  setTimeout(async()=>{
@@ -822,7 +840,7 @@ async function checkMapsJobs(){
 }
 const mapsStatusTimer=setInterval(checkMapsJobs,5*60_000);
 // Somente OSM executa pesquisas automáticas. Google Places permanece inativo.
-setTimeout(checkOSMDiscovery,12000).unref();
+setTimeout(checkOSMDiscovery,process.env.RUN_OSM_DISCOVERY_RECOVERY_ONCE==='true'?55000:12000).unref();
 setTimeout(checkMapsJobs,25000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
