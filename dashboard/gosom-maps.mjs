@@ -87,7 +87,9 @@ export async function pollMapsScrape(jobId){
  if(!['COMPLETED','FAILED','IMPORTED'].includes(job.status)){
   try{
    const res=await request('/api/v1/jobs/'+job.provider_id);
-   const detail=await res.json(),status=jobStatus(detail.status);
+   // Gosom's Go web.Job JSON uses exported `Status` (capital S).
+   // Accept both Go-native and API clients using lowercase `status`.
+   const detail=await res.json(),status=jobStatus(detail?.status??detail?.Status);
    run("UPDATE maps_scraper_jobs SET status=?,updated_at=?,error=? WHERE id=?",status,now(),status==='FAILED'?'Execução do scraper falhou':null,jobId);
   }catch(error){
    if(String(error?.message||'')!=='Scraper HTTP 404')throw error;
