@@ -563,13 +563,19 @@ async function handler(req,res){
    const v=await json(req),result=setSalesCampaign(v);
    notify();return respond(res,200,result);
   }
-  if(req.method==='GET'&&pathname==='/api/queue-health')return respond(res,200,{...queueHealth({waStatus:connection().status,busy:tickStatus().locked}),worker:tickStatus()});
+  if(req.method==='GET'&&pathname==='/api/queue-health'){
+   const live=process.env.WHATSAPP_TRANSPORT==='waakg'?await waControlStatus():null;
+   const waStatus=live?(live.connected?'CONNECTED':'DISCONNECTED'):connection().status;
+   return respond(res,200,{...queueHealth({waStatus,busy:tickStatus().locked}),worker:tickStatus()});
+  }
   if(req.method==='GET'&&pathname==='/api/diagnostics'){
    const last=one('SELECT query,found,status,at FROM discoveries ORDER BY at DESC LIMIT 1');
    const totals=all('SELECT status,COUNT(*) AS total FROM jobs GROUP BY status');
-   const data={at:now(),uptimeSeconds:Math.round(process.uptime()),connection:connection(),queueHealth:queueHealth({waStatus:connection().status,busy:tickStatus().locked}),worker:tickStatus(),discovery:{osmEnabled:getSetting('discovery_sources',{}).osm!==false,braveConfigured:!!process.env.BRAVE_SEARCH_API_KEY,last},leadCount:one('SELECT COUNT(*) AS n FROM leads')?.n||0,queue:Object.fromEntries(totals.map(x=>[x.status,x.total])),settings:{paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}};
+   const live=process.env.WHATSAPP_TRANSPORT==='waakg'?await waControlStatus():null;
+   const waStatus=live?(live.connected?'CONNECTED':'DISCONNECTED'):connection().status;
+   const data={at:now(),uptimeSeconds:Math.round(process.uptime()),connection:connection(),queueHealth:queueHealth({waStatus,busy:tickStatus().locked}),worker:tickStatus(),discovery:{osmEnabled:getSetting('discovery_sources',{}).osm!==false,braveConfigured:!!process.env.BRAVE_SEARCH_API_KEY,last},leadCount:one('SELECT COUNT(*) AS n FROM leads')?.n||0,queue:Object.fromEntries(totals.map(x=>[x.status,x.total])),settings:{paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}};
    // QR image, phone number and session identifiers never appear in diagnostics.
-   data.connection={decryption:data.connection.decryption,status:data.connection.status,error:data.connection.error,closeCode:data.connection.closeCode,lastEventAt:data.connection.lastEventAt,hasQr:Boolean(data.connection.qr)};
+   data.connection={decryption:data.connection.decryption,status:waStatus,error:live?.message||data.connection.error,closeCode:data.connection.closeCode,lastEventAt:data.connection.lastEventAt,hasQr:Boolean(data.connection.qr),transport:live?'waakg':'legacy'};
    return respond(res,200,data);
   }
   if(req.method==='POST'&&pathname.startsWith('/api/threads/ensure/')){const leadId=pathname.split('/')[4];if(!one('SELECT id FROM leads WHERE id=?',leadId))throw Error('Lead não existe');const t=getThread(leadId);notify();return respond(res,200,t);}
@@ -777,15 +783,17 @@ console.log('[invitation campaign]',JSON.stringify({...invitationActivation,read
 console.log('[authorized outreach]',activation.status,'ready='+activation.ready,'waiting='+activation.awaitingConsent);
 let testInstructionError=null;
 let lastQueueReason=null,lastQueueLogAt=0;
-function reportQueueHealth(){
- const snapshot=queueHealth({waStatus:connection().status,busy:tickStatus().locked});
+async function reportQueueHealth(){
+ const live=process.env.WHATSAPP_TRANSPORT==='waakg'?await waControlStatus():null;
+ const waStatus=live?(live.connected?'CONNECTED':'DISCONNECTED'):connection().status;
+ const snapshot=queueHealth({waStatus,busy:tickStatus().locked});
  if(snapshot.reason!==lastQueueReason||Date.now()-lastQueueLogAt>=15*60000||snapshot.alert){
   console.info('[queue health]',JSON.stringify({reason:snapshot.reason,alert:snapshot.alert,ready:snapshot.eligibleWaiting,pending:snapshot.initialPending,oldestPendingMinutes:snapshot.oldestPendingMinutes,unknown:snapshot.unknownInitial,sentToday:snapshot.initialToday.sent,counted:snapshot.initialToday.counted,limit:snapshot.initialToday.limit,nextAt:snapshot.initialToday.nextAt,lastAccepted:snapshot.lastConfirmedInitialAt,inventory:snapshot.inventory,queue:snapshot.queue,discovery:snapshot.discovery,uncertainReasons:snapshot.uncertainReasons,tick:tickStatus()}));
   lastQueueReason=snapshot.reason;lastQueueLogAt=Date.now();
  }
 }
-const healthTimer=setInterval(()=>{try{reportQueueHealth();}catch(e){console.error('[queue health]',e.message);}},3*60000);
-setTimeout(()=>{try{reportQueueHealth();}catch(e){console.error('[queue health]',e.message);}},5000).unref();
+const healthTimer=setInterval(()=>{reportQueueHealth().catch(e=>console.error('[queue health]',e.message));},3*60000);
+setTimeout(()=>{reportQueueHealth().catch(e=>console.error('[queue health]',e.message));},5000).unref();
 const interval=setInterval(()=>{
  // One transport at a time. The WA-AKG bridge uses explicit approvals; never
  // allow legacy Baileys workers to send to the same number from this process.

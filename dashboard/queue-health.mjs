@@ -3,6 +3,7 @@
 import {all,one,run,audit,now,getSetting} from './db.mjs';
 import {initialBudget,hourSP,radarSnapshot} from './radar.mjs';
 import {automaticCandidateSql,outreachQueueSnapshot} from './outreach-queue.mjs';
+import {insideApproachWindow} from './outreach-window.mjs';
 
 export const INITIAL_PENDING_MAX_AGE_MINUTES=8;
 export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={}){
@@ -26,6 +27,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={
  COALESCE(SUM(CASE WHEN l.stage='INTERESTED' THEN 1 ELSE 0 END),0) AS interested
  FROM leads l`);
  const invitationQueue=outreachQueueSnapshot(),discovery=radarSnapshot(at);
+ const autonomous=getSetting('autonomous_outreach_enabled',false)===true;
  const unknownErrors=all("SELECT error FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status='UNKNOWN' ORDER BY updated_at DESC LIMIT 30");
  const uncertainReasons={timeout:0,processInterrupted:0,providerError:0,other:0};
  for(const record of unknownErrors){
@@ -41,6 +43,10 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={
  let reason='READY';
  if(getSetting('paused',true))reason='PAUSED';
  else if(waStatus!=='CONNECTED')reason='WHATSAPP_OFFLINE';
+ else if(autonomous){
+  if(!insideApproachWindow(at))reason='OUTSIDE_WINDOW';
+  else if(invitationQueue.ready===0)reason=invitationQueue.awaitingConsent>0?'AWAITING_CONSENT':'NO_ELIGIBLE_LEADS';
+ }
  else if(!getSetting('auto_initial',false))reason='AUTOMATION_DISABLED';
  else if(!campaign||!campaign.enabled)reason='NO_ACTIVE_CAMPAIGN';
  else if(hour<b.start||hour>=b.end)reason='OUTSIDE_WINDOW';
@@ -52,7 +58,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={
  const dormant=reason==='INITIAL_JOB_PENDING'&&pendingAge>=INITIAL_PENDING_MAX_AGE_MINUTES;
  const invalidPending=initial.filter(x=>x.status==='PENDING'&&(x.execution_state!=='SENDING'||x.manual_takeover===1));
  return {
-  at:at.toISOString(),reason,alert:dormant?'STALE_INITIAL_PENDING':null,
+  at:at.toISOString(),reason,autonomousMode:autonomous,alert:dormant?'STALE_INITIAL_PENDING':null,
   allowedNow:reason==='READY',campaignSelected:!!campaign?.enabled,waConnected:waStatus==='CONNECTED',
   paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false),
   initialToday:{sent:b.confirmed,uncertain:b.uncertain,inFlight:b.sending,counted:b.counted,limit:b.limit,nextAt:b.nextAt},
