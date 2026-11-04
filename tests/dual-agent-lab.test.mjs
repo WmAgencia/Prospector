@@ -12,10 +12,10 @@ test('calendar-based delivery math never mistakes today+3 days for portfolio dea
  assert.equal(offerFacts().domainIncludedMonths,12);
 });
 
-test('current-policy baseline: two synthetic agents run 16 independent WhatsApp-free rehearsals',async()=>{
+test('current-policy baseline: two synthetic agents run 17 independent WhatsApp-free rehearsals',async()=>{
  const matrix=await runMatrix();
  assert.equal(matrix.transport,LAB_TRANSPORT);
- assert.equal(matrix.scenarios,16);
+ assert.equal(matrix.scenarios,17);
  assert.ok(matrix.failures>=3,'Current commercial script should expose known regressions');
  assert.ok(matrix.outcomes.every(x=>x.assessment.safety.whatsappCalls===0&&x.assessment.safety.contactsRead===0));
  const checks=Object.fromEntries(matrix.outcomes.map(x=>[x.scenario,x.assessment]));
@@ -24,6 +24,7 @@ test('current-policy baseline: two synthetic agents run 16 independent WhatsApp-
  assert.ok(checks['autoresponder'].errors.includes('AUTORESPONDER_SHOULD_NOT_TRIGGER_OUTREACH'));
  assert.equal(checks['explicit-refusal'].passes,true,'Current inbound policy correctly suppresses a direct refusal');
  assert.equal(checks['optout'].passes,true,'Current inbound policy correctly suppresses explicit opt-out');
+ assert.ok(checks['late-refusal'].errors.includes('REPLIED_AFTER_REFUSAL'),'The real conversational refusal must be visible in the failure matrix');
  console.log('LAB_BASELINE_OFFLINE',JSON.stringify({total:matrix.scenarios,passed:matrix.passes,failed:matrix.failures,failures:matrix.outcomes.filter(x=>!x.assessment.passes).map(x=>({scenario:x.scenario,problems:x.assessment.errors}))}));
 });
 
