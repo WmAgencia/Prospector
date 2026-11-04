@@ -125,4 +125,37 @@ test('Research starts at 5am São Paulo, replenishes lead stock, respects manual
  assert.equal(next.status,'COOLDOWN');
  assert.equal(createCalls,1);
 });
+
+test('Railway stock replenishment does not confuse 65 public leads with 65 permissioned contacts',async()=>{
+ const oldRailway=process.env.RAILWAY_ENVIRONMENT;
+ process.env.RAILWAY_ENVIRONMENT='production';
+ const reference='33333333-3333-4333-8333-333333333333';
+ const previousFetch=globalThis.fetch;
+ try{
+  for(let i=0;i<65;i++){
+   db.addLead({business:'Empresa Pública Fictícia '+i,phone:'5515987'+String(100000+i).padStart(6,'0'),city:'Sorocaba',segment:'oficinas mecânicas',source:'maps_extension',contact_permission:false});
+  }
+  const stock=ai.actionableLeadInventory();
+  assert.ok(stock.ready>=60,'Public research stock is sufficient in the old counting method');
+  assert.equal(stock.contactReady,0,'Public phone numbers are not documented opt-in');
+  assert.ok(stock.awaitingPermission>=60);
+  let created=0;
+  const originalMessageCount=db.one('SELECT COUNT(*) n FROM messages').n;
+  globalThis.fetch=async(url,opts={})=>{
+   const path=new URL(String(url)).pathname;
+   if(path==='/api/v1/jobs'&&opts.method==='POST'){created++;return Response.json({id:reference});}
+   throw Error('Unexpected mock request '+path);
+  };
+  const at=new Date('2026-11-06T15:00:00Z');
+  const result=await maps.automaticMapsDiscovery({at});
+  assert.equal(result.status,'PENDING','Should continue bounded research rather than reporting send-ready stock');
+  assert.equal(created,1);
+  assert.equal(db.one('SELECT auto_discovery FROM maps_scraper_jobs WHERE provider_id=?',reference).auto_discovery,1);
+  assert.equal(db.one('SELECT COUNT(*) n FROM messages').n,originalMessageCount,'Research must not send customer messages');
+ }finally{
+  globalThis.fetch=previousFetch;
+  if(oldRailway===undefined)delete process.env.RAILWAY_ENVIRONMENT;else process.env.RAILWAY_ENVIRONMENT=oldRailway;
+ }
+});
+
 test.after(()=>{globalThis.fetch=originalFetch;delete process.env.GROQ_API_KEY;db.db.close();fs.rmSync(dir,{recursive:true,force:true});});

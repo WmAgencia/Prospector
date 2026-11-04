@@ -2,6 +2,7 @@
 import {all,one,getSetting,setSetting,audit} from './db.mjs';
 import {daySP,hourSP} from './radar.mjs';
 import {recontactDecision} from './prospecting-recontact.mjs';
+import {documentedOptIn} from './outreach-queue.mjs';
 import {groqChat,groqConfigured} from './groq-models.mjs';
 
 export const RESEARCH_NICHES=[
@@ -57,15 +58,17 @@ export function commercialNicheSignals({limit=6000}={}){
  return Object.fromEntries(groups);
 }
 export function actionableLeadInventory({limit=6000,at=Date.now()}={}){
- const rows=all("SELECT id,phone,stage FROM leads WHERE phone IS NOT NULL AND stage IN ('DISCOVERED','NO_INTEREST') ORDER BY created_at DESC LIMIT ?",Math.min(10000,Math.max(1,Number(limit)||6000)));
- let fresh=0,due=0;
+ const rows=all("SELECT id,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL AND stage IN ('DISCOVERED','NO_INTEREST') ORDER BY created_at DESC LIMIT ?",Math.min(10000,Math.max(1,Number(limit)||6000)));
+ let fresh=0,due=0,contactReady=0;
  for(const lead of rows){
   const decision=recontactDecision(lead,at);
   if(!decision.eligible)continue;
   if(decision.fresh)fresh++;else due++;
+   if(lead.contact_permission===1&&documentedOptIn(lead.id))contactReady++;
  }
  const target=Math.min(250,Math.max(10,Math.trunc(Number(getSetting('research_ready_stock_target',60))||60)));
- return {ready:fresh+due,fresh,recontactDue:due,target,shortage:Math.max(0,target-fresh-due)};
+ return {ready:fresh+due,fresh,recontactDue:due,contactReady,awaitingPermission:Math.max(0,fresh+due-contactReady),target,
+  shortage:Math.max(0,target-fresh-due),contactShortage:Math.max(0,target-contactReady)};
 }
 export function researchCities(){
  const raw=String(getSetting('cities','Sorocaba,Votorantim,Campinas'));

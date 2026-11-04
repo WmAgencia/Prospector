@@ -223,7 +223,13 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
   }
   if(hourSP(at)>=18)return {status:'OUTSIDE_RESEARCH_WINDOW'};
   const stock=actionableLeadInventory({at:at.getTime()});
-  if(stock.ready>=stock.target)return {status:'STOCK_OK',ready:stock.ready,target:stock.target};
+  // Search and send use different eligibility. Business listings alone are
+  // research inventory, never permission to send a WhatsApp message.
+  // In production continue bounded research when all existing stock lacks
+  // documented permission, rather than treating it as a send-ready pipeline.
+  const permissionGate=process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true'||process.env.NODE_ENV==='production'||Boolean(process.env.RAILWAY_ENVIRONMENT);
+  const usableStock=permissionGate?stock.contactReady:stock.ready;
+  if(usableStock>=stock.target)return {status:'STOCK_OK',ready:stock.ready,contactReady:stock.contactReady,target:stock.target,permissionGate};
   const today=daySP(at);
   const recent=all("SELECT status,created_at FROM maps_scraper_jobs WHERE auto_discovery=1 ORDER BY created_at DESC LIMIT 50");
   const daily=recent.filter(x=>Number.isFinite(Date.parse(x.created_at))&&daySP(new Date(x.created_at))===today).length;
