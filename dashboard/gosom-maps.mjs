@@ -7,6 +7,10 @@ import {prospectingList} from './prospecting-search.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS maps_scraper_jobs(id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,niche TEXT NOT NULL,city TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,imported_at TEXT,added INTEGER NOT NULL DEFAULT 0,processed INTEGER NOT NULL DEFAULT 0,error TEXT)");
 if(!db.prepare('PRAGMA table_info(maps_scraper_jobs)').all().some(x=>x.name==='auto_discovery'))
  db.exec('ALTER TABLE maps_scraper_jobs ADD COLUMN auto_discovery INTEGER NOT NULL DEFAULT 0');
+const LEGACY_MAPS_BASE='https://consecom-prospector-maps.onrender.com';
+const RAILWAY_MAPS_BASE='http://prospector-maps.railway.internal:10000';
+const URL_BASE=String(process.env.PROSPECTOR_MAPS_BASE_URL||'').trim().replace(/\/$/,'')===RAILWAY_MAPS_BASE?
+ RAILWAY_MAPS_BASE:LEGACY_MAPS_BASE;
 if(URL_BASE===RAILWAY_MAPS_BASE&&!getSetting('maps_railway_migrated_v1',false)){
  // Render's ephemeral /tmp job IDs cannot be reused on the new Railway worker.
  // Explicitly mark only our interrupted automatic jobs for review, never the
@@ -23,10 +27,6 @@ if(URL_BASE===RAILWAY_MAPS_BASE&&!getSetting('maps_railway_migrated_v1',false)){
 // Private, authenticated worker lives alongside the Prospector on Railway.
 // Only the explicitly provisioned internal hostname is accepted, so this
 // variable cannot become an SSRF destination.
-const LEGACY_MAPS_BASE='https://consecom-prospector-maps.onrender.com';
-const RAILWAY_MAPS_BASE='http://prospector-maps.railway.internal:10000';
-const URL_BASE=String(process.env.PROSPECTOR_MAPS_BASE_URL||'').trim().replace(/\/$/,'')===RAILWAY_MAPS_BASE?
- RAILWAY_MAPS_BASE:LEGACY_MAPS_BASE;
 const configured=()=>Boolean(process.env.PROSPECTOR_MAPS_KEY);
 if(process.env.RUN_MAPS_SMOKE==='true'){
  setTimeout(async()=>{
