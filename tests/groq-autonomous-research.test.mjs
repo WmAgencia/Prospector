@@ -141,7 +141,7 @@ test('Railway stock replenishment does not confuse 65 public leads with 65 permi
   assert.ok(stock.awaitingPermission>=60);
   let created=0;
   const originalMessageCount=db.one('SELECT COUNT(*) n FROM messages').n;
-  globalThis.fetch=async(url,opts={})=>
+  globalThis.fetch=async(url,opts={})=>{
    const path=new URL(String(url)).pathname;
    if(path==='/api/v1/jobs'&&opts.method==='POST'){created++;return Response.json({id:reference});}
    throw Error('Unexpected mock request '+path);
