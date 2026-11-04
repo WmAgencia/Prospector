@@ -69,7 +69,7 @@ test('Approved button queue sends once, reply enters Groq and responds naturally
 });
 test('A hard refusal is terminal, not queued for more AI replies',async()=>{
  const lead=eligible('Estética que recusou');
- assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true}).status,202);
+ assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
  time+=90_000;assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
  const out=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
  unique:'consecom-principal:fullsales-2',content:'Sem interesse, obrigada.'});
