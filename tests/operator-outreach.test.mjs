@@ -5,6 +5,7 @@ import os from 'node:os';
 const dir=fs.mkdtempSync(os.tmpdir()+'/operator-outreach-');
 process.env.PROSPECTOR_DATA_DIR=dir;
 const db=await import('../dashboard/db.mjs');
+db.setSetting('paused',false);
 const queue=await import('../dashboard/prospecting-queue.mjs');
 test('operator selection queues more than 100 public businesses without creating consent',()=>{
  const ids=Array.from({length:105},(_,i)=>db.addLead({business:'Public '+i,phone:'1198'+String(i).padStart(7,'0'),source:'MANUAL'}).lead.id);
@@ -26,7 +27,7 @@ test('current cycle needs an actual incoming reply and cancellation cannot becom
  assert.equal(queue.enqueueApprovedApproaches({leadIds:[l.id,l.id],approve:true,operatorApproved:true}).body.queued,1);
  assert.equal(auth.operatorSelected(l.id),true);assert.equal(auth.conversationAuthorized(l.id),false);
  const send=async()=>({status:true});
- assert.equal((await queue.tickApproachQueue({getWaStatus:async()=>({connected:true}),getSession:()=> 'synthetic',send})).status,'SENT');
+ assert.equal((await queue.tickApproachQueue({currentTime:()=>Date.parse('2026-11-04T14:00:00Z'),getWaStatus:async()=>({connected:true}),getSession:()=> 'synthetic',send})).status,'SENT');
  assert.equal(auth.conversationAuthorized(l.id),false);
  const thread=db.getThread(l.id,l.phone+'@s.whatsapp.net');
  db.addMessage({threadId:thread.id,providerId:'in-current',direction:'in',body:'Oi',status:'received'});

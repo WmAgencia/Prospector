@@ -56,7 +56,7 @@ import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
 import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
-import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
+import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -243,6 +243,18 @@ if(!getSetting('five_tab_mode_20261028_applied',false)){
  setSetting('discovery_auto_enabled',false);
  setSetting('five_tab_mode_20261028_applied',true);
 }
+// Explicit authorization on 2026-11-04: autonomous B2B initial greeting.
+// Never start legacy campaign workers in parallel. The persistent approach
+// clock, local business window, consent replies, and suppression rules remain.
+if(!getSetting('autonomous_outreach_nov04_rollout_v1',false)){
+ setSetting('autonomous_outreach_enabled',true);
+ setSetting('paused',false);
+ setSetting('auto_initial',false);
+ setSetting('initial_interval_seconds',90);
+ setSetting('discovery_auto_enabled',true);
+ setSetting('autonomous_outreach_nov04_rollout_v1',true);
+ audit('AUTONOMOUS_OUTREACH_ENABLED',null,{window:'08:00-17:30 America/Sao_Paulo',minSeconds:90,threeCalendarMonths:true,autoResearch:true});
+}
 
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
 
@@ -333,7 +345,7 @@ async function body(req,limit=3*1024*1024){
  return Buffer.concat(parts);
 }
 async function json(req){const b=await body(req);return b.length?JSON.parse(b.toString('utf8')):{};}
-const allowedSettings=new Set(['decision_learning_enabled','decision_engine_enabled','paused','auto_initial','min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
+const allowedSettings=new Set(['decision_learning_enabled','decision_engine_enabled','paused','auto_initial','min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','autonomous_outreach_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
 function snapshot(){
  const leadOrigins=all('SELECT o.lead_id,o.source,o.verified FROM lead_origins o WHERE o.lead_id IN (SELECT id FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000) ORDER BY o.at DESC');
   const originsByLead=new Map();for(const origin of leadOrigins){if(!originsByLead.has(origin.lead_id))originsByLead.set(origin.lead_id,[]);originsByLead.get(origin.lead_id).push(origin);}
@@ -668,7 +680,8 @@ async function handler(req,res){
      if(['decision_engine_enabled','decision_learning_enabled'].includes(k)&&typeof value!=='boolean')throw Error('Use verdadeiro ou falso para o motor de decisão');
     if(k==='discovery_target_daily'&&(Number(value)<1||Number(value)>150))throw Error('A meta de descoberta deve ser de 1 a 150');
     if(k==='discovery_start_hour'&&(Number(value)<0||Number(value)>23))throw Error('O início da descoberta deve ficar entre 0h e 23h');
-    if(k==='initial_interval_seconds'&&Number(value)<144)throw Error('Intervalo mínimo é 144 segundos');
+    if(k==='initial_interval_seconds'&&Number(value)<90)throw Error('Intervalo mínimo é 90 segundos');
+     if(k==='autonomous_outreach_enabled'&&typeof value!=='boolean')throw Error('Ativação automática deve ser booleana');
     if(k==='owner_report_hour'&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>23))throw Error('Hora do relatório inválida');
     if(['owner_phone_a','owner_phone_b'].includes(k)&&value&&(!phone(value)||phone(value).length<12||phone(value).length>13))throw Error('Informe WhatsApp brasileiro válido com DDD');
     setSetting(k,['owner_phone_a','owner_phone_b'].includes(k)&&value?phone(value):value);
@@ -799,6 +812,12 @@ const customerAiTimer=setInterval(()=>{
  try{scheduleReport();}catch(e){console.warn('[daily sales report]',String(e?.message||e).slice(0,70));}
  tickSalesAgent().then(async()=>{const prices=await flushPriceApprovals();return Number(prices.sent||0)+await flushInterestAlerts()+await flushPersonalNotices();}).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
 },6000);
+const autonomousQueueTimer=setInterval(()=>{
+ try{
+  const result=enrollAutonomousApproaches();
+  if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',intervalSeconds:90}));notify();}
+ }catch(error){console.warn('[automatic approach]',String(error?.message||error).slice(0,140));}
+},5000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
@@ -871,4 +890,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});

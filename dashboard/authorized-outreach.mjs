@@ -5,6 +5,10 @@ import {validateCampaignForActivation} from './campaign-selection.mjs';
 import {outreachQueueSnapshot} from './outreach-queue.mjs';
 const ROLLOUT_KEY='automatic_authorized_outreach_rollout_20261015';
 export function enableAuthorizedOutreach(){
+ // Modern autonomous queue owns new WhatsApp approaches; do not reactivate
+ // the older multi-step campaign or overwrite the owner's 90s cadence.
+ if(getSetting('autonomous_outreach_enabled',false)===true)
+  return {status:'AUTONOMOUS_QUEUE_ACTIVE',paused:getSetting('paused',true),autoInitial:false};
  const queue=outreachQueueSnapshot();
  if(getSetting(ROLLOUT_KEY,false))return {status:'CONFIGURED',paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false),...queue};
  const id=getSetting('autonomous_campaign_id','');

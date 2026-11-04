@@ -9,13 +9,15 @@ export function recordOperatorSelection({itemId,batchId,leadId,offerType='portfo
 }
 export function operatorOffer(leadId){
  if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'"))return null;
- return one('SELECT s.offer_type FROM prospecting_batch_items i JOIN operator_outreach_selections s ON s.item_id=i.id WHERE i.lead_id=? ORDER BY i.rowid DESC LIMIT 1',leadId)?.offer_type||null;
+ return one('SELECT s.offer_type FROM prospecting_batch_items i JOIN operator_outreach_selections s ON s.item_id=i.id WHERE i.lead_id=? ORDER BY i.rowid DESC LIMIT 1',leadId)?.offer_type||
+  (one("SELECT 1 FROM prospecting_batch_items i JOIN prospecting_batches b ON b.id=i.batch_id WHERE i.lead_id=? AND b.origin='AUTONOMOUS' AND i.status IN ('SENDING','SENT') ORDER BY i.rowid DESC LIMIT 1",leadId)?'portfolio':null);
 }
 export function operatorSelected(leadId){
  if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'"))return false;
  const latest=one('SELECT rowid,* FROM prospecting_batch_items WHERE lead_id=? ORDER BY rowid DESC LIMIT 1',leadId);
  if(!latest||!['QUEUED','SENDING','SENT'].includes(latest.status))return false;
- return !!one('SELECT 1 FROM operator_outreach_selections WHERE item_id=? AND batch_id=? AND lead_id=?',latest.id,latest.batch_id,leadId);
+ return !!one('SELECT 1 FROM operator_outreach_selections WHERE item_id=? AND batch_id=? AND lead_id=?',latest.id,latest.batch_id,leadId)||
+  !!one("SELECT 1 FROM prospecting_batches WHERE id=? AND origin='AUTONOMOUS'",latest.batch_id);
 }
 export function conversationAuthorized(leadId,{ignoreTakeover=false}={}){
  const lead=one('SELECT phone,stage FROM leads WHERE id=?',leadId);
