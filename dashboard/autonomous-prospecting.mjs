@@ -94,7 +94,8 @@ export function researchCandidates({at=new Date(),niches=RESEARCH_NICHES}={}){
    replied:st.responded,contacted:st.contacted,interested:st.interested,
    priorExamples:hints[n.theme]||0});
  }
- return options.sort((a,b)=>b.score-a.score||a.niche.localeCompare(b.niche,'pt')||a.city.localeCompare(b.city,'pt'));
+ const rank=new Map(cities.map((city,i)=>[city,i]));
+ return options.sort((a,b)=>b.score-a.score||(rank.get(a.city)-rank.get(b.city))||a.niche.localeCompare(b.niche,'pt'));
 }
 function safeChoice(content,options){
  const raw=String(content||'').trim(),json=raw.startsWith('{')?raw:raw.match(/\{[\s\S]*?\}/)?.[0];
