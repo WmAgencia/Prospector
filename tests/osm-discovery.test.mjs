@@ -19,7 +19,7 @@ test('fontes públicas não inventam telefone, site ou permissões',()=>{
  const center=discoveryBoundingBox(resolveLocation('Sorocaba'));
  const adjacent=discoveryBoundingBox(resolveLocation('Sorocaba'),1);
  assert.notEqual(center,adjacent);
- assert.match(q,new RegExp('\\\\('+center.replace(/[.]/g,'\\\\.')+'\\\\)'));
+ assert(q.includes('('+center+')'));
  assert.equal(discoveryBoundingBox(resolveLocation('Sorocaba'),9),center);
  assert.equal(extractPhone({'contact:whatsapp':'incompleto',phone:'+55 15 99999-8888'}),'5515999998888');
  assert.equal(extractPhone({'contact:mobile':'+55 (15) 99999-1111'}),'5515999991111');
