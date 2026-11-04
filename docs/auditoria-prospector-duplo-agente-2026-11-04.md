@@ -39,7 +39,7 @@ Os testes reais entre dois agentes de IA (ambos Groq, com empresas inteiramente 
 
 ## 3. Resultados do duelo de agentes
 
-**Modo A — CI determinístico (16 cenários)**: clientes e Francisca são atores em memória; os casos de recusa/opt-out que já funcionam devem aparecer como êxitos, enquanto perguntas sobre oferta, preço e atendimentos automáticos evidenciam as falhas atuais. O teste mostra um diagnóstico, não faz o CI falhar deliberadamente por defeitos antigos.
+**Modo A — CI determinístico (17 cenários)**: clientes e Francisca são atores em memória; os casos de recusa/opt-out que já funcionam devem aparecer como êxitos, enquanto perguntas sobre oferta, preço e atendimentos automáticos evidenciam as falhas atuais. O teste mostra um diagnóstico, não faz o CI falhar deliberadamente por defeitos antigos.
 
 **Modo B — Groq contra Groq em serviço efêmero sem WhatsApp (13 cenários):**
 
@@ -102,7 +102,7 @@ Os testes reais entre dois agentes de IA (ambos Groq, com empresas inteiramente 
 
 ```bash
 npm test
-node scripts/dual-agent-lab.mjs --mode=baseline --max=16
+node scripts/dual-agent-lab.mjs --mode=baseline --max=17
 # Opcional e somente em ambiente isolado, usando empresas fictícias:
 GROQ_API_KEY=*** node scripts/dual-agent-lab.mjs --mode=groq --max=6 --turns=2
 ```
