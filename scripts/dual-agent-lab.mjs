@@ -7,7 +7,7 @@ import {prospectSalesContext} from '../dashboard/sales-policy.mjs';
 import {salesTonePrompt} from '../dashboard/sales-tone-playbook.mjs';
 const flags=process.argv.slice(2);
 const getFlag=(key,fallback)=>flags.find(x=>x.startsWith(key+'='))?.slice(key.length+1)??fallback;
-const mode=getFlag('--mode','baseline'),max=Math.min(16,Math.max(1,Number(getFlag('--max','16'))||16));
+const mode=getFlag('--mode','baseline'),max=Math.min(SCENARIOS.length,Math.max(1,Number(getFlag('--max','16'))||16));
 if(!['baseline','groq'].includes(mode))throw Error('Unknown simulation mode');
 const today=getFlag('--today','2026-11-04');
 const set=SCENARIOS.slice(0,max);
