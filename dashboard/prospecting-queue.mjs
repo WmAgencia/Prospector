@@ -25,6 +25,9 @@ function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false,automat
  if(!l||!l.phone)return null;
  if(ignoreQueueItemId&&one('SELECT phone FROM prospecting_batch_items WHERE id=?',ignoreQueueItemId)?.phone!==l.phone)return null;
  if(!recontactDecision(l,Date.now(),ignoreQueueItemId).eligible)return null;
+ // Production safeguard: public business contact details and operator selection
+ // are NOT evidence of WhatsApp marketing permission. Validate again at send time.
+ if(process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true'&&!documentedOptIn(l.id))return null;
  if(!documentedOptIn(l.id)&&!operatorApproved&&!automaticApproved&&!(ignoreQueueItemId&&operatorSelected(l.id)))return null;
  if(one('SELECT phone FROM suppressions WHERE phone=?',l.phone))return null;
 
@@ -43,7 +46,7 @@ export function approachQueueStatus(){
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
  return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
   intervalSeconds:90,nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),clock+APPROACH_INTERVAL_MS)).toISOString():null,
-  status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:false,requiresOperatorApproval:false};
+  status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true',requiresOperatorApproval:false};
 }
 export function enqueueApprovedApproaches(input={}){
  if(input.operatorApproved===true&&input.offerType!==undefined&&!['portfolio','promotion','corporate'].includes(input.offerType))return {status:400,body:{error:'Tipo de oferta inválido'}};
