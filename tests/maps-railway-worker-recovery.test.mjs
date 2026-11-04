@@ -22,7 +22,8 @@ globalThis.fetch=async(url,opts={})=>{
   calls++;return Response.json({id:newJobId});
  }
  if(u.pathname==='/api/v1/jobs/'+oldJobId)return new Response('not found',{status:404});
- if(u.pathname==='/api/v1/jobs/'+newJobId)return Response.json({status:'completed'});
+ // Gosom native API returns 'ok' for a completed scrape.
+ if(u.pathname==='/api/v1/jobs/'+newJobId)return Response.json({status:'ok'});
  if(u.pathname==='/api/v1/jobs/'+newJobId+'/download'){
   imports++;return new Response('link,title,phone,city\nhttps://www.google.com/maps/place/Prospector-QA,Empresa QA,+55 15 99999-1111,Sorocaba');
  }

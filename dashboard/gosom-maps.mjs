@@ -31,7 +31,7 @@ if(process.env.RUN_MAPS_SMOKE==='true'){
 }
 
 const valid=x=>typeof x==='string'&&x.trim().length>=2&&x.length<=85&&!/[\r\n<>]/.test(x);
-function jobStatus(s){const v=String(s||'').toLowerCase();return ['completed','complete','done','finished'].includes(v)?'COMPLETED':['failed','error','cancelled','canceled'].includes(v)?'FAILED':['pending','queued','created'].includes(v)?'PENDING':'RUNNING';}
+function jobStatus(s){const v=String(s||'').toLowerCase();return ['ok','completed','complete','done','finished','success','succeeded'].includes(v)?'COMPLETED':['failed','error','cancelled','canceled'].includes(v)?'FAILED':['pending','queued','created'].includes(v)?'PENDING':'RUNNING';}
 async function request(path,{method='GET',payload=null,expect='json'}={}){
  if(!configured())throw Error('Serviço Google Maps não configurado');
  if(!/^\/api\/v1\/jobs(?:\/[a-f0-9-]{36}(?:\/download)?)?$/.test(path))throw Error('Rota de scraper inválida');
