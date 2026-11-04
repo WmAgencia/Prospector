@@ -4,6 +4,7 @@ import {db,one,all,run,id,now,addLead,audit,getSetting,setSetting} from './db.mj
 import {daySP,hourSP} from './radar.mjs';
 import {recordOrigin} from './discovery.mjs';
 import {prospectingList} from './prospecting-search.mjs';
+import {RESEARCH_NICHES,actionableLeadInventory,chooseResearchTarget,recordResearchPlan,researchIntelligenceStatus} from './autonomous-prospecting.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS maps_scraper_jobs(id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,niche TEXT NOT NULL,city TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,imported_at TEXT,added INTEGER NOT NULL DEFAULT 0,processed INTEGER NOT NULL DEFAULT 0,error TEXT)");
 if(!db.prepare('PRAGMA table_info(maps_scraper_jobs)').all().some(x=>x.name==='auto_discovery'))
  db.exec('ALTER TABLE maps_scraper_jobs ADD COLUMN auto_discovery INTEGER NOT NULL DEFAULT 0');
@@ -48,7 +49,7 @@ async function request(path,{method='GET',payload=null,expect='json'}={}){
  return response;
 }
 function row(idValue){return one('SELECT * FROM maps_scraper_jobs WHERE id=?',idValue);}
-export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:'Render',async:true,automaticSend:false,autoResearchEnabled:process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED==='true',privateAPI:true,source:'Google Maps (termos aplicáveis)',jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error,auto_discovery FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
+export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:'Render',async:true,automaticSend:false,autoResearchEnabled:process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED==='true',privateAPI:true,source:'Google Maps (termos aplicáveis)',intelligence:researchIntelligenceStatus(),maxAutoJobsPerDay:AUTO_MAPS_MAX_JOBS_PER_DAY,jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error,auto_discovery FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
 
 if(process.env.RUN_MAPS_CREATE_SMOKE==='true'){
  setTimeout(async()=>{
@@ -124,17 +125,27 @@ export async function importMapsScrape(jobId){
  const response=await request('/api/v1/jobs/'+job.provider_id+'/download',{expect:'csv'});
  const csv=await response.text(),items=csvRows(csv);
  let added=0,processed=0,skipped=0;
+ // A second provider/map URL must never make a previously discovered company
+ // appear as a new person. Use local city+business fingerprints; do not merge
+ // two different phone numbers or silently grant any consent.
+ const fold=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().replace(/\s+/g,' ');
+ const known=new Set(all("SELECT business,city FROM leads ORDER BY created_at DESC LIMIT 50000")
+  .map(x=>fold(x.city)+'|'+fold(x.business)));
  for(const x of items){
   const url=mapUrl(x),business=String(x.title||x.name||'').trim().slice(0,150);
   if(!business||!url){skipped++;continue;}
   const cleanCity=s=>String(s||'').split(',')[0].normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
   const listedCity=String(x.city||x.municipality||x.cidade||'').trim();
   if(listedCity&&cleanCity(listedCity)!==cleanCity(job.city)){skipped++;continue;}
+  const fingerprint=fold(listedCity||job.city)+'|'+fold(business);
+  if(known.has(fingerprint)){skipped++;continue;}
   try{
    // Never confer WhatsApp consent solely from a Maps business listing.
    const saved=addLead({business,phone:x.phone||undefined,city:listedCity||job.city,segment:job.niche,website:String(x.website||'').slice(0,400),maps_id:url,source:'maps_extension',contact_permission:false,notes:'Origem: Gosom Google Maps. Endereço: '+String(x.address||'').slice(0,250)+' | Google Maps: '+url});
    recordOrigin(saved.lead.id,'maps_extension',{identity:url,provider:'gosom',jobId:job.id},false);
-   if(saved.created)added++;processed++;
+   if(saved.created)added++;
+   known.add(fingerprint);
+   processed++;
   }catch{skipped++;}
  }
  run("UPDATE maps_scraper_jobs SET status='IMPORTED',added=?,processed=?,imported_at=?,updated_at=? WHERE id=?",added,processed,now(),now(),jobId);
@@ -175,9 +186,11 @@ export async function refreshActiveMapsScrapes({limit=2,maxAgeHours=6}={}){
 // searches and imports *its own* completed jobs into the review list.
 // Manually-created jobs retain their explicit import step.
 // Limit the scraper to two sequential jobs/day and a 90-minute cooldown.
-export const AUTO_MAPS_MAX_JOBS_PER_DAY=2;
-export const AUTO_MAPS_COOLDOWN_MS=90*60_000;
-export const AUTO_MAPS_NICHES=['oficinas mecânicas','restaurantes','salões de beleza','dentistas','pet shops','contabilidade'];
+// Bound research to protect Hobby resources while replenishing in the morning
+// and through the business day. Never auto-send messages.
+export const AUTO_MAPS_MAX_JOBS_PER_DAY=12;
+export const AUTO_MAPS_COOLDOWN_MS=25*60_000;
+export const AUTO_MAPS_NICHES=RESEARCH_NICHES.map(x=>x.name);
 let autoMapsLocked=false;
 export async function automaticMapsDiscovery({at=new Date()}={}){
  if(autoMapsLocked)return {status:'BUSY'};
@@ -195,7 +208,9 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
    audit('MAPS_AUTO_DISCOVERY_IMPORTED',null,{jobId:complete.id,added:result.added,processed:result.processed});
    return {status:'IMPORTED',added:result.added,processed:result.processed};
   }
-  const active=one("SELECT id,auto_discovery FROM maps_scraper_jobs WHERE status IN ('PENDING','RUNNING') ORDER BY created_at ASC LIMIT 1");
+  // An abandoned upstream job cannot freeze research forever after a provider
+ // migration. Jobs are bounded to 6 hours (actual scraper max is 240 seconds).
+ const active=one("SELECT id,auto_discovery FROM maps_scraper_jobs WHERE status IN ('PENDING','RUNNING') AND created_at>=? ORDER BY created_at ASC LIMIT 1",new Date(at.getTime()-6*3600_000).toISOString());
   if(active){
    if(!active.auto_discovery)return {status:'MANUAL_JOB_RUNNING'};
    const state=await pollMapsScrape(active.id);
@@ -206,27 +221,31 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
    }
    return {status:state.status,error:state.error||null};
   }
+  if(hourSP(at)>=18)return {status:'OUTSIDE_RESEARCH_WINDOW'};
+  const stock=actionableLeadInventory({at:at.getTime()});
+  if(stock.ready>=stock.target)return {status:'STOCK_OK',ready:stock.ready,target:stock.target};
   const today=daySP(at);
   const recent=all("SELECT status,created_at FROM maps_scraper_jobs WHERE auto_discovery=1 ORDER BY created_at DESC LIMIT 50");
   const daily=recent.filter(x=>Number.isFinite(Date.parse(x.created_at))&&daySP(new Date(x.created_at))===today).length;
-  if(daily>=AUTO_MAPS_MAX_JOBS_PER_DAY)return {status:'DAILY_CAP',jobsToday:daily};
+  if(daily>=AUTO_MAPS_MAX_JOBS_PER_DAY)return {status:'DAILY_CAP',jobsToday:daily,ready:stock.ready,target:stock.target};
   const last=Date.parse(getSetting('maps_auto_last_start_at','')||'')||0;
   // A lost job after moving from Render to Railway is not a successful
   // discovery: retry within the *daily attempt cap* without waiting 90min.
   const lastFailed=recent[0]?.status==='FAILED';
   if(!lastFailed&&at.getTime()-last<AUTO_MAPS_COOLDOWN_MS)return {status:'COOLDOWN'};
-  const cities=String(getSetting('cities','Sorocaba,Votorantim,Campinas')).split(',').map(x=>x.trim()).filter(x=>x.length>=2&&x.length<=85).slice(0,3);
-  if(!cities.length)return {status:'NO_CITY'};
-  const cursor=Math.max(0,Math.trunc(Number(getSetting('maps_auto_cursor',0))||0));
-  const city=cities[Math.floor(cursor/AUTO_MAPS_NICHES.length)%cities.length];
-  const niche=AUTO_MAPS_NICHES[cursor%AUTO_MAPS_NICHES.length];
+  const choice=await chooseResearchTarget({at});
+  if(!choice.target)return {status:'NO_TARGET',ready:stock.ready};
+  const {city,niche}=choice.target;
   const job=await startMapsScrape({city,niche});
   if(job.reused)return {status:'PENDING',reused:true};
   run('UPDATE maps_scraper_jobs SET auto_discovery=1 WHERE id=?',job.id);
-  setSetting('maps_auto_cursor',cursor+1);
+  recordResearchPlan(choice,{at,stockBefore:stock});
   setSetting('maps_auto_last_start_at',at.toISOString());
-  audit('MAPS_AUTO_DISCOVERY_STARTED',null,{jobId:job.id,city,niche,limit:AUTO_MAPS_MAX_JOBS_PER_DAY});
-  return {status:'PENDING',created:true,city,niche};
+  audit('MAPS_AUTO_DISCOVERY_STARTED',null,{jobId:job.id,city,niche,source:choice.source,
+    ready:stock.ready,stockTarget:stock.target,limit:AUTO_MAPS_MAX_JOBS_PER_DAY});
+  console.info('[groq research plan]',JSON.stringify({source:choice.source,niche,city,
+   ready:stock.ready,stockTarget:stock.target,model:choice.model||null}));
+  return {status:'PENDING',created:true,city,niche,source:choice.source,ready:stock.ready};
  }catch(error){
   return {status:'SOURCE_ERROR',error:String(error?.message||error).slice(0,155)};
  }finally{autoMapsLocked=false;}
