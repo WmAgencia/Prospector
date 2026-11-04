@@ -391,8 +391,19 @@ document.addEventListener("click",async ev=>{
   if(action==="maps-import"){if(!mapsJob?.id)return;if(!confirm("Importar as empresas desta pesquisa para sua base, sem autorizar mensagens automáticas?"))return;const out=await post("/api/maps/import",{id:mapsJob.id});mapsJob={...mapsJob,status:"IMPORTED",added:out.added};n(out.added+" empresas novas importadas e deduplicadas.");await loadProspects();return;}
   if(action==="maps-poll"){await updateMapsJob();return;}
   if(action==="import-csv"){await importMapsCSV();return;}
-  if(action==="connect"){busy=true;render();await post("/api/whatsapp/connect",{});busy=false;await refreshWa();n("Sessão iniciada. Escaneie o QR Code para conectar.");return;}
-  if(action==="disconnect"){if(!confirm("Desconectar a sessão de WhatsApp?"))return;busy=true;await post("/api/whatsapp/disconnect",{});busy=false;qrResult=null;await refreshWa();n("Sessão interrompida.");return;}
+  if(action==="reconnect-qr"||action==="connect"){await openWhatsappQr();return;}
+  if(action==="disconnect"){
+   if(!confirm("Desconectar este WhatsApp? Será necessário escanear um novo QR Code para entrar novamente. A prospecção ficará pausada."))return;
+   busy=true;render();
+   try{
+    const out=await post("/api/whatsapp/disconnect",{});
+    if(out.verified!==true||out.connected!==false)throw Error("O gateway não confirmou o encerramento da sessão.");
+    qrResult=null;wa={ok:true,connected:false,status:"LOGGED_OUT",hasSession:true};
+    await refreshWa();
+    n("WhatsApp desconectado e prospecção pausada. Para reconectar, abra o QR Code.");
+   }finally{busy=false;render();}
+   return;
+  }
  }catch(e){busy=false;n(e.message);render();}
 });
 document.addEventListener("keydown",ev=>{
@@ -456,6 +467,15 @@ document.addEventListener("change",async e=>{
 });
 document.addEventListener("input",e=>{if(e.target.id==="chat-search"){chatFilter=e.target.value;const cursor=e.target.selectionStart;render();const input=q("#chat-search");if(input){input.focus();input.setSelectionRange(cursor,cursor);}}});
 window.addEventListener("hashchange",()=>{const tab=location.hash.split("/")[1];if(tabs[tab]&&tab!==view)nav(tab);});
-setInterval(async()=>{if(document.hidden||busy||q("input:focus,textarea:focus,select:focus"))return;if(view==="connections"){await refreshWa();}else if(view==="conversations"&&Date.now()-lastRefresh>24000){await refreshWa(false);await reload();}else if(Date.now()-lastRefresh>45000&&state){await reload();}},7000);
+setInterval(async()=>{
+ if(document.hidden)return;
+ // Always check gateway, even when an input is focused or another tab is open.
+ await refreshWa();
+ if(busy||q("input:focus,textarea:focus,select:focus"))return;
+ if(view==="conversations"&&Date.now()-lastRefresh>24000)await reload();
+ else if(Date.now()-lastRefresh>45000&&state)await reload();
+},7000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWa()});
+window.addEventListener("online",()=>refreshWa());
 await reload();
 await refreshWa();
