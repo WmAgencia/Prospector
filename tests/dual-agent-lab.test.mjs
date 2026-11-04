@@ -22,7 +22,8 @@ test('current-policy baseline: two synthetic agents run 16 independent WhatsApp-
  assert.ok(checks['eletrotec-question'].errors.includes('MISSING_FIXED_OFFER_AFTER_PROPOSAL_REQUEST'));
  assert.ok(checks['price-only'].errors.includes('UNNECESSARY_OWNER_PRICE_APPROVAL'));
  assert.ok(checks['autoresponder'].errors.includes('AUTORESPONDER_SHOULD_NOT_TRIGGER_OUTREACH'));
- assert.ok(checks['explicit-refusal'].errors.includes('REPLIED_AFTER_REFUSAL'));
+ assert.equal(checks['explicit-refusal'].passes,true,'Current inbound policy correctly suppresses a direct refusal');
+ assert.equal(checks['optout'].passes,true,'Current inbound policy correctly suppresses explicit opt-out');
  console.log('LAB_BASELINE_OFFLINE',JSON.stringify({total:matrix.scenarios,passed:matrix.passes,failed:matrix.failures,failures:matrix.outcomes.filter(x=>!x.assessment.passes).map(x=>({scenario:x.scenario,problems:x.assessment.errors}))}));
 });
 
