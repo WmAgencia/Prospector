@@ -140,7 +140,8 @@ test('Railway stock replenishment does not confuse 65 public leads with 65 permi
   assert.equal(stock.contactReady,0,'Public phone numbers are not documented opt-in');
   assert.ok(stock.awaitingPermission>=60);
   let created=0;
-  globalThis.fetch=async(url,opts={})=>{
+  const originalMessageCount=db.one('SELECT COUNT(*) n FROM messages').n;
+  globalThis.fetch=async(url,opts={})=>
    const path=new URL(String(url)).pathname;
    if(path==='/api/v1/jobs'&&opts.method==='POST'){created++;return Response.json({id:reference});}
    throw Error('Unexpected mock request '+path);
@@ -150,7 +151,7 @@ test('Railway stock replenishment does not confuse 65 public leads with 65 permi
   assert.equal(result.status,'PENDING','Should continue bounded research rather than reporting send-ready stock');
   assert.equal(created,1);
   assert.equal(db.one('SELECT auto_discovery FROM maps_scraper_jobs WHERE provider_id=?',reference).auto_discovery,1);
-  assert.equal(db.one('SELECT COUNT(*) n FROM messages').n,2,'Simulation must not send any more real messages');
+  assert.equal(db.one('SELECT COUNT(*) n FROM messages').n,originalMessageCount,'Research must not send customer messages');
  }finally{
   globalThis.fetch=previousFetch;
   if(oldRailway===undefined)delete process.env.RAILWAY_ENVIRONMENT;else process.env.RAILWAY_ENVIRONMENT=oldRailway;
