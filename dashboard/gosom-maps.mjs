@@ -7,12 +7,23 @@ import {prospectingList} from './prospecting-search.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS maps_scraper_jobs(id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,niche TEXT NOT NULL,city TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,imported_at TEXT,added INTEGER NOT NULL DEFAULT 0,processed INTEGER NOT NULL DEFAULT 0,error TEXT)");
 if(!db.prepare('PRAGMA table_info(maps_scraper_jobs)').all().some(x=>x.name==='auto_discovery'))
  db.exec('ALTER TABLE maps_scraper_jobs ADD COLUMN auto_discovery INTEGER NOT NULL DEFAULT 0');
-const URL_BASE='https://consecom-prospector-maps.onrender.com';
+// Keep the private Railway worker as the preferred route when configured.
+// Render remains a backward-compatible default for manually created jobs.
+const DEFAULT_MAPS_BASE='https://consecom-prospector-maps.onrender.com';
+function workerBase(){
+ const candidate=String(process.env.PROSPECTOR_MAPS_BASE_URL||DEFAULT_MAPS_BASE).trim().replace(/\/$/,'');
+ const parsed=new URL(candidate);
+ const privateRailway=parsed.protocol==='http:' && parsed.hostname.endsWith('.railway.internal') && parsed.port==='10000';
+ if(!(parsed.protocol==='https:'||privateRailway)||parsed.username||parsed.password||parsed.pathname!=='/'||parsed.search||parsed.hash)
+  throw Error('URL privada do Maps inválida');
+ return candidate;
+}
+
 const configured=()=>Boolean(process.env.PROSPECTOR_MAPS_KEY);
 if(process.env.RUN_MAPS_SMOKE==='true'){
  setTimeout(async()=>{
   try{
-   const response=await fetch(URL_BASE+'/api/v1/jobs',{headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY||''},signal:AbortSignal.timeout(25000)});
+   const response=await fetch(workerBase()+'/api/v1/jobs',{headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY||''},signal:AbortSignal.timeout(25000)});
    let list=[];if(response.ok)list=await response.json().catch(()=>[]);
    console.info('[maps-smoke]',JSON.stringify({http:response.status,authenticated:response.ok,jobs:Array.isArray(list)?list.length:null}));
   }catch(e){console.info('[maps-smoke]',JSON.stringify({error:e?.name||'NETWORK_ERROR'}));}
@@ -28,7 +39,7 @@ async function request(path,{method='GET',payload=null,expect='json'}={}){
  // queued jobs, without treating a network timeout as a failed scrape.
  let response;
  try{
-  response=await fetch(URL_BASE+path,{method,headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY,Accept:expect==='json'?'application/json':'text/csv',...(payload!==null?{'Content-Type':'application/json'}:{})},body:payload!==null?JSON.stringify(payload):undefined,signal:AbortSignal.timeout(method==='POST'?45000:60000)});
+  response=await fetch(workerBase()+path,{method,headers:{'X-Prospector-Maps-Key':process.env.PROSPECTOR_MAPS_KEY,Accept:expect==='json'?'application/json':'text/csv',...(payload!==null?{'Content-Type':'application/json'}:{})},body:payload!==null?JSON.stringify(payload):undefined,signal:AbortSignal.timeout(method==='POST'?45000:60000)});
  }catch(error){
   if(error?.name==='TimeoutError'||error?.name==='AbortError')throw Error('O serviço Gosom não respondeu dentro do prazo. A tarefa foi preservada; tente consultar novamente.');
   throw Error('Não foi possível conectar ao serviço Gosom; a tarefa foi preservada.');
@@ -194,11 +205,14 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
    return {status:state.status,error:state.error||null};
   }
   const today=daySP(at);
-  const daily=all("SELECT created_at FROM maps_scraper_jobs WHERE auto_discovery=1 ORDER BY created_at DESC LIMIT 50")
-   .filter(x=>Number.isFinite(Date.parse(x.created_at))&&daySP(new Date(x.created_at))===today).length;
+  const recent=all("SELECT status,created_at FROM maps_scraper_jobs WHERE auto_discovery=1 ORDER BY created_at DESC LIMIT 50");
+  const daily=recent.filter(x=>Number.isFinite(Date.parse(x.created_at))&&daySP(new Date(x.created_at))===today).length;
   if(daily>=AUTO_MAPS_MAX_JOBS_PER_DAY)return {status:'DAILY_CAP',jobsToday:daily};
   const last=Date.parse(getSetting('maps_auto_last_start_at','')||'')||0;
-  if(at.getTime()-last<AUTO_MAPS_COOLDOWN_MS)return {status:'COOLDOWN'};
+  // A lost job after moving from Render to Railway is not a successful
+  // discovery: retry within the *daily attempt cap* without waiting 90min.
+  const lastFailed=recent[0]?.status==='FAILED';
+  if(!lastFailed&&at.getTime()-last<AUTO_MAPS_COOLDOWN_MS)return {status:'COOLDOWN'};
   const cities=String(getSetting('cities','Sorocaba,Votorantim,Campinas')).split(',').map(x=>x.trim()).filter(x=>x.length>=2&&x.length<=85).slice(0,3);
   if(!cities.length)return {status:'NO_CITY'};
   const cursor=Math.max(0,Math.trunc(Number(getSetting('maps_auto_cursor',0))||0));
