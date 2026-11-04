@@ -132,7 +132,7 @@ export async function tickApproachQueue(deps={}){
  try{
   const time=currentTime(),batch=currentBatch();
   if(!batch)return {status:'IDLE'};
-  if(getSetting('paused',true))return {status:'PAUSED'};
+  if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return {status:'PAUSED'};
   if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
   const clock=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
@@ -151,7 +151,8 @@ export async function tickApproachQueue(deps={}){
    if(!currentBatch()||currentBatch().id!==batch.id)return false;
    const latest=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
    const nowMs=currentTime();
-   if(nowMs-latest<APPROACH_INTERVAL_MS||!insideApproachWindow(new Date(nowMs))||getSetting('paused',true))return false;
+   if(nowMs-latest<APPROACH_INTERVAL_MS||!insideApproachWindow(new Date(nowMs)))return false;
+   if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return false;
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
    if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS'))return false;
