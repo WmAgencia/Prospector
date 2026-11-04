@@ -79,7 +79,7 @@ export function cancelApproachQueue(){
 // Enrollment uses the same durable queue and 90-second clock as manual selections.
 // This authorization is limited to the autonomous research program. It does
 // not invent customer consent, override opt-outs, or contact existing clients.
-const normalizeIdentity=x=>String(x||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+const normalizeIdentity=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 const businessIdentity=l=>l?.business&&l?.city?normalizeIdentity(l.city)+'|'+normalizeIdentity(l.business):'';
 function unsafeSister(sibling,at){
  if(['INTERESTED','CONVERSING','CLOSED_WON'].includes(sibling.stage))return true;
