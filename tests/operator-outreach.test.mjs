@@ -7,6 +7,8 @@ process.env.PROSPECTOR_DATA_DIR=dir;
 const db=await import('../dashboard/db.mjs');
 db.setSetting('paused',false);
 const queue=await import('../dashboard/prospecting-queue.mjs');
+// Janela fixa (14:00 em São Paulo) para não depender do horário em que o teste roda.
+const IN_WINDOW=()=>Date.parse('2026-11-04T17:00:00Z');
 test('operator selection queues more than 100 public businesses without creating consent',()=>{
  const ids=Array.from({length:105},(_,i)=>db.addLead({business:'Public '+i,phone:'1198'+String(i).padStart(7,'0'),source:'MANUAL'}).lead.id);
  const result=queue.enqueueApprovedApproaches({leadIds:ids,approve:true,operatorApproved:true});
@@ -42,7 +44,7 @@ test('current cycle needs an actual incoming reply and cancellation cannot becom
  assert.equal(handoff.conversationHandoffStatus(thread.id).canDeliverToAi,true);
  assert.equal((await handoff.changeConversationHandoff({chatId:thread.id,manual:false})).status,200);
  db.run('UPDATE threads SET manual_takeover=0 WHERE id=?',thread.id);
- await queue.tickApproachQueue({send});
+ await queue.tickApproachQueue({send,currentTime:IN_WINDOW});
  db.run("UPDATE leads SET stage='DISCOVERED' WHERE id=?",l.id);
  db.run("UPDATE messages SET at='2020-01-01' WHERE thread_id=?",thread.id);
  db.run("UPDATE prospecting_batch_items SET attempt_at='2020-01-01' WHERE lead_id=?",l.id);
@@ -58,6 +60,7 @@ test('operator approval cannot bypass owner, client, optout or human takeover',(
  db.run("INSERT INTO contact_relationships(phone,kind,evidence,source,updated_at) VALUES(?,'EXISTING_CLIENT','verified customer','OPERATOR',?)",cases[1].phone,db.now());
  db.run('INSERT INTO suppressions(phone,reason,created_at) VALUES(?,?,?)',cases[2].phone,'optout',db.now());
  const t=db.getThread(cases[3].id,cases[3].phone+'@s.whatsapp.net');db.run('UPDATE threads SET manual_takeover=1 WHERE id=?',t.id);
+ queue.cancelApproachQueue();
  assert.equal(queue.enqueueApprovedApproaches({leadIds:cases.map(x=>x.id),approve:true,operatorApproved:true}).status,403);
  delete process.env.PROSPECTOR_OWNER_PHONE;
 });

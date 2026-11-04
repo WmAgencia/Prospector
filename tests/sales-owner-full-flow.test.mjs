@@ -14,7 +14,8 @@ const b=await import('../dashboard/waakg-bridge.mjs');
 const a=await import('../dashboard/groq-sales-automation.mjs');
 const p=await import('../dashboard/owner-price-approvals.mjs');
 const intro=await import('../dashboard/prospecting-introduction.mjs');
-let sequence=0,time=Date.now();const delivered=[];
+// 12:00 em São Paulo: sempre dentro da janela 08:00–17:30.
+let sequence=0,time=Date.parse('2026-11-04T15:00:00Z');const delivered=[];
 const send=async(route,opts)=>{delivered.push({route,...opts.data});return {status:true};};
 const status=async()=>({connected:true,sessionId:'synthetic'});
 const deps={status,send,draft:async()=>({ok:true,draft:'Criamos um site para apresentar seus serviços. Qual é sua principal necessidade?'}),qualify:async()=>({confirmed:false})};

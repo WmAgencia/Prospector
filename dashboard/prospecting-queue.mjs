@@ -2,6 +2,7 @@
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
 import {db,id,one,all,run,tx,now,audit,getSetting,setSetting,getThread,addMessage} from './db.mjs';
+import {daySP} from './radar.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
@@ -40,6 +41,25 @@ function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false,automat
 }
 function currentBatch(){
  return one("SELECT * FROM prospecting_batches WHERE status='ACTIVE' ORDER BY created_at ASC LIMIT 1");
+}
+// Um lote que ficou ACTIVE além do seu dia trava o ciclo seguinte: as 07:00 de
+// amanhã recusariam carregar a fila nova. Encerra lotes de dias anteriores sem
+// tocar em itens já enviados ou com entrega incerta.
+function closeStaleBatch(at=new Date()){
+ const batch=currentBatch();
+ if(!batch)return null;
+ const created=Date.parse(batch.created_at);
+ if(!Number.isFinite(created))return null;
+ // Só expira lote de dia ANTERIOR. Lote do mesmo dia (ou com data futura por
+ // desvio de relógio) continua válido.
+ const batchDay=daySP(new Date(created)),today=daySP(at);
+ if(batchDay>=today)return null;
+ const pending=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED'",batch.id)?.n||0;
+ if(!pending)return null;
+ run("UPDATE prospecting_batch_items SET status='CANCELLED',error='Janela encerrada; lote expirado' WHERE batch_id=? AND status='QUEUED'",batch.id);
+ run("UPDATE prospecting_batches SET status='EXPIRED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);
+ audit('PROSPECTING_BATCH_EXPIRED',null,{batchId:batch.id,cancelled:pending});
+ return {status:'EXPIRED',batchId:batch.id,cancelled:pending};
 }
 // Operador liberou a abordagem fria (2026-11-04). O opt-in por contato continua
 // valendo para o Groq: a primeira resposta da pessoa é o que libera a conversa.
@@ -100,6 +120,7 @@ function unsafeSister(sibling,at){
 export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
  if(getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
  if(getSetting('paused',true))return {status:'PAUSED'};
+ closeStaleBatch(at);
  if(currentBatch())return {status:'ACTIVE'};
  if(!insideApproachWindow(at))return {status:'OUTSIDE_WINDOW'};
  const atMs=at.getTime();
@@ -139,6 +160,7 @@ function createAutonomousBatch(selected){
 // fila nasce antes da janela e o trabalhador envia a partir das 08:00, 90s cada.
 export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
  if(getSetting('paused',true))return {status:'PAUSED'};
+ closeStaleBatch(at);
  if(currentBatch())return {status:'ACTIVE'};
  const atMs=at.getTime();
  const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL AND created_at>=? ORDER BY created_at DESC LIMIT 3000",new Date(atMs-18*3600_000).toISOString());
@@ -163,6 +185,8 @@ export async function tickApproachQueue(deps={}){
   if(!batch)return {status:'IDLE'};
   if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return {status:'PAUSED'};
   if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
+  const expired=closeStaleBatch(new Date(time));
+  if(expired)return expired;
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
   const clock=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
