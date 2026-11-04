@@ -78,8 +78,9 @@ export async function waControlStatus(){
   const live=detail?.data||{};
   const status=String(live.status||target.status||"DISCONNECTED");
   const connected=status==="CONNECTED"&&live.hasInstance===true&&Boolean(live.me?.id||live.me?.jid);
-  return {ok:true,connected,status:connected?"CONNECTED":status==="CONNECTED"?"DISCONNECTED":status,
-   sessionId:picked,hasSession:true,totalSessions:arr.length,qrAvailable:!connected};
+  const transportStale=status==="CONNECTED"&&!connected;
+  return {ok:true,connected,status:transportStale?"DISCONNECTED":status,
+   transportStale,sessionId:picked,hasSession:true,totalSessions:arr.length,qrAvailable:!connected};
  }catch(e){return {ok:false,connected:false,status:"ERROR",message:String(e.message).slice(0,180),sessionId,hasSession:!!sessionId};}
 }
 export async function waConnect(){
@@ -92,7 +93,13 @@ export async function waConnect(){
   if(!safeId(sessionId))throw Error("WA-AKG não criou uma sessão válida");
   setSetting(sessionKey,sessionId);
  }
- if(!state.connected&&!["SCAN_QR","CONNECTING","INITIALIZING"].includes(state.status))await waRequest("/api/sessions/"+encodeURIComponent(sessionId)+"/start",{method:"POST",data:{}});
+ if(state.transportStale){
+  // WA-AKG still has a stale CONNECTED instance, but no authenticated user:
+  // /start is a no-op in that state. Restart the socket before requesting QR.
+  await waRequest("/api/sessions/"+encodeURIComponent(sessionId)+"/restart",{method:"POST",data:{}});
+ }else if(!state.connected&&!["SCAN_QR","CONNECTING","INITIALIZING"].includes(state.status)){
+  await waRequest("/api/sessions/"+encodeURIComponent(sessionId)+"/start",{method:"POST",data:{}});
+ }
  // Configure webhook once, without exposing the shared secret to the browser.
  const destination="https://prospector-operacional-production.up.railway.app/api/wa-akg/webhook";
  const hookSecret=process.env.WA_AKG_WEBHOOK_SECRET||"";
@@ -112,7 +119,7 @@ export async function waGetQR(){
   const qr=typeof res.base64==="string"&&/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(res.base64)&&res.base64.length<250000?res.base64:null;
   return {status:status.status,connected:false,qr,message:qr?"Escaneie o código com WhatsApp > Aparelhos conectados":"O QR Code está sendo gerado"};
  }catch(e){
-  if(/Already connected|400/.test(e.message))return {status:"CONNECTED",connected:true,qr:null};
+  if(/Already connected/i.test(e.message))return {status:"VERIFYING",connected:false,qr:null,message:"O gateway informa uma conexão anterior. Clique em Reconectar para reiniciar a sessão."};
   return {status:status.status,connected:false,qr:null,message:"Aguardando QR Code. O servidor pode demorar alguns segundos."};
  }
 }
