@@ -1,10 +1,11 @@
 // One explicitly approved list, persisted in the Prospector volume.
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
-import {db,id,one,all,run,tx,now,audit,addLead,getThread,addMessage} from './db.mjs';
+import {db,id,one,all,run,tx,now,audit,getSetting,getThread,addMessage} from './db.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
-import {recontactDecision} from './prospecting-recontact.mjs';
+import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
+import {insideApproachWindow} from './outreach-window.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
 import {waRequest,selectedWaSession,waControlStatus} from './waakg-control.mjs';
 
@@ -12,17 +13,19 @@ export const APPROACH_INTERVAL_MS=90_000;
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batches(id TEXT PRIMARY KEY,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batch_items(id TEXT PRIMARY KEY,batch_id TEXT NOT NULL REFERENCES prospecting_batches(id),lead_id TEXT NOT NULL REFERENCES leads(id),phone TEXT NOT NULL,status TEXT NOT NULL,attempt_at TEXT,error TEXT,created_at TEXT NOT NULL,UNIQUE(batch_id,lead_id))");
 db.exec("CREATE INDEX IF NOT EXISTS idx_prospecting_batch_items ON prospecting_batch_items(status,batch_id,created_at)");
+if(!db.prepare('PRAGMA table_info(prospecting_batches)').all().some(x=>x.name==='origin'))
+ db.exec("ALTER TABLE prospecting_batches ADD COLUMN origin TEXT NOT NULL DEFAULT 'MANUAL'");
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_send_clock(id INTEGER PRIMARY KEY CHECK(id=1),last_attempt_ms INTEGER NOT NULL DEFAULT 0)");
 run("INSERT OR IGNORE INTO prospecting_send_clock(id,last_attempt_ms) VALUES(1,0)");
 // Crash safety: an interrupted network send may have been delivered.
 run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interrompido; conferir no WhatsApp' WHERE status='SENDING'");
 
-function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false){
+function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false,automaticApproved=false){
  const l=one("SELECT id,business,phone,stage,contact_permission FROM leads WHERE id=?",leadId);
  if(!l||!l.phone)return null;
  if(ignoreQueueItemId&&one('SELECT phone FROM prospecting_batch_items WHERE id=?',ignoreQueueItemId)?.phone!==l.phone)return null;
  if(!recontactDecision(l,Date.now(),ignoreQueueItemId).eligible)return null;
- if(!documentedOptIn(l.id)&&!operatorApproved&&!(ignoreQueueItemId&&operatorSelected(l.id)))return null;
+ if(!documentedOptIn(l.id)&&!operatorApproved&&!automaticApproved&&!(ignoreQueueItemId&&operatorSelected(l.id)))return null;
  if(one('SELECT phone FROM suppressions WHERE phone=?',l.phone))return null;
 
 
@@ -38,9 +41,9 @@ export function approachQueueStatus(){
  const waiting=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='QUEUED'")?.n||0;
  const unknown=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='UNKNOWN'")?.n||0;
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
- return {active:!!b,batchId:b?.id||null,waiting,sent,unknown,
+ return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
   intervalSeconds:90,nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),clock+APPROACH_INTERVAL_MS)).toISOString():null,
-  status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:false,requiresOperatorApproval:true};
+  status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:false,requiresOperatorApproval:false};
 }
 export function enqueueApprovedApproaches(input={}){
  if(input.operatorApproved===true&&input.offerType!==undefined&&!['portfolio','promotion','corporate'].includes(input.offerType))return {status:400,body:{error:'Tipo de oferta inválido'}};
@@ -73,6 +76,54 @@ export function cancelApproachQueue(){
  });
  return result;
 }
+// Enrollment uses the same durable queue and 90-second clock as manual selections.
+// This authorization is limited to the autonomous research program. It does
+// not invent customer consent, override opt-outs, or contact existing clients.
+const normalizeIdentity=x=>String(x||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+const businessIdentity=l=>l?.business&&l?.city?normalizeIdentity(l.city)+'|'+normalizeIdentity(l.business):'';
+function unsafeSister(sibling,at){
+ if(['INTERESTED','CONVERSING','CLOSED_WON'].includes(sibling.stage))return true;
+ if(sibling.phone&&one('SELECT 1 FROM suppressions WHERE phone=?',sibling.phone))return true;
+ const last=latestOutreachAt(sibling.id,sibling.phone);
+ const due=last?threeMonthsAfter(new Date(last)):null;
+ return !!due&&Date.parse(due)>at;
+}
+export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
+ if(getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
+ if(getSetting('paused',true))return {status:'PAUSED'};
+ if(currentBatch())return {status:'ACTIVE'};
+ if(!insideApproachWindow(at))return {status:'OUTSIDE_WINDOW'};
+ const atMs=at.getTime();
+ const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL ORDER BY created_at DESC LIMIT 6000");
+ const byIdentity=new Map();
+ for(const lead of rows){const key=businessIdentity(lead);if(key){if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(lead);}}
+ const selected=[],keys=new Set();
+ for(const lead of rows){
+  if(selected.length>=Math.max(1,Math.min(100,Number(maxBatch)||80)))break;
+  if(!['DISCOVERED','NO_INTEREST'].includes(lead.stage))continue;
+  if(!recontactDecision(lead,atMs).eligible)continue;
+  const key=businessIdentity(lead);
+  if(key&&(keys.has(key)||(byIdentity.get(key)||[]).some(other=>other.id!==lead.id&&unsafeSister(other,atMs))))continue;
+  selected.push(lead);if(key)keys.add(key);
+ }
+ if(!selected.length)return {status:'NO_ELIGIBLE_LEADS'};
+ return tx(()=>{
+  if(currentBatch())return {status:'ACTIVE'};
+  const batchId=id(),created=now();
+  run("INSERT INTO prospecting_batches(id,status,created_at,updated_at,origin) VALUES(?,'ACTIVE',?,?,'AUTONOMOUS')",batchId,created,created);
+  let queued=0;
+  for(const lead of selected){
+   // Recheck eligibility inside the transaction, including manual queue changes.
+   if(!eligibleLead(lead.id,'',false,true))continue;
+   run("INSERT INTO prospecting_batch_items(id,batch_id,lead_id,phone,status,created_at) VALUES(?,?,?,?,'QUEUED',?)",id(),batchId,lead.id,lead.phone,created);
+   queued++;
+  }
+  if(!queued){run('DELETE FROM prospecting_batches WHERE id=?',batchId);return {status:'NO_ELIGIBLE_LEADS'};}
+  audit('AUTONOMOUS_APPROACH_BATCH',null,{batchId,queued,window:'08:00-17:30',intervalSeconds:90,threeCalendarMonths:true});
+  return {status:'QUEUED',batchId,queued};
+ });
+}
+
 let locked=false;
 export async function tickApproachQueue(deps={}){
  if(locked)return {status:'BUSY'};
@@ -81,11 +132,14 @@ export async function tickApproachQueue(deps={}){
  try{
   const time=currentTime(),batch=currentBatch();
   if(!batch)return {status:'IDLE'};
+  if(getSetting('paused',true))return {status:'PAUSED'};
+  if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
+  if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
   const clock=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
   if(!next){run("UPDATE prospecting_batches SET status='COMPLETED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);return {status:'COMPLETED'};}
   if(time-clock<APPROACH_INTERVAL_MS)return {status:'WAITING',remainingMs:APPROACH_INTERVAL_MS-(time-clock)};
-  if(!eligibleLead(next.lead_id,next.id)){
+  if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS')){
    run("UPDATE prospecting_batch_items SET status='SKIPPED',error='Elegibilidade alterada',attempt_at=? WHERE id=?",now(),next.id);
    return {status:'SKIPPED'};
   }
@@ -97,9 +151,10 @@ export async function tickApproachQueue(deps={}){
    if(!currentBatch()||currentBatch().id!==batch.id)return false;
    const latest=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
    const nowMs=currentTime();
-   if(nowMs-latest<APPROACH_INTERVAL_MS)return false;
+   if(nowMs-latest<APPROACH_INTERVAL_MS||!insideApproachWindow(new Date(nowMs))||getSetting('paused',true))return false;
+   if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return false;
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
-   if(!eligibleLead(next.lead_id,next.id))return false;
+   if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS'))return false;
    run('UPDATE prospecting_send_clock SET last_attempt_ms=? WHERE id=1',nowMs);
    run("UPDATE prospecting_batch_items SET status='SENDING',attempt_at=? WHERE id=? AND status='QUEUED'",new Date(nowMs).toISOString(),next.id);
    // No duplicate recipient attempts even after crashes.
