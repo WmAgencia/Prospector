@@ -1,6 +1,6 @@
 // Offline simulation of two separate agents for 100 fictional businesses.
 // Uses production's pure commercial decision functions, never WA-AKG, DB, queue or notifications.
-import {detectAutomaticReply,portfolioQuestion,isBaseOfferQuestion,friendlyGreeting,fixedOfferPitch,fixedOfferPriceReply,WESLEY_PRESENTATION} from '../portfolio-offer-550.mjs';
+import {detectAutomaticReply,portfolioQuestion,isBaseOfferQuestion,isPortfolioFAQ,fixedOfferFollowup,friendlyGreeting,fixedOfferPitch,fixedOfferPriceReply,WESLEY_PRESENTATION} from '../portfolio-offer-550.mjs';
 import {salesEnding} from '../sales-policy.mjs';
 import {explicitInterest} from '../groq-interest-check.mjs';
 
@@ -44,8 +44,9 @@ export function safeFranciscaAgent({draft=null,at=new Date('2026-11-04T15:00:00Z
   if(end==='OPT_OUT'||end==='NO_INTEREST')return {event:end,text:'',terminal:true};
   if(end==='HUMAN_REVIEW'||explicitInterest(inbound))return {event:'HUMAN_HANDOFF',text:'',terminal:true};
   if(stage==='GREETING_SENT')return {event:'INTRO',text:WESLEY_PRESENTATION};
-  if(isBaseOfferQuestion(inbound)){
-   return {event:'FIXED_OFFER',text:portfolioQuestion(inbound)&&!/quanto|preço|preco|valor|r\$/i.test(inbound)?
+  if(isBaseOfferQuestion(inbound)||isPortfolioFAQ(inbound)){
+   const hasPitch=history.some(t=>t.role==='FRANCISCA'&&t.event==='FIXED_OFFER');
+   return {event:'FIXED_OFFER',text:(hasPitch||isPortfolioFAQ(inbound))?fixedOfferFollowup(inbound,at):portfolioQuestion(inbound)&&!/quanto|preço|preco|valor|r\$/i.test(inbound)?
     fixedOfferPitch(scenario,at):fixedOfferPriceReply(at)};
   }
   if(/parcelamento|pagar no cartão|loja virtual|checkout|sistema/i.test(inbound))
@@ -70,7 +71,9 @@ export function gradeVirtualConversation(scenario,transcript){
   if(!/R\$ 550/.test(all))issues.push('MISSING_FIXED_PRICE');
  }
  if(scenario.style==='interessado'&&transcript.at(-1)?.event!=='HUMAN_HANDOFF')issues.push('MISSING_INTEREST_HANDOFF');
- if(transcript.some(t=>t.event==='FIXED_OFFER'&&!/R\$ 550/.test(t.text)))issues.push('WRONG_FIXED_PRICE');
+ if(transcript.some(t=>t.event==='FIXED_OFFER'&&!/R\$ 550/.test(t.text)&&!/(?:Master SEO|três dias)/i.test(t.text)))issues.push('WRONG_FIXED_PRICE');
+ const texts=transcript.filter(t=>t.event==='FIXED_OFFER').map(t=>t.text);
+ if(texts.length>1&&new Set(texts).size<texts.length)issues.push('REPEATED_IDENTICAL_PITCH');
  return issues;
 }
 export async function simulateConversation({scenario,customerAgent=scriptedClientAgent(scenario),franciscaAgent=safeFranciscaAgent(),maxTurns=4,at=new Date('2026-11-04T15:00:00Z')}={}){
