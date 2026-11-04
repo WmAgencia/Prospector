@@ -5,7 +5,8 @@ import {aiDraft} from './ai-groq.mjs';
 import {getSetting} from './db.mjs';
 import {conversationAuthorized,operatorOffer} from './operator-outreach.mjs';
 import {requestPriceApproval,approvedPriceForLead} from './owner-price-approvals.mjs';
-import {prospectSalesContext,priceQuestion} from './sales-policy.mjs';
+import {prospectSalesContext,priceQuestion,salesEnding} from './sales-policy.mjs';
+import {detectAutomaticReply,isBaseOfferQuestion,portfolioQuestion,fixedOfferPitch,fixedOfferPriceReply} from './portfolio-offer-550.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
@@ -50,12 +51,13 @@ export function queueInboundTurn({providerId,jid}={}){
 }
 const active=new Set();
 export async function handleSalesTurn(providerId,deps={}){
- const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
+ const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.segment,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
  if(!r)return {state:'SKIP'};
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
  const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
  const allowTest=identity.role==='OWNER'&&identity.testSandbox===true;
  const salesFollowup=approvedProspectFollowup(identity,r.jid);
+ const portfolioAllowed=salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
  const intro=introductionStatus(r.lead_id);
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))return finish('SKIPPED','INTRO_NOT_COMPLETE');
  if(identity.role==='UNVERIFIED')return finish('SKIPPED','UNVERIFIED_SENDER');
@@ -63,7 +65,8 @@ export async function handleSalesTurn(providerId,deps={}){
  if(!salesFollowup&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
  if(r.session_id!==selectedWaSession())return finish('SKIPPED','SESSION');
  if(!allowTest&&(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP)||r.phone===personalPhone()))return finish('SKIPPED','OWNER');
- if(optedOut(r.body)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT');
+ if(optedOut(r.body)||['OPT_OUT','NO_INTEREST'].includes(salesEnding(r.body))||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT_OR_REFUSAL');
+ if(detectAutomaticReply(r.body))return finish('SKIPPED','AUTOMATIC_RESPONSE');
  if(identity.role!=='EXISTING_CLIENT'&&['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(r.stage))return finish('SKIPPED','ALREADY_HANDOFF');
  const stale=()=>{
   const current=one('SELECT l.stage,l.phone,t.manual_takeover,i.state inbox_state,i.body FROM leads l JOIN threads t ON t.lead_id=l.id JOIN waakg_inbox i ON i.provider_id=? WHERE l.id=?',providerId,r.lead_id);
@@ -84,7 +87,9 @@ export async function handleSalesTurn(providerId,deps={}){
  const dialogue=analyzeChatTurn({text:r.body,history:recentTurns,role:identity.role});
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
- const financial=priceQuestion(r.body)&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
+ const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
+ const fixedOffer=portfolioAllowed&&!buyerCommitment&&isBaseOfferQuestion(r.body);
+ const financial=priceQuestion(r.body)&&!fixedOffer&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
  const approval=financial?(deps.requestPriceApproval||requestPriceApproval)({leadId:r.lead_id,providerId,question:r.body,sessionId:r.session_id}):null;
  if(financial&&!approval?.ok)return finish('REVIEW','PRICE_APPROVAL_UNAVAILABLE');
  const qualify=deps.qualify||qualifyWithGroq;
@@ -129,12 +134,12 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('HANDOFF','REQUESTED_HUMAN');
  }
  // A one-word hello never requires an external model call.
- const draft=financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+ const draft=fixedOffer?{ok:true,draft:portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+
-     (salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
+     (salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(portfolioAllowed?'Existe uma oferta BASE aprovada para portfólio: R$ 550 com domínio por um ano e prazo de até 3 dias após materiais/escopo. Não invente extras nem desconto de 90%; consulte o operador para parcelamento ou outra modalidade.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
  if(stale())return finish(stale());
  if(!draft.ok||!draft.draft){
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});
@@ -145,7 +150,8 @@ export async function handleSalesTurn(providerId,deps={}){
   audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});
   return finish('REVIEW','REPEATED_OR_EMPTY_REPLY');
  }
- const review=reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
+ // Only a server-authored fixed portfolio template bypasses the generic price filter.
+ const review=fixedOffer?{ok:true,code:'OPERATOR_APPROVED_FIXED_OFFER'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
  if(!review.ok){
   audit('GROQ_REPLY_REJECTED',r.lead_id,{code:review.code,test:allowTest});
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'Resposta bloqueada para revisão: '+review.code});
