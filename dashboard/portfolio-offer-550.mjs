@@ -79,3 +79,17 @@ export function fixedOfferFollowup(question='',at=new Date()){
  if(/(?:quanto|preco|valor|custa|r\$\s*550)/.test(n))return fixedOfferPriceReply(at);
  return 'A proposta base continua sendo um site profissional por R$ 550, com domínio pago por um ano e prazo previsto de até três dias após receber o material e validar o escopo. Posso esclarecer algum ponto específico?';
 }
+
+export function safeGeneralReply(question='',lead={}){
+ const n=norm(question);
+ if(/(?:ja tenho site|ja temos site|nosso site (?:ja )?(?:funciona|existe))/.test(n))
+  return 'Se o site de vocês já atende bem, não faz sentido sugerir outro sem necessidade. Podemos avaliar melhorias pontuais de conteúdo, apresentação e contato, caso seja útil.';
+ if(/(?:quem fala|quem e voce|quem esta falando|com quem)/.test(n))
+  return 'Aqui é a Francisca, assistente virtual da Consecom. Estou dando continuidade à proposta apresentada pelo Wesley e posso explicar o que a agência oferece.';
+ if(/(?:anuncio|trafego pago|meta ads|google ads)/.test(n))
+  return 'A Consecom trabalha com publicidade e tecnologia. A criação do site e a gestão de anúncios são serviços diferentes, com escopos que precisam ser alinhados antes da contratação.';
+ if(/(?:agendar|agenda|reserva|loja virtual|pagamento|parcelamento)/.test(n))
+  return 'Essa funcionalidade precisa ser avaliada com nossa equipe antes de confirmar escopo, valor ou prazo. Posso encaminhar sua dúvida ao responsável.';
+ const focus=siteFocus(lead.segment,lead.business);
+ return 'A ideia é desenvolver um site profissional que organize '+focus+'. Se você quiser, posso explicar a proposta base e como ela ajudaria a empresa.';
+}
