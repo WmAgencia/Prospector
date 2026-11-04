@@ -58,7 +58,7 @@ import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone} from '
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
-import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes} from './gosom-maps.mjs';
+import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
 import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
@@ -836,9 +836,15 @@ async function checkMapsJobs(){
    if(item.changed)console.info('[maps background]',JSON.stringify({status:item.status,idPresent:!!item.id}));
    if(item.error)console.warn('[maps background]',item.error);
   }
+  const auto=await automaticMapsDiscovery();
+  if(['PENDING','IMPORTED','SOURCE_ERROR','MANUAL_JOB_RUNNING','FAILED'].includes(auto.status))
+   console.info('[maps automatic research]',JSON.stringify({status:auto.status,created:!!auto.created,
+    city:auto.city||null,niche:auto.niche||null,added:auto.added||0,processed:auto.processed||0,
+    error:auto.error||null}));
+  if(auto.status==='IMPORTED'&&auto.added)notify();
  }catch(error){console.warn('[maps background]',String(error.message).slice(0,160));}
 }
-const mapsStatusTimer=setInterval(checkMapsJobs,5*60_000);
+const mapsStatusTimer=setInterval(checkMapsJobs,2*60_000);
 // Somente OSM executa pesquisas automáticas. Google Places permanece inativo.
 setTimeout(checkOSMDiscovery,process.env.RUN_OSM_DISCOVERY_RECOVERY_ONCE==='true'?55000:12000).unref();
 setTimeout(checkMapsJobs,25000).unref();
