@@ -1,9 +1,12 @@
 // Async Gosom Google Maps integration. All provider calls remain server-side.
 // Jobs are never mistaken for completed results; importing requires explicit user action.
-import {db,one,all,run,id,now,addLead,audit} from './db.mjs';
+import {db,one,all,run,id,now,addLead,audit,getSetting,setSetting} from './db.mjs';
+import {daySP,hourSP} from './radar.mjs';
 import {recordOrigin} from './discovery.mjs';
 import {prospectingList} from './prospecting-search.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS maps_scraper_jobs(id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,niche TEXT NOT NULL,city TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,imported_at TEXT,added INTEGER NOT NULL DEFAULT 0,processed INTEGER NOT NULL DEFAULT 0,error TEXT)");
+if(!db.prepare('PRAGMA table_info(maps_scraper_jobs)').all().some(x=>x.name==='auto_discovery'))
+ db.exec('ALTER TABLE maps_scraper_jobs ADD COLUMN auto_discovery INTEGER NOT NULL DEFAULT 0');
 const URL_BASE='https://consecom-prospector-maps.onrender.com';
 const configured=()=>Boolean(process.env.PROSPECTOR_MAPS_KEY);
 if(process.env.RUN_MAPS_SMOKE==='true'){
@@ -34,7 +37,7 @@ async function request(path,{method='GET',payload=null,expect='json'}={}){
  return response;
 }
 function row(idValue){return one('SELECT * FROM maps_scraper_jobs WHERE id=?',idValue);}
-export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:'Render',async:true,automaticSend:false,privateAPI:true,source:'Google Maps (termos aplicáveis)',jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
+export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:'Render',async:true,automaticSend:false,autoResearchEnabled:process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED==='true',privateAPI:true,source:'Google Maps (termos aplicáveis)',jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error,auto_discovery FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
 
 if(process.env.RUN_MAPS_CREATE_SMOKE==='true'){
  setTimeout(async()=>{
@@ -151,4 +154,64 @@ export async function refreshActiveMapsScrapes({limit=2,maxAgeHours=6}={}){
   }
  }
  return outcomes;
+}
+
+
+// An operator explicitly requested unattended business research, not
+// unattended WhatsApp outreach. This opt-in worker only creates internal Maps
+// searches and imports *its own* completed jobs into the review list.
+// Manually-created jobs retain their explicit import step.
+// Limit the scraper to two sequential jobs/day and a 90-minute cooldown.
+export const AUTO_MAPS_MAX_JOBS_PER_DAY=2;
+export const AUTO_MAPS_COOLDOWN_MS=90*60_000;
+export const AUTO_MAPS_NICHES=['oficinas mecânicas','restaurantes','salões de beleza','dentistas','pet shops','contabilidade'];
+let autoMapsLocked=false;
+export async function automaticMapsDiscovery({at=new Date()}={}){
+ if(autoMapsLocked)return {status:'BUSY'};
+ if(process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED!=='true')return {status:'DISABLED'};
+ if(!configured())return {status:'NOT_CONFIGURED'};
+ if(getSetting('discovery_auto_enabled',false)!==true)return {status:'DISABLED_BY_OPERATOR'};
+ if(hourSP(at)<5)return {status:'BEFORE_START'};
+ autoMapsLocked=true;
+ try{
+  // Import only explicitly auto-researched data. Do not silently import a
+  // manual job whose owner has not reviewed the results.
+  const complete=one("SELECT id FROM maps_scraper_jobs WHERE auto_discovery=1 AND status='COMPLETED' ORDER BY created_at ASC LIMIT 1");
+  if(complete){
+   const result=await importMapsScrape(complete.id);
+   audit('MAPS_AUTO_DISCOVERY_IMPORTED',null,{jobId:complete.id,added:result.added,processed:result.processed});
+   return {status:'IMPORTED',added:result.added,processed:result.processed};
+  }
+  const active=one("SELECT id,auto_discovery FROM maps_scraper_jobs WHERE status IN ('PENDING','RUNNING') ORDER BY created_at ASC LIMIT 1");
+  if(active){
+   if(!active.auto_discovery)return {status:'MANUAL_JOB_RUNNING'};
+   const state=await pollMapsScrape(active.id);
+   if(state.status==='COMPLETED'){
+    const result=await importMapsScrape(active.id);
+    audit('MAPS_AUTO_DISCOVERY_IMPORTED',null,{jobId:active.id,added:result.added,processed:result.processed});
+    return {status:'IMPORTED',added:result.added,processed:result.processed};
+   }
+   return {status:state.status,error:state.error||null};
+  }
+  const today=daySP(at);
+  const daily=all("SELECT created_at FROM maps_scraper_jobs WHERE auto_discovery=1 ORDER BY created_at DESC LIMIT 50")
+   .filter(x=>Number.isFinite(Date.parse(x.created_at))&&daySP(new Date(x.created_at))===today).length;
+  if(daily>=AUTO_MAPS_MAX_JOBS_PER_DAY)return {status:'DAILY_CAP',jobsToday:daily};
+  const last=Date.parse(getSetting('maps_auto_last_start_at','')||'')||0;
+  if(at.getTime()-last<AUTO_MAPS_COOLDOWN_MS)return {status:'COOLDOWN'};
+  const cities=String(getSetting('cities','Sorocaba,Votorantim,Campinas')).split(',').map(x=>x.trim()).filter(x=>x.length>=2&&x.length<=85).slice(0,3);
+  if(!cities.length)return {status:'NO_CITY'};
+  const cursor=Math.max(0,Math.trunc(Number(getSetting('maps_auto_cursor',0))||0));
+  const city=cities[Math.floor(cursor/AUTO_MAPS_NICHES.length)%cities.length];
+  const niche=AUTO_MAPS_NICHES[cursor%AUTO_MAPS_NICHES.length];
+  const job=await startMapsScrape({city,niche});
+  if(job.reused)return {status:'PENDING',reused:true};
+  run('UPDATE maps_scraper_jobs SET auto_discovery=1 WHERE id=?',job.id);
+  setSetting('maps_auto_cursor',cursor+1);
+  setSetting('maps_auto_last_start_at',at.toISOString());
+  audit('MAPS_AUTO_DISCOVERY_STARTED',null,{jobId:job.id,city,niche,limit:AUTO_MAPS_MAX_JOBS_PER_DAY});
+  return {status:'PENDING',created:true,city,niche};
+ }catch(error){
+  return {status:'SOURCE_ERROR',error:String(error?.message||error).slice(0,155)};
+ }finally{autoMapsLocked=false;}
 }
