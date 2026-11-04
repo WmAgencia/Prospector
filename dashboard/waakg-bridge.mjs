@@ -7,6 +7,7 @@ import {ownerReceived} from "./groq-owner.mjs";
 import {classifyContact} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
+import {detectAutomaticReply} from './portfolio-offer-550.mjs';
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
 import {routeIntroductionReply} from "./prospecting-introduction.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
@@ -89,13 +90,13 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  const thread=getThread(lead.id,jid);
  const firstInbound=!one("SELECT id FROM messages WHERE thread_id=? AND direction=\'in\' LIMIT 1",thread.id);
  addMessage({threadId:thread.id,providerId:unique,direction:"in",body:content,status:"received"});
- let state="REVIEW";
- const ending=identity.role==='PROSPECT_APPROACHED'?salesEnding(content):null;
- if(isExplicitOptOut(content)||ending==='OPT_OUT'){
+ let state=identity.role==='PROSPECT_APPROACHED'&&detectAutomaticReply(content)?'AUTO_REPLY':'REVIEW';
+ const ending=identity.role==='PROSPECT_APPROACHED'&&state!=='AUTO_REPLY'?salesEnding(content):null;
+ if(state!=='AUTO_REPLY'&&(isExplicitOptOut(content)||ending==='OPT_OUT')){
   stopLead(lead.id,"INBOUND_OPTOUT");state="OPT_OUT";
- }else if(/^(?:não tenho interesse|nao tenho interesse|agora não|agora nao|não é o momento|nao e o momento)(?:[.!\s]|$)/i.test(content)||ending==='NO_INTEREST'){
+ }else if(state!=='AUTO_REPLY'&&(/^(?:não tenho interesse|nao tenho interesse|agora não|agora nao|não é o momento|nao e o momento)(?:[.!\s]|$)/i.test(content)||ending==='NO_INTEREST')){
   stage(lead.id,'NO_INTEREST','INBOUND_SOFT_DECLINE');state='NO_INTEREST';
- }else if(/\b(humano|atendente|pessoa de verdade|falar com algu[eé]m)\b/i.test(content)||ending==='HUMAN_REVIEW'){
+ }else if(state!=='AUTO_REPLY'&&(/\b(humano|atendente|pessoa de verdade|falar com algu[eé]m)\b/i.test(content)||ending==='HUMAN_REVIEW')){
   run("UPDATE threads SET manual_takeover=1 WHERE id=?",thread.id);state="HUMAN";
  }
  if(identity.role==='PROSPECT_APPROACHED'){
@@ -107,7 +108,7 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
  // The owner has already been routed above, including the sandbox exception.
- if(firstInbound)queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
+ if(firstInbound&&state!=='AUTO_REPLY')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
  const introRoute=identity.role==='PROSPECT_APPROACHED'?
   routeIntroductionReply({leadId:lead.id,providerId:unique,body:content,inboxState:state,receivedAt:at}):{managed:false,queueAi:true};
  if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid});
