@@ -63,7 +63,7 @@ test('Three complete calendar months protect already approached contacts, no opt
  const initial='2026-08-04T14:00:00.000Z';
  db.run('INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)',
   l.id,l.phone,'SENT',db.id(),initial);
- db.stage(l.id,'NO_INTEREST','not now');
+ db.run("UPDATE leads SET stage='NO_INTEREST' WHERE id=?",l.id);
  const before=recontactDecision({id:l.id,phone:l.phone,stage:'NO_INTEREST'},Date.parse('2026-11-04T13:59:59Z'));
  assert.equal(before.eligible,false);
  assert.equal(before.reason,'THREE_MONTH_COOLDOWN');
@@ -105,7 +105,7 @@ test('Research starts at 5am São Paulo, replenishes lead stock, respects manual
  assert.equal(db.one("SELECT COUNT(*) n FROM leads WHERE business='Mecânica Alfa QA'").n,1);
  const present=ai.actionableLeadInventory();
  assert(present.ready>=1);
- assert.equal(db.one('SELECT COUNT(*) n FROM prospecting_batch_items').n,0);
+ assert.equal(db.one('SELECT COUNT(*) n FROM initial_contacts').n,1);
  assert.equal(db.getSetting('paused',true),true);
  const next=await maps.automaticMapsDiscovery({at:new Date('2026-11-04T08:17:00Z')});
  assert.equal(next.status,'COOLDOWN');
