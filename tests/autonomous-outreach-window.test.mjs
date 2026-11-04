@@ -73,4 +73,23 @@ test('one attempt every 90 seconds, even when the queue is checked every second'
  d.setSetting('paused',true);
  assert.equal((await q.tickApproachQueue(deps)).status,'PAUSED');
 });
+test('uncertain autonomous send pauses subsequent recipients without retrying',async()=>{
+ q.cancelApproachQueue();
+ d.setSetting('paused',false);
+ const fresh=lead('Oficina Segurança','5515999890099');
+ const enrolled=q.enrollAutonomousApproaches({at});
+ assert.equal(enrolled.status,'QUEUED');
+ let calls=0;
+ const time=Date.parse('2026-11-04T16:00:00Z');
+ const first=await q.tickApproachQueue({
+  currentTime:()=>time,getWaStatus:async()=>({connected:true,sessionId:'test-session'}),
+  getSession:()=> 'test-session',
+  send:async()=>{calls++;throw Error('synthetic uncertainty');}
+ });
+ assert.equal(first.status,'UNKNOWN');
+ assert.equal(d.getSetting('paused'),true);
+ assert.equal(calls,1);
+ assert.equal((await q.tickApproachQueue({currentTime:()=>time+90_000})).status,'PAUSED');
+ assert.equal(calls,1);
+});
 test.after(()=>{d.db.close();fs.rmSync(dir,{recursive:true,force:true});});
