@@ -84,4 +84,22 @@ test('Missing approval and public-phone records do not send',()=>{
  assert.equal(sent.length,2);
 });
 
+test('Documented consent enforcement blocks manual and autonomous bypass of public numbers',()=>{
+ const before=process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN;
+ process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN='true';
+ try{
+  const target=lead('Mecânica Não Autorizada','15988887778',false);
+  assert.equal(queue.enqueueApprovedApproaches({leadIds:[target.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,403);
+  assert.equal(queue.approachQueueStatus().requiresDocumentedOptIn,true);
+  db.run('UPDATE leads SET contact_permission=1 WHERE id=?',target.id);
+  db.audit('CONSENT_UPDATED',target.id,{permitted:true,evidence:'test permission documented'});
+  const eligible=queue.enqueueApprovedApproaches({leadIds:[target.id],approve:true,operatorApproved:true,offerType:'portfolio'});
+  assert.equal(eligible.status,202);
+  queue.cancelApproachQueue();
+ }finally{
+  if(before===undefined)delete process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN;
+  else process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN=before;
+ }
+});
+
 test.after(()=>{db.db.close();fs.rmSync(dir,{recursive:true,force:true});});
