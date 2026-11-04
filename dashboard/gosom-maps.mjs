@@ -7,7 +7,26 @@ import {prospectingList} from './prospecting-search.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS maps_scraper_jobs(id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,niche TEXT NOT NULL,city TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,imported_at TEXT,added INTEGER NOT NULL DEFAULT 0,processed INTEGER NOT NULL DEFAULT 0,error TEXT)");
 if(!db.prepare('PRAGMA table_info(maps_scraper_jobs)').all().some(x=>x.name==='auto_discovery'))
  db.exec('ALTER TABLE maps_scraper_jobs ADD COLUMN auto_discovery INTEGER NOT NULL DEFAULT 0');
-const URL_BASE='https://consecom-prospector-maps.onrender.com';
+if(URL_BASE===RAILWAY_MAPS_BASE&&!getSetting('maps_railway_migrated_v1',false)){
+ // Render's ephemeral /tmp job IDs cannot be reused on the new Railway worker.
+ // Explicitly mark only our interrupted automatic jobs for review, never the
+ // manually created jobs. Allow an immediate research retry on the new worker.
+ const interrupted=run("UPDATE maps_scraper_jobs SET status='FAILED',error='Tarefa interrompida na migração Render → Railway',updated_at=? WHERE auto_discovery=1 AND status IN ('PENDING','RUNNING')",now());
+ if(interrupted.changes){
+  const cursor=Number(getSetting('maps_auto_cursor',0))||0;
+  setSetting('maps_auto_cursor',Math.max(0,cursor-interrupted.changes));
+  setSetting('maps_auto_last_start_at','');
+ }
+ setSetting('maps_railway_migrated_v1',true);
+ audit('MAPS_WORKER_MOVED_TO_RAILWAY',null,{interrupted:interrupted.changes,privateNetwork:true});
+}
+// Private, authenticated worker lives alongside the Prospector on Railway.
+// Only the explicitly provisioned internal hostname is accepted, so this
+// variable cannot become an SSRF destination.
+const LEGACY_MAPS_BASE='https://consecom-prospector-maps.onrender.com';
+const RAILWAY_MAPS_BASE='http://prospector-maps.railway.internal:10000';
+const URL_BASE=String(process.env.PROSPECTOR_MAPS_BASE_URL||'').trim().replace(/\/$/,'')===RAILWAY_MAPS_BASE?
+ RAILWAY_MAPS_BASE:LEGACY_MAPS_BASE;
 const configured=()=>Boolean(process.env.PROSPECTOR_MAPS_KEY);
 if(process.env.RUN_MAPS_SMOKE==='true'){
  setTimeout(async()=>{
@@ -37,7 +56,7 @@ async function request(path,{method='GET',payload=null,expect='json'}={}){
  return response;
 }
 function row(idValue){return one('SELECT * FROM maps_scraper_jobs WHERE id=?',idValue);}
-export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:'Render',async:true,automaticSend:false,autoResearchEnabled:process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED==='true',privateAPI:true,source:'Google Maps (termos aplicáveis)',jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error,auto_discovery FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
+export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:URL_BASE===RAILWAY_MAPS_BASE?'Railway Hobby':'Render',async:true,automaticSend:false,autoResearchEnabled:process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED==='true',privateAPI:true,source:'Google Maps (termos aplicáveis)',jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error,auto_discovery FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
 
 if(process.env.RUN_MAPS_CREATE_SMOKE==='true'){
  setTimeout(async()=>{
