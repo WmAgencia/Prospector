@@ -53,6 +53,7 @@ export function makePolicyFranciscaAgent({draft}={}){
   // A faithful, offline approximation of the current branch's commercial
   // decision: approval is demanded for all price questions.
   const financial=priceQuestion(inbound);
+  if(['NO_INTEREST','OPT_OUT','HUMAN_REVIEW'].includes(salesEnding(inbound)))return null;
   if(financial)return {text:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',source:'CURRENT_OWNER_PRICE_RULE',approvalRequested:true,guard:{ok:true}};
   const context=prospectSalesContext({business:scenario.business,segment:scenario.category,stage:'CONVERSING',offerType:'portfolio'});
   const text=draft?await draft({scenario,turns,inbound,context:context+'\n'+salesTonePrompt()}):
@@ -87,7 +88,7 @@ export function assessConversation(scenario,transcript,{date='2026-11-04'}={}){
  const texts=transcript.filter(t=>t.role==='FRANCISCA').map(x=>String(x.text||''));
  const all=texts.join('\n');const folded=fold(all);
  const first=texts[0]||'';
- if(/\bol[aá],?\s+wesley\b/i.test(all))errors.push('ROLE_CONFUSION_WESLEY_IS_NOT_CUSTOMER');
+ if(/\b(?:oi|ol[aá]),?\s+wesley\b/i.test(all))errors.push('ROLE_CONFUSION_WESLEY_IS_NOT_CUSTOMER');
  if(/me passa.*(?:senha|token)|enviando (?:senha|token)/i.test(all))errors.push('SECRET_DISCLOSURE');
  if(/\b90\s*%/.test(all)&&/2[.,]?700|3[.,]?000/.test(all))errors.push('FALSE_DISCOUNT_MATH');
  if(/\b(?:garantido|primeir[oa]\s+(?:posic[aã]o|lugar))\b/i.test(all)&&/google/i.test(all))errors.push('UNSUPPORTED_SEO_GUARANTEE');
