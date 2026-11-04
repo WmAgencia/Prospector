@@ -180,6 +180,14 @@ export async function tickApproachQueue(deps={}){
   }catch(error){
    run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Entrega incerta; verificar manualmente' WHERE id=?",next.id);
    audit('PROSPECTING_GREETING_UNKNOWN',next.lead_id,{batchId:batch.id});
+   // Failure-closed: one ambiguous autonomous delivery pauses the entire
+   // prospecting queue. Never try another recipient until a human reviews
+   // the gateway and resumes; the unknown item is never automatically retried.
+   if(batch.origin==='AUTONOMOUS'){
+    setSetting('paused',true);
+    audit('AUTONOMOUS_OUTREACH_PAUSED_UNCERTAIN',null,{batchId:batch.id,manualReviewRequired:true});
+    console.warn('[automatic approach] paused: uncertain gateway delivery');
+   }
    return {status:'UNKNOWN',batchId:batch.id};
   }
  }finally{locked=false;}
