@@ -6,7 +6,7 @@ import {getSetting} from './db.mjs';
 import {conversationAuthorized,operatorOffer} from './operator-outreach.mjs';
 import {requestPriceApproval,approvedPriceForLead} from './owner-price-approvals.mjs';
 import {prospectSalesContext,priceQuestion,salesEnding} from './sales-policy.mjs';
-import {detectAutomaticReply,isBaseOfferQuestion,portfolioQuestion,fixedOfferPitch,fixedOfferPriceReply} from './portfolio-offer-550.mjs';
+import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup} from './portfolio-offer-550.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
@@ -80,6 +80,7 @@ export async function handleSalesTurn(providerId,deps={}){
  if(stale())return finish(stale());
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
  const recentTurns=all("SELECT direction,body,at FROM messages WHERE thread_id=? ORDER BY at DESC,rowid DESC LIMIT 22",r.thread_id).reverse();
+ const offerAlreadyExplained=recentTurns.some(m=>m.direction==='out'&&/R\$\s*550/i.test(String(m.body||'')));
  const history=recentTurns.slice(-8).map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
  // A chat is a continuous exchange. Read the real server-side thread rather
  // than asking the model to infer whether it has greeted the contact before.
@@ -88,7 +89,7 @@ export async function handleSalesTurn(providerId,deps={}){
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
  const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
- const fixedOffer=portfolioAllowed&&!buyerCommitment&&isBaseOfferQuestion(r.body);
+ const fixedOffer=portfolioAllowed&&!buyerCommitment&&(isBaseOfferQuestion(r.body)||isPortfolioFAQ(r.body));
  const financial=priceQuestion(r.body)&&!fixedOffer&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
  const approval=financial?(deps.requestPriceApproval||requestPriceApproval)({leadId:r.lead_id,providerId,question:r.body,sessionId:r.session_id}):null;
  if(financial&&!approval?.ok)return finish('REVIEW','PRICE_APPROVAL_UNAVAILABLE');
@@ -134,7 +135,7 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('HANDOFF','REQUESTED_HUMAN');
  }
  // A one-word hello never requires an external model call.
- const draft=fixedOffer?{ok:true,draft:portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+ const draft=fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
