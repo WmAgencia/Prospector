@@ -27,10 +27,22 @@ export function verifiedPersonName(lead={}){
  if(/(?:autoeletrica|mecanica|oficina|loja|empresa|buffet|solucoes|servicos|ltda|comercio|clinica|studio|eletrotec)/i.test(norm(name)))return "";
  return name;
 }
+// Fallback aprovado pelo operador: sem nome pessoal, usa o primeiro nome da
+// empresa; sem nada utilizável, só a saudação. Nunca inventa nome.
+export function greetingName(lead={}){
+ const person=verifiedPersonName(lead);
+ if(person)return person;
+ const business=String(lead.business||'').replace(/\b(?:ltda|me|eireli|epp|s\.?a\.?)\b\.?/gi,' ').trim();
+ const first=business.split(/[\s\-–—|•,./]+/).filter(Boolean)[0]||'';
+ if(!/^[\p{L}][\p{L}'’.-]{1,29}$/u.test(first))return '';
+ if(/^(?:a|o|os|as|de|da|do|das|dos|e|em|para|com|a|à|ao)$/i.test(first))return '';
+ if(/^(?:whatsapp|tudo|aqui|empresa|comercio|servicos|servico|loja|clinica|oficina|bar|restaurante)$/i.test(first))return '';
+ return first.charAt(0).toUpperCase()+first.slice(1);
+}
 export function friendlyGreeting(lead={},at=new Date()){
  const h=Number(new Intl.DateTimeFormat("en-GB",{hour:"2-digit",hourCycle:"h23",timeZone:"America/Sao_Paulo"}).format(at));
  const period=h>=5&&h<12?"bom dia":h>=12&&h<18?"boa tarde":"boa noite";
- const name=verifiedPersonName(lead);
+ const name=greetingName(lead);
  return "Olá"+(name?", "+name:"")+", "+period+"! Tudo bem?";
 }
 export function siteFocus(segment="",business=""){

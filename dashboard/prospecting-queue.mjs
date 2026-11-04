@@ -11,7 +11,7 @@ import {waRequest,selectedWaSession,waControlStatus} from './waakg-control.mjs';
 
 export const APPROACH_INTERVAL_MS=90_000;
 // Railway production always requires documented permission; tests may opt in explicitly.
-export const requiresDocumentedOptIn=()=>process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true'||process.env.NODE_ENV==='production'||!!process.env.RAILWAY_ENVIRONMENT;
+export const requiresDocumentedOptIn=()=>process.env.PROSPECTOR_COLD_FIRST_APPROACH!=='true'&&(process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true'||process.env.NODE_ENV==='production'||!!process.env.RAILWAY_ENVIRONMENT);
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batches(id TEXT PRIMARY KEY,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batch_items(id TEXT PRIMARY KEY,batch_id TEXT NOT NULL REFERENCES prospecting_batches(id),lead_id TEXT NOT NULL REFERENCES leads(id),phone TEXT NOT NULL,status TEXT NOT NULL,attempt_at TEXT,error TEXT,created_at TEXT NOT NULL,UNIQUE(batch_id,lead_id))");
 db.exec("CREATE INDEX IF NOT EXISTS idx_prospecting_batch_items ON prospecting_batch_items(status,batch_id,created_at)");
@@ -29,6 +29,7 @@ function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false,automat
  if(!recontactDecision(l,Date.now(),ignoreQueueItemId).eligible)return null;
  // Production safeguard: public business contact details and operator selection
  // are NOT evidence of WhatsApp marketing permission. Validate again at send time.
+ // Abordagem fria liberada pelo operador dispensa opt-in prévio (nome vem da empresa).
  if(requiresDocumentedOptIn()&&!documentedOptIn(l.id))return null;
  if(!documentedOptIn(l.id)&&!operatorApproved&&!automaticApproved&&!(ignoreQueueItemId&&operatorSelected(l.id)))return null;
  if(one('SELECT phone FROM suppressions WHERE phone=?',l.phone))return null;
@@ -40,6 +41,9 @@ function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false,automat
 function currentBatch(){
  return one("SELECT * FROM prospecting_batches WHERE status='ACTIVE' ORDER BY created_at ASC LIMIT 1");
 }
+// Operador liberou a abordagem fria (2026-11-04). O opt-in por contato continua
+// valendo para o Groq: a primeira resposta da pessoa é o que libera a conversa.
+export const coldFirstApproachEnabled=()=>process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
 export function approachQueueStatus(){
  const b=currentBatch();
  const clock=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
@@ -112,6 +116,9 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
   selected.push(lead);if(key)keys.add(key);
  }
  if(!selected.length)return {status:'NO_ELIGIBLE_LEADS'};
+ return createAutonomousBatch(selected);
+}
+function createAutonomousBatch(selected){
  return tx(()=>{
   if(currentBatch())return {status:'ACTIVE'};
   const batchId=id(),created=now();
@@ -127,6 +134,23 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
   audit('AUTONOMOUS_APPROACH_BATCH',null,{batchId,queued,window:'08:00-17:30',intervalSeconds:90,threeCalendarMonths:true});
   return {status:'QUEUED',batchId,queued};
  });
+}
+// Pré-aquecimento 07:00–08:00: a pesquisa do dia já virou leads no CRM, então a
+// fila nasce antes da janela e o trabalhador envia a partir das 08:00, 90s cada.
+export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
+ if(getSetting('paused',true))return {status:'PAUSED'};
+ if(currentBatch())return {status:'ACTIVE'};
+ const atMs=at.getTime();
+ const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL AND created_at>=? ORDER BY created_at DESC LIMIT 3000",new Date(atMs-18*3600_000).toISOString());
+ const selected=[];
+ for(const lead of rows){
+  if(selected.length>=Math.max(1,Math.min(300,Number(maxBatch)||200)))break;
+  if(!['DISCOVERED','NO_INTEREST'].includes(lead.stage))continue;
+  if(!recontactDecision(lead,atMs).eligible)continue;
+  selected.push(lead);
+ }
+ if(!selected.length)return {status:'NO_ELIGIBLE_LEADS'};
+ return createAutonomousBatch(selected);
 }
 
 let locked=false;

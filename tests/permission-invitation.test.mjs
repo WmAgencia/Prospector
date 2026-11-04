@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-invitation-'));
 process.env.PROSPECTOR_DATA_DIR=directory;
+// O modo convite exige uma base legal registrada por instância (opt-in explícito).
+process.env.PROSPECTOR_INVITATION_LEGAL_BASIS='true';
 const db=await import('../dashboard/db.mjs');
 const runtime=await import('../dashboard/runtime.mjs');
 const invitation=await import('../dashboard/permission-invitation.mjs');

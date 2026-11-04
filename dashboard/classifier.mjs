@@ -1,7 +1,7 @@
 // Classificador determinístico conservador e auditável.
 export const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}\s?!]/gu,' ').replace(/\s+/g,' ').trim();
 const rules=[
- ['OPT_OUT',/\b(?:pare de (?:me )?(?:mandar|enviar|chamar)|nao (?:me )?(?:mande|manda|chame|chama|contate)|me (?:remova|remove|exclua|exclui)|remove meu (?:numero|contato)|descadastr|bloqueia|para de me chamar)\b/],
+ ['OPT_OUT',/\b(?:pare(?: de)?(?: me)?(?: mandar| enviar| chamar| ligar| contatar| perturbar)?|stop|sair|sai(?:r| da lista)|remover da lista|tirar da lista|cancelar (?:o )?(?:envio|contato|mensagens)|nao (?:me )?(?:mande|manda|chame|chama|contate|ligue|ligar)|me (?:remova|remove|exclua|exclui|tire|tira)|remove meu (?:numero|contato)|descadastr(?:e|ar)?|bloqueia|para de me chamar)\b/],
  ['NOT_INTERESTED',/\b(?:(?:nao|n) tenho interesse|sem interesse|nao quero|nao preciso|obrigad[oa] mas nao|ja tenho (?:site|quem (?:faz|cuida)|empresa fazendo)|agora nao|nao to afim|nao estou interessado|nao desejo)\b/],
  ['INTERESTED',/\b(?:tenho interesse|me interessei|quero saber mais|quero conhecer|pode explicar|me explica|qual (?:o )?valor|quanto custa|quanto fica|me passa (?:os )?(?:precos|valores)|vamos marcar|pode agendar|me manda (?:mais )?informac(?:oes|ao)|quero contratar)\b/],
  ['QUESTION',/\b(?:como funciona|me conte mais|o que voces fazem|que servico|tem algum exemplo|manda (?:o )?(?:video|audio))\b/]

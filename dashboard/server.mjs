@@ -56,7 +56,8 @@ import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
 import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
-import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
+import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
+import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
@@ -247,14 +248,15 @@ if(!getSetting('five_tab_mode_20261028_applied',false)){
 // Explicit authorization on 2026-11-04: autonomous B2B initial greeting.
 // Never start legacy campaign workers in parallel. The persistent approach
 // clock, local business window, consent replies, and suppression rules remain.
-if(!getSetting('autonomous_outreach_nov04_rollout_v1',false)){
+// Operador autorizou o fluxo completo (pesquisa 07h, abordagens 08h-17h30).
+if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('autonomous_outreach_nov04_rollout_v1',false)){
  setSetting('autonomous_outreach_enabled',true);
  setSetting('paused',false);
  setSetting('auto_initial',false);
  setSetting('initial_interval_seconds',90);
  setSetting('discovery_auto_enabled',true);
  setSetting('autonomous_outreach_nov04_rollout_v1',true);
- audit('AUTONOMOUS_OUTREACH_ENABLED',null,{window:'08:00-17:30 America/Sao_Paulo',minSeconds:90,threeCalendarMonths:true,autoResearch:true});
+ audit('AUTONOMOUS_OUTREACH_ENABLED',null,{window:'08:00-17:30 America/Sao_Paulo',minSeconds:90,threeCalendarMonths:true,autoResearch:true,coldFirstApproach:process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true'});
 }
 
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
@@ -746,6 +748,7 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/media')return upload(req,url,res);
   if(req.method==='GET'&&pathname.startsWith('/api/media/')){
    const media=one('SELECT * FROM media WHERE id=?',pathname.split('/')[3]);if(!media)return respond(res,404,{error:'Arquivo não encontrado'});
+   if(path.basename(media.filename)!==media.filename||!fs.existsSync(path.join(mediaDir,media.filename)))return respond(res,404,{error:'Arquivo não encontrado'});
    const f=path.join(mediaDir,media.filename);res.writeHead(200,{'Content-Type':media.mime,'Content-Length':media.bytes,'Cache-Control':'private, max-age=120'});fs.createReadStream(f).pipe(res);return;
   }
   if(req.method==='GET'&&/^\/studio\/(?:projects\.json|sites\/[a-z0-9-]{2,80}\.html)$/.test(pathname)){
@@ -828,8 +831,13 @@ const customerAiTimer=setInterval(()=>{
 },6000);
 const autonomousQueueTimer=setInterval(()=>{
  try{
-  const result=enrollAutonomousApproaches();
-  if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',intervalSeconds:90}));notify();}
+  // Cold first approach: monta a fila das 07:00 à primeira abordagem das 08:00.
+  const cold=process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
+  const minutes=saoPauloClock();
+  const result=cold&&minutes>=7*60&&minutes<8*60
+   ?preloadApproachQueue()
+   :cold&&insideApproachWindow()?enrollAutonomousApproaches():enrollAutonomousApproaches();
+  if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',intervalSeconds:90,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
  }catch(error){console.warn('[automatic approach]',String(error?.message||error).slice(0,140));}
 },5000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{

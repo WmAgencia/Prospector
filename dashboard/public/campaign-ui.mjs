@@ -43,7 +43,7 @@ function renderActive(){
  const status=campaignStatus({workflow:active,activeId:id,settings:snapshot.settings,connection:snapshot.connection});
  const p=campaignPreview(active.steps);
  return '<section class="cm-active" aria-label="Campanha selecionada"><div class="cm-active-head"><div class="cm-active-icon">↗</div><span class="cm-overline">CAMPANHA SELECIONADA</span><span class="cm-state '+(status.running?'cm-green':'cm-muted')+'">'+(status.running?'● ':'')+esc(status.label)+'</span></div>'+
- '<h3>'+esc(active.name)+'</h3><p>O roteiro pode ser editado quando as abordagens estiverem pausadas. '+(snapshot.settings.paused?'Os envios permanecem pausados.':'Somente contatos autorizados podem receber abordagens.')+'</p>'+
+ '<h3>'+esc(active.name)+'</h3><p>O roteiro pode ser editado quando as abordagens estiverem pausadas. '+(snapshot.settings.paused?'Os envios permanecem pausados.':'Envios só para contatos com autorização registrada.')+'</p>'+
  '<div class="cm-mini-stats"><span>◷ Espera '+p.waitBeforeAudio+'s + '+p.waitBeforeVideo+'s</span><span>♫ Áudio '+(p.hasAudio?'pronto':'pendente')+'</span><span>▣ Vídeo '+(p.hasVideo?'pronto':'pendente')+'</span></div>'+
  '<div class="cm-actions"><button class="btn secondary cm-edit-in-dark" data-cm="edit" data-id="'+esc(active.id)+'">✎ Editar campanha</button></div><details class="cm-disclosure"><summary>Ver etapas da campanha <span aria-hidden="true">⌄</span></summary>'+previewRows(active.steps)+'</details></section>';
 }

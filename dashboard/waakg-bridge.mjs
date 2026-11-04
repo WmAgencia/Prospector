@@ -103,6 +103,7 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
   if(state==='REVIEW'&&lead.stage!=='CONVERSING')stage(lead.id,'CONVERSING','PROSPECT_REPLIED');
   const outcome=state==='OPT_OUT'?'OPT_OUT':state==='HUMAN'?'HUMAN_REVIEW':state==='NO_INTEREST'?'NO_INTEREST':null;
   if(outcome)recordSalesOutcome({leadId:lead.id,status:outcome,providerId:unique,evidence:content});
+  if(!outcome&&process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true')grantAutonomousFirstReply(lead.id,content);
  }
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
@@ -113,6 +114,19 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
   routeIntroductionReply({leadId:lead.id,providerId:unique,body:content,inboxState:state,receivedAt:at}):{managed:false,queueAi:true};
  if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid});
  return {status:200,body:{accepted:true,processed:true}};
+}
+// Decisão do operador (2026-11-04): a primeira mensagem é fria e genérica, então
+// a resposta real a ela é o opt-in para o Groq continuar a conversa. Recusas,
+// opt-out e respostas automáticas nunca chegam aqui.
+function grantAutonomousFirstReply(leadId,text){
+ const current=one('SELECT contact_permission FROM leads WHERE id=?',leadId);
+ if(!current)return false;
+ if(!one("SELECT id FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 ORDER BY at DESC LIMIT 1",leadId)){
+  run('UPDATE leads SET contact_permission=1 WHERE id=?',leadId);
+  audit('CONSENT_UPDATED',leadId,{permitted:true,method:'first_greeting_reply',evidence:String(text||'').slice(0,1000)});
+ }
+ // Só continua quem recebeu a saudação da fila; demais conversas ficam em revisão.
+ return !!one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id LIKE 'prospect-queue:%' LIMIT 1",leadId);
 }
 export async function draftInbox(input){
  const row=one("SELECT * FROM waakg_inbox WHERE id=?",String(input.id||""));

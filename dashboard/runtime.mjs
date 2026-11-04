@@ -287,7 +287,9 @@ export async function incoming(m) {
  let thread=one('SELECT * FROM threads WHERE jid=?',from)||one('SELECT * FROM threads WHERE jid=?',alt);
  let lead=identity.lead||(thread?one('SELECT * FROM leads WHERE id=?',thread.lead_id):null);
  if(!lead&&ph){
-  lead=addLead({business:m.pushName||ph,name:personalName(m.pushName),phone:ph,source:'WHATSAPP_INBOUND',contact_permission:true}).lead;
+  // Iniciar a conversa não é opt-in para prospecção ativa. O aceite é registrado
+  // apenas por uma resposta afirmativa (isFirstApproval) ou aprovação do operador.
+  lead=addLead({business:m.pushName||ph,name:personalName(m.pushName),phone:ph,source:'WHATSAPP_INBOUND',contact_permission:false}).lead;
   stage(lead.id,'REPLIED','mensagem iniciada pelo contato');
  }
  if(!lead){audit('UNRESOLVED_INCOMING',null,{jid:from,alt,providerId:m.key?.id});return;}

@@ -143,7 +143,7 @@ test('Named greeting waits for reply, sends Wesley exactly after 30s and transfe
  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
  time+=90_000;
  assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
- assert.match(sent.at(-1).text,/Olá, (?:bom dia|boa tarde|boa noite)! Tudo bem\?/);
+ assert.match(sent.at(-1).text,/Olá(?:, \p{Lu}\p{L}{1,29})?, (?:bom dia|boa tarde|boa noite)! Tudo bem\?/u);
  assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
  const incoming=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
   unique:'consecom-principal:proposed-greeting-1',content:'Oi, tudo bem!'});

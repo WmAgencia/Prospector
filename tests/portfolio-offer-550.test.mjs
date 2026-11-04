@@ -28,9 +28,12 @@ test('dates add exactly three local calendar days, including leap and year bound
 });
 
 test('business greeting is never copied into a personal vocative',()=>{
- assert.equal(friendlyGreeting({business:'Eletrotec - Auto Elétrica | Mecânica | Injeção Eletrônica'},at),'Olá, boa tarde! Tudo bem?');
- assert.equal(friendlyGreeting({business:'Autoelétrica Érico'},at),'Olá, boa tarde! Tudo bem?');
+ assert.equal(friendlyGreeting({business:'Eletrotec - Auto Elétrica | Mecânica | Injeção Eletrônica'},at),'Olá, Eletrotec, boa tarde! Tudo bem?');
+ assert.equal(friendlyGreeting({business:'Autoelétrica Érico'},at),'Olá, Autoelétrica, boa tarde! Tudo bem?');
  assert.equal(friendlyGreeting({name:'João',business:'Loja Joias'},at),'Olá, boa tarde! Tudo bem?');
+ assert.equal(friendlyGreeting({business:'Padaria & Cia'},at),'Olá, Padaria, boa tarde! Tudo bem?');
+ assert.equal(friendlyGreeting({business:'de Sorocaba'},at),'Olá, boa tarde! Tudo bem?');
+ assert.equal(friendlyGreeting({},at),'Olá, boa tarde! Tudo bem?');
  assert.equal(friendlyGreeting({name:'Érico',name_verified:true,business:'Autoelétrica Érico'},at),'Olá, Érico, boa tarde! Tudo bem?');
  assert.equal(verifiedPersonName({name:'Oficina Érico',name_verified:true}),'');
 });
