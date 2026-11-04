@@ -17,3 +17,23 @@ s=s.replace(old,'''        // Voice runtime is loaded in the custom WA-AKG Node 
 '''+old)
 p.write_text(s)
 print("WA-AKG socket voice extension installed outside Next bundle")
+
+# The upstream logout API only changes the session's DB status when no
+# in-memory socket exists. Stale saved credentials otherwise reconnect
+# without a new QR even after the operator intentionally logs out.
+logout=Path("/app/src/app/api/sessions/[sessionId]/[action]/route.ts")
+route=logout.read_text()
+old_fallback='''                    await prisma.session.update({
+                        where: { sessionId },
+                        data: { status: "LOGGED_OUT", qr: null }
+                    });'''
+new_fallback='''                    await prisma.$transaction([
+                        prisma.session.update({
+                            where: { sessionId },
+                            data: { status: "LOGGED_OUT", qr: null }
+                        }),
+                        prisma.authState.deleteMany({ where: { sessionId } })
+                    ]);'''
+assert route.count(old_fallback)==1, "WA-AKG logout fallback changed upstream"
+logout.write_text(route.replace(old_fallback,new_fallback))
+print("WA-AKG offline logout clears stale auth state and requires fresh QR")
