@@ -1,7 +1,7 @@
 // One explicitly approved list, persisted in the Prospector volume.
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
-import {db,id,one,all,run,tx,now,audit,getSetting,getThread,addMessage} from './db.mjs';
+import {db,id,one,all,run,tx,now,audit,getSetting,setSetting,getThread,addMessage} from './db.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
@@ -180,6 +180,14 @@ export async function tickApproachQueue(deps={}){
   }catch(error){
    run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Entrega incerta; verificar manualmente' WHERE id=?",next.id);
    audit('PROSPECTING_GREETING_UNKNOWN',next.lead_id,{batchId:batch.id});
+   // Failure-closed: one ambiguous autonomous delivery pauses the entire
+   // prospecting queue. Never try another recipient until a human reviews
+   // the gateway and resumes; the unknown item is never automatically retried.
+   if(batch.origin==='AUTONOMOUS'){
+    setSetting('paused',true);
+    audit('AUTONOMOUS_OUTREACH_PAUSED_UNCERTAIN',null,{batchId:batch.id,manualReviewRequired:true});
+    console.warn('[automatic approach] paused: uncertain gateway delivery');
+   }
    return {status:'UNKNOWN',batchId:batch.id};
   }
  }finally{locked=false;}
