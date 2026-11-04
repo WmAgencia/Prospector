@@ -100,6 +100,7 @@ test('Research starts at 5am São Paulo, replenishes lead stock, respects manual
  assert.equal(createCalls,1);
  const second=await maps.automaticMapsDiscovery({at:new Date('2026-11-04T08:16:00Z')});
  assert.equal(second.status,'IMPORTED');
+ console.info('[research import fixture]',JSON.stringify({added:second.added,processed:second.processed,skipped:second.skipped}));
  assert.equal(second.added,1);
  assert.equal(files,1);
  assert.equal(db.one("SELECT COUNT(*) n FROM leads WHERE business='Mecânica Alfa QA'").n,1);
