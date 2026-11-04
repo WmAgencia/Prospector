@@ -27,12 +27,12 @@ export function prospectSalesContext({business='',segment='',city='',stage='',of
 }
 export function isExplicitOptOut(text=''){
  const n=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
- return /\b(?:pare de (?:mandar|enviar|me mandar)|parar (?:de )?(?:mandar|enviar)|stop|remov(?:a|er) (?:meu|nosso|este|o)?\s*(?:numero|contato)?|retir(?:ar|e) (?:meu|nosso)?\s*contato|descadastr(?:ar|e)|nao (?:me |nos )?(?:contat(?:e|em)|mand(?:e|em)|envie(?:m)?) (?:mais )?(?:mensagens|ofertas)?|nao quero (?:mais )?(?:receber )?(?:mensagens|contato)|nao quero que (?:voce|voces) me (?:mande|mandem|envie|enviem) mensagens)\b/.test(n)||/^(?:pare|parar|stop|sair|remover|cancelar)\b/.test(n);
+ return /\b(?:parem? de (?:nos |me )?(?:contatar|mandar|enviar)|pare de (?:mandar|enviar|me mandar)|parar (?:de )?(?:mandar|enviar)|stop|remov(?:a|er) (?:meu|nosso|este|o)?\s*(?:numero|contato)?|retir(?:ar|e) (?:meu|nosso)?\s*contato|descadastr(?:ad[oa]|ar|e)|nao (?:me |nos )?(?:contat(?:e|em)|mand(?:e|em)|envie(?:m)?) (?:mais )?(?:mensagens|ofertas)?|nao quero (?:mais )?(?:receber )?(?:mensagens|contato)|nao quero que (?:voce|voces) me (?:mande|mandem|envie|enviem) mensagens)\b/.test(n)||/^(?:pare|parar|stop|sair|remover|cancelar)\b/.test(n);
 }
 export function salesEnding(text=''){
  const n=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
  if(isExplicitOptOut(text))return 'OPT_OUT';
- if(!/(?:nao e que|nao sei se) (?:nao )?(?:tenho|temos) interesse/.test(n)&&/\b(?:nao (?:tenho|temos) interesse|sem interesse|nao (?:quero|queremos|preciso|precisamos) (?:o |de |um |uma |desse |dessa )?(?:site|proposta|servico|projeto|contato|nada)|nao queremos|agora nao|nao e o momento|por enquanto nao|nao vamos contratar|nao precisamos|ja temos quem (?:cuida|faz)|ja temos fornecedor|obrigad[oa],? mas nao|nao obrigad[oa])\b/.test(n))return 'NO_INTEREST';
+ if(!/(?:nao e que|nao sei se) (?:nao )?(?:tenho|temos) interesse/.test(n)&&/\b(?:nao (?:tenho|temos) interesse|sem interesse|nao (?:quero|queremos|preciso|precisamos) (?:o |de |um |uma |desse |dessa )?(?:site|proposta|servico|projeto|contato|nada)|nao queremos|agora nao|nao e o momento|por enquanto nao|nao vamos contratar|nao precisamos|ja temos quem (?:cuida|cuide|faz|faca)|ja temos fornecedor|obrigad[oa],? mas nao|nao obrigad[oa])\b/.test(n))return 'NO_INTEREST';
  if(/\b(?:quero falar com (?:uma pessoa|alguem|atendente|o wesley|wesley)|prefiro falar (?:direto )?com (?:o wesley|uma pessoa|um humano)|me passa (?:para |pra )?(?:um )?humano|pode passar (?:para |pra )?(?:um |uma )?(?:atendente|humano|pessoa)|quero um atendente|falar com o responsavel|nao quero falar com (?:um )?bot)\b/.test(n))return 'HUMAN_REVIEW';
  return null;
 }
