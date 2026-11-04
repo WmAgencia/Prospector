@@ -1,7 +1,7 @@
 // One explicitly approved list, persisted in the Prospector volume.
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
-import {db,id,one,all,run,tx,now,audit,getSetting,getThread,addMessage} from './db.mjs';
+import {db,id,one,all,run,tx,now,audit,getSetting,setSetting,getThread,addMessage} from './db.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
