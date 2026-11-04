@@ -29,7 +29,7 @@ test('request idempotency, owner buttons and confirmation links carry request on
 });
 test('only full owner in selected session can consume; quote exact and once',async()=>{
  const lead=fixture(),{request}=p.requestPriceApproval({leadId:lead.id,providerId:'q2',question:'Valor?'});
- let calls=0;const transport=deps(async(path,args)=>{calls++;assert.match(args.data.message.text,/R\$ 550/);assert.match(args.data.message.text,/R\$ 275/);assert.match(args.data.message.text,/mínimo.*4 dias/);return {status:true};});
+ let calls=0;const transport=deps(async(path,args)=>{calls++;assert.match(args.data.message.text,/R\$ 550/);assert.doesNotMatch(args.data.message.text,/R\$ 275|mínimo.*4 dias|50%/);assert.match(args.data.message.text,/confirmad/i);return {status:true};});
  assert.equal((await p.processPriceDecision({...event(request),jid:'5515999997336@s.whatsapp.net'},transport)).ok,false);
  assert.equal((await p.processPriceDecision({...event(request),sessionId:'other'},transport)).ok,false);
  assert.equal((await p.processPriceDecision(event(request,'550'),transport)).ok,true);
@@ -60,7 +60,7 @@ test('native choice is bound to one lead, concurrent clicks reserve once',async(
  const calls=[];const transport=deps(async(path,args)=>{calls.push({path,args});await new Promise(resolve=>setImmediate(resolve));return {status:true};});
  await Promise.all([p.processPriceDecision({...event(ra),text:'preco:'+ra.id+':1500'},transport),p.processPriceDecision({...event(ra),providerId:'other-click'},transport)]);
  assert.equal(calls.length,1);assert.ok(calls[0].path.includes(encodeURIComponent(a.phone+'@s.whatsapp.net')));
- assert.match(calls[0].args.data.message.text,/R\$ 750/);assert.equal(p.approvedPriceForLead(b.id),null);
+ assert.match(calls[0].args.data.message.text,/R\$ 1500/);assert.doesNotMatch(calls[0].args.data.message.text,/50%|4 dias/);assert.equal(p.approvedPriceForLead(b.id),null);
  assert.equal(d.one('SELECT state FROM owner_price_approvals WHERE id=?',rb.id).state,'PENDING');
 });
 test('sandbox owner, changed session and existing client cannot authorize',async()=>{
