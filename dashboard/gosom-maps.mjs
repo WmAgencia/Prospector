@@ -125,17 +125,27 @@ export async function importMapsScrape(jobId){
  const response=await request('/api/v1/jobs/'+job.provider_id+'/download',{expect:'csv'});
  const csv=await response.text(),items=csvRows(csv);
  let added=0,processed=0,skipped=0;
+ // A second provider/map URL must never make a previously discovered company
+ // appear as a new person. Use local city+business fingerprints; do not merge
+ // two different phone numbers or silently grant any consent.
+ const fold=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().replace(/\s+/g,' ');
+ const known=new Set(all("SELECT business,city FROM leads ORDER BY created_at DESC LIMIT 50000")
+  .map(x=>fold(x.city)+'|'+fold(x.business)));
  for(const x of items){
   const url=mapUrl(x),business=String(x.title||x.name||'').trim().slice(0,150);
   if(!business||!url){skipped++;continue;}
   const cleanCity=s=>String(s||'').split(',')[0].normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
   const listedCity=String(x.city||x.municipality||x.cidade||'').trim();
   if(listedCity&&cleanCity(listedCity)!==cleanCity(job.city)){skipped++;continue;}
+  const fingerprint=fold(listedCity||job.city)+'|'+fold(business);
+  if(known.has(fingerprint)){skipped++;continue;}
   try{
    // Never confer WhatsApp consent solely from a Maps business listing.
    const saved=addLead({business,phone:x.phone||undefined,city:listedCity||job.city,segment:job.niche,website:String(x.website||'').slice(0,400),maps_id:url,source:'maps_extension',contact_permission:false,notes:'Origem: Gosom Google Maps. Endereço: '+String(x.address||'').slice(0,250)+' | Google Maps: '+url});
    recordOrigin(saved.lead.id,'maps_extension',{identity:url,provider:'gosom',jobId:job.id},false);
-   if(saved.created)added++;processed++;
+   if(saved.created)added++;
+   known.add(fingerprint);
+   processed++;
   }catch{skipped++;}
  }
  run("UPDATE maps_scraper_jobs SET status='IMPORTED',added=?,processed=?,imported_at=?,updated_at=? WHERE id=?",added,processed,now(),now(),jobId);
