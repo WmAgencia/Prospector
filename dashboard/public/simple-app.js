@@ -23,6 +23,17 @@ function savedProspectSession(){
 }
 let prospectSession=savedProspectSession();
 const root=q("#app");
+let waRefreshing=null,qrOpening=false;
+function whatsappNotice(){
+ if(!wa||wa.connected)return "";
+ const unknown=wa.ok===false;
+ const scanning=wa.status==="SCAN_QR";
+ const title=unknown?"Não foi possível verificar o WhatsApp":scanning?"WhatsApp aguardando leitura do QR Code":"WhatsApp desconectado";
+ const detail=unknown?"Confira a conexão com o gateway. Os envios automáticos não devem ser retomados antes da confirmação.":
+  scanning?"Escaneie o QR Code para restabelecer a conexão.":
+  "Reconecte o WhatsApp para voltar a receber e enviar mensagens.";
+ return '<section class="wa-global-alert" role="alert" aria-label="Status do WhatsApp"><div class="wa-alert-mark" aria-hidden="true">!</div><div class="wa-alert-copy"><strong>'+esc(title)+'</strong><span>'+esc(detail)+'</span></div><button class="wa-alert-action" type="button" data-action="reconnect-qr">'+(scanning?"Abrir QR Code":"Reconectar / QR Code")+'</button></section>';
+}
 function n(msg){notice=String(msg||"");const el=q("#notice");if(el){el.textContent=notice;el.classList.toggle("hidden",!notice);el.setAttribute("role",notice?"status":"none")}}
 async function api(path,opts={}){
  const r=await fetch(path,{credentials:"same-origin",cache:"no-store",...opts,headers:{"Accept":"application/json",...(opts.body?{"Content-Type":"application/json"}:{}),...(opts.headers||{})}});
@@ -31,7 +42,7 @@ async function api(path,opts={}){
  return data;
 }
 const post=(path,data)=>api(path,{method:"POST",body:JSON.stringify(data||{})});
-function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections"){refreshWa();refreshGroq();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="settings"){refreshAI();refreshVoiceMetrics();}}
+function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections"){if(!qrOpening)refreshWa();refreshGroq();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="settings"){refreshAI();refreshVoiceMetrics();}}
 
 function glyph(key){
  const paths={
@@ -51,7 +62,7 @@ function glyph(key){
 }
 function shell(){
  const active=tabs[view]||tabs.overview,connected=!!wa?.connected;
- root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>Campanhas permanecem sob aprovação humana.</p></div><div class="side-footer"><span class="brand-min">C.</span><div><strong>Consecom Brasil</strong><small>Publicidade & tecnologia</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div><div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(connected?'WhatsApp online':'WhatsApp offline')+'</span></span><button class="icon-button refresh-button" data-action="refresh" title="Atualizar dados" aria-label="Atualizar dados">'+glyph('refresh')+'</button><span class="useravatar">C</span></div></header><div class="main-wrap"><div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>';
+ root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>Campanhas permanecem sob aprovação humana.</p></div><div class="side-footer"><span class="brand-min">C.</span><div><strong>Consecom Brasil</strong><small>Publicidade & tecnologia</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div><div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(connected?'WhatsApp online':'WhatsApp offline')+'</span></span><button class="icon-button refresh-button" data-action="refresh" title="Atualizar dados" aria-label="Atualizar dados">'+glyph('refresh')+'</button><span class="useravatar">C</span></div></header><div class="main-wrap">'+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>';
 }
 
 
@@ -165,12 +176,38 @@ function render(){
  if(view==="connections"&&!wa)refreshWa(false);
 }
 async function refreshWa(redraw=true){
+ if(waRefreshing)return waRefreshing;
+ waRefreshing=(async()=>{
+  try{
+   const w=await api("/api/whatsapp/status");
+   const wasConnected=!!wa?.connected;
+   const changed=!wa||wa.connected!==w.connected||wa.status!==w.status||wa.ok!==w.ok||wa.transportStale!==w.transportStale;
+   const oldQr=qrResult?.qr||null;wa=w;
+   if(w.connected)qrResult=null;
+   else if(view==="connections"&&w.hasSession&&["SCAN_QR","CONNECTING","INITIALIZING"].includes(w.status)){
+    qrResult=await api("/api/whatsapp/qr").catch(e=>({qr:null,message:e.message}));
+   }else if(view==="connections")qrResult=null;
+   if(redraw&&(changed||(view==="connections"&&oldQr!==(qrResult?.qr||null))))render();
+   if(view==="conversations"&&w.connected&&(!wasConnected||!remoteChats.length))await loadChats();
+  }catch(e){
+   const changed=wa?.ok!==false||wa?.message!==e.message;
+   wa={ok:false,status:"ERROR",message:e.message,connected:false};
+   qrResult=null;
+   if(redraw&&changed)render();
+  }
+ })().finally(()=>{waRefreshing=null});
+ return waRefreshing;
+}
+async function openWhatsappQr(){
+ if(qrOpening)return;
+ qrOpening=true;busy=true;
+ nav("connections");
  try{
-  const w=await api("/api/whatsapp/status");const wasConnected=!!wa?.connected;const changed=wa?.connected!==w.connected||wa?.status!==w.status;wa=w;
-  if(view==="conversations"&&w.connected&&(!wasConnected||!remoteChats.length)){await loadChats();return;}
-  if(view==="connections"&&w.hasSession&&!w.connected){qrResult=await api("/api/whatsapp/qr");}
-  if(redraw&&changed&&(view==="connections"||view==="overview"||view==="conversations"))render();
- }catch(e){wa={ok:false,status:"ERROR",message:e.message,connected:false};if(redraw&&view==="connections")render();}
+  await post("/api/whatsapp/connect",{});
+  await refreshWa();
+  n(wa?.connected?"WhatsApp conectado.":"Sessão iniciada. Escaneie o QR Code quando ele aparecer.");
+ }catch(error){n("Não foi possível iniciar a reconexão: "+error.message);}
+ finally{qrOpening=false;busy=false;render();}
 }
 async function refreshGroq(){
  try{
