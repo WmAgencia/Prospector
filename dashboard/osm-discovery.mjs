@@ -78,18 +78,40 @@ export function resolveSegment(s){
  const pair=Object.entries(SEGMENTS).find(([k])=>v.includes(k));
  return pair?.[1]||null;
 }
-export function extractPhone(tags){
- const raw=String(tags['contact:whatsapp']||tags['contact:phone']||tags.phone||tags['phone:mobile']||'');
- const hit=raw.split(/[;|,]/).map(x=>phone(x.trim())).find(x=>x&&x.startsWith('55')&&(x.length===12||x.length===13));
- return hit||null;
+export function extractPhone(tags={}){
+ // OSM contributors use several different keys. A malformed WhatsApp field
+ // must not hide a valid telephone published in another field.
+ for(const key of ['contact:whatsapp','contact:phone','phone','contact:mobile','phone:mobile','mobile','contact:telephone']){
+  const raw=String(tags[key]||'');
+  for(const entry of raw.split(/[;|,]/)){
+   const value=phone(entry.trim());
+   if(value&&value.startsWith('55')&&(value.length===12||value.length===13))return value;
+  }
+ }
+ return null;
 }
 export function extractInstagram(tags){
  const raw=String(tags['contact:instagram']||tags.instagram||'').trim();
  const match=raw.match(/(?:instagram\.com\/|^@)([a-z0-9_.]{2,30})/i);
  return match?match[1].toLowerCase():null;
 }
-export function makeQuery(location,segment){
- return '[out:json][timeout:24];(nwr["'+segment.filter+'"="'+segment.value+'"]["name"](around:'+location.radius+','+location.lat+','+location.lon+'););out center 70;';
+// Break large circular "around" searches into bounded, sequential tiles.
+// Never parallelize public-Overpass requests. Each query is deterministic,
+// carries only one category, and requests tags/centers rather than geometry.
+const TILE_OFFSETS=[[0,0],[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+export function discoveryBoundingBox(location,tileIndex=0){
+ const halfMeters=Math.min(2200,Math.max(900,location.radius/4));
+ const [north,east]=TILE_OFFSETS[((Math.trunc(Number(tileIndex)||0)%TILE_OFFSETS.length)+TILE_OFFSETS.length)%TILE_OFFSETS.length];
+ const shiftMeters=halfMeters*1.65;
+ const centerLat=location.lat+north*shiftMeters/111320;
+ const centerLon=location.lon+east*shiftMeters/(111320*Math.cos(location.lat*Math.PI/180));
+ const latDelta=halfMeters/111320,lonDelta=halfMeters/(111320*Math.cos(centerLat*Math.PI/180));
+ return [centerLat-latDelta,centerLon-lonDelta,centerLat+latDelta,centerLon+lonDelta].map(x=>x.toFixed(5)).join(',');
+}
+export function makeQuery(location,segment,tileIndex=0){
+ if(!/^[a-z:]+$/.test(segment.filter)||!/^[a-z_]+$/.test(segment.value))throw Error('Filtro OSM inválido');
+ return '[out:json][timeout:14];nwr["'+segment.filter+'"="'+segment.value+'"]["name"]('+
+  discoveryBoundingBox(location,tileIndex)+');out center 120;';
 }
 // Prioriza registros com telefone publicado, sem inventar informações nem omitir
 // empresas sem telefone. A amostra por consulta continua limitada para proteger
@@ -127,26 +149,29 @@ export async function discoverLocal(payload={},automatic=false){
  busy=true;
  try{
   // Registre ANTES da requisição: também conta falhas e protege a API comunitária.
-  const attemptId=id();run('INSERT INTO discoveries VALUES(?,?,?,?,?,?)',attemptId,searchKey,0,now(),'RUNNING',JSON.stringify({examined:0,automatic}));
+  const tileIndex=one('SELECT COUNT(*) AS n FROM discoveries WHERE query=?',searchKey)?.n||0;
+  const attemptId=id();run('INSERT INTO discoveries VALUES(?,?,?,?,?,?)',attemptId,searchKey,0,now(),'RUNNING',JSON.stringify({examined:0,automatic,tileIndex}));
   // Evite tratar falha temporária de um endpoint comunitário como inexistência de empresas.
-  // A single request per host, with two independent providers as fallback.
-  // 429 must never be retried at the same provider.
+  // A single small query per provider, with independent-host fallback only
+  // for transient upstream faults. Respect rate-limit response: never route
+  // a 429 around the public provider's restrictions.
   const endpoints=overpassEndpoints();
+  const query=makeQuery(location,segment,tileIndex);
   let response=null;
   for(const [index,endpoint] of endpoints.entries()){
    try{
     response=await fetch(endpoint,{
      method:'POST',
-     headers:{'Content-Type':'application/x-www-form-urlencoded; charset=utf-8','User-Agent':'ConsecomProspector/1.2 (business research; contact: wmagenciasuporte@gmail.com)','Accept':'application/json'},
-     body:new URLSearchParams({data:makeQuery(location,segment)}),
-     signal:AbortSignal.timeout(26000)
+     headers:{'Content-Type':'application/x-www-form-urlencoded; charset=utf-8','User-Agent':'ConsecomProspector/2.2 (small sequential OSM research; contact: wmagenciasuporte@gmail.com)','Accept':'application/json'},
+     body:new URLSearchParams({data:query}),
+     signal:AbortSignal.timeout(19000)
     });
     if(response.ok)break;
-    if(response.status===429)throw Error('Overpass respondeu HTTP 429 (limite da API comunitária)');
+    if(response.status===429||response.status===403)throw Object.assign(Error('Overpass recusou a consulta HTTP '+response.status),{noFallback:true});
     if(![502,503,504].includes(response.status)||index===endpoints.length-1)break;
-    console.warn('[osm discovery] upstream temporarily unavailable:',response.status);
+    console.warn('[osm discovery] provider unavailable:',response.status);
    }catch(err){
-    if(index===endpoints.length-1)throw err;
+    if(err?.noFallback||index===endpoints.length-1)throw err;
     response=null;
    }
   }
@@ -180,9 +205,9 @@ export async function discoverLocal(payload={},automatic=false){
    upsertBusinessMeta(result.lead.id,{businessType:segment.filter});
    if(result.created)added++;
   }
-  run('UPDATE discoveries SET status=?,found=?,details=? WHERE id=?','COMPLETE',added,JSON.stringify({examined,withPhone,automatic,matchedTotal:data.elements.length,selectedWithPhoneFirst:true}),attemptId);
+  run('UPDATE discoveries SET status=?,found=?,details=? WHERE id=?','COMPLETE',added,JSON.stringify({examined,withPhone,automatic,tileIndex,matchedTotal:data.elements.length,selectedWithPhoneFirst:true}),attemptId);
   audit('DISCOVER_OSM',null,{city:location.label,segment:segment.label,examined,added,withPhone,automatic});
-  return {source:'osm',city:location.label,segment:segment.label,examined,added,withPhone,withoutWebsiteListed:Math.max(0,examined-candidates.filter(x=>Boolean(x.tags?.website||x.tags?.['contact:website'])).length),
+  return {source:'osm',city:location.label,segment:segment.label,tileIndex,examined,added,withPhone,withoutWebsiteListed:Math.max(0,examined-candidates.filter(x=>Boolean(x.tags?.website||x.tags?.['contact:website'])).length),
    info:'Contatos públicos sem autorização de envio; a ausência de site no cadastro não comprova que a empresa não tem site.',
    attribution:'© OpenStreetMap contributors, ODbL',url:'https://www.openstreetmap.org/copyright'};
  }catch(error){
@@ -243,10 +268,14 @@ export async function dailyLocalDiscovery(input=new Date()){
   candidates.push({city,segment});
  }
  if(!candidates.length)return {status:'NO_NEW_COMBINATIONS'};
- const choice=candidates[attempts.length%candidates.length];
+ // Persist the cursor across days so it does not scan the same first 12
+ // niche/city combinations forever.
+ const cursor=Math.max(0,Math.trunc(Number(getSetting('osm_auto_cursor',0))||0));
+ const choice=candidates[cursor%candidates.length];
  autoBusy=true;
  try{
   run("INSERT INTO settings(key,value) VALUES('osm_last_auto_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(input.toISOString()));
+  run("INSERT INTO settings(key,value) VALUES('osm_auto_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(cursor+1));
   const segmentId=Object.keys(SEGMENTS).find(k=>SEGMENTS[k]===choice.segment);
   const result=await discoverLocal({city:choice.city.label,segment:segmentId},true);
   return {...result,target,foundToday:radarSnapshot().foundToday};

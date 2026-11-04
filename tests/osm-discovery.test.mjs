@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveLocation,resolveSegment,extractPhone,extractInstagram,makeQuery,prioritizeOSMResults,overpassEndpoints,DEFAULT_OVERPASS_ENDPOINT,FALLBACK_OVERPASS_ENDPOINT} from '../dashboard/osm-discovery.mjs';
+import {resolveLocation,resolveSegment,extractPhone,extractInstagram,makeQuery,discoveryBoundingBox,prioritizeOSMResults,overpassEndpoints,DEFAULT_OVERPASS_ENDPOINT,FALLBACK_OVERPASS_ENDPOINT} from '../dashboard/osm-discovery.mjs';
 test('cidades, acentos e segmentos suportados',()=>{
  assert.equal(resolveLocation('São Paulo').label,'São Paulo');
  assert.equal(resolveLocation('Votorantim').label,'Votorantim');
@@ -14,7 +14,16 @@ test('fontes públicas não inventam telefone, site ou permissões',()=>{
  assert.equal(extractInstagram({'contact:instagram':'https://instagram.com/empresa.oficial'}),'empresa.oficial');
  const q=makeQuery(resolveLocation('Sorocaba'),resolveSegment('dentista'));
  assert.match(q,/nwr\["amenity"="dentist"\]\["name"\]/);
- assert.match(q,/out center 70/);
+ assert.match(q,/out center 120/);
+ assert(!q.includes('around:'),'no unbounded radius scan');
+ const center=discoveryBoundingBox(resolveLocation('Sorocaba'));
+ const adjacent=discoveryBoundingBox(resolveLocation('Sorocaba'),1);
+ assert.notEqual(center,adjacent);
+ assert(q.includes('('+center+')'));
+ assert.equal(discoveryBoundingBox(resolveLocation('Sorocaba'),9),center);
+ assert.equal(extractPhone({'contact:whatsapp':'incompleto',phone:'+55 15 99999-8888'}),'5515999998888');
+ assert.equal(extractPhone({'contact:mobile':'+55 (15) 99999-1111'}),'5515999991111');
+ assert.equal(extractPhone({'phone:mobile':'+55 (15) 98888-7777'}),'5515988887777');
 });
 
 test('prioritiza telefone publicado sem descartar registros sem contato',()=>{
