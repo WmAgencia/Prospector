@@ -60,3 +60,22 @@ export function approvedPortfolioText(text,at=new Date()){
  if(n.includes("90%")||n.includes("primeira posicao")||n.includes("ranking garantido"))return false;
  return text===fixedOfferPriceReply(at)||text===fixedOfferPitch({},at);
 }
+
+export function isPortfolioFAQ(value=''){
+ const n=norm(value);
+ if(/(?:parcelamento|parcelar|cartao|pix|boleto|entrada|mensalidade|loja virtual|checkout|sistema|integracao especial)/.test(n))return false;
+ return /(?:google|seo|ranking|primeira posicao|dominio|entrega|prazo|tres dias|3 dias|90%|desconto)/.test(n);
+}
+export function fixedOfferFollowup(question='',at=new Date()){
+ const n=norm(question);
+ if(/(?:90\s*%|desconto|2[.,]?700|3[.,]?000)/.test(n))
+  return 'A conta correta é aproximadamente 80% de redução em relação a R$ 2.700–3.000, não 90%. A proposta do site base é de R$ 550, com domínio pago por um ano.';
+ if(/(?:google|seo|ranking|primeira posicao)/.test(n))
+  return 'Incluímos uma estrutura técnica de Master SEO para melhorar a presença do site nas buscas orgânicas. Isso não garante a primeira posição no Google nem um número específico de clientes.';
+ if(/dominio/.test(n))
+  return 'Sim. No site base de portfólio, o domínio fica pago por um ano e já está incluído no valor de R$ 550. Renovações futuras e outros serviços são combinados separadamente.';
+ if(/(?:prazo|entrega|pronto|quando|3 dias|tres dias)/.test(n))
+  return 'Para o site base, a previsão é de até três dias corridos após recebermos os materiais e confirmarmos o escopo. Se isso acontecer hoje, a data de referência é '+brDeliveryDate(at)+'.';
+ if(/(?:quanto|preco|valor|custa|r\$\s*550)/.test(n))return fixedOfferPriceReply(at);
+ return 'A proposta base continua sendo um site profissional por R$ 550, com domínio pago por um ano e prazo previsto de até três dias após receber o material e validar o escopo. Posso esclarecer algum ponto específico?';
+}
