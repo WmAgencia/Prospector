@@ -53,4 +53,4 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma db push && (if [ -n \"$ADMIN_EMAIL\" ] && [ -n \"$ADMIN_PASSWORD\" ]; then node scripts/setup-admin.js \"$ADMIN_EMAIL\" \"$ADMIN_PASSWORD\"; fi) && node node_modules/tsx/dist/cli.mjs src/server/index.ts"]
+# The superadmin already exists in the persistent MySQL database. Do not\n# promote it on every boot: a locked user row can prevent the entire WA-AKG\n# API from starting. Account provisioning is a separate, explicit operation.\nCMD ["sh", "-c", "npx prisma db push && exec node node_modules/tsx/dist/cli.mjs src/server/index.ts"]
