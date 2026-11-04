@@ -16,6 +16,7 @@ const scenarios=[
  {id:'business-only',category:'retail_products',business:'Móveis & Decoração | Loja e Planejados',name:null,customer:'Sou vendedor de móveis, não há pessoa de contato identificada.',turns:['Olá, do que se trata?','Vocês fazem site para mostrar produtos?'],focus:['name_fallback','products']},
  {id:'buffet-offer',category:'party_services',business:'Buffet de Festas Modelo',name:null,customer:'Sou responsável por um buffet infantil e posso ter interesse.',turns:['Pode me explicar a proposta?','Qual valor e prazo?'],focus:['benefits','price','delivery']},
  {id:'explicit-refusal',category:'automotive_services',business:'Oficina Beta',name:null,customer:'Não quero ser abordado.',turns:['Não tenho interesse, obrigado.','Mas obrigada.'],focus:['stop','no_followup']},
+ {id:'late-refusal',category:'automotive_services',business:'Autoelétrica C',name:null,customer:'Recuso a oferta dentro de uma frase natural, como ocorreu na conversa auditada.',turns:['Ah sim, no momento não temos interesse.','Mas obrigada.'],focus:['stop','no_followup']},
  {id:'optout',category:'retail_products',business:'Loja Exemplo',name:null,customer:'Peço remoção definitiva dos contatos.',turns:['Pare de me mandar mensagens.'],focus:['opt_out']},
  {id:'human-handoff',category:'party_services',business:'Buffet Amar',name:null,customer:'Quero falar com uma pessoa real.',turns:['Quero falar com um atendente humano.'],focus:['handoff']},
  {id:'price-only',category:'services',business:'Lavanderia Limpa',name:null,customer:'Só quero saber quanto custa.',turns:['Quanto custa o site?'],focus:['price','intro_sequence']},
@@ -97,7 +98,7 @@ export function assessConversation(scenario,transcript,{date='2026-11-04'}={}){
  if(askedPitch&&!/(?:site|servi[cç]o|produto)/i.test(all))errors.push('MISSING_SITE_BENEFITS');
  if(scenario.focus.includes('price')&&/(?:aprova|confirmar a proposta.*respons[aá]vel)/i.test(all)&&!/(?:550|quinhentos e cinquenta)/i.test(all))errors.push('UNNECESSARY_OWNER_PRICE_APPROVAL');
  if(scenario.id==='autoresponder'&&texts.length)errors.push('AUTORESPONDER_SHOULD_NOT_TRIGGER_OUTREACH');
- if(['explicit-refusal','optout'].includes(scenario.id)&&texts.length)errors.push('REPLIED_AFTER_REFUSAL');
+ if(['explicit-refusal','optout','late-refusal'].includes(scenario.id)&&texts.length)errors.push('REPLIED_AFTER_REFUSAL');
  if(scenario.id==='business-only'&&/M[oó]veis.*(?:\||&).*,/i.test(first))warnings.push('VERBATIM_BUSINESS_NAME');
  if(scenario.focus.includes('delivery')&&/(?:550|quinhentos e cinquenta)/i.test(all)&&!/3 dias|tr[eê]s dias|\b\d{1,2}\s+de novembro/i.test(all))warnings.push('MISSING_DELIVERY_TERM');
  if(scenario.focus.includes('domain')&&/(?:550|quinhentos e cinquenta)/i.test(all)&&!/(?:dom[ií]nio)/i.test(all))warnings.push('MISSING_DOMAIN_INCLUDED');
