@@ -6,7 +6,7 @@ const tabs={overview:"Visão geral",conversations:"Conversas",prospects:"Prospec
 let offerType='portfolio';
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
 let view=["overview","conversations","prospects","connections","settings"].includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
-let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false;
+let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,groqModels=null,groqOwner=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false,consentPolicy=null,consentPolicyBusy=false;
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
 function newProspectSession(){
  const token=crypto.randomUUID();
@@ -42,7 +42,7 @@ async function api(path,opts={}){
  return data;
 }
 const post=(path,data)=>api(path,{method:"POST",body:JSON.stringify(data||{})});
-function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections"){if(!qrOpening)refreshWa();refreshGroq();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="settings"){refreshAI();refreshVoiceMetrics();}}
+function nav(viewName){if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(view==="connections"){if(!qrOpening)refreshWa();refreshGroq();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="settings"){refreshAI();refreshVoiceMetrics();refreshConsentPolicy();}}
 
 function glyph(key){
  const paths={
@@ -156,7 +156,8 @@ function connections(){
 }
 function settings(){
  const s=state?.settings||{};
- return '<section class="panel settings"><span class="kicker">PREFERÊNCIAS</span><h2>Configurações</h2><p class="intro">Opções essenciais da operação, sem ferramentas extras.</p><div class="setting-line"><div><strong>Prospecção pausada</strong><small>Não iniciar campanhas ou envios automaticamente.</small></div><label class="switch"><input id="s-paused" type="checkbox" '+(s.paused?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>Abordagem automática</strong><small>08h às 17h30; 90 segundos entre contatos e três meses para reabordar.</small></div><label class="switch"><input id="s-autonomous" type="checkbox" '+(s.autonomous_outreach_enabled?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>Descoberta automática</strong><small>Pesquisa pública programada no OpenStreetMap.</small></div><label class="switch"><input id="s-discovery" type="checkbox" '+(s.discovery_auto_enabled?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>IA de conversação</strong><small>Groq continua as conversas das empresas abordadas. Valores de propostas exigem sua aprovação pelo WhatsApp.</small></div><span class="tag '+(ai?.configured?"green":"")+'">'+(ai?.configured?"Configurada":"Não configurada")+'</span></div><div class="setting-line"><div><strong>Integração WhatsApp</strong><small>Conexão via WA-AKG administrada pelo Prospector.</small></div><button class="secondary compact" data-tab="connections">Gerenciar conexão</button></div><p class="footnote">Com a abordagem automática ativada, leads elegíveis entram na fila sem seleção individual. Você pode pausar a prospecção a qualquer momento. Interessados são encaminhados ao seu WhatsApp pessoal.</p></section>'+
+ const policy=consentPolicy||{enforced:true,canDisable:false,policyStatus:'OPT_IN_REQUIRED',message:'Conferindo política de mensagens…',policyUrl:'https://whatsappbusiness.com/policy/'};
+ return '<section class="panel settings"><span class="kicker">PREFERÊNCIAS</span><h2>Configurações</h2><p class="intro">Opções essenciais da operação, sem ferramentas extras.</p><div class="setting-line"><div><strong>Prospecção pausada</strong><small>Não iniciar campanhas ou envios automaticamente.</small></div><label class="switch"><input id="s-paused" type="checkbox" '+(s.paused?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>Abordagem automática</strong><small>08h às 17h30; 90 segundos entre contatos e três meses para reabordar.</small></div><label class="switch"><input id="s-autonomous" type="checkbox" '+(s.autonomous_outreach_enabled?"checked":"")+'><span></span></label></div><div class="setting-line consent-policy-line"><div><strong>Proteção de autorização no WhatsApp</strong><small>Exige autorização antes do primeiro WhatsApp comercial. Empresas encontradas no Maps não são automaticamente autorizadas.</small><small class="consent-policy-status" role="status">'+esc(policy.enforced?'Proteção ativa':'Proteção desativada')+' · '+esc(policy.canDisable?'Controle disponível':'Aguardando mudança oficial da Meta')+'</small></div><label class="switch" title="'+esc(policy.canDisable?'Alterar proteção de consentimento':policy.message)+'"><input id="s-consent-guard" type="checkbox" aria-label="Exigir autorização antes de mensagens comerciais" '+(policy.enforced?'checked':'')+' '+(!policy.canDisable||consentPolicyBusy?'disabled':'')+'><span></span></label></div><p class="footnote consent-policy-note">'+esc(policy.message)+' <a href="'+esc(policy.policyUrl||'https://whatsappbusiness.com/policy/')+'" target="_blank" rel="noopener noreferrer">Ver política oficial</a>.</p><div class="setting-line"><div><strong>Descoberta automática</strong><small>Pesquisa pública programada no OpenStreetMap.</small></div><label class="switch"><input id="s-discovery" type="checkbox" '+(s.discovery_auto_enabled?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>IA de conversação</strong><small>Groq continua as conversas das empresas abordadas. Valores de propostas exigem sua aprovação pelo WhatsApp.</small></div><span class="tag '+(ai?.configured?"green":"")+'">'+(ai?.configured?"Configurada":"Não configurada")+'</span></div><div class="setting-line"><div><strong>Integração WhatsApp</strong><small>Conexão via WA-AKG administrada pelo Prospector.</small></div><button class="secondary compact" data-tab="connections">Gerenciar conexão</button></div><p class="footnote">Com a abordagem automática ativada, leads elegíveis entram na fila sem seleção individual. Você pode pausar a prospecção a qualquer momento. Interessados são encaminhados ao seu WhatsApp pessoal.</p></section>'+
  '<section class="panel"><span class="kicker">FRANCISCA · VOZ</span><h2>Diagnóstico das ligações</h2>'+
  '<p class="intro">Métricas agregadas dos últimos 7 dias. Nenhuma gravação ou transcrição é salva neste painel.</p>'+
  cards([
@@ -217,6 +218,10 @@ async function refreshGroq(){
  }catch(e){n('Não foi possível consultar os modelos Groq: '+e.message);}
 }
 async function refreshAI(){try{ai=await api("/api/ai/status");if(view==="settings")render();}catch{}}
+async function refreshConsentPolicy(){
+ try{consentPolicy=await api('/api/outreach/consent-policy');if(view==='settings')render();}
+ catch(e){consentPolicy={enforced:true,canDisable:false,policyStatus:'UNKNOWN',message:'Não foi possível verificar a política. A proteção permanece ativa.',policyUrl:'https://whatsappbusiness.com/policy/'};if(view==='settings')render();}
+}
 async function refreshVoiceMetrics(){try{voiceMetrics=await api('/api/ai/voice-metrics');if(view==='settings')render();}catch{voiceMetrics=null;}}
 async function loadChats(){
  if(!wa?.connected){remoteChats=[];if(view==="conversations")render();return;}
@@ -458,6 +463,14 @@ document.addEventListener("change",async e=>{
   const leadId=t.dataset.selectLead;
   if(t.checked)selectedLeadIds.add(leadId);else selectedLeadIds.delete(leadId);
   approachPreview=null;render();return;
+ }
+ if(t.id==='s-consent-guard'){
+  if(!consentPolicy?.canDisable){t.checked=true;n('A Meta ainda exige autorização prévia; o controle não pode ser desligado.');return;}
+  const desired=t.checked;consentPolicyBusy=true;t.disabled=true;
+  try{consentPolicy=await post('/api/outreach/consent-policy',{enforced:desired});n(consentPolicy.message||'Proteção atualizada.');}
+  catch(err){n(err.message);await refreshConsentPolicy();}
+  finally{consentPolicyBusy=false;if(view==='settings')render();}
+  return;
  }
  if(t.id==="s-paused"||t.id==="s-discovery"||t.id==="s-autonomous"){
   const key=t.id==="s-paused"?"paused":t.id==="s-autonomous"?"autonomous_outreach_enabled":"discovery_auto_enabled";

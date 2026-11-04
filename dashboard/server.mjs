@@ -57,6 +57,7 @@ import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-autom
 import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue} from './prospecting-queue.mjs';
+import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -502,6 +503,11 @@ async function handler(req,res){
   }
   if(req.method==='GET'&&pathname==='/api/ai/customer-status')return respond(res,200,agentStatus());
   if(req.method==='GET'&&pathname==='/api/ai/concierge-status')return respond(res,200,statusConcierge());
+  if(req.method==='GET'&&pathname==='/api/outreach/consent-policy')return respond(res,200,outreachConsentControl());
+  if(req.method==='POST'&&pathname==='/api/outreach/consent-policy'){
+   const result=requestOutreachConsentControl(await json(req));
+   return respond(res,result.status,result.body);
+  }
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
   if(req.method==='POST'&&pathname==='/api/prospecting/queue'){const r=enqueueApprovedApproaches(await json(req));if(r.status===202)notify();return respond(res,r.status,r.body);}
   if(req.method==='POST'&&pathname==='/api/prospecting/queue/cancel'){const r=cancelApproachQueue();notify();return respond(res,200,r);}
