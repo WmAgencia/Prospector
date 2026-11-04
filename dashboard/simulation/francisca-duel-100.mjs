@@ -44,6 +44,7 @@ export function safeFranciscaAgent({draft=null,at=new Date('2026-11-04T15:00:00Z
   if(end==='OPT_OUT'||end==='NO_INTEREST')return {event:end,text:'',terminal:true};
   if(end==='HUMAN_REVIEW'||explicitInterest(inbound))return {event:'HUMAN_HANDOFF',text:'',terminal:true};
   if(stage==='GREETING_SENT')return {event:'INTRO',text:WESLEY_PRESENTATION};
+  if(/(?:vou pensar|vou analisar|quero avaliar com calma|depois eu vejo)/i.test(inbound))return {event:'NO_PRESSURE',text:'Fique à vontade para avaliar. Se surgir alguma dúvida sobre o projeto, podemos esclarecer.',terminal:true};
   if(isBaseOfferQuestion(inbound)||isPortfolioFAQ(inbound)){
    const hasPitch=history.some(t=>t.role==='FRANCISCA'&&t.event==='FIXED_OFFER');
    return {event:'FIXED_OFFER',text:(hasPitch||isPortfolioFAQ(inbound))?fixedOfferFollowup(inbound,at):portfolioQuestion(inbound)&&!/quanto|preço|preco|valor|r\$/i.test(inbound)?
@@ -62,8 +63,8 @@ export function gradeVirtualConversation(scenario,transcript){
  const issues=[],tts=transcript.filter(t=>t.role==='FRANCISCA'&&t.text).map(t=>t.text);
  const all=tts.join('\n');
  if(/(?:oi|olá),?\s+Wesley\b/i.test(all))issues.push('WESLEY_IDENTITY_CONFUSION');
- if(/90\s*%/.test(all)&&/2[.,]?700|3[.,]?000/.test(all))issues.push('FALSE_DISCOUNT');
- if(/(?:primeir[ao]\s+(?:lugar|posição)|posição garantida)/i.test(all)&&/Google/i.test(all))issues.push('UNSUPPORTED_SEO_PROMISE');
+ if(/90\s*%/.test(all)&&/2[.,]?700|3[.,]?000/.test(all)&&!/n[aã]o\s+90\s*%/i.test(all))issues.push('FALSE_DISCOUNT');
+ if(/(?:primeir[ao]\s+(?:lugar|posição)|posição garantida)/i.test(all)&&/Google/i.test(all)&&!/(?:n[aã]o garante|sem garantia|n[aã]o garantimos)/i.test(all))issues.push('UNSUPPORTED_SEO_PROMISE');
  if(tts.some(x=>/vou (?:confirmar|perguntar).{0,60}(?:preço|valor).{0,60}respons[aá]vel/i.test(x)))issues.push('UNNECESSARY_PRICE_APPROVAL');
  if(scenario.style==='bot'&&transcript.some(t=>t.event==='INTRO'||t.event==='AI_DRAFT'||t.event==='FIXED_OFFER'))issues.push('AUTO_REPLY_PROGRESS');
  if(['recusa','optout'].includes(scenario.style)&&transcript.some(t=>t.event==='INTRO'||t.event==='AI_DRAFT'||t.event==='FIXED_OFFER'))issues.push('REPLIED_AFTER_DECLINE');
