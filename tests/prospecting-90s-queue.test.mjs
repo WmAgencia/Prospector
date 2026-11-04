@@ -12,7 +12,8 @@ function lead(name,number,consent=true){
  if(consent)db.audit('CONSENT_UPDATED',result.id,{permitted:true,evidence:'consentimento verificado neste teste'});
  return result;
 }
-let nowMs=2_000_000_000_000;
+db.setSetting('paused',false);
+let nowMs=Date.parse('2026-11-04T14:00:00Z'); // 11h em São Paulo
 const sent=[];
 const deps={currentTime:()=>nowMs,getWaStatus:async()=>({connected:true,sessionId:'test-session'}),getSession:()=> 'test-session',send:async(url,options)=>{sent.push({url,body:options.data,time:nowMs});return {status:true};}};
 
@@ -33,7 +34,7 @@ test('Two initial greetings are never attempted less than 90 seconds apart',asyn
  const first=await queue.tickApproachQueue(deps);
  assert.equal(first.status,'SENT');
  assert.equal(sent.length,1);
- assert.match(sent[0].body.message.text,/^Olá, Mecânica [AB], boa noite! Tudo bem\?$/);
+ assert.match(sent[0].body.message.text,/^Olá, Mecânica [AB], bom dia! Tudo bem\?$/);
  nowMs+=89_999;
  const early=await queue.tickApproachQueue(deps);
  assert.equal(early.status,'WAITING');
@@ -42,7 +43,7 @@ test('Two initial greetings are never attempted less than 90 seconds apart',asyn
  const second=await queue.tickApproachQueue(deps);
  assert.equal(second.status,'SENT');
  assert.equal(sent.length,2);
- assert.deepEqual(new Set(sent.map(x=>x.body.message.text)),new Set(['Olá, Mecânica A, boa noite! Tudo bem?','Olá, Mecânica B, boa noite! Tudo bem?']));
+ assert.deepEqual(new Set(sent.map(x=>x.body.message.text)),new Set(['Olá, Mecânica A, bom dia! Tudo bem?','Olá, Mecânica B, bom dia! Tudo bem?']));
  assert.equal(sent[1].time-sent[0].time,90_000);
  assert.equal(db.one("SELECT COUNT(*) n FROM initial_contacts WHERE status='SENT'").n,2);
  assert.equal(db.one("SELECT COUNT(*) n FROM messages WHERE direction='out'").n,2);
