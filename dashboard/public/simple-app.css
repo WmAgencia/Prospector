@@ -175,3 +175,13 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
 .wa-alert-action:hover{background:#684018}
 .wa-alert-action:focus-visible{outline:3px solid #d8a45a;outline-offset:3px}
 @media(max-width:700px){.wa-global-alert{margin:12px 15px 0;flex-wrap:wrap;gap:10px;padding:13px}.wa-alert-copy{flex-basis:calc(100% - 45px)}.wa-alert-action{width:100%}}
+
+/* Server-authoritative WhatsApp opt-in policy switch. Accessible and compact. */
+.consent-policy-line{align-items:center}
+.consent-policy-line>div{min-width:0;max-width:640px}
+.consent-policy-status{color:#327653!important;font-weight:650;letter-spacing:.005em}
+.consent-policy-note{padding:0 0 16px;margin:-3px 0 0!important;color:#738c7d;line-height:1.6}
+.consent-policy-note a{color:#216f4b;text-decoration:underline;text-underline-offset:3px}
+.consent-policy-line .switch input:disabled+span{opacity:.65;cursor:not-allowed}
+.consent-policy-line .switch input:disabled+span:before{box-shadow:0 1px 4px #152f2219}
+@media(max-width:700px){.consent-policy-line{align-items:flex-start}.consent-policy-line .switch{margin-top:4px}.consent-policy-note{font-size:11px}}
