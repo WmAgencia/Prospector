@@ -114,7 +114,9 @@ test('Navigation preserves safety and accommodates mobile, form focus and reduce
  assert.match(css,/@media\(max-width:940px\)/);
  assert.match(css,/prefers-reduced-motion:reduce/);
  assert.match(css,/focus-visible/);
- assert.match(app,/document\.hidden\|\|busy\|\|q\("input:focus,textarea:focus,select:focus"\)/);
+ assert.match(app,/if\(document\.hidden\)return;/);
+ assert.match(app,/await refreshWa\(\);/);
+ assert.match(app,/if\(busy\|\|q\("input:focus,textarea:focus,select:focus"\)\)return;/);
  assert.match(app,/confirm\("Importar as empresas desta pesquisa/);
  assert.match(app,/prospectFilter="uncontacted"/);
  assert.match(h.root.innerHTML,/^$/);
