@@ -58,6 +58,20 @@ test('Confirmed wins and conversation reply counts drive Groq strategy; raw mess
  assert.equal(ai.researchIntelligenceStatus({at:morning}).lastPlan.niche,result.target.niche);
  delete process.env.GROQ_API_KEY;
 });
+test('Groq model-specific code fences and concise choice indices remain valid and bounded',async()=>{
+ process.env.GROQ_API_KEY='synthetic-test-model-key';
+ const choices=[{niche:'oficinas mecânicas',city:'Sorocaba',theme:'automotive',closedWon:1},
+  {niche:'buffet infantil',city:'Sorocaba',theme:'events',closedWon:0}];
+ const first=await ai.chooseResearchTarget({at:new Date('2026-11-04T11:20:00Z'),candidates:choices,
+  groq:async()=>({model:'synthetic',choice:{content:'choice: 1'}})});
+ assert.equal(first.source,'groq');
+ assert.equal(first.target.niche,'buffet infantil');
+ const invalid=await ai.chooseResearchTarget({at:new Date('2026-11-04T14:30:00Z'),candidates:choices,
+  groq:async()=>({model:'synthetic',choice:{content:'{"choice":99}'}})});
+ assert.equal(invalid.source,'local');
+ assert.equal(invalid.fallbackReason,'GROQ_RESPONSE_INVALID');
+ delete process.env.GROQ_API_KEY;
+});
 test('Three complete calendar months protect already approached contacts, no opt-out recontact',()=>{
  const l=db.addLead({business:'Empresa Retorno QA',city:'Sorocaba',segment:'buffet infantil',phone:'5515999992222',source:'MANUAL'}).lead;
  const initial='2026-08-04T14:00:00.000Z';
