@@ -143,7 +143,7 @@ test('Named greeting waits for reply, sends Wesley exactly after 30s and transfe
  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true}).status,202);
  time+=90_000;
  assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
- assert.match(sent.at(-1).text,/Olá, Mecânica Silva, (?:bom dia|boa tarde|boa noite)! Tudo bem\?/);
+ assert.match(sent.at(-1).text,/Olá, (?:bom dia|boa tarde|boa noite)! Tudo bem\?/);
  assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
  const incoming=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
   unique:'consecom-principal:proposed-greeting-1',content:'Oi, tudo bem!'});
@@ -175,8 +175,9 @@ test('Named greeting waits for reply, sends Wesley exactly after 30s and transfe
   send:async(route,options)=>{sentMessage=options.data.message.text;return {status:true};}
  });
  assert.equal(response.state,'SENT');
- assert.match(seenContext,/Francisca/);
- assert.match(sentMessage,/Sou a Francisca/);
+ assert.equal(seenContext,'','Approved fixed portfolio pitch must not invoke a general-purpose draft');
+ assert.match(sentMessage,/R\$ 550/);
+ assert.match(sentMessage,/domínio pago por um ano/);
  assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
 });
 test('Francisca never treats a second hello as a new conversation, even on an inbound-only chat',async()=>{
