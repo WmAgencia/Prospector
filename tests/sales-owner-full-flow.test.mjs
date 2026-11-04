@@ -50,14 +50,21 @@ test('multiple selected public businesses independently reply, approve a quote a
  }
  assert.equal(d.one('SELECT COUNT(*) n FROM leads WHERE contact_permission=1').n,0);
 });
-test('a price question in the first reply reaches owner approval without requiring a second question',async()=>{
+test('a price question in the first reply respects Wesley introduction and then gets R$550 without owner approval',async()=>{
  const lead=d.addLead({business:'Empresa que pergunta logo o preço',phone:'5511999888877'}).lead;
  assert.equal(q.enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true}).status,202);
  time+=90000;
  assert.equal((await q.tickApproachQueue({currentTime:()=>time,getWaStatus:status,getSession:()=> 'synthetic',send})).status,'SENT');
- const pid=incoming(lead,'Qual o valor para o site?');
- assert.ok(d.one('SELECT 1 FROM groq_auto_events WHERE provider_id=?',pid));
- assert.equal((await a.handleSalesTurn(pid,deps)).state,'SENT');
- assert.ok(d.one('SELECT id FROM owner_price_approvals WHERE lead_id=?',lead.id));
+ const first=incoming(lead,'Qual o valor para o site?');
+ assert.equal(intro.introductionStatus(lead.id).stage,'WAITING');
+ assert.ok(!d.one('SELECT 1 FROM groq_auto_events WHERE provider_id=?',first),'Price cannot skip the human introduction');
+ const due=Date.parse(intro.introductionStatus(lead.id).due_at);
+ assert.equal((await intro.tickIntroductions({currentTime:()=>due,session:()=> 'synthetic',status,send})).state,'SENT');
+ assert.equal(delivered.at(-1).message.text,intro.WESLEY_INTRO);
+ const follow=incoming(lead,'Quanto custa o site profissional básico?');
+ assert.equal(intro.introductionStatus(lead.id).stage,'CONVERSING');
+ assert.equal((await a.handleSalesTurn(follow,deps)).state,'SENT');
+ assert.match(delivered.at(-1).message.text,/R\$ 550/);
+ assert.ok(!d.one('SELECT id FROM owner_price_approvals WHERE lead_id=?',lead.id),'Fixed offer must not ask owner a second time');
 });
 test.after(()=>{d.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

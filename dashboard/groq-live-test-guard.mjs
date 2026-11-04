@@ -27,6 +27,7 @@ export function reviewGroqReply({inbound='',draft='',allowAveragePrice=false}={}
  if(/\b(?:sou humano|nao sou uma ia|nao sou robo|sou o dono|sou wesley)\b/.test(n))return {ok:false,code:'MISREPRESENTATION'};
  if(/\b(?:cpf|rg|senha|cartao de credito|numero do cartao|codigo de verificacao)\b/.test(n))return {ok:false,code:'SENSITIVE_DATA'};
  if(/\b(?:ignore as instrucoes|desconsidere as regras|system prompt|api key|token secreto)\b/.test(n))return {ok:false,code:'PROMPT_LEAK'};
+ if(/\b(?:confirmad[oa] para (?:amanha|hoje|as \d+)|agendamento confirmado|reuniao marcada|retirado (?:da|de) lista|removido (?:da|de) (?:nossa|minha) lista|ja (?:enviei|encaminhei) (?:o contrato|a proposta|seus dados))\b/.test(n))return {ok:false,code:'UNVERIFIED_ACTION'};
  if(/(?:\n\s*){3,}/.test(s))return {ok:false,code:'LONG_FORMAT'};
  return {ok:true,code:'REVIEWED',length:s.length};
 }

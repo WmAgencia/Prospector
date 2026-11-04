@@ -8,6 +8,7 @@ import {documentedOptIn} from './outreach-queue.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
 import {threeMonthsAfter} from './prospecting-recontact.mjs';
 import {priceQuestion} from './sales-policy.mjs';
+import {detectAutomaticReply,friendlyGreeting,portfolioQuestion} from './portfolio-offer-550.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 
 export const INTRO_DELAY_MS=30_000;
@@ -20,14 +21,11 @@ run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Process interr
 const clean=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function asksAboutProposal(value=''){
  const s=clean(value);
+ if(portfolioQuestion(s))return true;
  return /(?:sobre o que|do que) (?:se trata|seria|e) (?:essa |a |sua )?(?:proposta|oferta)|(?:qual|que|como) (?:e |seria )?(?:a |essa |sua )?(?:proposta|oferta)|(?:me explica|pode explicar|explica|me fala|me conte|pode falar).{0,65}(?:proposta|oferta|servico|site|trabalho)|(?:quero|gostaria de) (?:saber|entender|conhecer|ver).{0,45}(?:proposta|oferta)|(?:pode|poderia) (?:me )?(?:contar|explicar|falar) (?:mais|sobre)|(?:quanto (?:custa|fica)|qual (?:o )?(?:valor|preco|investimento)|fazer (?:um )?orcamento)|(?:quero (?:fechar|contratar)|vamos (?:fechar|comecar))/i.test(s);
 }
 export function greetingForProspect(lead={},at=new Date()){
- const hour=Number(new Intl.DateTimeFormat('en-GB',{hour:'2-digit',hourCycle:'h23',timeZone:'America/Sao_Paulo'}).format(at));
- const period=hour>=5&&hour<12?'bom dia':hour>=12&&hour<18?'boa tarde':'boa noite';
- const cleanName=s=>String(s||'').trim().replace(/[\r\n\t<>]/g,' ').replace(/\s+/g,' ').replace(/[!?.,;:]+$/g,'').slice(0,60);
- const name=cleanName(lead.name)||cleanName(lead.business);
- return name?'Olá, '+name+', '+period+'! Tudo bem?':'Olá, '+period+'! Tudo bem?';
+ return friendlyGreeting(lead,at);
 }
 export function introductionStatus(leadId){return one('SELECT * FROM prospecting_introductions WHERE lead_id=?',String(leadId||''))||null;}
 export function registerGreeting({leadId,greetingId,sessionId}={}){
@@ -51,14 +49,12 @@ export function cancelIntroduction(leadId,reason='CONTACT_DECLINED'){
 }
 export function routeIntroductionReply({leadId,providerId,body='',inboxState='REVIEW',receivedAt=new Date()}={}){
  const item=introductionStatus(leadId);
+ // Automated menus are not human permission to proceed; keep introduction pending.
+ if(inboxState==='AUTO_REPLY'||detectAutomaticReply(body))return {managed:true,queueAi:false,state:'AUTO_REPLY'};
  if(!item)return {managed:false,queueAi:true};
  if(inboxState!=='REVIEW'){
   cancelIntroduction(leadId,'INBOX_'+inboxState);
   return {managed:true,queueAi:false,state:'CANCELLED'};
- }
- if(['GREETING_SENT','WAITING'].includes(item.stage)&&priceQuestion(body)){
-  run("UPDATE prospecting_introductions SET stage='CONVERSING',due_at=NULL,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING')",now(),leadId);
-  return {managed:true,queueAi:true,state:'CONVERSING'};
  }
  if(item.stage==='GREETING_SENT'){
   const received=new Date(receivedAt);
