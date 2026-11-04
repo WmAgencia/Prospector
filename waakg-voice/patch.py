@@ -61,3 +61,22 @@ new_logout='''            case "logout": {
 assert route.count(old_logout)==1, "WA-AKG logout implementation changed upstream"
 logout.write_text(route.replace(old_logout,new_logout))
 print("WA-AKG logout confirmed: remote unlink when possible, socket shutdown and auth revocation")
+
+# Upstream runAutoMigration() always executes ALTER TABLE User even if the
+# enum is already correct. On MySQL this takes a metadata lock and can block
+# server.listen indefinitely when other long-lived connections hold the lock.
+# The Docker CMD already runs prisma db push before the server starts.
+migrate = Path("/app/src/lib/auto-migrate.ts")
+migration_source = migrate.read_text()
+role_ddl_anchor = "                        // Ensure default value is 'USER' and order is ('SUPERADMIN', 'STAFF', 'USER')"
+role_ddl_end = "\n                    }\n                }\n            }\n        } else {"
+assert migration_source.count(role_ddl_anchor) == 1, "Unexpected upstream enum migration"
+start = migration_source.index(role_ddl_anchor)
+end = migration_source.index(role_ddl_end, start)
+migration_source = (
+    migration_source[:start]
+    + '                        logger.info("Database", "Role enum already synced; skipping redundant ALTER TABLE.");'
+    + migration_source[end:]
+)
+migrate.write_text(migration_source)
+print("WA-AKG runtime skips redundant User enum ALTER TABLE on already-current schema")
