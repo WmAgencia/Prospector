@@ -30,6 +30,7 @@ const root=q("#app");
 let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
+let outreachHours={start:'08:00',end:'17:30'};
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaVoiceOn=true,franciscaHistory=[],franciscaBusy=false,franciscaRecorder=null,franciscaAudio=null,franciscaRecordTimeout=null,franciscaConversationId=crypto.randomUUID();
 let calendarMonth=(()=>{const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).formatToParts(new Date()).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return parts.year+'-'+parts.month;})();
 async function loadCalendar(){
@@ -70,7 +71,7 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
  });
 }
 
-function nav(viewName){if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings"){refreshAI();refreshVoiceMetrics();refreshConsentPolicy();}}
+function nav(viewName){if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();}
 
 function glyph(key){
  if(globalThis.ProspectorIcons)return globalThis.ProspectorIcons.svg(key);
@@ -454,20 +455,17 @@ function connections(){
  return whatsappAccountsPanel()+(waModalOpen?'<div class="wa-modal-backdrop" role="presentation"><section class="wa-modal" role="dialog" aria-modal="true" aria-labelledby="wa-modal-title"><button type="button" class="wa-modal-close" data-action="close-wa-modal" aria-label="Fechar">'+glyph('close')+'</button><span class="kicker">CONEXÃO WHATSAPP</span><h2 id="wa-modal-title">'+esc(item?.label||'Novo número')+'</h2><p>No celular, abra WhatsApp → <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong>. Depois escaneie o código.</p><div class="wa-modal-qr">'+(wa?.connected?'<div class="wa-connected-success"><span>✓</span><h3>Conectado!</h3><p>Seu WhatsApp está pronto. Esta janela fecha automaticamente.</p></div>':qrResult?.qr?'<img class="qr-image" src="'+esc(qrResult.qr)+'" alt="QR Code para conectar este WhatsApp"><small>Escaneie com o seu WhatsApp</small>':'<div class="wa-qr-loading"><span class="wa-qr-skeleton">▦</span><strong>Aguardando QR Code</strong><small>'+esc(qrResult?.message||'Preparando o pareamento')+'</small></div>')+'</div><div class="wa-modal-actions">'+(wa?.connected?'<button type="button" class="secondary" data-action="disconnect">Desconectar número</button>':'<button type="button" class="secondary" data-action="connect">Atualizar QR Code</button>')+'<button type="button" class="primary" data-action="close-wa-modal">Fechar</button></div></section></div>':'');
 }
 function settings(){
- if(platformContext.role==="master")return masterSettings();
- const s=state?.settings||{};
- const policy=consentPolicy||{enforced:true,canDisable:false,policyStatus:'OPT_IN_REQUIRED',message:'Conferindo política de mensagens…',policyUrl:'https://whatsappbusiness.com/policy/'};
- return '<section class="panel settings"><span class="kicker">PREFERÊNCIAS</span><h2>Configurações</h2><p class="intro">Opções essenciais da operação, sem ferramentas extras.</p><div class="setting-line"><div><strong>Prospecção pausada</strong><small>Não iniciar campanhas ou envios automaticamente.</small></div><label class="switch"><input id="s-paused" type="checkbox" '+(s.paused?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>Abordagem automática</strong><small>08h às 17h30; intervalo aleatório de 90 a 180 segundos entre contatos e três meses para reabordar.</small></div><label class="switch"><input id="s-autonomous" type="checkbox" '+(s.autonomous_outreach_enabled?"checked":"")+'><span></span></label></div><div class="setting-line consent-policy-line"><div><strong>Proteção de autorização no WhatsApp</strong><small>Exige autorização antes do primeiro WhatsApp comercial. Empresas encontradas no Maps não são automaticamente autorizadas.</small><small class="consent-policy-status" role="status">'+esc(policy.enforced?'Proteção ativa':'Proteção desativada')+' · '+esc(policy.canDisable?'Controle disponível':'Aguardando mudança oficial da Meta')+'</small></div><label class="switch" title="'+esc(policy.canDisable?'Alterar proteção de consentimento':policy.message)+'"><input id="s-consent-guard" type="checkbox" aria-label="Exigir autorização antes de mensagens comerciais" '+(policy.enforced?'checked':'')+' '+(!policy.canDisable||consentPolicyBusy?'disabled':'')+'><span></span></label></div><p class="footnote consent-policy-note">'+esc(policy.message)+' <a href="'+esc(policy.policyUrl||'https://whatsappbusiness.com/policy/')+'" target="_blank" rel="noopener noreferrer">Ver política oficial</a>.</p><div class="setting-line"><div><strong>Descoberta automática</strong><small>Pesquisa pública programada no OpenStreetMap.</small></div><label class="switch"><input id="s-discovery" type="checkbox" '+(s.discovery_auto_enabled?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>IA de conversação</strong><small>A IA continua as conversas das empresas abordadas. Valores de propostas exigem sua aprovação pelo WhatsApp.</small></div><span class="tag '+(ai?.configured?"green":"")+'">'+(ai?.configured?"Configurada":"Não configurada")+'</span></div><div class="setting-line"><div><strong>Integração WhatsApp</strong><small>Seus números conectados em um só lugar.</small></div><button class="secondary compact" data-tab="connections">Gerenciar conexão</button></div><p class="footnote">Com a abordagem automática ativada, leads elegíveis entram na fila sem seleção individual. Você pode pausar a prospecção a qualquer momento. Interessados são encaminhados ao seu WhatsApp pessoal.</p></section>'+
- '<section class="panel"><span class="kicker">FRANCISCA · VOZ</span><h2>Diagnóstico das ligações</h2>'+
- '<p class="intro">Métricas agregadas dos últimos 7 dias. Nenhuma gravação ou transcrição é salva neste painel.</p>'+
- cards([
-  ['Respostas medidas',voiceMetrics?.turns??'—','Turnos concluídos'],
-  ['Tempo médio',voiceMetrics?.turns?(voiceMetrics.avgMs/1000).toFixed(1)+' s':'—','Preparação das respostas e voz'],
-  ['Interrupções',voiceMetrics?.interruptions??'—','Turnos cortados pelo interlocutor'],
-  ['Áudio em partes',voiceMetrics?.turns?String(voiceMetrics.avgSegments)+' segmentos':'—','Média de segmentos por resposta']
- ])+
- (voiceMetrics?.turns?'<p class="footnote">Tempo médio por etapa: transcrição '+(voiceMetrics.sttMs/1000).toFixed(1)+' s · processamento '+(voiceMetrics.llmMs/1000).toFixed(1)+' s · voz '+(voiceMetrics.ttsMs/1000).toFixed(1)+' s. Transcrições incertas: '+voiceMetrics.uncertain+' · Falhas de processamento: '+voiceMetrics.failures+'.</p>':'<p class="footnote">Os indicadores aparecerão após as primeiras chamadas na nova versão.</p>')+
- '</section>';
+ if(platformContext.role==='master')return masterSettings();
+ const hours=outreachHours||{start:'08:00',end:'17:30'};
+ return '<div class="workspace-head"><div><span class="kicker">PREFERÊNCIAS DA CONTA</span><h2>Configurações</h2><p>O essencial para sua operação, com segurança e sem ferramentas técnicas desnecessárias.</p></div></div>'+
+ '<div class="account-settings-grid"><section class="panel"><div class="heading"><div><span class="kicker">HORÁRIO DE ABORDAGENS</span><h3>Quando abordar empresas?</h3><p>Defina quando sua operação pode iniciar novas conversas.</p></div></div><form id="outreach-hours-form" class="stack-form"><div class="setting-hour-fields"><label>Início das abordagens<input name="start" type="time" step="60" min="08:00" max="17:29" value="'+esc(hours.start)+'" required></label><label>Fim das abordagens<input name="end" type="time" step="60" min="08:01" max="17:30" value="'+esc(hours.end)+'" required></label></div><p class="footnote">A descoberta continua a partir das 5h. Os horários configurados devem ficar dentro da janela de segurança das 8h às 17h30, e os envios continuam sujeitos à autorização do destinatário e às regras do canal.</p><button class="primary" type="submit">Salvar horário</button></form></section>'+
+ '<section class="panel"><div class="heading"><div><span class="kicker">ACESSO E SEGURANÇA</span><h3>E-mail e senha</h3><p>Para qualquer alteração, confirme a senha atual.</p></div></div><form id="account-credentials" class="stack-form"><label>Novo e-mail<input type="email" name="newEmail" autocomplete="email" value="'+esc(platformContext.email||'')+'" required></label><label>Senha atual<input type="password" name="currentPassword" autocomplete="current-password" minlength="1" maxlength="128" required></label><label>Nova senha (opcional)<input type="password" name="newPassword" autocomplete="new-password" minlength="10" maxlength="128" placeholder="Mínimo de 10 caracteres"></label><p class="footnote">Alterar o e-mail ou a senha encerra outras sessões conectadas. Você permanece conectado neste navegador.</p><button class="primary" type="submit">Salvar dados de acesso</button></form></section></div>'+
+ '<section class="panel settings-simple-control"><div><span class="kicker">CONTROLE RÁPIDO</span><h3>Pausar novas abordagens</h3><p>Pause imediatamente a fila automática sem interromper conversas recebidas.</p></div><label class="switch" aria-label="Pausar abordagem automática"><input id="s-paused" type="checkbox" '+(state?.settings?.paused?'checked':'')+'><span></span></label></section>'+
+ '<p class="settings-small-note">Seus dados e conversas ficam vinculados ao seu espaço. Treinamento com históricos exige autorização. A Francisca está disponível na bolinha lateral, em todas as áreas do painel.</p>';
+}
+async function loadOutreachHours(){
+ try{const r=await api('/api/settings/outreach-hours');outreachHours=r.hours;if(view==='settings')render();}
+ catch(e){n(e.message);}
 }
 function render(){
  shell();
@@ -667,6 +665,10 @@ document.addEventListener("click",async ev=>{
    finally{handoffPending=false;render();}
    return;
   }
+  if(action==='francisca-toggle'){franciscaOpen=!franciscaOpen;renderFrancisca();return;}
+  if(action==='francisca-close'){franciscaOpen=false;stopFranciscaSound();renderFrancisca();return;}
+  if(action==='francisca-sound'){franciscaVoiceOn=!franciscaVoiceOn;if(!franciscaVoiceOn)stopFranciscaSound();renderFrancisca();return;}
+  if(action==='francisca-record-toggle'){await toggleFranciscaRecording();return;}
   if(action==='calendar-prev'||action==='calendar-next'){moveCalendar(action==='calendar-prev'?-1:1);return;}
   if(action==='calendar-day'){calendarDay=el.dataset.date||'';calendarCategory=el.dataset.kind==='closed'?'closed':'approached';render();return;}
   if(action==="refresh-kanban"){await loadKanban();n('Kanban atualizado.');return;}
@@ -740,6 +742,20 @@ document.addEventListener("submit",async ev=>{
  ev.preventDefault();
  if(await platformSubmit(ev))return;
 
+ if(ev.target.id==='outreach-hours-form'){
+  const payload=Object.fromEntries(new FormData(ev.target));
+  try{const r=await post('/api/settings/outreach-hours',payload);outreachHours=r.hours;n('Horário de abordagem salvo.');render();}catch(e){n(e.message);}return;
+ }
+ if(ev.target.id==='account-credentials'){
+  const payload=Object.fromEntries(new FormData(ev.target));
+  try{const r=await post('/api/platform/account',payload);platformContext.email=r.email;n(r.message||'Conta atualizada.');render();}
+  catch(e){n(e.message);}return;
+ }
+ if(ev.target.id==='francisca-form'){
+  const text=q('#francisca-input')?.value.trim();if(!text)return;
+  const input=q('#francisca-input');if(input)input.value='';
+  await franciscaReply(text);return;
+ }
  if(ev.target.id==='scope-form'){
   const payload=Object.fromEntries(new FormData(ev.target));
   try{scopeInfo=await post('/api/prospecting/preferences',payload);scopeMode=scopeInfo.selection?.mode||'all';n('Pesquisa automática configurada. O sistema respeitará as cotas e os contatos autorizados.');render();}
@@ -814,6 +830,7 @@ document.addEventListener("change",async e=>{
  }
 });
 document.addEventListener("input",e=>{
+ if(e.target.id==='training-input'){trainingRecordedText=e.target.value;return;}
  if(e.target.id==='client-search'){
   clientSearch=e.target.value;const cursor=e.target.selectionStart;render();
   const input=q('#client-search');if(input){input.focus();input.setSelectionRange(cursor,cursor);}return;
@@ -839,3 +856,4 @@ window.addEventListener("online",()=>refreshWa());
 await reload();
 await refreshWa();
 if(view==='prospects')await Promise.all([loadCalendar(),loadScope()]);
+if(view==='settings')await loadOutreachHours();
