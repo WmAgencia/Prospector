@@ -76,4 +76,17 @@ test('unregistered sessions are rejected and secondary numbers do not grant owne
  assert.equal(roles.classifyContact({jid:'5511900009999@s.whatsapp.net',sessionId:'pool-two'}).ownerTools,false);
  assert.equal(roles.classifyContact({jid:'5511900009999@s.whatsapp.net',sessionId:'pool-one'}).ownerTools,true);
 });
+test('cooling accounts leave the rotation, all cooling accounts wait without synthetic traffic',async()=>{
+ const budget=await import('../dashboard/session-outreach-budget.mjs');
+ const fill=id=>{const count=budget.sessionOutreachBudget(id,time).approachesInCycle;for(let n=count;n<20;n++)budget.recordApproachConfirmation(id,'budget-'+id+'-'+n,time);};
+ fill('pool-one');
+ assert.equal((await control.selectApproachSender({at:time})).sessionId,'pool-two');
+ fill('pool-two');fill('pool-three');
+ const before={...d.one('SELECT * FROM prospecting_send_clock WHERE id=1')},count=sent.length;
+ assert.equal((await q.tickApproachQueue({currentTime:()=>time,send})).status,'COOLDOWN');
+ assert.deepEqual({...d.one('SELECT * FROM prospecting_send_clock WHERE id=1')},before);
+ assert.equal(sent.length,count);
+ assert.equal((await control.selectApproachSender({at:time+900000})).sessionId,'pool-one');
+});
+
 test.after(()=>{globalThis.fetch=originalFetch;d.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

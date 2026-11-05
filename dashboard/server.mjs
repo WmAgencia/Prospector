@@ -575,14 +575,14 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/queue-health'){
    const live=process.env.WHATSAPP_TRANSPORT==='waakg'?await waOperationalStatus():null;
    const waStatus=live?(live.connected?'CONNECTED':'DISCONNECTED'):connection().status;
-   return respond(res,200,{...queueHealth({waStatus,busy:tickStatus().locked}),worker:tickStatus()});
+   return respond(res,200,{...queueHealth({waStatus,senderReady:live?.approachReady!==false,busy:tickStatus().locked}),worker:tickStatus()});
   }
   if(req.method==='GET'&&pathname==='/api/diagnostics'){
    const last=one('SELECT query,found,status,at FROM discoveries ORDER BY at DESC LIMIT 1');
    const totals=all('SELECT status,COUNT(*) AS total FROM jobs GROUP BY status');
    const live=process.env.WHATSAPP_TRANSPORT==='waakg'?await waOperationalStatus():null;
    const waStatus=live?(live.connected?'CONNECTED':'DISCONNECTED'):connection().status;
-   const data={at:now(),uptimeSeconds:Math.round(process.uptime()),connection:connection(),queueHealth:queueHealth({waStatus,busy:tickStatus().locked}),worker:tickStatus(),discovery:{osmEnabled:getSetting('discovery_sources',{}).osm!==false,braveConfigured:!!process.env.BRAVE_SEARCH_API_KEY,last},leadCount:one('SELECT COUNT(*) AS n FROM leads')?.n||0,queue:Object.fromEntries(totals.map(x=>[x.status,x.total])),settings:{paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}};
+   const data={at:now(),uptimeSeconds:Math.round(process.uptime()),connection:connection(),queueHealth:queueHealth({waStatus,senderReady:live?.approachReady!==false,busy:tickStatus().locked}),worker:tickStatus(),discovery:{osmEnabled:getSetting('discovery_sources',{}).osm!==false,braveConfigured:!!process.env.BRAVE_SEARCH_API_KEY,last},leadCount:one('SELECT COUNT(*) AS n FROM leads')?.n||0,queue:Object.fromEntries(totals.map(x=>[x.status,x.total])),settings:{paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}};
    // QR image, phone number and session identifiers never appear in diagnostics.
    data.connection={decryption:data.connection.decryption,status:waStatus,error:live?.message||data.connection.error,closeCode:data.connection.closeCode,lastEventAt:data.connection.lastEventAt,hasQr:Boolean(data.connection.qr),transport:live?'waakg':'legacy'};
    return respond(res,200,data);
@@ -796,7 +796,7 @@ let lastQueueReason=null,lastQueueLogAt=0;
 async function reportQueueHealth(){
  const live=process.env.WHATSAPP_TRANSPORT==='waakg'?await waOperationalStatus():null;
  const waStatus=live?(live.connected?'CONNECTED':'DISCONNECTED'):connection().status;
- const snapshot=queueHealth({waStatus,busy:tickStatus().locked});
+ const snapshot=queueHealth({waStatus,senderReady:live?.approachReady!==false,busy:tickStatus().locked});
  if(snapshot.reason!==lastQueueReason||Date.now()-lastQueueLogAt>=15*60000||snapshot.alert){
   console.info('[queue health]',JSON.stringify({reason:snapshot.reason,alert:snapshot.alert,ready:snapshot.eligibleWaiting,pending:snapshot.initialPending,oldestPendingMinutes:snapshot.oldestPendingMinutes,unknown:snapshot.unknownInitial,sentToday:snapshot.initialToday.sent,counted:snapshot.initialToday.counted,limit:snapshot.initialToday.limit,nextAt:snapshot.initialToday.nextAt,lastAccepted:snapshot.lastConfirmedInitialAt,inventory:snapshot.inventory,queue:snapshot.queue,discovery:snapshot.discovery,uncertainReasons:snapshot.uncertainReasons,tick:tickStatus()}));
   lastQueueReason=snapshot.reason;lastQueueLogAt=Date.now();

@@ -106,4 +106,11 @@ test('enabled cold first approach reports the real autonomous inventory without 
  }
 });
 
+test('connected senders resting are reported as cooldown rather than ready',()=>{
+ db.setSetting('paused',false);
+ const status=queueHealth({at,waStatus:'CONNECTED',senderReady:false});
+ assert.equal(status.reason,'SESSION_COOLDOWN');assert.equal(status.allowedNow,false);
+ assert.equal(queueHealth({at,waStatus:'DISCONNECTED',senderReady:false}).reason,'WHATSAPP_OFFLINE');
+});
+
 test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
