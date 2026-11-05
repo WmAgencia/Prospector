@@ -19,6 +19,8 @@ import {modelPredict,modelStatistics,labelExample} from './decision-intelligence
 import {evidence,STATUSES} from './website-review.mjs';
 import {eligibleRecontacts,scheduleApprovedRecontact} from './contact-cadence.mjs';
 import {discoverLocal,dailyLocalDiscovery,reconcileInterruptedSearches,LOCATIONS,SEGMENTS} from './osm-discovery.mjs';
+import {getProspectingPreferences,setProspectingPreferences,availableDiscoveryOptions} from './prospecting-preferences.mjs';
+import {prospectingCalendar,validMonth} from './prospecting-calendar.mjs';
 import {radarSnapshot} from './radar.mjs';
 import {importCampaignPackage} from './campaign-package.mjs';
 import {bridgeStatus,bridgeSpec,syncAgentBridge} from './agent-bridge.mjs';
@@ -523,6 +525,19 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/maps/search'){try{return respond(res,202,await startMapsScrape(await json(req)));}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/maps/job'){try{return respond(res,200,await pollMapsScrape(url.searchParams.get('id')||''));}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
   if(req.method==='POST'&&pathname==='/api/maps/import'){try{const a=await importMapsScrape((await json(req)).id);notify();return respond(res,200,a);}catch(e){return respond(res,503,{error:String(e.message).slice(0,220)});}}
+  if(pathname==='/api/prospecting/preferences'){
+   if(req.method==='GET')return respond(res,200,{...getProspectingPreferences(),options:availableDiscoveryOptions()});
+   if(req.method==='POST'){
+    try{const preferences=setProspectingPreferences(await json(req));notify();return respond(res,200,preferences);}
+    catch(e){return respond(res,422,{error:String(e.message).slice(0,220)});}
+   }
+  }
+  if(req.method==='GET'&&pathname==='/api/prospecting/calendar'){
+   const month=url.searchParams.get('month')||'',day=url.searchParams.get('day')||undefined,kind=url.searchParams.get('kind')||undefined;
+   if(!validMonth(month))return respond(res,422,{error:'Informe um mês válido (AAAA-MM)'});
+   try{return respond(res,200,prospectingCalendar({month,day,kind}));}
+   catch(e){return respond(res,422,{error:String(e.message).slice(0,180)});}
+  }
   if(req.method==='POST'&&pathname==='/api/prospecting/search'){try{const result=await prospectingSearch(await json(req));notify();return respond(res,200,result);}catch(e){return respond(res,503,{ok:false,error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/wa-akg/status')return respond(res,200,await gatewayRemoteStatus());
   if(req.method==='GET'&&pathname==='/api/wa-akg/inbox')return respond(res,200,gatewayInbox());
