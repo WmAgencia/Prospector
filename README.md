@@ -1,5 +1,19 @@
 # Prospector — Consecom
 
+## Painel master, clientes e treinamento
+
+O acesso administrativo existente mantém a operação e o banco da Consecom. A seção **Clientes** permite cadastrar gestores, abrir o painel de cada conta, suspender acessos, renovar links privados e liberar recargas. Abrir uma conta muda o espaço do navegador; use **Voltar ao painel master** para retornar. O link de cliente é mostrado uma vez; gerar outro invalida o anterior e as sessões antigas.
+
+Cada cliente executa em processo separado, ligado apenas ao loopback, com banco SQLite, arquivos, sessões WhatsApp, configurações, filas e treinamento próprios em `PROSPECTOR_DATA_DIR/platform/clients/<uuid>`. O cadastro e o extrato ficam em `platform/platform.sqlite`. O servidor público autentica a conta pelo cookie assinado e escolhe o processo; IDs enviados pelo navegador não escolhem bancos. As rotas legadas administrativas não estão disponíveis no espaço do cliente. Os webhooks usam segredo próprio por conta e validam a assinatura do corpo original. Credenciais da operação Consecom, números pessoais, restaurações privadas, testes e campanhas não são herdados.
+
+Os processos previamente usados são restaurados após reinício. Essa primeira arquitetura usa o mesmo servidor físico; sua capacidade depende de memória e CPU. Não equivale a uma implantação distribuída ou a uma quantidade ilimitada de clientes. Inclua a pasta `platform` nos backups do volume persistente. O SQLite operacional existente permanece no mesmo caminho.
+
+**Créditos:** o pacote comercial exibido é 250 abordagens por R$ 9,90, sem mensalidade obrigatória. A liberação é manual pelo master depois da confirmação do pagamento; não há checkout nem cobrança automática. Uma abordagem aceita pelo canal consome um crédito. Pesquisa e respostas posteriores não geram nova cobrança de abordagem nesta versão. O crédito é reservado antes do transporte, consumido uma única vez após confirmação e liberado se a entrega não for confirmada. Envios incertos nunca são repetidos automaticamente. Uma interrupção entre reserva e confirmação mantém o valor em conferência; o master pode suspender a conta, conferir as entregas e liberar reservas não enviadas. Esse mecanismo não comprova leitura ou entrega no celular. Quantidade comprada não é promessa de volume diário, segurança da conta ou taxa de fechamento.
+
+**Treinamento:** a tela reúne cadastro da empresa, análise de conversas e chat manual. O gestor pode escolher conversas ou todas as disponíveis em seus canais. A análise lê apenas texto enviado pela empresa, exclui grupos e mídias e remove padrões de números, e-mails e links. Uma amostra distribuída de até 160 textos é usada para sugerir padrões; o acesso ao histórico depende do que o gateway sincronizou. A integração não consegue recuperar conversas ausentes do gateway. Selecionar todas pode incluir conversas pessoais: o gestor deve revisar a seleção e o relatório. Conteúdo importado é dado não confiável, nunca comando para executar ferramentas ou mudar permissões.
+
+O relatório mostra padrões, sugestões e incertezas. O gestor pode editar e aprovar a versão, que passa a compor o contexto das respostas. O chat manual produz sugestões também sujeitas à aprovação. O perfil ativo permanece em uso até outra versão ser aprovada. Clientes novos começam pausados e sem resposta automática antes do primeiro perfil aprovado. Trata-se de personalização por contexto e exemplos, sem ajuste dos pesos do modelo. Solicitações de não contato, limites do canal, deduplicação, atendimento humano e revisão de condições comerciais continuam prioritários.
+
 Painel operacional de prospecção com fila determinística, WhatsApp via WA-AKG ou Baileys, atendimento com Groq, biblioteca de mídias e editor de workflows.
 
 ## Fluxo automático de produção

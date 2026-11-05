@@ -3,6 +3,7 @@
 // A send timeout is UNKNOWN and is never retried automatically.
 import {db,id,one,all,run,tx,now,audit,getSetting,setSetting,getThread,addMessage} from './db.mjs';
 import {daySP} from './radar.mjs';
+import {reserveApproachCredit,settleApproachCredit,availableApproachCredits} from './tenant-credits.mjs';
 import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt} from './approach-cadence.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
@@ -94,7 +95,7 @@ export function approachQueueStatus(){
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
  return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
   intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,senderRotation:{mode:'round_robin',sessions:managedSessions().length,lastSession:rotationCursor()},nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),approachDueAt(clock))).toISOString():null,
-  status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
+  status:b?.status||'IDLE',availableCredits:availableApproachCredits(),repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
 export function enqueueApprovedApproaches(input={}){
  if(input.operatorApproved===true&&input.offerType!==undefined&&!['portfolio','promotion','corporate'].includes(input.offerType))return {status:400,body:{error:'Tipo de oferta inválido'}};
@@ -103,6 +104,7 @@ export function enqueueApprovedApproaches(input={}){
  const result=tx(()=>{
   if(currentBatch())return {status:409,body:{error:'Já existe uma fila em andamento. Conclua ou cancele antes de iniciar outra.'}};
   const approved=ids.map(leadId=>eligibleLead(leadId,'',input.operatorApproved===true)).filter(Boolean);
+  if(process.env.PROSPECTOR_TENANT_ID&&approved.length>availableApproachCredits())return {status:402,body:{error:'Saldo insuficiente para esta seleção. Reduza a lista ou solicite uma recarga.'}};
   if(!approved.length)return {status:403,body:{error:input.operatorApproved===true?'Nenhuma selecionada está elegível para abordagem. Confira bloqueios, contatos anteriores e atendimento humano.':'Nenhuma selecionada tem autorização de contato documentada. Confirme a seleção manual no painel para aprovar a primeira abordagem.'}};
   const batchId=id(),at=now();
   run('INSERT INTO prospecting_batches(id,status,created_at,updated_at) VALUES(?,?,?,?)',batchId,'ACTIVE',at,at);
@@ -221,6 +223,8 @@ export async function tickApproachQueue(deps={}){
   const rotating=!deps.getWaStatus&&!deps.getSession;
   const wa=rotating?await selectApproachSender():await getWaStatus(),session=rotating?wa.sessionId:(getSession()||wa.sessionId);
   if(!wa.connected||!session)return {status:wa.reason||'OFFLINE'};
+  if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('training_active',null))return {status:'TRAINING_REVIEW_REQUIRED'};
+  if(!reserveApproachCredit(next.id))return {status:'NO_CREDITS'};
   // Transaction reserves the global clock *before* invoking the provider.
   // Timestamp can only move forward. The interval is enforced after restarts.
   const reserved=tx(()=>{
@@ -243,13 +247,14 @@ export async function tickApproachQueue(deps={}){
    run('INSERT OR IGNORE INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)',next.lead_id,next.phone,'UNKNOWN',next.id,new Date(nowMs).toISOString());
    return true;
   });
-  if(!reserved)return {status:'WAITING'};
+  if(!reserved){settleApproachCredit(next.id,false);return {status:'WAITING'};}
   const recipient=one('SELECT name,business FROM leads WHERE id=?',next.lead_id);
   const message=greetingForProspect(recipient,new Date(time));
   try{
    const result=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/send',{method:'POST',data:{message:{text:message}}});
    run('UPDATE prospecting_send_clock SET last_finished_ms=MAX(last_finished_ms,?) WHERE id=1',currentTime());
    if(result.status!==true)throw Error('Gateway não confirmou entrega');
+   settleApproachCredit(next.id,true);
    run("UPDATE prospecting_batch_items SET status='SENT',error=NULL WHERE id=?",next.id);
    run("UPDATE initial_contacts SET status='SENT' WHERE job_id=?",next.id);
    const lead=one('SELECT * FROM leads WHERE id=?',next.lead_id);
@@ -260,6 +265,7 @@ export async function tickApproachQueue(deps={}){
    audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE});
    return {status:'SENT',batchId:batch.id};
   }catch(error){
+   settleApproachCredit(next.id,false);
    run('UPDATE prospecting_send_clock SET last_finished_ms=MAX(last_finished_ms,?) WHERE id=1',currentTime());
    run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Entrega incerta; verificar manualmente' WHERE id=?",next.id);
    audit('PROSPECTING_GREETING_UNKNOWN',next.lead_id,{batchId:batch.id});

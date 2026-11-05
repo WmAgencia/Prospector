@@ -54,6 +54,7 @@ export function queueInboundTurn({providerId,jid,sessionId}={}){
 }
 const active=new Set();
 export async function handleSalesTurn(providerId,deps={}){
+ if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('training_active',null))return {state:'TRAINING_REVIEW_REQUIRED'};
  const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.segment,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
  if(!r)return {state:'SKIP'};
  const replyStartedAt=(deps.replyNow||Date.now)();
@@ -61,7 +62,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
  const allowTest=identity.role==='OWNER'&&identity.testSandbox===true;
  const salesFollowup=approvedProspectFollowup(identity,r.jid);
- const portfolioAllowed=salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
+ const portfolioAllowed=!process.env.PROSPECTOR_TENANT_ID&&salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
  const intro=introductionStatus(r.lead_id);
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))return finish('SKIPPED','INTRO_NOT_COMPLETE');
  if(identity.role==='UNVERIFIED')return finish('SKIPPED','UNVERIFIED_SENDER');
@@ -144,7 +145,7 @@ export async function handleSalesTurn(providerId,deps={}){
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+
-     (salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(portfolioAllowed?'Existe uma oferta BASE aprovada para portfólio: R$ 550 com domínio por um ano e prazo de até 3 dias após materiais/escopo. Não invente extras nem desconto de 90%; consulte o operador para parcelamento ou outra modalidade.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
+     (!process.env.PROSPECTOR_TENANT_ID&&salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(portfolioAllowed?'Existe uma oferta BASE aprovada para portfólio: R$ 550 com domínio por um ano e prazo de até 3 dias após materiais/escopo. Não invente extras nem desconto de 90%; consulte o operador para parcelamento ou outra modalidade.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
  if(stale())return finish(stale());
  if(!draft.ok||!draft.draft){
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});

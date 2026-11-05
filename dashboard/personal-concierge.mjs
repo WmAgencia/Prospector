@@ -22,7 +22,7 @@ export function classifyInbound(text){
  return {category:'other',intro:false,human:false,label:'Assunto a esclarecer'};
 }
 // Used only for the very first inbound greeting; later turns use conversational history.
-export const firstGreeting=()=> 'Olá! Aqui é a Francisca, assistente virtual da Consecom. Como posso ajudar?';
+export const firstGreeting=()=>process.env.PROSPECTOR_TENANT_ID?'Olá! Sou o assistente virtual da '+process.env.PROSPECTOR_TENANT_NAME+'. Como posso ajudar?':'Olá! Aqui é a Francisca, assistente virtual da Consecom. Como posso ajudar?';
 export function queueInboundBrief({leadId,phone,body,source='WHATSAPP_INBOUND'}={}){
  const dest=personalPhone();
  if(process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true'||!dest||!leadId)return false;

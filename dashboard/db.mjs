@@ -204,3 +204,7 @@ export function stopLead(leadId,reason){
  run("UPDATE executions SET state='CANCELLED',updated_at=? WHERE lead_id=?",now(),leadId);
  stage(leadId,'NO_INTEREST',reason);
 }
+// New client workspaces never inherit Consecom campaigns or automatic discovery.
+if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('tenant_initialized',false)){
+ for(const [key,value] of Object.entries({paused:true,auto_initial:false,autonomous_outreach_enabled:false,discovery_auto_enabled:false,google_places_auto_enabled:false,owner_notifications_enabled:false,sales_daily_report_enabled:false,tenant_initialized:true}))setSetting(key,value);
+}

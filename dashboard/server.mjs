@@ -1,5 +1,7 @@
 import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
+import {handlePlatform} from './platform.mjs';
+import {handleTraining} from './training.mjs';
 import {accessClientKey,createAccessLimiter} from './access-rate-limit.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -419,8 +421,10 @@ async function handler(req,res){
   securityHeaders(res);
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/health'&&req.method==='GET')return respond(res,200,{status:'ok'});
-  if(await handleMcp(req,res,url,{authorized}))return;
+  // MCP has its own OAuth/origin validation; client spaces never expose it.
+  if(!process.env.PROSPECTOR_TENANT_ID&&!String(req.headers.cookie||'').includes('ps_client=')&&await handleMcp(req,res,url,{authorized}))return;
   if(!sameOriginWrite(req,res))return;
+  if(await handlePlatform(req,res,url,{authorized,json,respond}))return;
   if(url.pathname==='/access'&&req.method==='GET')return showAccess(res);
   if(url.pathname==='/api/auth/exchange'&&req.method==='POST')return exchangeAccess(req,res);
   // Only WA-AKG HMAC-signed events may bypass dashboard session authentication.
@@ -456,6 +460,7 @@ async function handler(req,res){
   }
   if(!protectedAccess(req,res,url.pathname))return;
   const pathname=decodeURIComponent(url.pathname);
+  if(await handleTraining(req,res,url,{json,respond}))return;
   if(pathname==='/api/events'){
    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
@@ -688,6 +693,7 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/settings'){
    const v=await json(req);
    for(const [k,value] of Object.entries(v)){
+    if(process.env.PROSPECTOR_TENANT_ID&&!['paused','autonomous_outreach_enabled','discovery_auto_enabled'].includes(k))return respond(res,403,{error:'Esta configuração é administrada pela plataforma'});
     if(!allowedSettings.has(k))throw Error('Configuração desconhecida: '+k);
     if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
     if(k==='daily_limit'&&Number(value)>150)throw Error('O teto diário é 150 primeiras abordagens');
@@ -767,7 +773,7 @@ async function handler(req,res){
   res.writeHead(200,{'Content-Type':web[ext]||'text/plain','Cache-Control':'no-cache'});fs.createReadStream(f).pipe(res);
  }catch(e){console.error('[API]',e?.message);error(res,e);}
 }
-const host=envIsProd?'0.0.0.0':'127.0.0.1',port=Number(process.env.PORT||3030);
+const host=process.env.HOST||(envIsProd?'0.0.0.0':'127.0.0.1'),port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
 // Read-only remote state: prevents false offline badges in the Prospector UI.
 if(process.env.WHATSAPP_TRANSPORT==='waakg'){

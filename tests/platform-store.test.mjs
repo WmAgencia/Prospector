@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {openPlatformStore} from '../dashboard/platform-store.mjs';
+test('client credentials, balances and idempotent reservations stay isolated across restarts',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-platform-'));const s=openPlatformStore(dir);
+ const a=s.create({name:'Agência A',email:'a@example.test'}),b=s.create({name:'Agência B',email:'b@example.test'});
+ assert.equal(s.authenticate(a.token).id,a.client.id);assert.equal(s.authenticate('invalid'),undefined);
+ assert.equal(s.list()[0].secret,undefined);assert.equal(s.list()[0].token_hash,undefined);
+ s.adjust(a.client.id,250,'Recarga','payment-1');s.adjust(a.client.id,250,'Recarga','payment-1');
+ assert.equal(s.balance(a.client.id),250);assert.equal(s.balance(b.client.id),0);
+ assert.equal(s.reserve(b.client.id,'approach'),false);assert.equal(s.reserve(a.client.id,'approach'),true);
+ assert.equal(s.reserve(a.client.id,'approach'),false);assert.equal(s.pending(a.client.id),1);
+ s.settle(a.client.id,'approach',true);s.settle(a.client.id,'approach',true);
+ assert.equal(s.balance(a.client.id),249);assert.equal(s.pending(a.client.id),0);
+ assert.equal(s.reserve(a.client.id,'failed'),true);s.settle(a.client.id,'failed',false);assert.equal(s.balance(a.client.id),249);
+ assert.equal(s.reserve(a.client.id,'failed'),true);s.settle(a.client.id,'failed',false);
+ assert.throws(()=>s.adjust(a.client.id,-1000,'bad'));
+ const old=s.authenticate(a.token),newToken=s.rotate(old.id);assert.equal(s.authenticate(a.token),undefined);assert.equal(s.authenticate(newToken).id,old.id);
+ s.status(old.id,'suspended');assert.equal(s.authenticate(newToken),undefined);assert.throws(()=>s.reserve(old.id,'suspended'));
+ s.db.close();const again=openPlatformStore(dir);assert.equal(again.balance(old.id),249);again.db.close();fs.rmSync(dir,{recursive:true,force:true});
+});
