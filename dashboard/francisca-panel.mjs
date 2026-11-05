@@ -6,6 +6,25 @@ import {availableApproachCredits} from './tenant-credits.mjs';
 
 let inFlight=false;
 let lastStarted=0;
+// The worker process belongs to ONE tenant. Audio and text share a bounded,
+// ephemeral conversational context; never persistent and never shared across workers.
+const voiceContexts=new Map();
+const VOICE_TTL=20*60*1000;
+function conversationKey(input){
+ return /^[a-f\d]{8}-[a-f\d-]{27,36}$/i.test(String(input||''))?String(input):null;
+}
+function previousConversation(key){
+ if(!key)return [];
+ const entry=voiceContexts.get(key);
+ if(!entry||Date.now()-entry.at>VOICE_TTL){voiceContexts.delete(key);return [];}
+ return entry.turns.slice(-10);
+}
+function noteConversation(key,history,heard,spoken){
+ if(!key)return;
+ for(const [k,v] of voiceContexts){if(Date.now()-v.at>VOICE_TTL)voiceContexts.delete(k);}
+ if(voiceContexts.size>60)voiceContexts.delete(voiceContexts.keys().next().value);
+ voiceContexts.set(key,{at:Date.now(),turns:[...history,{role:'user',content:heard},{role:'assistant',content:spoken}].slice(-10)});
+}
 const cap=(value,n=750)=>String(value||'').trim().slice(0,n);
 async function readAudio(req){
  const ct=String(req.headers['content-type']||'').split(';')[0];
@@ -55,7 +74,9 @@ export async function handleFranciscaPanel(req,res,url,{json,respond}){
   const data=isAudio?null:await json(req);
   const transcript=isAudio?await readAudio(req):cap(data?.text,700);
   if(transcript.length<2)throw Error('Diga ou escreva uma pergunta para a Francisca');
-  const history=(Array.isArray(data?.history)?data.history:[]).slice(-10)
+  const key=conversationKey(isAudio?req.headers['x-francisca-conversation']:data?.conversationId);
+  const serverHistory=previousConversation(key);
+  const history=serverHistory.length?serverHistory:(Array.isArray(data?.history)?data.history:[]).slice(-10)
    .filter(x=>['user','assistant'].includes(x.role)&&typeof x.text==='string')
    .map(x=>({role:x.role,content:cap(x.text,400)}));
   const details=franciscaPanelContext();
@@ -63,6 +84,7 @@ export async function handleFranciscaPanel(req,res,url,{json,respond}){
   const result=await groqChat({task:'voice',maxTokens:650,messages:[{role:'system',content:system},...history,{role:'user',content:transcript}]});
   const answer=cap(result.choice?.content,650);
   if(answer.length<2)throw Error('A IA não conseguiu formular a resposta');
+  noteConversation(key,history,transcript,answer);
   respond(res,200,{transcript,answer,voiceAvailable:true,readOnly:true,tenantScoped:true});
  }catch(e){respond(res,422,{error:'A Francisca não conseguiu responder: '+String(e.message).slice(0,120)});}
  finally{inFlight=false;}
