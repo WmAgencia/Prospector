@@ -92,6 +92,22 @@ export function openPlatformStore(root){
     db.exec('COMMIT');return selectRequest.get(item.id);
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
+  hasPassword(clientId){
+   return !!db.prepare('SELECT 1 FROM client_passwords WHERE client_id=?').get(clientId);
+  },
+  setupPassword(clientId,password){
+   const client=get(clientId),input=String(password||'');
+   if(!client||client.status!=='active'||this.hasPassword(clientId))throw Error('Este convite já foi utilizado');
+   if(input.length<10||input.length>128)throw Error('A senha deve ter de 10 a 128 caracteres');
+   const salt=crypto.randomBytes(24).toString('hex'),hash=crypto.scryptSync(input,salt,64).toString('hex');
+   db.exec('BEGIN IMMEDIATE');try{
+    db.prepare('INSERT INTO client_passwords(client_id,email,salt,password_hash,privacy_version,created_at,phone) VALUES(?,?,?,?,?,?,?)')
+     .run(clientId,client.email,salt,hash,'invite-activation',new Date().toISOString(),client.contact_phone||null);
+    // Rotate the initial invite token so it cannot be reused.
+    db.prepare('UPDATE clients SET token_hash=? WHERE id=?').run(crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex'),clientId);
+    db.exec('COMMIT');return get(clientId);
+   }catch(e){db.exec('ROLLBACK');throw e;}
+  },
   changeCredentials(clientId,{currentPassword,newEmail,newPassword}={}){
    const client=get(clientId);
    const row=db.prepare('SELECT * FROM client_passwords WHERE client_id=?').get(clientId);
