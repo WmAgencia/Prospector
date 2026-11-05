@@ -60,7 +60,7 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
  });
 }
 
-function nav(viewName){if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings"){refreshAI();refreshVoiceMetrics();refreshConsentPolicy();}}
+function nav(viewName){if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects")loadProspectExperience();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings"){refreshAI();refreshVoiceMetrics();refreshConsentPolicy();}}
 
 function glyph(key){
  if(globalThis.ProspectorIcons)return globalThis.ProspectorIcons.svg(key);
@@ -124,6 +124,31 @@ function trainingView(){
  return '<div class="workspace-head"><div><span class="kicker">TREINAMENTO DA IA</span><h2>Seu jeito de atender. Com a sua revisão.</h2><p>Ensine sobre a empresa e transforme exemplos reais em um perfil de atendimento.</p></div><span class="tag '+(profile?'green':'')+'">'+(profile?'Perfil aprovado':'Aguardando treinamento')+'</span></div><div class="training-steps"><span>1. Conte sobre a empresa</span><span>2. Traga exemplos ou converse</span><span>3. Revise e ative</span></div><section class="panel"><h3>Sobre sua empresa</h3><form id="training-business" class="stack-form"><label>Nome da empresa<input name="name" required maxlength="100" value="'+esc(t.business?.name||'')+'"></label><label>WhatsApp pessoal para avisos de interessados<input name="notificationPhone" type="tel" autocomplete="tel" placeholder="(11) 99999-9999" value="'+esc(t.business?.notificationPhone||'')+'"><small>Use o número em que você quer receber os avisos para assumir o fechamento.</small></label><label>Serviços, público e informações aprovadas<textarea name="description" rows="3" maxlength="4000" placeholder="O que você vende, para quem atende e quando chamar uma pessoa.">'+esc(t.business?.description||'')+'</textarea></label><button class="secondary" '+(trainingBusy?'disabled':'')+'>Salvar informações</button></form></section><div class="training-grid"><section class="panel"><div class="heading"><div><span class="kicker">APRENDER COM O WHATSAPP</span><h3>Seus exemplos de conversa</h3></div><button class="secondary compact" data-action="training-chats">Carregar conversas</button></div><p>São analisados textos enviados pela empresa nos números conectados. Escolha conversas comerciais; dados de contato são removidos dos exemplos.</p><div class="mode-options"><label><input type="radio" name="training-mode" value="selected" '+(trainingMode==='selected'?'checked':'')+'> Selecionar conversas</label><label><input type="radio" name="training-mode" value="all" '+(trainingMode==='all'?'checked':'')+'> Todas as disponíveis</label></div>'+(trainingMode==='all'?'<p class="analysis-note">Esse modo inclui todas as conversas individuais disponíveis, inclusive pessoais. Use apenas se você tem autorização para utilizar todos os históricos comerciais.</p><label class="training-all-confirm"><input id="training-all-confirm" type="checkbox" '+(trainingAllConfirmed?'checked':'')+'> Confirmo que as conversas disponíveis são comerciais e estão autorizadas para esta análise.</label>':'<div class="training-chat-list">'+(trainingChats.length?trainingChats.map(c=>'<label><input type="checkbox" data-training-chat="'+esc(c.key)+'" '+(trainingSelection.has(c.key)?'checked':'')+'><span><strong>'+esc(c.name)+'</strong><small>'+esc(c.channel)+'</small></span></label>').join(''):'<p>Carregue as conversas para escolher os exemplos.</p>')+'</div>')+'<button class="primary" data-action="training-analyze" '+(trainingBusy||running?'disabled':'')+'>'+(running?'Analisando conversas…':'Analisar e gerar relatório')+'</button><p class="footnote">A análise usa o histórico que a integração disponibiliza, com exemplos distribuídos entre as conversas escolhidas. Nada é enviado aos contatos.</p>'+(t.runs?.length?'<div class="training-history"><h4>Últimas análises</h4>'+t.runs.slice(0,3).map(r=>'<p><strong>'+esc(({RUNNING:'Em andamento',REVIEW:'Pronta para revisão',FAILED:'Não concluída'})[r.status]||r.status)+'</strong> · '+stamp(r.created_at)+(r.details?.error?'<br>'+esc(r.details.error):'')+'</p>').join('')+'</div>':'')+'</section><section class="panel training-manual"><span class="kicker">TREINAR CONVERSANDO</span><h3>Ensine do seu jeito</h3><p>Conte como abordar, o que perguntar e quando encaminhar o cliente para você.</p><div class="training-messages" role="log" aria-label="Conversa de treinamento">'+(t.chat?.length?t.chat.map(m=>'<div class="training-message '+(m.role==='user'?'sent':'received')+'"><small>'+ (m.role==='user'?'Você':'Assistente de treinamento')+'</small><p>'+esc(m.body)+'</p></div>').join(''):'<div class="training-welcome"><strong>O que seu atendimento precisa saber?</strong><p>Exemplo: “Prefiro respostas curtas. Antes de apresentar a proposta, pergunte qual é a maior dificuldade do negócio.”</p></div>')+'</div><form id="training-chat" class="training-composer"><label class="sr-only" for="training-input">Orientação para o treinamento</label><textarea id="training-input" name="text" rows="3" maxlength="3000" required placeholder="Escreva uma orientação para sua IA…"></textarea><button class="primary" '+(trainingBusy?'disabled':'')+'>'+(trainingBusy?'Preparando…':'Enviar orientação')+'</button></form></section></div><section class="panel profile-review"><div class="heading"><div><span class="kicker">REVISÃO DO GESTOR</span><h3>'+(draft?'Revise o que foi aprendido':'Perfil de atendimento')+'</h3><p>'+(draft?'Edite o relatório abaixo. Só a versão aprovada será usada nas respostas.':'O perfil aprovado aparece aqui. Novos treinamentos geram uma sugestão para sua revisão.')+'</p></div>'+(profile?'<span class="tag green">Ativo desde '+stamp(profile.at)+'</span>':'')+'</div>'+(draft?'<form id="training-approve" class="stack-form"><input type="hidden" name="id" value="'+esc(draft.id)+'"><label>Regras e padrões aprendidos<textarea name="text" rows="12" maxlength="9000" required>'+esc(draft.text)+'</textarea></label><button class="primary" '+(trainingBusy?'disabled':'')+'>Aprovar e usar este perfil</button></form>':profile?'<pre class="profile-text">'+esc(profile.text)+'</pre><button class="secondary" data-action="training-edit-profile">Editar perfil aprovado</button>':'<div class="empty"><p>Analise conversas ou envie uma orientação para criar a primeira sugestão.</p></div>')+'</section>';
 }
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
+async function loadProspectExperience(){
+ try{
+  const [settings,calendar,queue]=await Promise.all([
+   api('/api/prospecting/preferences'),api('/api/prospecting/calendar?month='+encodeURIComponent(calendarMonth)),
+   api('/api/prospecting/queue').catch(()=>null)
+  ]);
+  prospectPrefs=settings;calendarData=calendar;approachQueue=queue;
+  if(view==='prospects')render();
+ }catch(e){n(e.message);}
+}
+async function loadProspectCalendar(){
+ if(calendarBusy)return;
+ calendarBusy=true;
+ try{
+  calendarData=await api('/api/prospecting/calendar?month='+encodeURIComponent(calendarMonth));
+  calendarDetail=null;
+  if(view==='prospects')render();
+ }finally{calendarBusy=false;}
+}
+async function openCalendarDetail(day,kind='approached'){
+ calendarDetail={day,kind,items:[]};
+ if(view==='prospects')render();
+ const result=await api('/api/prospecting/calendar?month='+encodeURIComponent(calendarMonth)+'&day='+encodeURIComponent(day)+'&kind='+encodeURIComponent(kind));
+ if(calendarDetail?.day===day&&calendarDetail?.kind===kind){calendarDetail=result.detail;render();}
+}
 async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');if(view==='credits')render();}catch(e){n(e.message);}}
 async function loadTraining(){try{trainingState=await api('/api/training');if(view==='training'&&!q('textarea:focus,input:focus'))render();}catch(e){n(e.message);}}
 async function platformAction(action,el){
@@ -494,7 +519,7 @@ async function reload(){
  try{
   if(platformContext.role==="master"){await loadClients();lastRefresh=Date.now();render();return;}
   state=await api("/api/state");lastRefresh=Date.now();
-  if(view==="clients")await loadClients();else if(view==="training")await loadTraining();else if(view==="credits"){render();await loadCredits();}else if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else render();
+  if(view==="clients")await loadClients();else if(view==="training")await loadTraining();else if(view==="credits"){render();await loadCredits();}else if(view==="prospects")await loadProspectExperience();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else render();
  }catch(e){if(!state)root.innerHTML='<main class="load-error"><h2>Não foi possível abrir o Prospector</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';else n(e.message);}
 }
 document.addEventListener("click",async ev=>{
@@ -533,6 +558,14 @@ document.addEventListener("click",async ev=>{
    finally{handoffPending=false;render();}
    return;
   }
+  if(action==='calendar-prev'||action==='calendar-next'){
+   changeMonth(action==='calendar-prev'?-1:1);await loadProspectCalendar();return;
+  }
+  if(action==='calendar-day'){await openCalendarDetail(el.dataset.day,'approached');return;}
+  if(action==='calendar-kind'){
+   if(calendarDetail)await openCalendarDetail(calendarDetail.day,el.dataset.kind);return;
+  }
+  if(action==='calendar-close'){calendarDetail=null;render();return;}
   if(action==="refresh-kanban"){await loadKanban();n('Kanban atualizado.');return;}
   if(action==="menu"){q("#side")?.classList.toggle("mobile-open");q(".scrim")?.classList.toggle("visible");return;}
   if(action==="close-menu"){q("#side")?.classList.remove("mobile-open");q(".scrim")?.classList.remove("visible");return;}
@@ -601,6 +634,15 @@ document.addEventListener("submit",async ev=>{
  ev.preventDefault();
  if(await platformSubmit(ev))return;
 
+ if(ev.target.id==='prospect-preference-form'){
+  const data=Object.fromEntries(new FormData(ev.target));
+  try{
+   const result=await post('/api/prospecting/preferences',{mode:data.mode,niche:data.niche||'',city:data.city||''});
+   prospectPrefs={...prospectPrefs,...result};
+   n('Preferência de pesquisa salva. A próxima busca automática seguirá essa configuração.');
+  }catch(e){n(e.message);}
+  render();return;
+ }
  if(ev.target.id==="search-form"){
   ev.preventDefault();
   const a=q("#niche")?.value.trim(),b=q("#city")?.value.trim();
@@ -643,6 +685,12 @@ document.addEventListener("submit",async ev=>{
 });
 document.addEventListener("change",async e=>{
  if(e.target.dataset.trainingChat){if(e.target.checked)trainingSelection.add(e.target.dataset.trainingChat);else trainingSelection.delete(e.target.dataset.trainingChat);return;}
+ if(e.target.name==='mode'&&e.target.closest('#prospect-preference-form')){
+  // Preserve typed niche/city before changing only visible fields.
+  prospectPrefs.niche=q('#prospect-preference-form [name=niche]')?.value||prospectPrefs.niche;
+  prospectPrefs.city=q('#prospect-preference-form [name=city]')?.value||prospectPrefs.city;
+  prospectPrefs.mode=e.target.value;render();return;
+ }
  if(e.target.name==="training-mode"){trainingMode=e.target.value;trainingAllConfirmed=false;render();return;}
  if(e.target.id==='training-all-confirm'){trainingAllConfirmed=e.target.checked;return;}
  if(e.target.id==='client-status-filter'){clientStatusFilter=e.target.value;render();return;}
