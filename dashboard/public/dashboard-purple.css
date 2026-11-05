@@ -1,0 +1,136 @@
+/* Prospector dashboard | cohesive with the approved white/purple landing. */
+/* Presentation layer only: existing controls, data and business logic unchanged. */
+:root{
+ --bg:#f8f7ff;--canvas:#fdfcff;--ink:#181528;--ink2:#302a4b;--muted:#68637d;--soft:#86819a;
+ --green:#6738f7;--darkgreen:#26174b;--lime:#e8e0ff;--light:#f2edff;
+ --line:#eee9fa;--border:#e9e3f8;--shadow:0 6px 28px #5133a60b;--shadow-hover:0 14px 38px #5133a625;
+ --p3-purple:#6d38fa;--p3-purple-dark:#4e20d8;
+}
+html,body{background:#f7f6ff!important;color:#181528}
+body{font-family:'DM Sans',sans-serif}
+a{color:#6738f7}
+::selection{background:#ded0ff;color:#301478}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #9268ff;outline-offset:3px}
+.shell{background:#fdfcff!important;box-shadow:0 15px 60px #3720650e}
+.side{background:#fbfaff!important;color:#77718e!important;border-right:1px solid #ece7fb!important;scrollbar-color:#cdbcf9 transparent}
+.brand-mark{background:linear-gradient(145deg,#aa7cff,#6132fa)!important;color:white!important;box-shadow:0 4px 15px #6535f83b;border-radius:12px;font-weight:900}
+.brand-mark span{color:#d6c5ff!important}
+.brand strong{color:#17132f!important}.brand .accent{color:#7947ff!important}.brand small,.side-label{color:#81779b!important}
+.nav,.side .nav{color:#79708f!important}
+.nav:hover,.side .nav:hover{background:#f0eaff!important;color:#6937ec!important}
+.nav.active,.side .nav.active{background:linear-gradient(135deg,#7541ff,#5330f0)!important;color:white!important;border-color:transparent!important;box-shadow:0 8px 19px #5932e82e}
+.nav.active .icon,.side .nav.active .icon{opacity:1}
+.nav-indicator{background:#edddff}
+.side-panel{background:#f4efff;border-color:#e4d9ff}.side-panel-label,.side-status strong,.side-status small,.side-panel p{color:#5c4e81}
+.side-footer{border-color:#eee7ff}.side-footer strong{color:#35245a}.brand-min{background:linear-gradient(140deg,#e2d5ff,#c6b1ff)!important;color:#4f32b7!important}
+.top{background:#fff!important;border-bottom:1px solid #f2effa!important;box-shadow:none}
+.top-title h1{color:#1a1730!important;font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;letter-spacing:-.06em}
+.top-title .eyebrow{color:#9086a3!important}
+.workspace-tabs button{color:#746d87!important;font-size:11px;font-weight:700;transition:color .15s,background .15s}
+.workspace-tabs button:hover{background:#f3edff!important;color:#622efa!important}
+.workspace-tabs button.active{background:#eee6ff!important;color:#5a2ee1!important;font-weight:850}
+.icon-button{border:1px solid #eae5f7!important;background:#fff!important;color:#5d3cbe!important}
+.icon-button:hover{background:#f1eaff!important;border-color:#cfbefd!important}
+.status-chip{background:#f4f1ff!important;color:#5d5081!important}.status-chip.online{background:#ebf9e9!important;color:#427e43!important}
+.pulse.ok{background:#58c76f!important;box-shadow:0 0 0 3px #80de8a25}
+.useravatar{background:linear-gradient(140deg,#e6d8ff,#c9b2ff)!important;color:#5329b9!important;font-weight:800}
+.account-logout{color:#5b37b2!important;background:#f7f3ff!important;border-color:#e8defb!important}.account-logout:hover{background:#eee5ff!important}
+.body,.main-wrap,.content{background:#fdfcff!important;color:#1c1831}
+.content{max-width:1700px}
+.workspace-head h2,.kanban-overview-head h2,.heading h2,.panel h2{color:#1a162e!important;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-.065em}
+.workspace-head p,.kanban-overview-head p,.heading p,.footnote{color:#706781!important}
+.kicker,.eyebrow{color:#7041de!important}
+.tag{background:#f1ebff!important;color:#6541c1!important;border:1px solid #e5dbff!important}
+.tag.green{background:#eaf9e7!important;color:#397745!important;border:1px solid #ceeacb!important}
+.primary,.primary.compact,.button-dark{background:linear-gradient(110deg,#7944ff,#572bf3)!important;color:white!important;border-color:transparent!important;box-shadow:0 7px 16px #6f43eb26}
+.primary:hover,.button-dark:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.secondary,.secondary.compact{background:#fff!important;color:#5f32d4!important;border:1px solid #dfd4fc!important}
+.secondary:hover{background:#f6f1ff!important;border-color:#bca7fa!important}
+.text-button{color:#6337cf!important}
+.panel,.metric,.account-card,.client-card,.kanban-column,.chat-panel,.chat-list,.setting-line{border-color:#e9e4f7!important;box-shadow:0 7px 23px #4b2bbd0b;background:#fff}
+.panel{border-radius:17px}
+.stats{gap:15px}.metric{border-radius:16px;background:#fff!important;box-shadow:0 9px 26px #5435bb0c}
+.metric-top{color:#7d7098}.metric-label{color:#6b6382!important}.metric-value{color:#24193f!important;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-.06em}
+.metric-index{color:#8c6bea!important}.metric-help{color:#746e83!important}
+.kanban-metric{border-color:#eee8fb!important;background:#fff!important;box-shadow:0 7px 23px #4b2bbd0a;border-radius:15px}
+.kanban-metric>span{color:#756a90!important}.kanban-metric>strong{color:#20173f!important}.kanban-metric>small{color:#79708e!important}
+.kanban-dashboard{background:transparent!important}
+.kanban-overview-head .kicker{color:#7046e9!important}
+.kanban-columns{gap:15px!important;padding-bottom:12px!important}
+.kanban-column{border-radius:15px!important;background:#f1ebff!important;overflow:hidden}
+.kanban-column header{background:#eee7ff!important;border-bottom:1px solid #e6dcfe!important}
+.kanban-column header strong,.kanban-column header span{color:#3e2d70!important}
+.kanban-column header small{color:#786a94!important}
+.kanban-column.kanban-conversing{background:#eaf2ff!important}
+.kanban-column.kanban-conversing header{background:#e3edff!important;border-color:#d7e4ff!important}
+.kanban-column.kanban-interested{background:#edfae6!important}
+.kanban-column.kanban-interested header{background:#e2f7d7!important;border-color:#d5eccd!important}
+.kanban-column.kanban-no_interest{background:#f7f2ff!important}
+.kanban-column.kanban-no_interest header{background:#f0eaff!important}
+.kanban-lead{border:1px solid #eee9f7!important;border-radius:11px!important;box-shadow:0 4px 12px #5333a20a!important;background:#fff!important}
+.kanban-lead-top strong{color:#241b3b!important}.kanban-lead-top small,.kanban-lead p{color:#7b708d!important}
+.kanban-lead-avatar{background:#e9dfff!important;color:#6a40e4!important}
+.kanban-message{color:#6833e3!important;border-color:#e8ddfa!important}
+.kanban-message:hover{background:#f2eaff!important}
+.kanban-empty{color:#827990!important}
+.kanban-board-title h3{color:#241b39}
+.kanban-progress .fill,.progress-fill{background:linear-gradient(100deg,#7140fa,#9d6afa)!important}
+.workspace-return{background:#efe9ff!important;color:#4a3490!important}.workspace-return a{color:#6030e5!important}
+.wa-global-alert{border-color:#f2d9aa!important;background:#fffaf1!important}.wa-alert-mark{background:#fff0d2!important;color:#926a18!important}
+.wa-alert-action{background:#fff!important;border-color:#eedfbb!important;color:#805b1d!important}
+.notice{background:#f0eaff!important;color:#5638a3!important;border-color:#e1d5fb!important}
+.chat-list,.chat-panel{border-radius:16px!important}
+.chat-person:hover{background:#f8f4ff!important}.chat-person.selected{background:#eee8ff!important;color:#5a30da!important}
+.chat-heading{border-bottom-color:#eee6fd!important}.chat-handoff{background:#f3eeff!important;border-color:#d9c8ff!important;color:#5129c3!important}.chat-handoff.ai-mode{background:#eee8ff!important}
+.avatar{background:#e8dfff!important;color:#5e35d3!important}
+.message-feed,.training-messages{background:#f8f5ff!important;border-color:#e9e2fb!important}
+.bubble-wrap.out .bubble,.bubble.out,.training-message.sent{background:#e7ddff!important;color:#26154b!important;border-color:#ddd0fb!important}
+.bubble-wrap.in .bubble,.bubble.in{background:#fff!important;color:#2a2440!important}
+.composer{border-color:#e7e1fa!important}.composer input{border-color:#e4dcf9!important}
+.prospect-simple .panel,.prospect-search-simple,.search-form{border-color:#ece5fa!important}
+.field,input:not([type=checkbox]):not([type=radio]),select,textarea{accent-color:#7041f8}
+.field:focus-visible,.search-form input:focus-visible{outline-color:#9e7aff!important}
+.search-source.active,.prospect-filter.active,.subtab.active{background:#eee7ff!important;color:#5d30e0!important}
+.account-grid .account-card:hover,.client-card:hover{box-shadow:0 12px 24px #5d33d319!important}
+.account-icon{background:#e9e1ff!important;color:#5f39e2!important}
+.client-balance strong,.credit-balance>strong,.credit-packet-volume,.credit-packet-price{color:#552be1!important}
+.client-searchbar,.client-searchbar input,.client-searchbar select{border-color:#e6dcfa!important}
+.client-searchbar label{color:#524471!important}
+.credit-summary-grid{gap:15px}
+.credit-balance{background:linear-gradient(138deg,#f6f2ff,#fff)!important;border-color:#e1d4ff!important}
+.credit-packet{background:#fff!important;border-color:#e9e1fc!important;border-radius:16px;box-shadow:0 8px 20px #5430cb0d}
+.credit-packet.featured{background:linear-gradient(145deg,#f1eaff,#fff)!important;border:2px solid #8353ff!important;box-shadow:0 12px 28px #673dff2b}
+.credit-packet-top,.credit-packet-top .tag{color:#6a3de1!important}.credit-packet>p,.credit-packet>small,.credit-explain p{color:#706580!important}
+.credit-preference{background:linear-gradient(110deg,#f2eaff,#fff)!important;border-color:#dacbff!important}.credit-preference strong{color:#5130bb!important}
+.orders-list{border-color:#e9e1fc!important;background:#f5f0ff!important}
+.order-identity strong,.order-amount strong{color:#2e205b!important}
+.prospector-dialog{border:1px solid #e4dbff;box-shadow:0 30px 95px #2b137f38}
+.prospector-dialog .kicker{color:#7041ea}.prospector-dialog h2{color:#241b42}.prospector-dialog .dialog-check{background:#f5eeff!important;border-color:#ebdeff!important;color:#5e448f!important}
+.prospector-dialog .dialog-check input{accent-color:#7243f9}
+.training-steps article,.training-chat-list,.training-message,.training-chat-list>label{border-color:#eae4f8!important}
+.training-message small{color:#7353ae!important}
+.training-welcome,.training-message p,.training-history p{color:#5e5476!important}
+.training-all-confirm{background:#fff8ed!important;border-color:#f0dcc0!important}
+.setup-progress{background:#f4edff!important;border-color:#dfd0fc!important}
+.setup-progress strong,.setup-progress p{color:#4b3579!important}
+.setup-item{background:#fff!important;color:#6134d1!important;border-color:#dfd0fa!important}.setup-item.done{background:#eef8ec!important;color:#367c44!important;border-color:#cdeac8!important}
+.setting-line small,.main-footer{color:#7d7390!important}
+.main-footer{border-top:1px solid #f0ebfa!important}
+::-webkit-scrollbar-thumb{background:#d6c5fd}
+@media(max-width:940px){
+ .side{background:#faf8ff!important;border-color:#e8e0fd!important}
+ .side .brand>div{display:block}
+ .side nav .nav{justify-content:flex-start;width:100%;background:transparent}
+ .side .nav span{display:inline-flex}
+ .side .nav.active{color:white!important}
+}
+@media(max-width:700px){
+ .content{padding-inline:14px!important}
+ .top{padding-inline:13px!important}
+ .kanban-columns{overflow-x:auto!important;scroll-snap-type:x proximity}
+ .kanban-column{scroll-snap-align:start}
+ .credit-packages-grid{grid-template-columns:1fr!important}
+}
+@media(prefers-reduced-motion:reduce){
+ .primary:hover,.button-dark:hover,.credit-packet:hover{transform:none!important;transition:none!important}
+}
