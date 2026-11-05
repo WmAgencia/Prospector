@@ -8,7 +8,7 @@ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-stock-'));
 process.env.PROSPECTOR_DATA_DIR=dir;
 delete process.env.PROSPECTOR_TENANT_ID;
 const db=await import('../dashboard/db.mjs');
-const {discoveryStockSnapshot,replenishmentPlan,identityKey}=await import('../dashboard/discovery-stock.mjs');
+const {discoveryStockSnapshot,replenishmentPlan,identityKey,dailyRefillBudget}=await import('../dashboard/discovery-stock.mjs');
 const number=i=>'55'+String(11900000000+i);
 const add=(i,props={})=>db.addLead({business:'Empresa '+i,city:'Sorocaba',phone:number(i),source:'MANUAL',...props}).lead;
 
@@ -46,6 +46,22 @@ test('funded pool respects purchased credits and keeps customer credit accountin
  assert.equal(replenishmentPlan({ready:50,target:250,credits:null}).missing,200);
  assert.equal(replenishmentPlan({ready:0,target:1000,credits:null}).missing,250);
  assert.equal(identityKey({business:'OFICINA São José',city:'Sorocaba'}),identityKey({business:'Oficina Sao Jose',city:'SOROCABA'}));
+});
+
+test('daily allowance stays exhausted after approaches, even though ready stock shrinks',()=>{
+ db.setSetting('discovery_stock_checkpoint',null);
+ const morning=dailyRefillBudget();
+ assert.equal(morning.carryover,249);
+ assert.equal(morning.missing,1);
+ const newLead=add(900);
+ const filled=dailyRefillBudget();
+ assert.equal(filled.missing,0);
+ assert.ok(filled.foundSinceCheckpoint>=1);
+ db.run('INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)',
+  newLead.id,newLead.phone,'SENT',db.id(),new Date().toISOString());
+ db.run("UPDATE leads SET stage='CONTACTED' WHERE id=?",newLead.id);
+ const afterSend=dailyRefillBudget();
+ assert.equal(afterSend.missing,0,'sending must not cause extra discovery on the same day');
 });
 
 test.after(()=>{
