@@ -81,6 +81,33 @@ export function openPlatformStore(root){
     db.exec('COMMIT');return selectRequest.get(item.id);
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
+  changeCredentials(clientId,{currentPassword,newEmail,newPassword}={}){
+   const client=get(clientId);
+   const row=db.prepare('SELECT * FROM client_passwords WHERE client_id=?').get(clientId);
+   if(!client||!row||client.status!=='active')throw Error('Alteração indisponível para esta conta');
+   const old=String(currentPassword||'');
+   if(!old||old.length>128)throw Error('Confirme sua senha atual');
+   const hash=crypto.scryptSync(old,row.salt,64);
+   if(!crypto.timingSafeEqual(hash,Buffer.from(row.password_hash,'hex')))throw Error('Senha atual incorreta');
+   const email=String(newEmail||row.email).trim().toLowerCase();
+   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>200)throw Error('E-mail inválido');
+   const next=String(newPassword||'');
+   if(next&&(next.length<10||next.length>128))throw Error('A nova senha deve ter entre 10 e 128 caracteres');
+   if(email===row.email&&!next)throw Error('Informe um novo e-mail ou nova senha');
+   const salt=next?crypto.randomBytes(24).toString('hex'):row.salt;
+   const digest=next?crypto.scryptSync(next,salt,64).toString('hex'):row.password_hash;
+   db.exec('BEGIN IMMEDIATE');try{
+    if(email!==row.email){
+     if(db.prepare('SELECT 1 FROM clients WHERE lower(email)=? AND id<>?').get(email,clientId))throw Error('E-mail já cadastrado');
+     db.prepare('UPDATE clients SET email=? WHERE id=?').run(email,clientId);
+    }
+    db.prepare('UPDATE client_passwords SET email=?,salt=?,password_hash=? WHERE client_id=?').run(email,salt,digest,clientId);
+    // Logout every old password-session after changing credentials;
+    // worker secret and WhatsApp webhook credentials remain unchanged.
+    db.prepare('UPDATE clients SET token_hash=? WHERE id=?').run(crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex'),clientId);
+    db.exec('COMMIT');return get(clientId);
+   }catch(e){db.exec('ROLLBACK');throw e;}
+  },
   signup({name,email,password,phone,privacyAcknowledged}){
    email=String(email||'').trim().toLowerCase();password=String(password||'');
    if(privacyAcknowledged!==true||password.length<10||password.length>128)throw Error('Use uma senha de 10 a 128 caracteres e confirme a leitura sobre seus dados');

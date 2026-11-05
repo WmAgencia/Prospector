@@ -27,20 +27,26 @@ function savedProspectSession(){
 }
 let prospectSession=savedProspectSession();
 const root=q("#app");
-let waAccounts=[],connectionSession='';
+let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
+let prospectCalendar=null,scopeInfo=null,scopeMode='all',calendarDay='',calendarCategory='approached';
+let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
+let outreachHours={start:'08:00',end:'17:30'};
+let trainingRecordTimeout=null,franciscaOpen=false,franciscaVoiceOn=true,franciscaHistory=[],franciscaBusy=false,franciscaRecorder=null,franciscaAudio=null,franciscaRecordTimeout=null,franciscaConversationId=crypto.randomUUID();
+let calendarMonth=(()=>{const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).formatToParts(new Date()).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return parts.year+'-'+parts.month;})();
+async function loadCalendar(){
+ try{prospectCalendar=await api('/api/prospecting/calendar?month='+encodeURIComponent(calendarMonth));if(view==='prospects')render();}catch(e){n('Calendário indisponível: '+e.message);}
+}
+async function loadScope(){
+ try{scopeInfo=await api('/api/prospecting/preferences');scopeMode=scopeInfo.selection?.mode||'all';if(view==='prospects')render();}catch(e){n(e.message);}
+}
+function moveCalendar(delta){
+ const [y,m]=calendarMonth.split('-').map(Number),next=new Date(Date.UTC(y,m-1+delta,1));
+ calendarMonth=next.toISOString().slice(0,7);calendarDay='';loadCalendar();
+}
+
 const waSessionQuery=()=>connectionSession?'?sessionId='+encodeURIComponent(connectionSession):'';
 let waRefreshing=null,qrOpening=false;
-function whatsappNotice(){
- if(platformContext.role==="master")return "";
- if(!wa||wa.connected)return "";
- const unknown=wa.ok===false;
- const scanning=wa.status==="SCAN_QR";
- const title=unknown?"Não foi possível verificar o WhatsApp":scanning?"WhatsApp aguardando leitura do QR Code":"WhatsApp desconectado";
- const detail=unknown?"Confira a conexão com o gateway. Os envios automáticos não devem ser retomados antes da confirmação.":
-  scanning?"Escaneie o QR Code para restabelecer a conexão.":
-  "Reconecte o WhatsApp para voltar a receber e enviar mensagens.";
- return '<section class="wa-global-alert" role="alert" aria-label="Status do WhatsApp"><div class="wa-alert-mark" aria-hidden="true">!</div><div class="wa-alert-copy"><strong>'+esc(title)+'</strong><span>'+esc(detail)+'</span></div><button class="wa-alert-action" type="button" data-action="reconnect-qr">'+(scanning?"Abrir QR Code":"Reconectar / QR Code")+'</button></section>';
-}
+function whatsappNotice(){return '';}
 function n(msg){notice=String(msg||"");const el=q("#notice");if(el){el.textContent=notice;el.classList.toggle("hidden",!notice);el.setAttribute("role",notice?"status":"none")}}
 async function api(path,opts={}){
  const r=await fetch(path,{credentials:"same-origin",cache:"no-store",...opts,headers:{"Accept":"application/json",...(opts.body?{"Content-Type":"application/json"}:{}),...(opts.headers||{})}});
@@ -65,7 +71,7 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
  });
 }
 
-function nav(viewName){if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects")loadProspects();if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings"){refreshAI();refreshVoiceMetrics();refreshConsentPolicy();}}
+function nav(viewName){if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();}
 
 function glyph(key){
  if(globalThis.ProspectorIcons)return globalThis.ProspectorIcons.svg(key);
@@ -87,7 +93,7 @@ function glyph(key){
 function workspaceTabs(){return '<nav class="workspace-tabs" aria-label="Seções do painel">'+Object.entries(tabs).filter(([key])=>platformContext.role==='master'?['overview','clients','credits','settings'].includes(key):key!=='clients').map(([key,label])=>'<button data-tab="'+key+'" class="'+(view===key?'active':'')+'" '+(view===key?'aria-current="page"':'')+'>'+esc(label)+'</button>').join('')+'</nav>';}
 function shell(){
  const active=tabs[view]||tabs.overview,connected=!!wa?.connected;
- root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["overview","clients","credits","settings"].includes(key):key!=="clients").map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p></div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div>'+workspaceTabs()+'<div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'WhatsApp offline')+'</span></span><button class="icon-button refresh-button" data-action="refresh" title="Atualizar dados" aria-label="Atualizar dados">'+glyph('refresh')+'</button><button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+(platformContext.canReturnToMaster?'<div class="workspace-return">Você está no espaço de '+esc(platformContext.name)+'. <a href="/master">Voltar ao painel master</a></div>':'')+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>';
+ root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["overview","clients","credits","settings"].includes(key):key!=="clients").map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p></div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div>'+workspaceTabs()+'<div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'Desconectado')+'</span></span>'+(platformContext.role!=="master"&&!connected?'<button class="wa-inline-connect" type="button" data-action="reconnect-qr">'+glyph('connections')+' Conectar</button>':'')+'<button class="icon-button refresh-button" data-action="refresh" title="Atualizar dados" aria-label="Atualizar dados">'+glyph('refresh')+'</button><button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+(platformContext.canReturnToMaster?'<div class="workspace-return">Você está no espaço de '+esc(platformContext.name)+'. <a href="/master">Voltar ao painel master</a></div>':'')+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>'+franciscaWidget();
 }
 
 
@@ -124,9 +130,142 @@ function creditsView(){
  '<section class="panel"><div class="heading"><div><h3>Meus pedidos de recarga</h3><p>Um pedido não é uma cobrança automática.</p></div><button class="secondary compact" data-action="refresh-credits">Atualizar</button></div>'+(requests.length?'<div class="orders-list">'+requests.slice(0,15).map(x=>'<div class="order-row"><div class="order-identity"><strong>'+Number(x.credits).toLocaleString('pt-BR')+' créditos · '+moneyFromCents(x.price_cents)+'</strong><small>'+stamp(x.created_at)+'</small></div><span class="tag '+(x.status==='APPROVED'?'green':'')+'">'+(x.status==='PENDING'?'Aguardando confirmação':x.status==='APPROVED'?'Créditos liberados':'Não aprovado')+'</span></div>').join('')+'</div>':'<div class="empty"><p>Você ainda não solicitou uma recarga.</p></div>')+'</section>'+
  '<section class="panel"><h3>Histórico de créditos</h3>'+(c.items?.length?'<div class="table-wrap"><table class="result-table"><thead><tr><th>Data</th><th>Descrição</th><th>Créditos</th></tr></thead><tbody>'+c.items.map(x=>'<tr><td>'+stamp(x.created_at)+'</td><td>'+esc(x.reason)+'</td><td class="'+(x.amount>0?'credit-positive':'')+'">'+(x.amount>0?'+':'')+esc(x.amount)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty"><p>O extrato aparecerá depois da primeira recarga ou abordagem.</p></div>')+'</section>';
 }
+function voiceMime(){
+ if(!window.MediaRecorder)return '';
+ return ['audio/webm','audio/mp4','audio/ogg'].find(type=>MediaRecorder.isTypeSupported(type))||'';
+}
+async function toggleTrainingRecording(){
+ if(trainingRecorder?.state==='recording'){trainingRecorder.stop();return;}
+ if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){n('Seu navegador não permite gravação de áudio neste contexto. Use o campo de texto.');return;}
+ trainingRecordedText=q('#training-input')?.value||trainingRecordedText;
+ let stream;
+ try{
+  const mime=voiceMime();if(!mime)throw Error('Formato de gravação indisponível');
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  const rec=new MediaRecorder(stream,{mimeType:mime}),chunks=[];
+  trainingRecorder=rec;
+  rec.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
+  rec.onstop=async()=>{
+   if(trainingRecordTimeout)clearTimeout(trainingRecordTimeout);trainingRecordTimeout=null;
+   stream.getTracks().forEach(t=>t.stop());trainingRecording=false;trainingRecorder=null;
+   try{
+    const blob=new Blob(chunks,{type:mime});
+    if(blob.size>5*1024*1024)throw Error('Gravação acima de 5 MB');
+    const result=await api('/api/training/voice-note',{method:'POST',headers:{'Content-Type':mime},body:blob});
+    trainingRecordedText=[trainingRecordedText,result.text].filter(Boolean).join('\n');
+    if(view==='training')render();n('Áudio transcrito. Revise o texto antes de enviar como orientação.');
+   }catch(e){if(view==='training')render();n(e.message);}
+  };
+  rec.start();trainingRecording=true;render();
+  trainingRecordTimeout=setTimeout(()=>{if(rec.state==='recording')rec.stop();},45000);
+ }catch(e){stream?.getTracks().forEach(t=>t.stop());trainingRecording=false;trainingRecorder=null;n('Microfone indisponível: '+e.message);}
+}
+function franciscaWidget(){
+ if(platformContext.role==='master')return '';
+ return '<div class="francisca-widget"><button type="button" class="francisca-orb" data-action="francisca-toggle" aria-label="'+(franciscaOpen?'Fechar Francisca':'Conversar com Francisca por voz')+'" aria-expanded="'+String(franciscaOpen)+'"><span>F</span><small>Francisca</small></button>'+
+ (franciscaOpen?'<section class="francisca-window" role="dialog" aria-label="Assistente Francisca"><div class="francisca-header"><span class="francisca-avatar">F</span><div><strong>Francisca</strong><small>Assistente do seu painel · voz e texto</small></div><button type="button" data-action="francisca-close" aria-label="Fechar Francisca">×</button></div><div class="francisca-log" role="log" aria-live="polite">'+(franciscaHistory.length?franciscaHistory.map(m=>'<div class="francisca-message '+(m.role==='user'?'sent':'received')+'">'+esc(m.text)+'</div>').join(''):'<div class="francisca-intro"><strong>Oi! Sou a Francisca.</strong><p>Posso explicar seus indicadores, créditos, conexões e orientações de atendimento. Minha atuação aqui é consultiva: nenhuma ação é executada sem você.</p></div>')+(franciscaBusy?'<div class="francisca-message received">Preparando sua resposta…</div>':'')+'</div><form id="francisca-form" class="francisca-compose"><input id="francisca-input" maxlength="700" placeholder="Pergunte ou fale com a Francisca…" autocomplete="off" aria-label="Sua pergunta para Francisca"><button type="submit" class="francisca-send" '+(franciscaBusy?'disabled':'')+' aria-label="Enviar pergunta">➤</button></form><div class="francisca-controls"><button type="button" class="francisca-mic '+(franciscaRecorder?.state==='recording'?'recording':'')+'" data-action="francisca-record-toggle">'+(franciscaRecorder?.state==='recording'?'■ Parar gravação':'🎙 Conversar por voz')+'</button><button type="button" class="francisca-sound" data-action="francisca-sound">'+(franciscaVoiceOn?'🔊 Voz ligada':'🔇 Voz desligada')+'</button></div><p class="francisca-privacy">Microfone usado somente quando ativado. A conversa é processada pelo servidor da sua conta e seus fornecedores de IA; áudio não é salvo pelo painel.</p></section>':'')+'</div>';
+}
+function renderFrancisca(){
+ const old=q('.francisca-widget');
+ if(!old)return;
+ const wrap=document.createElement('div');wrap.innerHTML=franciscaWidget();
+ const next=wrap.firstElementChild;if(old&&next)old.replaceWith(next);
+ q('.francisca-log')?.scrollTo({top:q('.francisca-log').scrollHeight,behavior:'smooth'});
+}
+function stopFranciscaSound(){
+ if(franciscaAudio){try{franciscaAudio.pause();franciscaAudio.src='';}catch{}franciscaAudio=null;}
+}
+async function speakFrancisca(text){
+ if(!franciscaVoiceOn)return;
+ try{
+  const resp=await fetch('/api/ai/francisca-speak',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+  if(!resp.ok)throw Error('Áudio indisponível');
+  const audioBlob=await resp.blob(),url=URL.createObjectURL(audioBlob);
+  stopFranciscaSound();const audio=new Audio(url);franciscaAudio=audio;
+  audio.onended=()=>{URL.revokeObjectURL(url);if(franciscaAudio===audio)franciscaAudio=null;};
+  audio.onerror=()=>{URL.revokeObjectURL(url);if(franciscaAudio===audio)franciscaAudio=null;};
+  await audio.play();
+ }catch{n('Francisca respondeu por texto; a reprodução da voz não está disponível.');}
+}
+async function franciscaReply(input,isAudio=false){
+ if(franciscaBusy)return;
+ franciscaBusy=true;renderFrancisca();
+ try{
+  let result;
+  if(isAudio){
+   const resp=await fetch('/api/ai/francisca-turn',{method:'POST',credentials:'same-origin',headers:{'Content-Type':input.type,'X-Francisca-Conversation':franciscaConversationId},body:input});
+   result=await resp.json().catch(()=>({}));if(!resp.ok)throw Error(result.error||'Falha ao conversar');
+  }else{
+   result=await post('/api/ai/francisca-turn',{text:input,history:franciscaHistory.slice(-10),conversationId:franciscaConversationId});
+  }
+  franciscaHistory.push({role:'user',text:result.transcript||String(input).slice(0,700)},{role:'assistant',text:result.answer});
+  franciscaHistory=franciscaHistory.slice(-20);
+  renderFrancisca();
+  if(franciscaVoiceOn)void speakFrancisca(result.answer);
+ }catch(e){n(e.message);}
+ finally{franciscaBusy=false;renderFrancisca();}
+}
+async function toggleFranciscaRecording(){
+ if(franciscaRecorder?.state==='recording'){franciscaRecorder.stop();return;}
+ if(franciscaBusy)return;
+ stopFranciscaSound();if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){n('O navegador não permite áudio. Escreva para a Francisca.');return;}
+ let stream;
+ try{
+  const mime=voiceMime();if(!mime)throw Error('Formato de áudio indisponível');
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  const rec=new MediaRecorder(stream,{mimeType:mime}),chunks=[];franciscaRecorder=rec;
+  rec.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
+  rec.onstop=async()=>{
+   if(franciscaRecordTimeout)clearTimeout(franciscaRecordTimeout);franciscaRecordTimeout=null;
+   stream.getTracks().forEach(t=>t.stop());franciscaRecorder=null;renderFrancisca();
+   const blob=new Blob(chunks,{type:mime});
+   if(blob.size>0&&blob.size<=5*1024*1024)await franciscaReply(blob,true);
+   else n('Áudio vazio ou grande demais para transcrever.');
+  };
+  rec.start();renderFrancisca();
+  franciscaRecordTimeout=setTimeout(()=>{if(rec.state==='recording')rec.stop();},45000);
+ }catch(e){stream?.getTracks().forEach(t=>t.stop());franciscaRecorder=null;n('Não foi possível acessar o microfone: '+e.message);}
+}
+function trainingConversation(t){
+ return '<section class="panel training-manual"><div class="heading"><div><span class="kicker">DO SEU JEITO</span><h3>O que seu atendimento precisa saber?</h3><p>Explique com suas próprias palavras. A IA transformará suas orientações em um perfil para sua revisão.</p></div></div>'+
+ '<div class="training-tips"><strong>Você pode contar:</strong><span>O que sua empresa faz</span><span>Para quem vocês vendem</span><span>Quais serviços oferecem</span><span>Como prefere responder e quando assumir</span></div>'+
+ '<div class="training-messages" role="log" aria-label="Conversa de treinamento">'+(t.chat?.length?t.chat.map(m=>'<div class="training-message '+(m.role==='user'?'sent':'received')+'"><small>'+(m.role==='user'?'Você':'Assistente de treinamento')+'</small><p>'+esc(m.body)+'</p></div>').join(''):'<div class="training-welcome"><strong>Conte como sua empresa trabalha.</strong><p>Exemplo: “Atendemos oficinas mecânicas, oferecemos gestão de tráfego e preferimos perguntas curtas. Quando alguém pedir valores, me avise para eu assumir.”</p></div>')+'</div>'+
+ '<form class="training-composer" id="training-chat"><label class="sr-only" for="training-input">Orientações para a IA</label><textarea id="training-input" name="text" maxlength="3000" rows="3" required placeholder="Fale de forma natural sobre a sua empresa…">'+esc(trainingRecordedText)+'</textarea><div class="training-compose-actions"><button type="button" class="secondary training-record '+(trainingRecording?'recording':'')+'" data-action="training-record-toggle">'+(trainingRecording?'■ Parar gravação':'🎙 Falar por áudio')+'</button><button class="primary" type="submit" '+(trainingBusy?'disabled':'')+'>Enviar orientação ↗</button></div></form>'+
+ '<p class="footnote">Áudios são transcritos para um texto que você confere antes de enviar. A gravação original não é salva pelo painel.</p></section>';
+}
+function trainingProfile(t){
+ const draft=t.draft,profile=t.profile;
+ return '<section class="panel profile-review"><div class="heading"><div><span class="kicker">REVISÃO DO GESTOR</span><h3>'+(draft?'Novo perfil para revisar':'Perfil de atendimento')+'</h3><p>'+(draft?'Edite a sugestão antes de ativar.':'Orienta a IA nas próximas conversas.')+'</p></div>'+(profile?'<span class="tag green">Ativo</span>':'')+'</div>'+
+ (draft?'<form id="training-approve" class="stack-form"><input type="hidden" name="id" value="'+esc(draft.id)+'"><label>Regras aprendidas<textarea name="text" rows="12" maxlength="9000" required>'+esc(draft.text)+'</textarea></label><button class="primary" type="submit">Aprovar e ativar perfil</button></form>':profile?'<pre class="profile-text">'+esc(profile.text)+'</pre><button class="secondary" type="button" data-action="training-edit-profile">Editar perfil</button>':'<div class="empty"><p>Seu perfil aparecerá aqui após o treinamento ou análise de conversas.</p></div>')+'</section>';
+}
+function trainingAnalysis(t){
+ const running=t.runs?.some(x=>x.status==='RUNNING');
+ const connected=!!wa?.connected;
+ return '<section class="panel training-analysis"><div class="heading"><div><span class="kicker">APRENDER COM O WHATSAPP</span><h3>Extrair contexto das conversas</h3><p>Identifique padrões e exemplos de atendimento para revisar com sua IA.</p></div></div>'+
+ (!connected?'<div class="training-connect-notice"><span class="training-connection-icon">'+glyph('connections')+'</span><div><strong>Conecte seus WhatsApps primeiro</strong><p>Para analisar conversas comerciais, conecte os números na aba Conexões. Você pode continuar com treinamento manual enquanto isso.</p></div><button type="button" class="primary" data-tab="connections">Conectar números</button></div>':
+ '<div class="training-chats-actions"><span class="tag green">WhatsApp conectado</span><button type="button" class="secondary compact" data-action="training-chats">Carregar conversas</button></div><div class="mode-options"><label><input type="radio" name="training-mode" value="selected" '+(trainingMode==='selected'?'checked':'')+'> Selecionar conversas</label><label><input type="radio" name="training-mode" value="all" '+(trainingMode==='all'?'checked':'')+'> Todas as disponíveis</label></div>'+
+ (trainingMode==='all'?'<p class="analysis-note">Este modo pode incluir conversas pessoais. Use somente quando todos os históricos disponíveis forem comerciais e autorizados.</p><label class="training-all-confirm"><input id="training-all-confirm" type="checkbox" '+(trainingAllConfirmed?'checked':'')+'> Confirmo que todas as conversas disponíveis podem ser utilizadas para este treinamento.</label>':'<div class="training-chat-list">'+(trainingChats.length?trainingChats.map(x=>'<label><input type="checkbox" data-training-chat="'+esc(x.key)+'" '+(trainingSelection.has(x.key)?'checked':'')+'><span><strong>'+esc(x.name)+'</strong><small>'+esc(x.channel)+'</small></span></label>').join(''):'<p>Carregue as conversas para escolher quais exemplos deseja analisar.</p>')+'</div>')+
+ '<button type="button" class="primary" data-action="training-analyze" '+(running||trainingBusy?'disabled':'')+'>'+(running?'Análise em andamento…':'Analisar e gerar relatório')+'</button>')+
+ '<p class="footnote">A análise não envia mensagens aos contatos e só examina amostras dos textos enviados pela empresa. O perfil gerado precisa ser revisado antes de entrar em uso.</p>'+
+ (t.runs?.length?'<div class="training-history"><h4>Últimas análises</h4>'+t.runs.slice(0,3).map(x=>'<p><strong>'+esc(({RUNNING:'Analisando',REVIEW:'Pronta para revisão',FAILED:'Não concluída'})[x.status]||x.status)+'</strong> · '+stamp(x.created_at)+(x.details?.error?'<br>'+esc(x.details.error):'')+'</p>').join('')+'</div>':'')+'</section>';
+}
 function trainingView(){
- const t=trainingState||{},draft=t.draft,profile=t.profile,running=t.runs?.find(x=>x.status==='RUNNING');
- return '<div class="workspace-head"><div><span class="kicker">TREINAMENTO DA IA</span><h2>Seu jeito de atender. Com a sua revisão.</h2><p>Ensine sobre a empresa e transforme exemplos reais em um perfil de atendimento.</p></div><span class="tag '+(profile?'green':'')+'">'+(profile?'Perfil aprovado':'Aguardando treinamento')+'</span></div><div class="training-steps"><span>1. Conte sobre a empresa</span><span>2. Traga exemplos ou converse</span><span>3. Revise e ative</span></div><section class="panel"><h3>Sobre sua empresa</h3><form id="training-business" class="stack-form"><label>Nome da empresa<input name="name" required maxlength="100" value="'+esc(t.business?.name||'')+'"></label><label>WhatsApp pessoal para avisos de interessados<input name="notificationPhone" type="tel" autocomplete="tel" placeholder="(11) 99999-9999" value="'+esc(t.business?.notificationPhone||'')+'"><small>Use o número em que você quer receber os avisos para assumir o fechamento.</small></label><label>Serviços, público e informações aprovadas<textarea name="description" rows="3" maxlength="4000" placeholder="O que você vende, para quem atende e quando chamar uma pessoa.">'+esc(t.business?.description||'')+'</textarea></label><button class="secondary" '+(trainingBusy?'disabled':'')+'>Salvar informações</button></form></section><div class="training-grid"><section class="panel"><div class="heading"><div><span class="kicker">APRENDER COM O WHATSAPP</span><h3>Seus exemplos de conversa</h3></div><button class="secondary compact" data-action="training-chats">Carregar conversas</button></div><p>São analisados textos enviados pela empresa nos números conectados. Escolha conversas comerciais; dados de contato são removidos dos exemplos.</p><div class="mode-options"><label><input type="radio" name="training-mode" value="selected" '+(trainingMode==='selected'?'checked':'')+'> Selecionar conversas</label><label><input type="radio" name="training-mode" value="all" '+(trainingMode==='all'?'checked':'')+'> Todas as disponíveis</label></div>'+(trainingMode==='all'?'<p class="analysis-note">Esse modo inclui todas as conversas individuais disponíveis, inclusive pessoais. Use apenas se você tem autorização para utilizar todos os históricos comerciais.</p><label class="training-all-confirm"><input id="training-all-confirm" type="checkbox" '+(trainingAllConfirmed?'checked':'')+'> Confirmo que as conversas disponíveis são comerciais e estão autorizadas para esta análise.</label>':'<div class="training-chat-list">'+(trainingChats.length?trainingChats.map(c=>'<label><input type="checkbox" data-training-chat="'+esc(c.key)+'" '+(trainingSelection.has(c.key)?'checked':'')+'><span><strong>'+esc(c.name)+'</strong><small>'+esc(c.channel)+'</small></span></label>').join(''):'<p>Carregue as conversas para escolher os exemplos.</p>')+'</div>')+'<button class="primary" data-action="training-analyze" '+(trainingBusy||running?'disabled':'')+'>'+(running?'Analisando conversas…':'Analisar e gerar relatório')+'</button><p class="footnote">A análise usa o histórico que a integração disponibiliza, com exemplos distribuídos entre as conversas escolhidas. Nada é enviado aos contatos.</p>'+(t.runs?.length?'<div class="training-history"><h4>Últimas análises</h4>'+t.runs.slice(0,3).map(r=>'<p><strong>'+esc(({RUNNING:'Em andamento',REVIEW:'Pronta para revisão',FAILED:'Não concluída'})[r.status]||r.status)+'</strong> · '+stamp(r.created_at)+(r.details?.error?'<br>'+esc(r.details.error):'')+'</p>').join('')+'</div>':'')+'</section><section class="panel training-manual"><span class="kicker">TREINAR CONVERSANDO</span><h3>Ensine do seu jeito</h3><p>Conte como abordar, o que perguntar e quando encaminhar o cliente para você.</p><div class="training-messages" role="log" aria-label="Conversa de treinamento">'+(t.chat?.length?t.chat.map(m=>'<div class="training-message '+(m.role==='user'?'sent':'received')+'"><small>'+ (m.role==='user'?'Você':'Assistente de treinamento')+'</small><p>'+esc(m.body)+'</p></div>').join(''):'<div class="training-welcome"><strong>O que seu atendimento precisa saber?</strong><p>Exemplo: “Prefiro respostas curtas. Antes de apresentar a proposta, pergunte qual é a maior dificuldade do negócio.”</p></div>')+'</div><form id="training-chat" class="training-composer"><label class="sr-only" for="training-input">Orientação para o treinamento</label><textarea id="training-input" name="text" rows="3" maxlength="3000" required placeholder="Escreva uma orientação para sua IA…"></textarea><button class="primary" '+(trainingBusy?'disabled':'')+'>'+(trainingBusy?'Preparando…':'Enviar orientação')+'</button></form></section></div><section class="panel profile-review"><div class="heading"><div><span class="kicker">REVISÃO DO GESTOR</span><h3>'+(draft?'Revise o que foi aprendido':'Perfil de atendimento')+'</h3><p>'+(draft?'Edite o relatório abaixo. Só a versão aprovada será usada nas respostas.':'O perfil aprovado aparece aqui. Novos treinamentos geram uma sugestão para sua revisão.')+'</p></div>'+(profile?'<span class="tag green">Ativo desde '+stamp(profile.at)+'</span>':'')+'</div>'+(draft?'<form id="training-approve" class="stack-form"><input type="hidden" name="id" value="'+esc(draft.id)+'"><label>Regras e padrões aprendidos<textarea name="text" rows="12" maxlength="9000" required>'+esc(draft.text)+'</textarea></label><button class="primary" '+(trainingBusy?'disabled':'')+'>Aprovar e usar este perfil</button></form>':profile?'<pre class="profile-text">'+esc(profile.text)+'</pre><button class="secondary" data-action="training-edit-profile">Editar perfil aprovado</button>':'<div class="empty"><p>Analise conversas ou envie uma orientação para criar a primeira sugestão.</p></div>')+'</section>';
+ const t=trainingState||{},ready=!!t.profile&&!trainingWizardReopen,step=Math.max(0,Math.min(3,trainingStep));
+ const title='<div class="workspace-head"><div><span class="kicker">TREINAMENTO DA IA</span><h2>'+(ready?'Contexto configurado':'Configure seu atendimento por etapas')+'</h2><p>'+(ready?'Continue treinando do seu jeito ou revise o perfil aprovado.':'Ensine à IA como sua empresa funciona sem precisar de termos técnicos.')+'</p></div><span class="tag '+(t.profile?'green':'')+'">'+(t.profile?'Perfil aprovado':'Configuração em andamento')+'</span></div>';
+ if(ready)return title+'<div class="training-configured-head"><span class="tag green">✓ Contexto configurado</span><button type="button" class="secondary compact" data-action="training-reopen">Reconfigurar etapas</button><button type="button" class="secondary compact" data-action="training-open-analysis">Analisar mais conversas</button></div><div class="training-ready-grid">'+trainingConversation(t)+trainingProfile(t)+'</div>'+(trainingStep===2?trainingAnalysis(t):'');
+ const steps=['Sobre a empresa','Explique do seu jeito','Analisar conversas','Revisar e ativar'];
+ const trail='<div class="training-wizard-steps">'+steps.map((name,i)=>'<button type="button" data-action="training-goto" data-step="'+i+'" class="'+(i===step?'active':i<step?'completed':'')+'"><span>'+(i<step?'✓':i+1)+'</span><small>'+name+'</small></button>').join('')+'</div>';
+ let body='';
+ if(step===0){
+  body='<section class="panel training-wizard-card"><span class="kicker">ETAPA 01 / 04</span><h3>Conte sobre sua empresa</h3><p>Preencha só o essencial. Essas informações ajudam a IA a atender sem inventar serviços ou condições.</p><form id="training-business" class="stack-form"><label>Nome da empresa<input name="name" required maxlength="100" value="'+esc(t.business?.name||'')+'" placeholder="Nome da sua empresa"></label><label>WhatsApp pessoal para avisar interessados<input name="notificationPhone" type="tel" value="'+esc(t.business?.notificationPhone||'')+'" placeholder="(15) 99999-9999"></label><label>Serviços, público e informações aprovadas<textarea name="description" rows="5" maxlength="4000" placeholder="Quais são os principais serviços? Quem são os clientes? Quais orientações já estão aprovadas?">'+esc(t.business?.description||'')+'</textarea></label><button class="primary" type="submit">Salvar e continuar →</button></form></section>';
+ }else if(step===1){
+  body='<div class="training-wizard-head"><span class="kicker">ETAPA 02 / 04</span><h3>Explique falando ou escrevendo</h3><p>Fale normalmente: você não precisa preparar um texto técnico.</p></div>'+trainingConversation(t)+'<div class="training-wizard-actions"><button type="button" class="secondary" data-action="training-prev">Voltar</button><button type="button" class="primary" data-action="training-next">Próxima etapa →</button></div>';
+ }else if(step===2){
+  body='<div class="training-wizard-head"><span class="kicker">ETAPA 03 / 04</span><h3>Aprenda com suas conversas</h3><p>Conecte os números e escolha quais históricos comerciais você autoriza analisar.</p></div>'+trainingAnalysis(t)+'<div class="training-wizard-actions"><button type="button" class="secondary" data-action="training-prev">Voltar</button><button type="button" class="primary" data-action="training-next">Revisar perfil →</button></div>';
+ }else{
+  body='<div class="training-wizard-head"><span class="kicker">ETAPA 04 / 04</span><h3>Revise antes de ativar</h3><p>Somente o que você aprovar será usado no atendimento.</p></div>'+trainingProfile(t)+'<div class="training-wizard-actions"><button type="button" class="secondary" data-action="training-prev">Voltar</button>'+(t.profile?'<button type="button" class="primary" data-action="training-finish">Concluir configuração</button>':'')+'</div>';
+ }
+ return title+trail+'<div class="training-wizard-content">'+body+'</div>';
 }
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
 async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');if(view==='credits')render();}catch(e){n(e.message);}}
@@ -188,6 +327,13 @@ async function platformAction(action,el){
   const answer=await confirmInApp({title:suspend?'Suspender acesso?':'Reativar acesso?',description:suspend?'O gestor '+(client?.name||'selecionado')+' deixará de acessar o painel e seu processo de atendimento será interrompido.':'O cliente voltará a acessar seu ambiente privado.',danger:suspend,confirmLabel:suspend?'Suspender conta':'Reativar conta'});
   if(!answer)return true;await post('/api/platform/clients/'+el.dataset.client+'/status',{status:el.dataset.status});await loadClients();n('Acesso atualizado.');return true;
  }
+ if(action==='training-reopen'){trainingWizardReopen=true;trainingStep=0;render();return true;}
+ if(action==='training-open-analysis'){trainingStep=2;render();return true;}
+ if(action==='training-finish'){trainingWizardReopen=false;trainingStep=0;render();return true;}
+ if(action==='training-goto'){trainingWizardReopen=true;trainingStep=Math.max(0,Math.min(3,Number(el.dataset.step)||0));render();return true;}
+ if(action==='training-next'){trainingWizardReopen=true;trainingStep=Math.min(3,trainingStep+1);render();return true;}
+ if(action==='training-prev'){trainingWizardReopen=true;trainingStep=Math.max(0,trainingStep-1);render();return true;}
+ if(action==='training-record-toggle'){await toggleTrainingRecording();return true;}
  if(action==='training-chats'){const r=await api('/api/training/chats');trainingChats=r.items||[];render();if(r.failures?.length)n('Não foi possível ler '+r.failures.length+' canal(is). Os demais estão disponíveis.');return true;}
  if(action==='training-edit-profile'){trainingState=await post('/api/training/edit',{});render();return true;}
  if(action==='training-analyze'){
@@ -205,7 +351,7 @@ async function platformSubmit(ev){
  const button=ev.target.querySelector('button');if(button)button.disabled=true;
  try{
   if(id==='client-create'){const r=await post('/api/platform/clients',input);clientAccess=location.origin+r.accessPath;await loadClients();n('Cliente criado. Copie o link privado para compartilhar.');}
-  else{trainingState=await post('/api/training/'+({ 'training-business':'business','training-chat':'chat','training-approve':'approve'})[id],input);n(id==='training-approve'?'Perfil aprovado e ativo.':'Informações de treinamento salvas.');}
+  else{trainingState=await post('/api/training/'+({ 'training-business':'business','training-chat':'chat','training-approve':'approve'})[id],input);if(id==='training-business')trainingStep=1;if(id==='training-chat')trainingRecordedText='';if(id==='training-approve'){trainingWizardReopen=false;trainingStep=0;}n(id==='training-approve'?'Perfil aprovado e ativo.':'Informações de treinamento salvas.');}
  }catch(e){n(e.message);}finally{trainingBusy=false;busy=false;render();}return true;
 }
 function pipelineGraphic(k){
@@ -278,52 +424,48 @@ function conversations(){
 }
 
 function prospecting(){
- const d=prospects||{results:[],total:0,uncontacted:0,returned:0};
- const records=d.results||[],available=records.filter(p=>p.selectable);
- const allSelected=available.length>0&&available.every(p=>selectedLeadIds.has(p.id));
- const count=records.length,waiting=approachQueue?.waiting||0,active=!!approachQueue?.active,automatic=approachQueue?.automaticEnabled===true;
- const intelligence=mapsResearch?.intelligence||null,stock=intelligence?.stock||null,plan=intelligence?.lastPlan||null;
- return '<div class="prospect-simple">'+
-  '<section class="panel"><div class="heading"><div><h2>Pesquisa inteligente</h2><p>Busca empresas sozinha desde as 5h e repõe contatos para sua seleção.</p></div><span class="tag '+(intelligence?.enabled?'green':'')+'">'+(intelligence?.enabled?'Pesquisa automática ativa':'Verificando')+'</span></div>'+
-  (approachQueue?.dailyBudget?'<p class="daily-budget-label"><strong>'+approachQueue.dailyBudget.counted+' / '+approachQueue.dailyBudget.limit+'</strong> novas abordagens hoje · todos os números da operação</p>':'')+'<p class="footnote">'+(stock?'Contatos elegíveis com telefone: <strong>'+Number(stock.ready||0)+'</strong> · Meta de estoque: '+Number(stock.target||60)+'. ':'')+
-  (plan?'Última prioridade: <strong>'+esc(plan.niche||'')+' em '+esc(plan.city||'')+'</strong> ('+(plan.source==='groq'?'análise comercial':'prioridade local')+').':'A inteligência comercial escolhe os nichos conforme os resultados confirmados.')+
-  '</p><p class="footnote">'+(automatic?'Abordagem automática ativada · 08h às 17h30 · intervalo aleatório de 90 a 180 segundos entre novos contatos · recontato somente após três meses.':'Abordagem automática desativada. Você ainda pode escolher empresas e abordar manualmente.')+'</p></section>'+
-  '<section class="panel prospect-search-simple"><div class="heading"><div><h2>Pesquisar empresas</h2><p>Informe o ramo e a cidade para encontrar oportunidades.</p></div></div>'+
-  '<form id="search-form" class="search-form"><label>Ramo de atividade<input id="niche" class="field" name="niche" value="'+esc(niche)+'" placeholder="Ex.: oficina mecânica" maxlength="85" autocomplete="off"></label><label>Cidade<input id="city" class="field" name="city" value="'+esc(city)+'" placeholder="Ex.: Sorocaba" maxlength="85" autocomplete="address-level2"></label><button type="submit" class="primary" '+(busy?'disabled':'')+'>'+glyph('search')+' '+(busy?'Pesquisando...':'Pesquisar')+'</button></form>'+
-  (mapsJob?'<p role="status">Google Maps: '+esc(mapsJob.status)+(mapsJob.error?' · '+esc(mapsJob.error):'')+'. A pesquisa não garante cobertura completa.</p>':'')+
-  (prospectError?'<p class="prospect-search-error" role="alert">'+esc(prospectError)+'</p>':'')+'</section>'+
-  '<section class="panel prospect-results-simple"><div class="heading"><div><h2>Empresas não abordadas</h2><p>'+count+' resultado'+(count===1?'':'s')+' na base'+(niche||city?' para esta pesquisa':'')+'. Selecionar todas inclui somente esta lista carregada; limite de 1000 empresas por fila. A fonte não garante todas as empresas da cidade.</p></div></div>'+
-  '<label>Abordagem desta lista<select id="approach-offer" class="field">'+[['portfolio','Portfólio · referência para aprovação R$ 350'],['promotion','Oferta promocional · referência R$ 550'],['corporate','Empresa maior · referência R$ 1.500']].map(([key,label])=>'<option value="'+key+'" '+(offerType===key?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
-  '<div class="selection-toolbar"><div class="selection-left"><button type="button" class="secondary" data-action="toggle-all" '+(available.length?'':'disabled')+'>'+glyph('check')+' '+(allSelected?'Desmarcar todas':'Selecionar todas da lista carregada')+'</button><span class="selection-count">'+selectedLeadIds.size+' selecionada'+(selectedLeadIds.size===1?'':'s')+'</span></div><button type="button" class="primary" data-action="approach-selected" '+(!selectedLeadIds.size||active?'disabled':'')+'>Abordar '+glyph('arrow')+'</button></div>'+
-  (active?'<div class="prospect-queue-strip" role="status"><span>Fila de abordagens: '+waiting+' aguardando · intervalo aleatório de 90 a 180 segundos</span><button class="secondary compact" type="button" data-action="cancel-approach-queue">Cancelar fila</button></div>':'')+
-  (records.length?'<div class="table-wrap"><table class="result-table"><thead><tr><th class="check-col">SEL.</th><th>EMPRESA</th><th>CIDADE / RAMO</th><th>TELEFONE</th><th>PRIMEIRA ABORDAGEM</th><th>CONTATO / CONSULTA</th></tr></thead><tbody>'+records.map(p=>
-  '<tr class="'+(selectedLeadIds.has(p.id)?'selected-row':'')+'"><td><input type="checkbox" class="lead-checkbox" data-select-lead="'+esc(p.id)+'" '+(selectedLeadIds.has(p.id)?'checked':'')+' '+(p.selectable?'':'disabled')+' aria-label="Selecionar '+esc(p.business)+'"></td><td><strong>'+esc(p.business)+'</strong><small>'+esc(p.website||'')+'</small></td><td>'+esc(p.city||'—')+'<small>'+esc(p.segment||'—')+'</small></td><td>'+esc(p.phone||'Sem telefone')+'</td><td>'+esc(p.authorized?'Liberado':'Aprovar ao abordar')+'</td><td><div class="external-actions">'+(p.manual_contact_url?'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.manual_contact_url)+'">WhatsApp manual ↗</a>':'')+'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.maps_url||'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.business+' '+(p.city||'')))+'">Maps ↗</a>'+(p.instagram_url?'<a class="secondary compact" target="_blank" rel="noopener noreferrer" href="'+esc(p.instagram_url)+'">Instagram ↗</a>':'')+'</div></td></tr>'
-  ).join('')+'</tbody></table></div>':'<div class="empty prospect-empty"><span class="empty-mark">'+glyph('search')+'</span><h4>Nenhuma empresa encontrada</h4><p>Pesquise um ramo e uma cidade. Se as fontes externas não responderem, a lista mostrará apenas registros já salvos.</p></div>')+
-  '<p class="prospect-disclaimer">Selecionar empresas e clicar Abordar aprova somente essa lista, com intervalo aleatório de 90 a 180 segundos entre contatos. A IA continua após respostas; bloqueios e pedidos de não contato são respeitados.</p>'+
-  '</section></div>';
+ const scopes=scopeInfo?.options||{},chosen=scopeInfo?.selection||{};
+ const options=[['all','Todos os nichos · todas as cidades disponíveis'],['niche-all','Um nicho · todas as cidades disponíveis'],['niche-city','Um nicho · uma cidade'],['all-city','Todos os nichos · uma cidade']];
+ const needNiche=scopeMode.startsWith('niche'),needCity=scopeMode.endsWith('-city');
+ const calendar=prospectCalendar||{month:calendarMonth,days:[],totals:{approached:0,closed:0}},lookup=new Map((calendar.days||[]).map(x=>[x.date,x]));
+ const [year,month]=calendarMonth.split('-').map(Number);
+ const numberOfDays=new Date(year,month,0).getDate(),firstWeekday=(new Date(year,month-1,1).getDay()+6)%7;
+ const fullMonth=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(new Date(year,month-1,1));
+ const calendarCells=[...Array(firstWeekday)].map(()=>'<div class="calendar-empty" aria-hidden="true"></div>');
+ for(let day=1;day<=numberOfDays;day++){
+  const date=calendarMonth+'-'+String(day).padStart(2,'0'),info=lookup.get(date)||{approachedCount:0,closedCount:0,conversionRate:0};
+  calendarCells.push('<div class="calendar-day '+(date===calendarDay?'selected':'')+'"><div class="calendar-day-number">'+day+'</div><button type="button" class="calendar-day-counter" data-action="calendar-day" data-date="'+date+'" data-kind="approached" aria-label="Ver abordadas de '+date+'"><strong>'+Number(info.approachedCount||0)+'</strong><small>Abordadas</small></button><button type="button" class="calendar-day-counter closed" data-action="calendar-day" data-date="'+date+'" data-kind="closed" aria-label="Ver fechadas de '+date+'"><strong>'+Number(info.closedCount||0)+'</strong><small>Fechadas</small></button><small class="calendar-day-rate">'+Number(info.conversionRate||0).toLocaleString('pt-BR')+'% conversão</small></div>');
+ }
+ const selected=lookup.get(calendarDay),items=selected?.[calendarCategory]||[],typeLabel=calendarCategory==='closed'?'Fechadas':'Abordadas';
+ return '<div class="prospect-dashboard"><div class="workspace-head"><div><span class="kicker">PROSPECÇÃO AUTOMÁTICA</span><h2>Encontre oportunidades no seu ritmo.</h2><p>Defina onde o sistema deve pesquisar. A descoberta é automática a partir das 5h e mantém o histórico das abordagens.</p></div><span class="tag '+(state?.settings?.discovery_auto_enabled?'green':'')+'">'+(state?.settings?.discovery_auto_enabled?'Pesquisa automática ligada':'Pesquisa pausada')+'</span></div>'+
+ '<section class="panel scope-panel"><div class="heading"><div><h3>O que você quer prospectar?</h3><p>Escolha a abrangência. Você não precisa clicar em “Pesquisar” a cada dia.</p></div><span class="tag">Sua preferência</span></div><form id="scope-form" class="scope-form"><label>Tipo de pesquisa<select name="mode" id="scope-mode">'+options.map(([v,label])=>'<option value="'+v+'" '+(v===scopeMode?'selected':'')+'>'+label+'</option>').join('')+'</select></label><label class="'+(needNiche?'':'scope-hidden')+'">Nicho<input name="niche" list="scope-niches" value="'+esc(chosen.niche||'')+'" '+(needNiche?'required':'')+' placeholder="Ex.: oficina ou contabilidade" autocomplete="off"><datalist id="scope-niches">'+(scopes.segments||[]).map(x=>'<option value="'+esc(x.id)+'" label="'+esc(x.label)+'"></option>').join('')+'</datalist></label><label class="'+(needCity?'':'scope-hidden')+'">Cidade<input name="city" list="scope-cities" value="'+esc(chosen.city||'')+'" '+(needCity?'required':'')+' placeholder="Ex.: Sorocaba" autocomplete="address-level2"><datalist id="scope-cities">'+(scopes.cities||[]).map(x=>'<option value="'+esc(x)+'"></option>').join('')+'</datalist></label><label class="scope-check"><input type="checkbox" name="enabled" value="on" '+(chosen.enabled?"checked":"")+'> Ativar descoberta automática às 5h</label><button type="submit" class="primary">Salvar preferência</button></form><p class="scope-limitation">'+esc(scopes.coverage||'A pesquisa depende dos nichos e cidades atualmente suportados.')+' Atualmente: '+Number(scopes.cities?.length||0)+' cidades e '+Number(scopes.segments?.length||0)+' nichos disponíveis. A preferência não inicia mensagens sem autorização.</p></section>'+
+ '<section class="panel calendar-panel"><div class="calendar-head"><div><span class="kicker">HISTÓRICO DE PROSPECÇÃO</span><h3>Calendário de resultados</h3><p>Veja as empresas abordadas e os fechamentos confirmados, dia a dia.</p></div><div class="calendar-nav"><button type="button" class="secondary compact" data-action="calendar-prev" aria-label="Mês anterior">‹</button><strong>'+esc(fullMonth)+'</strong><button type="button" class="secondary compact" data-action="calendar-next" aria-label="Próximo mês">›</button></div></div><div class="calendar-month-totals"><span><strong>'+Number(calendar.totals?.approached||0)+'</strong> abordadas no mês</span><span><strong>'+Number(calendar.totals?.closed||0)+'</strong> vendas confirmadas no mês</span></div><div class="calendar-scroll"><div class="calendar-week-grid">'+['SEG','TER','QUA','QUI','SEX','SÁB','DOM'].map(x=>'<span>'+x+'</span>').join('')+'</div><div class="calendar-days-grid">'+calendarCells.join('')+'</div></div><p class="calendar-definition">'+esc(calendar.conversionDefinition||'A taxa compara empresas abordadas naquele dia com as que têm venda confirmada registrada.')+'</p></section>'+
+ (calendarDay?'<section class="panel calendar-details"><div class="heading"><div><span class="kicker">DETALHES DO DIA</span><h3>'+esc(new Date(calendarDay+'T12:00:00').toLocaleDateString('pt-BR',{day:'numeric',month:'long',year:'numeric'}))+'</h3></div><div class="calendar-detail-tabs"><button type="button" data-action="calendar-day" data-date="'+calendarDay+'" data-kind="approached" class="'+(calendarCategory==='approached'?'active':'')+'">Abordadas · '+Number(selected?.approachedCount||0)+'</button><button type="button" data-action="calendar-day" data-date="'+calendarDay+'" data-kind="closed" class="'+(calendarCategory==='closed'?'active':'')+'">Fechadas · '+Number(selected?.closedCount||0)+'</button></div></div>'+(items.length?'<div class="calendar-company-list">'+items.map(x=>'<div><span class="calendar-company-avatar">'+esc((x.business||'E')[0])+'</span><span><strong>'+esc(x.business)+'</strong><small>'+esc(x.city||'Sem cidade informada')+(x.confirmedTime===false?' · data estimada':'')+'</small></span><span class="tag '+(calendarCategory==='closed'?'green':'')+'">'+typeLabel.slice(0,-1)+'</span></div>').join('')+'</div>':'<div class="empty"><p>Nenhuma empresa registrada nesta categoria e data.</p></div>')+'</section>':'')+
+ '</div>';
 }
 function whatsappAccountsPanel(){
- return '<section class="panel wa-accounts"><div class="heading"><div><span class="kicker">CANAIS DE ATENDIMENTO</span><h3>Seus WhatsApps</h3><p>'+waAccounts.filter(x=>x.connected).length+' conectado(s) · Cada conversa permanece no número de origem.</p></div><button class="secondary compact" data-tab="training">Treinar atendimento</button></div><div class="account-grid">'+waAccounts.map((item,i)=>'<button type="button" class="account-card '+(connectionSession===item.session_id?'selected':'')+'" data-action="select-wa" data-session="'+esc(item.session_id)+'" aria-pressed="'+(connectionSession===item.session_id)+'"><span class="account-icon">'+(i+1)+'</span><span><strong>'+esc(item.label)+'</strong><small><span class="pulse '+(item.connected?'ok':'')+'"></span> '+(item.connected?'Conectado':item.status==='SCAN_QR'?'Aguardando QR Code':'Conectar número')+'</small></span><span class="account-arrow">'+glyph('arrow')+'</span></button>').join('')+'</div><div class="add-account"><input id="new-wa-label" maxlength="70" placeholder="Nome do novo WhatsApp (opcional)" aria-label="Nome do novo WhatsApp"><button class="primary" data-action="add-wa" '+(busy?'disabled':'')+'>+ Conectar mais um WhatsApp</button></div><p class="footnote">Selecione um canal para gerenciá-lo e exibir seu QR Code abaixo. O intervalo de 90 a 180 segundos é compartilhado entre os números.</p></section>';
+ const count=waAccounts.filter(x=>x.connected).length;
+ return '<section class="panel wa-directory"><div class="heading"><div><span class="kicker">CANAIS DE ATENDIMENTO</span><h2>Seus WhatsApps</h2><p>Identifique seus números e gerencie cada conexão com segurança.</p></div><span class="tag green">'+count+' conectado'+(count===1?'':'s')+'</span></div>'+
+ '<div class="wa-directory-list">'+(waAccounts.length?waAccounts.map(item=>'<button type="button" class="wa-directory-item" data-action="select-wa" data-session="'+esc(item.session_id)+'"><span class="wa-directory-avatar">'+glyph('conversations')+'</span><span class="wa-directory-details"><strong>'+esc(item.label)+'</strong><small>'+(item.numberSuffix?'•••• '+esc(item.numberSuffix)+' · ':'')+(item.connected?'Número conectado':'Aguardando conexão')+'</small></span><span class="wa-directory-status '+(item.connected?'is-online':'')+'"><span class="pulse '+(item.connected?'ok':'')+'"></span> '+(item.connected?'Conectado':'Conectar')+'</span>'+glyph('arrow')+'</button>').join(''):'<div class="empty"><h3>Seu primeiro WhatsApp</h3><p>Dê um nome para identificar o canal e conecte pelo QR Code.</p></div>')+'</div>'+
+ '<form class="wa-add-form" id="wa-add-form"><label>Nome do novo WhatsApp<input id="new-wa-label" name="label" maxlength="70" placeholder="Ex.: Comercial 01 ou Atendimento" required></label><button type="submit" data-action="add-wa" class="primary" '+(busy?'disabled':'')+'>+ Conectar mais um WhatsApp</button></form>'+
+ '<p class="footnote">Cada número tem sua própria sessão. A cadência de novas abordagens é compartilhada entre os canais.</p></section>';
 }
 function connections(){
- const connected=!!wa?.connected,status=wa?.status||"DISCONNECTED",qr=qrResult?.qr;
- return whatsappAccountsPanel()+'<section class="connect-layout"><div class="panel connect-info"><span class="kicker">INTEGRAÇÃO WHATSAPP</span><h2>Conecte seu WhatsApp em segundos.</h2><p>Você não precisa acessar outro sistema. O Prospector gera o QR Code aqui e cuida da sincronização das suas conversas.</p><div class="connection-status '+(connected?"connected":"")+'"><span class="pulse '+(connected?"ok":"")+'"></span><span><strong>'+(connected?"WhatsApp conectado":"WhatsApp não conectado")+'</strong><small>'+esc(status==="ERROR"?(wa?.message||"Falha de comunicação"):connected?"Pronto para receber conversas":"Clique em Conectar para iniciar a sessão")+'</small></span></div><div class="actions">'+(connected?'<button class="secondary" data-action="disconnect">Desconectar</button>':'<button class="primary" data-action="connect" '+(busy?"disabled":"")+'>'+(busy?"Conectando...":"Conectar WhatsApp")+'</button>')+'</div><div class="steps"><strong>Como conectar</strong><p>1. Abra o WhatsApp no celular.</p><p>2. Vá em <b>Aparelhos conectados</b> e toque em <b>Conectar aparelho</b>.</p><p>3. Escaneie o QR Code mostrado ao lado.</p></div></div><div class="panel qr-panel"><div class="qr-frame">'+(connected?'<div class="qr-placeholder"><span>✓</span><h3>WhatsApp conectado!</h3><p>Suas conversas aparecerão na aba Conversas.</p></div>':qr?'<img class="qr-image" src="'+esc(qr)+'" alt="QR Code de conexão do WhatsApp"><p>Escaneie com a câmera do WhatsApp</p>':'<div class="qr-placeholder"><span>▦</span><h3>'+esc(wa?.hasSession?"Aguardando QR Code":"Pronto para conectar")+'</h3><p>'+esc(qrResult?.message||"Clique em Conectar WhatsApp para gerar seu código.")+'</p></div>')+'</div><p class="footnote">QR temporário e protegido. As abordagens automáticas obedecem ao horário e ao intervalo aleatório de 90 a 180 segundos.</p></div></section>';
+ const item=waAccounts.find(x=>x.session_id===connectionSession);
+ return whatsappAccountsPanel()+(waModalOpen?'<div class="wa-modal-backdrop" role="presentation"><section class="wa-modal" role="dialog" aria-modal="true" aria-labelledby="wa-modal-title"><button type="button" class="wa-modal-close" data-action="close-wa-modal" aria-label="Fechar">'+glyph('close')+'</button><span class="kicker">CONEXÃO WHATSAPP</span><h2 id="wa-modal-title">'+esc(item?.label||'Novo número')+'</h2><p>No celular, abra WhatsApp → <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong>. Depois escaneie o código.</p><div class="wa-modal-qr">'+(wa?.connected?'<div class="wa-connected-success"><span>✓</span><h3>Conectado!</h3><p>Seu WhatsApp está pronto. Esta janela fecha automaticamente.</p></div>':qrResult?.qr?'<img class="qr-image" src="'+esc(qrResult.qr)+'" alt="QR Code para conectar este WhatsApp"><small>Escaneie com o seu WhatsApp</small>':'<div class="wa-qr-loading"><span class="wa-qr-skeleton">▦</span><strong>Aguardando QR Code</strong><small>'+esc(qrResult?.message||'Preparando o pareamento')+'</small></div>')+'</div><div class="wa-modal-actions">'+(wa?.connected?'<button type="button" class="secondary" data-action="disconnect">Desconectar número</button>':'<button type="button" class="secondary" data-action="connect">Atualizar QR Code</button>')+'<button type="button" class="primary" data-action="close-wa-modal">Fechar</button></div></section></div>':'');
 }
 function settings(){
- if(platformContext.role==="master")return masterSettings();
- const s=state?.settings||{};
- const policy=consentPolicy||{enforced:true,canDisable:false,policyStatus:'OPT_IN_REQUIRED',message:'Conferindo política de mensagens…',policyUrl:'https://whatsappbusiness.com/policy/'};
- return '<section class="panel settings"><span class="kicker">PREFERÊNCIAS</span><h2>Configurações</h2><p class="intro">Opções essenciais da operação, sem ferramentas extras.</p><div class="setting-line"><div><strong>Prospecção pausada</strong><small>Não iniciar campanhas ou envios automaticamente.</small></div><label class="switch"><input id="s-paused" type="checkbox" '+(s.paused?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>Abordagem automática</strong><small>08h às 17h30; intervalo aleatório de 90 a 180 segundos entre contatos e três meses para reabordar.</small></div><label class="switch"><input id="s-autonomous" type="checkbox" '+(s.autonomous_outreach_enabled?"checked":"")+'><span></span></label></div><div class="setting-line consent-policy-line"><div><strong>Proteção de autorização no WhatsApp</strong><small>Exige autorização antes do primeiro WhatsApp comercial. Empresas encontradas no Maps não são automaticamente autorizadas.</small><small class="consent-policy-status" role="status">'+esc(policy.enforced?'Proteção ativa':'Proteção desativada')+' · '+esc(policy.canDisable?'Controle disponível':'Aguardando mudança oficial da Meta')+'</small></div><label class="switch" title="'+esc(policy.canDisable?'Alterar proteção de consentimento':policy.message)+'"><input id="s-consent-guard" type="checkbox" aria-label="Exigir autorização antes de mensagens comerciais" '+(policy.enforced?'checked':'')+' '+(!policy.canDisable||consentPolicyBusy?'disabled':'')+'><span></span></label></div><p class="footnote consent-policy-note">'+esc(policy.message)+' <a href="'+esc(policy.policyUrl||'https://whatsappbusiness.com/policy/')+'" target="_blank" rel="noopener noreferrer">Ver política oficial</a>.</p><div class="setting-line"><div><strong>Descoberta automática</strong><small>Pesquisa pública programada no OpenStreetMap.</small></div><label class="switch"><input id="s-discovery" type="checkbox" '+(s.discovery_auto_enabled?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>IA de conversação</strong><small>A IA continua as conversas das empresas abordadas. Valores de propostas exigem sua aprovação pelo WhatsApp.</small></div><span class="tag '+(ai?.configured?"green":"")+'">'+(ai?.configured?"Configurada":"Não configurada")+'</span></div><div class="setting-line"><div><strong>Integração WhatsApp</strong><small>Seus números conectados em um só lugar.</small></div><button class="secondary compact" data-tab="connections">Gerenciar conexão</button></div><p class="footnote">Com a abordagem automática ativada, leads elegíveis entram na fila sem seleção individual. Você pode pausar a prospecção a qualquer momento. Interessados são encaminhados ao seu WhatsApp pessoal.</p></section>'+
- '<section class="panel"><span class="kicker">FRANCISCA · VOZ</span><h2>Diagnóstico das ligações</h2>'+
- '<p class="intro">Métricas agregadas dos últimos 7 dias. Nenhuma gravação ou transcrição é salva neste painel.</p>'+
- cards([
-  ['Respostas medidas',voiceMetrics?.turns??'—','Turnos concluídos'],
-  ['Tempo médio',voiceMetrics?.turns?(voiceMetrics.avgMs/1000).toFixed(1)+' s':'—','Preparação das respostas e voz'],
-  ['Interrupções',voiceMetrics?.interruptions??'—','Turnos cortados pelo interlocutor'],
-  ['Áudio em partes',voiceMetrics?.turns?String(voiceMetrics.avgSegments)+' segmentos':'—','Média de segmentos por resposta']
- ])+
- (voiceMetrics?.turns?'<p class="footnote">Tempo médio por etapa: transcrição '+(voiceMetrics.sttMs/1000).toFixed(1)+' s · processamento '+(voiceMetrics.llmMs/1000).toFixed(1)+' s · voz '+(voiceMetrics.ttsMs/1000).toFixed(1)+' s. Transcrições incertas: '+voiceMetrics.uncertain+' · Falhas de processamento: '+voiceMetrics.failures+'.</p>':'<p class="footnote">Os indicadores aparecerão após as primeiras chamadas na nova versão.</p>')+
- '</section>';
+ if(platformContext.role==='master')return masterSettings();
+ const hours=outreachHours||{start:'08:00',end:'17:30'};
+ return '<div class="workspace-head"><div><span class="kicker">PREFERÊNCIAS DA CONTA</span><h2>Configurações</h2><p>O essencial para sua operação, com segurança e sem ferramentas técnicas desnecessárias.</p></div></div>'+
+ '<div class="account-settings-grid"><section class="panel"><div class="heading"><div><span class="kicker">HORÁRIO DE ABORDAGENS</span><h3>Quando abordar empresas?</h3><p>Defina quando sua operação pode iniciar novas conversas.</p></div></div><form id="outreach-hours-form" class="stack-form"><div class="setting-hour-fields"><label>Início das abordagens<input name="start" type="time" step="60" min="08:00" max="17:29" value="'+esc(hours.start)+'" required></label><label>Fim das abordagens<input name="end" type="time" step="60" min="08:01" max="17:30" value="'+esc(hours.end)+'" required></label></div><p class="footnote">A descoberta continua a partir das 5h. Os horários configurados devem ficar dentro da janela de segurança das 8h às 17h30, e os envios continuam sujeitos à autorização do destinatário e às regras do canal.</p><button class="primary" type="submit">Salvar horário</button></form></section>'+
+ '<section class="panel"><div class="heading"><div><span class="kicker">ACESSO E SEGURANÇA</span><h3>E-mail e senha</h3><p>Para qualquer alteração, confirme a senha atual.</p></div></div><form id="account-credentials" class="stack-form"><label>Novo e-mail<input type="email" name="newEmail" autocomplete="email" value="'+esc(platformContext.email||'')+'" required></label><label>Senha atual<input type="password" name="currentPassword" autocomplete="current-password" minlength="1" maxlength="128" required></label><label>Nova senha (opcional)<input type="password" name="newPassword" autocomplete="new-password" minlength="10" maxlength="128" placeholder="Mínimo de 10 caracteres"></label><p class="footnote">Alterar o e-mail ou a senha encerra outras sessões conectadas. Você permanece conectado neste navegador.</p><button class="primary" type="submit">Salvar dados de acesso</button></form></section></div>'+
+ '<section class="panel settings-simple-control"><div><span class="kicker">CONTROLE RÁPIDO</span><h3>Pausar novas abordagens</h3><p>Pause imediatamente a fila automática sem interromper conversas recebidas.</p></div><label class="switch" aria-label="Pausar abordagem automática"><input id="s-paused" type="checkbox" '+(state?.settings?.paused?'checked':'')+'><span></span></label></section>'+
+ '<p class="settings-small-note">Seus dados e conversas ficam vinculados ao seu espaço. Treinamento com históricos exige autorização. A Francisca está disponível na bolinha lateral, em todas as áreas do painel.</p>';
+}
+async function loadOutreachHours(){
+ try{const r=await api('/api/settings/outreach-hours');outreachHours=r.hours;if(view==='settings')render();}
+ catch(e){n(e.message);}
 }
 function render(){
  shell();
@@ -346,6 +488,8 @@ async function refreshWa(redraw=true){
    const wasConnected=!!wa?.connected;
    const changed=!wa||wa.connected!==w.connected||wa.status!==w.status||wa.ok!==w.ok||wa.transportStale!==w.transportStale;
    const oldQr=qrResult?.qr||null;wa=w;
+   if(w.connected&&waModalOpen&&!waModalCloseTimer){waModalCloseTimer=setTimeout(()=>{waModalOpen=false;waModalCloseTimer=null;if(view==='connections')render();},2500);}
+   if(!w.connected&&waModalCloseTimer){clearTimeout(waModalCloseTimer);waModalCloseTimer=null;}
    if(w.connected)qrResult=null;
    else if(view==="connections"&&w.hasSession&&["SCAN_QR","CONNECTING","INITIALIZING"].includes(w.status)){
     qrResult=await api("/api/whatsapp/qr"+waSessionQuery()).catch(e=>({qr:null,message:e.message}));
@@ -363,7 +507,7 @@ async function refreshWa(redraw=true){
 }
 async function openWhatsappQr(){
  if(qrOpening)return;
- qrOpening=true;busy=true;
+ qrOpening=true;busy=true;waModalOpen=true;
  nav("connections");
  try{
   await post("/api/whatsapp/connect",{sessionId:connectionSession||undefined});
@@ -521,6 +665,12 @@ document.addEventListener("click",async ev=>{
    finally{handoffPending=false;render();}
    return;
   }
+  if(action==='francisca-toggle'){franciscaOpen=!franciscaOpen;renderFrancisca();return;}
+  if(action==='francisca-close'){franciscaOpen=false;stopFranciscaSound();renderFrancisca();return;}
+  if(action==='francisca-sound'){franciscaVoiceOn=!franciscaVoiceOn;if(!franciscaVoiceOn)stopFranciscaSound();renderFrancisca();return;}
+  if(action==='francisca-record-toggle'){await toggleFranciscaRecording();return;}
+  if(action==='calendar-prev'||action==='calendar-next'){moveCalendar(action==='calendar-prev'?-1:1);return;}
+  if(action==='calendar-day'){calendarDay=el.dataset.date||'';calendarCategory=el.dataset.kind==='closed'?'closed':'approached';render();return;}
   if(action==="refresh-kanban"){await loadKanban();n('Kanban atualizado.');return;}
   if(action==="menu"){q("#side")?.classList.toggle("mobile-open");q(".scrim")?.classList.toggle("visible");return;}
   if(action==="close-menu"){q("#side")?.classList.remove("mobile-open");q(".scrim")?.classList.remove("visible");return;}
@@ -555,8 +705,11 @@ document.addEventListener("click",async ev=>{
   if(action==="maps-poll"){await updateMapsJob();return;}
   if(action==="import-csv"){await importMapsCSV();return;}
   if(action==="reconnect-qr"||action==="connect"){await openWhatsappQr();return;}
+  if(action==='close-wa-modal'){waModalOpen=false;if(waModalCloseTimer){clearTimeout(waModalCloseTimer);waModalCloseTimer=null;}render();return;}
   if(action==='select-wa'){
-   connectionSession=String(el.dataset.session||'');qrResult=null;
+   connectionSession=String(el.dataset.session||'');qrResult=null;waModalOpen=true;
+   if(waModalCloseTimer){clearTimeout(waModalCloseTimer);waModalCloseTimer=null;}
+   await refreshWa();if(!wa?.connected)await post('/api/whatsapp/connect',{sessionId:connectionSession});
    await refreshWa();render();return;
   }
   if(action==='add-wa'){
@@ -564,7 +717,7 @@ document.addEventListener("click",async ev=>{
    const name=q('#new-wa-label')?.value?.trim();
    const label=name||'WhatsApp '+(waAccounts.length+1);
    busy=true;render();
-   try{const created=await post('/api/whatsapp/sessions',{name:label});connectionSession=created.sessionId;qrResult=null;await refreshWa();n('WhatsApp adicionado. Escaneie o QR Code deste número.');}
+   try{const created=await post('/api/whatsapp/sessions',{name:label});connectionSession=created.sessionId;qrResult=null;waModalOpen=true;await refreshWa();n('WhatsApp adicionado. Escaneie o QR Code deste número.');}
    finally{busy=false;render();}
    return;
   }
@@ -589,6 +742,26 @@ document.addEventListener("submit",async ev=>{
  ev.preventDefault();
  if(await platformSubmit(ev))return;
 
+ if(ev.target.id==='outreach-hours-form'){
+  const payload=Object.fromEntries(new FormData(ev.target));
+  try{const r=await post('/api/settings/outreach-hours',payload);outreachHours=r.hours;n('Horário de abordagem salvo.');render();}catch(e){n(e.message);}return;
+ }
+ if(ev.target.id==='account-credentials'){
+  const payload=Object.fromEntries(new FormData(ev.target));
+  try{const r=await post('/api/platform/account',payload);platformContext.email=r.email;n(r.message||'Conta atualizada.');render();}
+  catch(e){n(e.message);}return;
+ }
+ if(ev.target.id==='francisca-form'){
+  const text=q('#francisca-input')?.value.trim();if(!text)return;
+  const input=q('#francisca-input');if(input)input.value='';
+  await franciscaReply(text);return;
+ }
+ if(ev.target.id==='scope-form'){
+  const payload=Object.fromEntries(new FormData(ev.target));
+  try{scopeInfo=await post('/api/prospecting/preferences',payload);scopeMode=scopeInfo.selection?.mode||'all';n('Pesquisa automática configurada. O sistema respeitará as cotas e os contatos autorizados.');render();}
+  catch(e){n(e.message);}
+  return;
+ }
  if(ev.target.id==="search-form"){
   ev.preventDefault();
   const a=q("#niche")?.value.trim(),b=q("#city")?.value.trim();
@@ -634,6 +807,7 @@ document.addEventListener("change",async e=>{
  if(e.target.name==="training-mode"){trainingMode=e.target.value;trainingAllConfirmed=false;render();return;}
  if(e.target.id==='training-all-confirm'){trainingAllConfirmed=e.target.checked;return;}
  if(e.target.id==='client-status-filter'){clientStatusFilter=e.target.value;render();return;}
+ if(e.target.id==='scope-mode'){scopeMode=e.target.value;render();return;}
  const t=e.target;
  if(t.id==='approach-offer'){offerType=t.value;return;}
  if(t.dataset?.selectLead){
@@ -656,6 +830,7 @@ document.addEventListener("change",async e=>{
  }
 });
 document.addEventListener("input",e=>{
+ if(e.target.id==='training-input'){trainingRecordedText=e.target.value;return;}
  if(e.target.id==='client-search'){
   clientSearch=e.target.value;const cursor=e.target.selectionStart;render();
   const input=q('#client-search');if(input){input.focus();input.setSelectionRange(cursor,cursor);}return;
@@ -680,3 +855,5 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWa(
 window.addEventListener("online",()=>refreshWa());
 await reload();
 await refreshWa();
+if(view==='prospects')await Promise.all([loadCalendar(),loadScope()]);
+if(view==='settings')await loadOutreachHours();

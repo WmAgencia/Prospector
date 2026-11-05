@@ -153,3 +153,180 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .kanban-column-head>span{background:#e2d5ff!important;color:#5d30de!important}
 .wa-alert-copy strong{color:#6e4a12!important}.wa-alert-copy span{color:#84652f!important}
 .chat-handoff:focus-visible,.prospector-dialog button:focus-visible{outline-color:#8f65ff!important}
+
+/* CLIENT WORKSPACE V3 | refined chats, monthly calendar, WA modal, guided training, Francisca */
+.wa-global-alert{display:none!important}
+.wa-inline-connect{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:#f1eaff;border:1px solid #d9cbff;color:#5e32dd;border-radius:99px;font-size:11px;font-weight:800;min-height:37px;padding:8px 13px;white-space:nowrap;cursor:pointer}
+.wa-inline-connect:hover{background:#e5dbff}.wa-inline-connect .icon{height:15px;width:15px}
+.chats{background:#fff;border-radius:18px;border:1px solid #e9e3f8;overflow:hidden;box-shadow:0 14px 45px #38237d0e;min-height:65vh}
+.chat-list{background:#fff!important;border-right:1px solid #ece7f6!important;border-radius:0!important;box-shadow:none!important}
+.chats-title{padding:24px 19px 15px}.chats-title h3{font-size:21px;letter-spacing:-.05em;font-family:'Plus Jakarta Sans',sans-serif}
+.chats-title p{font-size:11px;color:#908a9d}.chats-title .small-pill{background:#f1ebff;color:#7048c6;border-color:#e3d6fc}
+#chat-search{border-radius:99px!important;background:#f8f6fc!important;border-color:#ebe6f5!important;margin:0 13px 13px!important;max-width:calc(100% - 26px);min-height:44px}
+.chat-person{padding:13px 17px!important;border-bottom:1px solid #f1edf8!important;transition:background .16s;align-items:center}
+.chat-person.selected{background:#ede6ff!important;border-left:3px solid #7444fd!important}
+.chat-person .avatar{height:43px;width:43px;font-size:16px;border-radius:50%;background:linear-gradient(135deg,#e9dfff,#cfbafa)!important}
+.chat-person .info strong{font-size:13px;color:#2b2445!important}.chat-person .info small{font-size:10px;color:#8b809a!important}
+.chat-person time{font-size:10px;color:#8d869b!important}
+.chat-panel{border-radius:0!important;box-shadow:none!important;background:#f9f7fe!important}
+.chat-heading{min-height:77px;padding:12px 17px!important;background:#fff!important;border-bottom:1px solid #eee9f7!important}
+.chat-heading .avatar{width:43px;height:43px;border-radius:50%;font-size:16px}
+.chat-heading strong{font-size:13px!important;color:#242039!important}
+.chat-heading small{font-size:10px!important;color:#8c8799!important}
+.message-feed{background-color:#f8f6ff!important;background-image:radial-gradient(#e9e0fa 1.2px,transparent 1.3px)!important;background-size:23px 23px;min-height:350px;padding:24px 19px!important;scroll-behavior:smooth}
+.bubble-wrap{margin-bottom:13px}
+.bubble{border-radius:13px!important;box-shadow:0 3px 8px #34225c0b!important;max-width:min(83%,560px)!important;font-size:12px!important;line-height:1.55}
+.bubble-wrap.out .bubble,.bubble.out{background:#e1d3ff!important;border-radius:13px 13px 4px 13px!important}
+.bubble-wrap.in .bubble,.bubble.in{background:#fff!important;border-radius:13px 13px 13px 4px!important}
+.bubble small{font-size:9px;color:#8d849c!important;opacity:1!important;margin-top:6px}
+.composer{background:white!important;padding:12px!important;border-top:1px solid #efeafa!important;gap:10px}
+.composer input{border-radius:99px!important;background:#f9f7ff!important;border-color:#e5dcf7!important;min-height:46px;padding-inline:19px!important}
+.composer button{border-radius:99px!important;min-height:44px}
+
+/* Prospecting overview and explicit research scope. */
+.prospect-dashboard{display:grid;gap:19px}
+.scope-panel,.calendar-panel,.calendar-details{border-radius:19px!important}
+.scope-form{display:grid;grid-template-columns:minmax(210px,1.3fr) minmax(160px,1fr) minmax(150px,1fr) auto;gap:12px;align-items:end;margin:22px 0 13px}
+.scope-form label{display:grid;gap:7px;color:#5e4e7c;font-size:12px;font-weight:750;min-width:0}
+.scope-form :is(input,select){width:100%;min-height:47px;padding:10px 12px;border:1px solid #dfd5fa;border-radius:11px;background:#fcfbff;color:#29203e;font:600 12px 'DM Sans',sans-serif}
+.scope-form button{min-height:47px;white-space:nowrap}
+.scope-form .scope-hidden{display:none}
+.scope-limitation{font-size:11px;line-height:1.7;color:#716a84;padding:10px 13px;border-radius:10px;background:#faf8ff;margin:0!important}
+.calendar-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.calendar-head h3{font-size:24px;letter-spacing:-.055em;margin:5px 0 3px}.calendar-head p{font-size:12px;color:#736c84}
+.calendar-nav{display:flex;align-items:center;gap:12px}.calendar-nav strong{font-size:14px;min-width:130px;text-align:center;text-transform:capitalize;color:#302442}
+.calendar-nav button{min-width:36px;min-height:36px;padding:6px 10px;font-size:24px;line-height:1}
+.calendar-month-totals{display:flex;flex-wrap:wrap;gap:9px 17px;margin-bottom:18px}
+.calendar-month-totals span{display:flex;align-items:center;gap:9px;color:#625776;font-size:11px;background:#f5f1ff;padding:9px 13px;border-radius:99px}
+.calendar-month-totals strong{color:#6635ed;font:800 18px 'Plus Jakarta Sans',sans-serif}
+.calendar-scroll{overflow-x:auto;padding-bottom:9px;scrollbar-color:#c5b3f4 #f8f6ff}
+.calendar-week-grid,.calendar-days-grid{display:grid;grid-template-columns:repeat(7,minmax(104px,1fr));gap:8px;min-width:785px}
+.calendar-week-grid{margin-bottom:8px}.calendar-week-grid span{text-align:center;font-size:10px;letter-spacing:.07em;font-weight:850;color:#9a91ab;padding:9px 0}
+.calendar-day{display:flex;flex-direction:column;align-items:stretch;gap:6px;min-height:154px;background:#fdfcff;border:1px solid #ece5fa;border-radius:12px;padding:10px 9px;transition:box-shadow .15s,border-color .15s}
+.calendar-day:hover{border-color:#c3aff8;box-shadow:0 6px 16px #6842c512}
+.calendar-day.selected{border-color:#8755f9;box-shadow:0 0 0 2px #ede2ff}
+.calendar-day-number{color:#312647;font-size:12px;font-weight:850;line-height:1.3;padding:0 2px 2px}
+.calendar-day-counter{min-height:43px;display:flex;align-items:center;justify-content:space-between;gap:4px;border-radius:9px;border:1px solid #e5dcfa;background:#f5f0ff;padding:7px 8px;text-align:left;color:#6744db;cursor:pointer}
+.calendar-day-counter.closed{background:#eff9e9;color:#458744;border-color:#dcefd5}
+.calendar-day-counter:hover{filter:brightness(.975)}.calendar-day-counter strong{font-size:17px;line-height:1;font-weight:850}
+.calendar-day-counter small{font-size:9px;font-weight:800;white-space:nowrap}
+.calendar-day-rate{font-size:9px;color:#8b809e;text-align:center;margin-top:auto;font-weight:700}
+.calendar-empty{min-height:155px}
+.calendar-definition{font-size:11px;color:#756985;line-height:1.55;margin-top:14px!important}
+.calendar-detail-tabs{display:flex;align-items:center;gap:7px}
+.calendar-detail-tabs button{border:1px solid #e4dcf9;border-radius:99px;background:white;color:#756b88;padding:10px 13px;font-size:11px;font-weight:750;cursor:pointer}
+.calendar-detail-tabs button.active{background:#e9ddff;color:#5b2ade;border-color:#cbb5ff}
+.calendar-company-list{display:grid;gap:0;border:1px solid #f0ebf9;border-radius:13px;overflow:hidden}
+.calendar-company-list>div{display:flex;align-items:center;gap:13px;padding:15px;background:white;border-bottom:1px solid #f3eefb}
+.calendar-company-list>div:last-child{border-bottom:0}
+.calendar-company-avatar{width:37px;height:37px;display:grid;place-items:center;background:#eee7ff;border-radius:10px;color:#6d41ed;font-weight:850}
+.calendar-company-list>div>span:nth-child(2){display:grid;flex:1;gap:3px;min-width:0}
+.calendar-company-list strong{font-size:12px;color:#29203c}.calendar-company-list small{font-size:11px;color:#868095}
+
+/* WhatsApp list and secure pairing popup. */
+.wa-directory .heading h2{font-size:23px;letter-spacing:-.055em}
+.wa-directory-list{border:1px solid #eae3f9;border-radius:14px;overflow:hidden;margin:19px 0}
+.wa-directory-item{width:100%;display:flex;align-items:center;gap:14px;text-align:left;background:white;border:0;border-bottom:1px solid #f2edfa;padding:16px;cursor:pointer;color:#292241;min-height:77px}
+.wa-directory-item:last-child{border-bottom:0}.wa-directory-item:hover{background:#faf7ff}
+.wa-directory-avatar{width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:#eee6ff;color:#6e3aed;flex:none}
+.wa-directory-details{flex:1;display:grid;gap:3px;min-width:0}.wa-directory-details strong{font-size:13px}.wa-directory-details small{font-size:11px;color:#827990}
+.wa-directory-status{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#9a7182;background:#fcf3f3;padding:8px 12px;border-radius:99px;font-weight:750;white-space:nowrap}
+.wa-directory-status.is-online{background:#edf9e9;color:#3a804b}
+.wa-add-form{display:flex;align-items:end;gap:13px;flex-wrap:wrap}.wa-add-form label{flex:1;min-width:230px;display:grid;gap:7px;font-size:12px;font-weight:750;color:#62567d}
+.wa-add-form input{min-height:46px;border-radius:11px;border:1px solid #e0d6f8;background:#fcfbff;padding:11px 13px}.wa-add-form button{min-height:46px;white-space:nowrap}
+.wa-modal-backdrop{position:fixed;z-index:200;inset:0;background:#1b0e456d;backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);display:grid;place-items:center;padding:16px}
+.wa-modal{position:relative;width:min(480px,100%);max-height:calc(100dvh - 32px);overflow:auto;background:#fff;border:1px solid #e3d6fc;border-radius:23px;box-shadow:0 35px 110px #17074752;padding:30px;text-align:center}
+.wa-modal-close{position:absolute;right:16px;top:14px;display:grid;place-items:center;border:0;background:#f5f0ff;color:#6342cd;width:34px;height:34px;border-radius:50%;cursor:pointer}
+.wa-modal .kicker{display:block;margin-bottom:9px}.wa-modal h2{font-size:24px;color:#28203f}.wa-modal p{max-width:350px;margin:12px auto 0;font-size:12px;line-height:1.7;color:#706784}
+.wa-modal-qr{margin:20px auto 16px;min-height:240px;border-radius:15px;background:linear-gradient(150deg,#f4efff,#fbf9ff);border:1px solid #e7ddfc;padding:20px;display:grid;place-items:center}
+.wa-modal-qr .qr-image{width:min(260px,100%);max-width:100%;height:auto;border:12px solid white;border-radius:12px;box-shadow:0 8px 22px #5d3bb42c}
+.wa-modal-qr small{font-size:11px;color:#76688c;margin-top:10px}
+.wa-qr-loading{display:grid;gap:13px;justify-items:center;color:#584486;font-size:13px}.wa-qr-skeleton{font-size:85px;line-height:1;color:#c4affb}
+.wa-connected-success{display:grid;justify-items:center;gap:9px}.wa-connected-success>span{width:66px;height:66px;background:#dbf5d2;color:#37803f;border-radius:50%;display:grid;place-items:center;font-size:33px}
+.wa-modal-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:11px}.wa-modal-actions button{min-height:45px}
+.wa-modal-actions .secondary{border-radius:11px}
+
+/* Wizard and reviewed training context. */
+.training-wizard-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:19px 0 22px}
+.training-wizard-steps button{display:flex;align-items:center;gap:10px;text-align:left;min-height:64px;padding:13px;border-radius:13px;border:1px solid #e5def9;background:#fff;color:#81758e;cursor:pointer}
+.training-wizard-steps button span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#f2edff;color:#7548ea;flex:none;font-size:12px;font-weight:850}
+.training-wizard-steps button small{font-size:11px;font-weight:850;line-height:1.35}
+.training-wizard-steps button.active{background:#f1eaff;border-color:#ad92fb;color:#5430b2}
+.training-wizard-steps button.active span{background:#7040fa;color:#fff}
+.training-wizard-steps button.completed span{background:#e7f7df;color:#458445}
+.training-wizard-card{max-width:740px;margin:0 auto;padding:31px!important}
+.training-wizard-card>h3,.training-wizard-head h3{font-size:25px;letter-spacing:-.055em;margin:6px 0;color:#2f2446}
+.training-wizard-card>p,.training-wizard-head p{font-size:13px;color:#716583;line-height:1.65;margin-bottom:20px}
+.training-wizard-content{max-width:1200px;margin:auto}
+.training-wizard-head{margin-bottom:17px}
+.training-wizard-actions{display:flex;justify-content:space-between;gap:13px;margin:17px 0 0}
+.training-wizard-actions button{min-height:45px}
+.training-ready-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(310px,1fr);gap:18px;align-items:start}
+.training-ready-grid .profile-review{position:sticky;top:14px}
+.training-configured-head{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:0 0 19px}
+.training-manual .heading h3{font-size:20px}.training-tips{display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:#f7f3ff;border:1px solid #e7ddfa;border-radius:12px;padding:12px 14px;margin-bottom:15px}
+.training-tips>strong{font-size:11px;color:#5432a4;margin-right:5px}.training-tips span{border-radius:99px;background:#fff;border:1px solid #e9e1ff;padding:6px 10px;font-size:10px;font-weight:700;color:#6c578a}
+.training-messages{background:#faf8ff!important;border-color:#eae4f9!important;max-height:360px;overflow:auto}
+.training-composer{display:grid;gap:10px}.training-composer textarea{width:100%;border:1px solid #dfd2fa;border-radius:13px;background:white;resize:vertical;min-height:94px;font-size:13px}
+.training-compose-actions{display:flex;justify-content:space-between;gap:9px;flex-wrap:wrap}
+.training-compose-actions button{min-height:43px}
+.training-record.recording{background:#fff1f1!important;border-color:#d77b7b!important;color:#aa3e3e!important;animation:voicePulse 1s ease-in-out infinite alternate}
+.training-connect-notice{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:18px;background:#f6f1ff;border:1px solid #e4d5fc;border-radius:13px}
+.training-connection-icon{width:48px;height:48px;background:#e6d8ff;color:#7141ea;display:grid;place-items:center;border-radius:12px}
+.training-connect-notice>div{flex:1;min-width:180px}.training-connect-notice strong{font-size:13px;color:#47316f}.training-connect-notice p{font-size:11px;color:#74668a;margin:4px 0 0;line-height:1.55}
+.training-chats-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:15px}
+.training-analysis .mode-options{display:flex;gap:14px;flex-wrap:wrap;margin:13px 0}
+.training-analysis .mode-options label{font-size:12px;color:#443463;font-weight:750}
+.training-analysis .training-chat-list{max-height:300px;overflow-y:auto}
+.profile-review .profile-text{max-height:500px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#3a2e55;background:#f8f5ff;padding:17px;border-radius:12px}
+.profile-review textarea{background:#fff;border-color:#ddd2fc}
+
+/* Francisca private floating voice assistant. */
+.francisca-widget{position:fixed;bottom:24px;right:26px;z-index:100;display:flex;align-items:flex-end;gap:12px;flex-direction:column;pointer-events:none}
+.francisca-widget>*{pointer-events:auto}
+.francisca-orb{order:2;width:69px;height:69px;display:grid;place-content:center;gap:0;border:3px solid #e3d6ff;border-radius:50%;background:linear-gradient(140deg,#a374ff,#6d35fa 65%,#4b1bcd);box-shadow:0 11px 35px #6832e76b;color:white;cursor:pointer;transition:transform .18s ease,box-shadow .18s}
+.francisca-orb:hover{transform:scale(1.055);box-shadow:0 15px 40px #6832e79b}.francisca-orb span{font-family:Georgia,serif;font-size:30px;font-weight:850;line-height:1}.francisca-orb small{font-size:8px;font-weight:850;letter-spacing:.025em}
+.francisca-window{order:1;width:min(383px,calc(100vw - 26px));max-height:min(615px,calc(100dvh - 120px));display:flex;flex-direction:column;overflow:hidden;border:1px solid #ddd2fc;border-radius:21px;background:#fff;box-shadow:0 26px 78px #2c146d58}
+.francisca-header{display:flex;align-items:center;gap:10px;padding:16px 16px;background:linear-gradient(120deg,#8e56ff,#6633ee);color:white;flex:none}
+.francisca-avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#ffffff25;border:1px solid #fff7;font-family:Georgia,serif;font-size:24px}
+.francisca-header>div{flex:1;display:grid;gap:3px}.francisca-header strong{font-size:14px;color:white}.francisca-header small{font-size:10px;color:#eae0ff}
+.francisca-header button{width:29px;height:29px;display:grid;place-items:center;border:0;background:#ffffff27;color:white;border-radius:50%;font-size:22px;cursor:pointer}
+.francisca-log{display:flex;flex-direction:column;gap:11px;padding:17px;overflow:auto;min-height:120px;max-height:333px;flex:1;background:#faf8ff}
+.francisca-intro{background:white;border:1px solid #eae2fa;border-radius:12px;padding:14px;color:#48366a}.francisca-intro strong{font-size:13px}.francisca-intro p{font-size:11px;line-height:1.6;margin-top:6px}
+.francisca-message{font-size:12px;line-height:1.58;padding:11px 13px;border-radius:12px;max-width:91%;white-space:pre-wrap;overflow-wrap:anywhere}
+.francisca-message.sent{align-self:flex-end;background:#e7dcff;color:#3c2272;border-bottom-right-radius:4px}
+.francisca-message.received{align-self:flex-start;background:white;color:#322548;border:1px solid #e9e1f7;border-bottom-left-radius:4px}
+.francisca-compose{display:flex;align-items:center;gap:9px;padding:12px 13px 8px;background:#fff;border-top:1px solid #eee8f9}
+.francisca-compose input{min-width:0;flex:1;min-height:41px;border-radius:99px;border:1px solid #e6dafa!important;background:#faf8ff;padding:10px 13px;font-size:11px}
+.francisca-send{height:40px;width:40px;display:grid;place-items:center;border:0;border-radius:50%;background:#7140fa;color:white;font-size:16px;cursor:pointer}
+.francisca-controls{display:flex;justify-content:space-between;gap:9px;padding:2px 13px 10px}
+.francisca-controls button{background:#f5f0ff;border:1px solid #e5dafa;border-radius:99px;color:#5a32cb;min-height:37px;padding:8px 12px;font-size:10px;font-weight:800;cursor:pointer}
+.francisca-controls .recording{color:#a82d52;background:#ffedf4;border-color:#f4bccf;animation:voicePulse .7s alternate infinite}
+.francisca-privacy{font-size:9px;color:#968aa6;line-height:1.45;padding:0 14px 11px;margin:0!important}
+@keyframes voicePulse{to{opacity:.65;box-shadow:0 0 0 5px #e2649033}}
+.setting-hour-fields{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:13px 0}
+.setting-hour-fields label{display:grid;gap:8px;color:#54466f;font-size:12px;font-weight:750}
+.setting-hour-fields input{min-height:48px;border:1px solid #e4d9fa;padding:10px 14px;border-radius:10px;background:#fff}
+.account-settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+.account-settings-grid h3{font-size:20px}.settings-simple-control{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:18px}.settings-simple-control h3{font-size:17px;margin:5px 0}.settings-simple-control p,.settings-small-note{font-size:12px;color:#776a8b;line-height:1.65}
+.settings-small-note{margin:18px 3px 0!important}
+@media(max-width:1280px){.scope-form{grid-template-columns:repeat(2,minmax(0,1fr))}.scope-form button{align-self:end}.training-ready-grid{grid-template-columns:minmax(0,1.2fr) minmax(290px,1fr)}}
+@media(max-width:950px){.training-ready-grid,.account-settings-grid{grid-template-columns:1fr}.training-ready-grid .profile-review{position:static}.training-wizard-steps button{padding:10px}.training-wizard-steps button small{font-size:10px}.scope-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){
+ .wa-inline-connect{padding:9px 10px;font-size:10px}
+ .chats{min-height:620px}.chat-person{padding:10px 13px!important}.chat-heading{min-height:62px}
+ .message-feed{padding:16px 12px!important}.bubble{font-size:11px!important}
+ .scope-form{grid-template-columns:1fr}.scope-form button{width:100%}
+ .calendar-week-grid,.calendar-days-grid{min-width:820px}.calendar-day{min-height:154px}
+ .calendar-head{align-items:start}.calendar-nav{width:100%;justify-content:space-between}
+ .calendar-details .heading{display:block}.calendar-detail-tabs{margin-top:13px}
+ .wa-directory-item{gap:9px;padding:12px}.wa-directory-avatar{width:37px;height:37px}.wa-directory-status{padding:6px 8px;font-size:10px}.wa-directory-details small{font-size:10px}
+ .wa-add-form label,.wa-add-form button{width:100%}.wa-modal{padding:22px 15px}.wa-modal-qr{padding:13px}
+ .training-wizard-steps{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+ .training-wizard-steps button{min-height:54px;flex-direction:column;justify-content:center;text-align:center;gap:4px;padding:6px 3px}
+ .training-wizard-steps button span{width:25px;height:25px}.training-wizard-steps button small{font-size:8px}
+ .training-wizard-card{padding:21px!important}.training-tips{align-items:start}.training-compose-actions button{flex:1}
+ .francisca-widget{right:13px;bottom:15px}.francisca-orb{height:60px;width:60px}.francisca-window{max-height:calc(100dvh - 100px)}
+ .setting-hour-fields{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){.francisca-orb,.calendar-day,.chat-person{transition:none!important}.francisca-orb:hover{transform:none!important}.training-record.recording,.francisca-controls .recording{animation:none!important}}

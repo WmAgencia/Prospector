@@ -90,8 +90,9 @@ export async function waControlStatus(requestedSession,listedSessions){
   const status=String(live.status||target.status||"DISCONNECTED");
   const connected=status==="CONNECTED"&&live.hasInstance===true&&Boolean(live.me?.id||live.me?.jid);
   const transportStale=status==="CONNECTED"&&!connected;
+  const liveNumber=String(live.me?.id||live.me?.jid||'').split('@')[0].split(':')[0].replace(/\D/g,'');
   return {ok:true,connected,status:transportStale?"DISCONNECTED":status,
-   transportStale,sessionId:picked,numberSuffix:String(live.me?.id||live.me?.jid||'').split('@')[0].split(':')[0].slice(-4),hasSession:true,totalSessions:arr.length,qrAvailable:!connected};
+   transportStale,sessionId:picked,numberSuffix:liveNumber.slice(-4),number:connected&&/^\d{10,15}$/.test(liveNumber)?liveNumber:null,hasSession:true,totalSessions:arr.length,qrAvailable:!connected};
  }catch(e){return {ok:false,connected:false,status:"ERROR",message:String(e.message).slice(0,180),sessionId,hasSession:!!sessionId};}
 }
 export async function waConnect(requestedSession){

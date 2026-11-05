@@ -2,6 +2,9 @@ import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
 import {handlePlatform,isPrimaryClient} from './platform.mjs';
 import {handleTraining} from './training.mjs';
+import {handleFranciscaPanel} from './francisca-panel.mjs';
+import {monthlyProspectingCalendar} from './prospecting-calendar.mjs';
+import {currentScope,scopeOptions,saveScope,getOutreachHours,saveOutreachHours} from './client-preferences.mjs';
 import {accessClientKey,createAccessLimiter} from './access-rate-limit.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -460,12 +463,26 @@ async function handler(req,res){
   }
   if(!protectedAccess(req,res,url.pathname))return;
   const pathname=decodeURIComponent(url.pathname);
+  if(await handleFranciscaPanel(req,res,url,{json,respond}))return;
   if(await handleTraining(req,res,url,{json,respond}))return;
   if(pathname==='/api/events'){
    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+  if(pathname==='/api/prospecting/calendar'&&req.method==='GET'){
+   const month=url.searchParams.get('month')||new Date().toISOString().slice(0,7);
+   try{return respond(res,200,monthlyProspectingCalendar(month));}
+   catch(e){return respond(res,422,{error:String(e.message).slice(0,140)});}
+  }
+  if(pathname==='/api/prospecting/preferences'){
+   if(req.method==='GET')return respond(res,200,{selection:currentScope(),options:scopeOptions()});
+   if(req.method==='POST'){try{return respond(res,200,saveScope(await json(req)));}catch(e){return respond(res,422,{error:String(e.message).slice(0,200)});}}
+  }
+  if(pathname==='/api/settings/outreach-hours'){
+   if(req.method==='GET')return respond(res,200,{hours:getOutreachHours(),hardMin:'08:00',hardMax:'17:30'});
+   if(req.method==='POST'){try{return respond(res,200,{hours:saveOutreachHours(await json(req)),hardMin:'08:00',hardMax:'17:30'});}catch(e){return respond(res,422,{error:String(e.message).slice(0,200)});}}
+  }
   if(req.method==='GET'&&pathname==='/api/google-places/status')return respond(res,200,placesStatus());
   if(req.method==='POST'&&pathname==='/api/google-places/search'){const result=await placesSearch(await json(req));return respond(res,result.status,result.body);}
   if(req.method==='POST'&&pathname==='/api/whatsapp/reply'){const result=await sendChatMessage(await json(req));if(result.status===200)notify();return respond(res,result.status,result.body);}

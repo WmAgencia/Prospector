@@ -1,5 +1,6 @@
 // São Paulo business-hour gate for every new WhatsApp prospecting approach.
 // End is exclusive: 17:30:00 must not start another new approach.
+import {getSetting} from './db.mjs';
 export const FIRST_APPROACH_START_MINUTES=8*60;
 export const FIRST_APPROACH_END_MINUTES=17*60+30;
 export function saoPauloClock(at=new Date()){
@@ -18,5 +19,11 @@ export function insideApproachWindow(at=new Date()){
   if(parts.year+'-'+parts.month+'-'+parts.day<start)return false;
  }
  const minutes=saoPauloClock(at);
- return minutes>=FIRST_APPROACH_START_MINUTES&&minutes<FIRST_APPROACH_END_MINUTES;
+ const selected=getSetting('client_outreach_hours',null);
+ const parse=value=>{const m=/^(\d\d):([0-5]\d)$/.exec(String(value||''));return m?Number(m[1])*60+Number(m[2]):NaN;};
+ const selectedStart=parse(selected?.start),selectedEnd=parse(selected?.end);
+ // Per-account hours may NARROW but never widen the existing WhatsApp gate.
+ const startMinute=Number.isInteger(selectedStart)&&selectedStart>=FIRST_APPROACH_START_MINUTES&&selectedStart<FIRST_APPROACH_END_MINUTES?selectedStart:FIRST_APPROACH_START_MINUTES;
+ const endMinute=Number.isInteger(selectedEnd)&&selectedEnd>startMinute&&selectedEnd<=FIRST_APPROACH_END_MINUTES?selectedEnd:FIRST_APPROACH_END_MINUTES;
+ return minutes>=startMinute&&minutes<endMinute;
 }

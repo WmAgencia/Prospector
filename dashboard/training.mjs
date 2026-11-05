@@ -2,6 +2,7 @@ import {db,one,all,run,getSetting,setSetting,now} from './db.mjs';
 import {managedSessions,isManagedSession} from './waakg-session-registry.mjs';
 import {waRequest} from './waakg-control.mjs';
 import {groqChat} from './groq-models.mjs';
+import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import crypto from 'node:crypto';
 db.exec(`CREATE TABLE IF NOT EXISTS training_chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,body TEXT NOT NULL,at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS training_runs(id TEXT PRIMARY KEY,status TEXT NOT NULL,report TEXT,details TEXT NOT NULL,created_at TEXT NOT NULL);`);
@@ -74,6 +75,21 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
   if(!selection.length){respond(res,422,{error:'Selecione ao menos uma conversa disponível'});return true;}
   const id=crypto.randomUUID();activeRun=true;run('INSERT INTO training_runs VALUES(?,?,?,?,?)',id,'RUNNING',null,JSON.stringify({conversations:selection.length}),now());
   void analyzeRun(id,selection,null,model);respond(res,202,{id,status:'RUNNING'});return true;
+ }
+ if(req.method==='POST'&&p==='/api/training/voice-note'){
+  // The microphone recording is handled only in memory; transcription returns
+  // editable text and never silently activates a training profile.
+  const mime=String(req.headers['content-type']||'').split(';')[0];
+  const ext=({'audio/webm':'webm','audio/ogg':'ogg','audio/mp4':'m4a','audio/mpeg':'mp3','audio/wav':'wav'})[mime];
+  if(!ext){respond(res,415,{error:'Formato de áudio não suportado neste navegador'});return true;}
+  const parts=[];let length=0;
+  try{
+   for await(const chunk of req){length+=chunk.length;if(length>5*1024*1024)throw Error('Áudio muito grande (máximo 5 MB)');parts.push(chunk);}
+   if(length<200)throw Error('Gravação de áudio vazia');
+   const result=await transcribeAudio({buffer:Buffer.concat(parts),filename:'orientacao.'+ext});
+   respond(res,200,{text:result.text,needsReview:true,stored:false});
+  }catch(e){respond(res,422,{error:'Não foi possível transcrever. '+String(e.message).slice(0,130)});}
+  return true;
  }
  if(req.method==='POST'&&p==='/api/training/chat'){
   const text=String((await json(req)).text||'').trim();if(!text||text.length>3000){respond(res,422,{error:'Escreva uma orientação de até 3.000 caracteres'});return true;}
