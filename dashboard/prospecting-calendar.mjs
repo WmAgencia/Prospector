@@ -23,7 +23,8 @@ export function monthlyProspectingCalendar(month){
  ? "SELECT i.lead_id,l.business,l.city,l.segment,l.phone,COALESCE(CASE WHEN b.status='SENT' THEN b.attempt_at END,CASE WHEN j.status='SENT' THEN j.updated_at END,i.created_at) AS at, CASE WHEN b.status='SENT' OR j.status='SENT' THEN 1 ELSE 0 END AS confirmed_time FROM initial_contacts i JOIN leads l ON l.id=i.lead_id LEFT JOIN prospecting_batch_items b ON b.id=i.job_id LEFT JOIN jobs j ON j.id=i.job_id WHERE i.status='SENT'"
  : "SELECT i.lead_id,l.business,l.city,l.segment,l.phone,COALESCE(CASE WHEN j.status='SENT' THEN j.updated_at END,i.created_at) AS at, CASE WHEN j.status='SENT' THEN 1 ELSE 0 END AS confirmed_time FROM initial_contacts i JOIN leads l ON l.id=i.lead_id LEFT JOIN jobs j ON j.id=i.job_id WHERE i.status='SENT'";
  const approaches=all(approachSql);
- const closed=tableExists('sales_outcomes')?all(
+ const hasOutcomes=tableExists('sales_outcomes');
+ const closed=hasOutcomes?all(
   "SELECT s.lead_id,s.updated_at AS at,l.business,l.city,l.segment,l.phone FROM sales_outcomes s JOIN leads l ON l.id=s.lead_id WHERE s.status='CLOSED_WON' AND s.updated_at>=? AND s.updated_at<?",from,to
  ):[];
  const days=new Map();
@@ -41,7 +42,7 @@ export function monthlyProspectingCalendar(month){
   ...day,approachedCount:day.approached.length,closedCount:day.closed.length,
   // Cohort conversion counts companies approached on this day that *now*
   // have a registered sale, regardless of when the sale was confirmed.
-  conversionRate:day.approached.length?Math.round(1000*day.approached.filter(x=>one("SELECT 1 FROM sales_outcomes WHERE lead_id=? AND status='CLOSED_WON'",x.id)).length/day.approached.length)/10:0
+  conversionRate:day.approached.length&&hasOutcomes?Math.round(1000*day.approached.filter(x=>one("SELECT 1 FROM sales_outcomes WHERE lead_id=? AND status='CLOSED_WON'",x.id)).length/day.approached.length)/10:0
  }));
  return {month:value,days:output,totals:{approached:output.reduce((n,d)=>n+d.approachedCount,0),closed:output.reduce((n,d)=>n+d.closedCount,0)},
   conversionDefinition:'Percentual das empresas abordadas naquele dia com venda confirmada registrada; os fechamentos do dia são contados separadamente.',
