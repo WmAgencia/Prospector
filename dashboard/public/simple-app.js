@@ -269,10 +269,19 @@ async function toggleFranciscaRecording(){
  if(franciscaBusy){franciscaInlineError('Termine a resposta atual antes de iniciar a conversa por voz.');return;}
  franciscaVoiceActive=true;franciscaVoiceState='connecting';renderFrancisca();
  try{
-  const {createFranciscaVoiceSession}=await import('./francisca-live.mjs');
+  // Greet once, with the real Francisca voice, before opening microphone VAD.
+  // This avoids the assistant's own greeting being transcribed as user speech.
+  const [voiceModule]=await Promise.all([
+   import('./francisca-live.mjs'),
+   speakFrancisca('Oi! Sou a Francisca. Pode falar, estou te ouvindo.')
+  ]);
   if(!franciscaVoiceActive)return;
+  const {createFranciscaVoiceSession}=voiceModule;
   franciscaVoiceSession=createFranciscaVoiceSession({
-   onState:status=>{if(franciscaVoiceActive){franciscaVoiceState=status;renderFrancisca();}},
+   onState:status=>{
+    if(status==='off'&&franciscaVoiceActive){franciscaVoiceActive=false;franciscaVoiceSession=null;}
+    franciscaVoiceState=status;renderFrancisca();
+   },
    onError:message=>{if(franciscaVoiceActive)franciscaInlineError(message);},
    onTurn:async blob=>{if(franciscaVoiceActive)await franciscaReply(blob,true);}
   });
