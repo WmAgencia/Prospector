@@ -40,7 +40,7 @@ Cada cliente continua no número que iniciou sua abordagem: apresentação, resp
 
 O fluxo autorizado pelo operador permite a primeira saudação comercial sem consentimento prévio quando `PROSPECTOR_COLD_FIRST_APPROACH=true`. Isso não marca o contato como consentido. A resposta da pessoa libera a continuidade daquela conversa; recusas, bloqueios, atendimento humano e clientes existentes permanecem protegidos.
 
-- Pesquisa automática a partir das 07h00 e preparação da fila entre 07h00 e 08h00.
+- Pesquisa automática a partir das **05h00** (America/Sao_Paulo) para descoberta e pesquisa de empresas; preparação da fila entre **07h00 e 08h00**; **novas abordagens somente das 08h00 às 17h30**. A descoberta respeita as cotas das fontes e pode prosseguir após 08h00.
 - Novas abordagens das **08h00 às 17h30**, horário `America/Sao_Paulo`, com intervalo sorteado de **90 a 180 segundos**, diferente do sorteio anterior por pelo menos **5 segundos**. O sorteio fica salvo no banco e não muda a cada consulta nem após reiniciar. Indisponibilidade ou fim da janela podem adiar a tentativa; não há compensação com disparos em sequência.
 - `PROSPECTOR_APPROACH_START_DATE=AAAA-MM-DD` impede novas abordagens antes da data inicial em São Paulo, sem impedir respostas a mensagens recebidas.
 - Saudação personalizada; após resposta elegível, apresentação em 30 segundos e continuidade pelo Groq. Respostas automáticas de estabelecimentos não liberam a sequência.
@@ -50,7 +50,7 @@ O fluxo autorizado pelo operador permite a primeira saudação comercial sem con
 - Interesse confirmado, pedido de humano e negociações fora da oferta aprovada seguem os controles de encaminhamento ao operador.
 - Entrega incerta pausa a abordagem autônoma e nunca é repetida automaticamente. Recontato respeita três meses de calendário.
 
-Para ativar uma instalação: configurar `PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN=true`, `PROSPECTOR_COLD_FIRST_APPROACH=true`, `WHATSAPP_TRANSPORT=waakg`, credenciais dos provedores e `PROSPECTOR_INBOUND_AUTOREPLY_ENABLED=true`; verificar sessão conectada e configurações persistidas `autonomous_outreach_enabled=true`, `paused=false`, `discovery_auto_enabled=true`, `discovery_start_hour=7`. A opção de ativação inicial é aplicada uma vez; uma pausa posterior deve ser removida explicitamente pelo operador. `auto_initial=false` mantém o trabalhador legado de campanhas desativado.
+Para ativar uma instalação: configurar `PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN=true`, `PROSPECTOR_COLD_FIRST_APPROACH=true`, `WHATSAPP_TRANSPORT=waakg`, credenciais dos provedores e `PROSPECTOR_INBOUND_AUTOREPLY_ENABLED=true`; verificar sessão conectada e configurações persistidas `autonomous_outreach_enabled=true`, `paused=false`, `discovery_auto_enabled=true`, `discovery_start_hour=5`. A opção de ativação inicial é aplicada uma vez; uma pausa posterior deve ser removida explicitamente pelo operador. `auto_initial=false` mantém o trabalhador legado de campanhas desativado.
 
 Sem `PROSPECTOR_COLD_FIRST_APPROACH=true`, a fila de produção continua exigindo autorização documentada. Diagnóstico: `/api/prospecting/queue`, `/api/sales/status` e `/api/queue-health`, com autenticação do painel.
 
