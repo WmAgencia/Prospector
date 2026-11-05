@@ -72,10 +72,10 @@ export function createFranciscaVoiceSession({onTurn,onState=()=>{},onError=()=>{
    // Keep measuring the microphone while the assistant is speaking.
    // A sustained new user utterance interrupts playback and starts recording
    // without disconnecting the underlying microphone stream.
-   const userSpeech=canInterrupt()&&rms>Math.max(.035,ambient*3.3);
+   const userSpeech=canInterrupt()&&rms>Math.max(.018,ambient*2.5);
    if(userSpeech){
     if(!bargeStarted)bargeStarted=now;
-    if(now-bargeStarted>=210){
+    if(now-bargeStarted>=140){
      bargeStarted=0;
      try{onInterrupt();}catch(error){onError(error?.message||'Falha ao interromper');}
      processing=false;
