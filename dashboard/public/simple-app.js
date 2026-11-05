@@ -293,11 +293,15 @@ function prospecting(){
   '</section></div>';
 }
 function whatsappAccountsPanel(){
- return '<section class="panel wa-accounts"><div class="heading"><div><span class="kicker">CANAIS DE ATENDIMENTO</span><h3>Seus WhatsApps</h3><p>'+waAccounts.filter(x=>x.connected).length+' conectado(s) · Cada conversa permanece no número de origem.</p></div><button class="secondary compact" data-tab="training">Treinar atendimento</button></div><div class="account-grid">'+waAccounts.map((item,i)=>'<button type="button" class="account-card '+(connectionSession===item.session_id?'selected':'')+'" data-action="select-wa" data-session="'+esc(item.session_id)+'" aria-pressed="'+(connectionSession===item.session_id)+'"><span class="account-icon">'+(i+1)+'</span><span><strong>'+esc(item.label)+'</strong><small><span class="pulse '+(item.connected?'ok':'')+'"></span> '+(item.connected?'Conectado':item.status==='SCAN_QR'?'Aguardando QR Code':'Conectar número')+'</small></span><span class="account-arrow">'+glyph('arrow')+'</span></button>').join('')+'</div><div class="add-account"><input id="new-wa-label" maxlength="70" placeholder="Nome do novo WhatsApp (opcional)" aria-label="Nome do novo WhatsApp"><button class="primary" data-action="add-wa" '+(busy?'disabled':'')+'>+ Conectar mais um WhatsApp</button></div><p class="footnote">Selecione um canal para gerenciá-lo e exibir seu QR Code abaixo. O intervalo de 90 a 180 segundos é compartilhado entre os números.</p></section>';
+ const count=waAccounts.filter(x=>x.connected).length;
+ return '<section class="panel wa-directory"><div class="heading"><div><span class="kicker">CANAIS DE ATENDIMENTO</span><h2>Seus WhatsApps</h2><p>Identifique seus números e gerencie cada conexão com segurança.</p></div><span class="tag green">'+count+' conectado'+(count===1?'':'s')+'</span></div>'+
+ '<div class="wa-directory-list">'+(waAccounts.length?waAccounts.map(item=>'<button type="button" class="wa-directory-item" data-action="select-wa" data-session="'+esc(item.session_id)+'"><span class="wa-directory-avatar">'+glyph('conversations')+'</span><span class="wa-directory-details"><strong>'+esc(item.label)+'</strong><small>'+(item.numberSuffix?'•••• '+esc(item.numberSuffix)+' · ':'')+(item.connected?'Número conectado':'Aguardando conexão')+'</small></span><span class="wa-directory-status '+(item.connected?'is-online':'')+'"><span class="pulse '+(item.connected?'ok':'')+'"></span> '+(item.connected?'Conectado':'Conectar')+'</span>'+glyph('arrow')+'</button>').join(''):'<div class="empty"><h3>Seu primeiro WhatsApp</h3><p>Dê um nome para identificar o canal e conecte pelo QR Code.</p></div>')+'</div>'+
+ '<form class="wa-add-form" id="wa-add-form"><label>Nome do novo WhatsApp<input id="new-wa-label" name="label" maxlength="70" placeholder="Ex.: Comercial 01 ou Atendimento" required></label><button type="submit" class="primary" '+(busy?'disabled':'')+'>+ Conectar mais um WhatsApp</button></form>'+
+ '<p class="footnote">Cada número tem sua própria sessão. A cadência de novas abordagens é compartilhada entre os canais.</p></section>';
 }
 function connections(){
- const connected=!!wa?.connected,status=wa?.status||"DISCONNECTED",qr=qrResult?.qr;
- return whatsappAccountsPanel()+'<section class="connect-layout"><div class="panel connect-info"><span class="kicker">INTEGRAÇÃO WHATSAPP</span><h2>Conecte seu WhatsApp em segundos.</h2><p>Você não precisa acessar outro sistema. O Prospector gera o QR Code aqui e cuida da sincronização das suas conversas.</p><div class="connection-status '+(connected?"connected":"")+'"><span class="pulse '+(connected?"ok":"")+'"></span><span><strong>'+(connected?"WhatsApp conectado":"WhatsApp não conectado")+'</strong><small>'+esc(status==="ERROR"?(wa?.message||"Falha de comunicação"):connected?"Pronto para receber conversas":"Clique em Conectar para iniciar a sessão")+'</small></span></div><div class="actions">'+(connected?'<button class="secondary" data-action="disconnect">Desconectar</button>':'<button class="primary" data-action="connect" '+(busy?"disabled":"")+'>'+(busy?"Conectando...":"Conectar WhatsApp")+'</button>')+'</div><div class="steps"><strong>Como conectar</strong><p>1. Abra o WhatsApp no celular.</p><p>2. Vá em <b>Aparelhos conectados</b> e toque em <b>Conectar aparelho</b>.</p><p>3. Escaneie o QR Code mostrado ao lado.</p></div></div><div class="panel qr-panel"><div class="qr-frame">'+(connected?'<div class="qr-placeholder"><span>✓</span><h3>WhatsApp conectado!</h3><p>Suas conversas aparecerão na aba Conversas.</p></div>':qr?'<img class="qr-image" src="'+esc(qr)+'" alt="QR Code de conexão do WhatsApp"><p>Escaneie com a câmera do WhatsApp</p>':'<div class="qr-placeholder"><span>▦</span><h3>'+esc(wa?.hasSession?"Aguardando QR Code":"Pronto para conectar")+'</h3><p>'+esc(qrResult?.message||"Clique em Conectar WhatsApp para gerar seu código.")+'</p></div>')+'</div><p class="footnote">QR temporário e protegido. As abordagens automáticas obedecem ao horário e ao intervalo aleatório de 90 a 180 segundos.</p></div></section>';
+ const item=waAccounts.find(x=>x.session_id===connectionSession);
+ return whatsappAccountsPanel()+(waModalOpen?'<div class="wa-modal-backdrop" role="presentation"><section class="wa-modal" role="dialog" aria-modal="true" aria-labelledby="wa-modal-title"><button type="button" class="wa-modal-close" data-action="close-wa-modal" aria-label="Fechar">'+glyph('close')+'</button><span class="kicker">CONEXÃO WHATSAPP</span><h2 id="wa-modal-title">'+esc(item?.label||'Novo número')+'</h2><p>No celular, abra WhatsApp → <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong>. Depois escaneie o código.</p><div class="wa-modal-qr">'+(wa?.connected?'<div class="wa-connected-success"><span>✓</span><h3>Conectado!</h3><p>Seu WhatsApp está pronto. Esta janela fecha automaticamente.</p></div>':qrResult?.qr?'<img class="qr-image" src="'+esc(qrResult.qr)+'" alt="QR Code para conectar este WhatsApp"><small>Escaneie com o seu WhatsApp</small>':'<div class="wa-qr-loading"><span class="wa-qr-skeleton">▦</span><strong>Aguardando QR Code</strong><small>'+esc(qrResult?.message||'Preparando o pareamento')+'</small></div>')+'</div><div class="wa-modal-actions">'+(wa?.connected?'<button type="button" class="secondary" data-action="disconnect">Desconectar número</button>':'<button type="button" class="secondary" data-action="connect">Atualizar QR Code</button>')+'<button type="button" class="primary" data-action="close-wa-modal">Fechar</button></div></section></div>':'');
 }
 function settings(){
  if(platformContext.role==="master")return masterSettings();
@@ -547,8 +551,11 @@ document.addEventListener("click",async ev=>{
   if(action==="maps-poll"){await updateMapsJob();return;}
   if(action==="import-csv"){await importMapsCSV();return;}
   if(action==="reconnect-qr"||action==="connect"){await openWhatsappQr();return;}
+  if(action==='close-wa-modal'){waModalOpen=false;if(waModalCloseTimer){clearTimeout(waModalCloseTimer);waModalCloseTimer=null;}render();return;}
   if(action==='select-wa'){
-   connectionSession=String(el.dataset.session||'');qrResult=null;
+   connectionSession=String(el.dataset.session||'');qrResult=null;waModalOpen=true;
+   if(waModalCloseTimer){clearTimeout(waModalCloseTimer);waModalCloseTimer=null;}
+   await refreshWa();if(!wa?.connected)await post('/api/whatsapp/connect',{sessionId:connectionSession});
    await refreshWa();render();return;
   }
   if(action==='add-wa'){
@@ -556,7 +563,7 @@ document.addEventListener("click",async ev=>{
    const name=q('#new-wa-label')?.value?.trim();
    const label=name||'WhatsApp '+(waAccounts.length+1);
    busy=true;render();
-   try{const created=await post('/api/whatsapp/sessions',{name:label});connectionSession=created.sessionId;qrResult=null;await refreshWa();n('WhatsApp adicionado. Escaneie o QR Code deste número.');}
+   try{const created=await post('/api/whatsapp/sessions',{name:label});connectionSession=created.sessionId;qrResult=null;waModalOpen=true;await refreshWa();n('WhatsApp adicionado. Escaneie o QR Code deste número.');}
    finally{busy=false;render();}
    return;
   }
