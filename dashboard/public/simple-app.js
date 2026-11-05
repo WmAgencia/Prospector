@@ -898,6 +898,17 @@ document.addEventListener("submit",async ev=>{
  ev.preventDefault();
  if(await platformSubmit(ev))return;
 
+ if(ev.target.id==='activate-account'){
+  const input=Object.fromEntries(new FormData(ev.target));
+  if(input.password!==input.confirmPassword){n('As senhas não são iguais.');return;}
+  try{
+   const result=await post('/api/platform/account/setup',{password:input.password});
+   platformContext.needsPasswordSetup=false;
+   n('Conta ativada com sucesso. Seu convite inicial perdeu a validade.');
+   render();
+  }catch(error){n(error.message);}
+  return;
+ }
  if(ev.target.id==='outreach-hours-form'){
   const payload=Object.fromEntries(new FormData(ev.target));
   try{const r=await post('/api/settings/outreach-hours',payload);outreachHours=r.hours;n('Horário de abordagem salvo.');render();}catch(e){n(e.message);}return;
