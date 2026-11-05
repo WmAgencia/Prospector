@@ -28,7 +28,7 @@ function savedProspectSession(){
 let prospectSession=savedProspectSession();
 const root=q("#app");
 let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
-let prospectCalendar=null,scopeInfo=null,scopeMode='all',calendarDay='',calendarCategory='approached';
+let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
 let outreachHours={start:'08:00',end:'17:30'};
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaVoiceOn=true,franciscaHistory=[],franciscaBusy=false,franciscaRecorder=null,franciscaAudio=null,franciscaRecordTimeout=null,franciscaConversationId=crypto.randomUUID();
@@ -37,7 +37,7 @@ async function loadCalendar(){
  try{prospectCalendar=await api('/api/prospecting/calendar?month='+encodeURIComponent(calendarMonth));if(view==='prospects')render();}catch(e){n('Calendário indisponível: '+e.message);}
 }
 async function loadScope(){
- try{scopeInfo=await api('/api/prospecting/preferences');scopeMode=scopeInfo.selection?.mode||'all';if(view==='prospects')render();}catch(e){n(e.message);}
+ try{scopeInfo=await api('/api/prospecting/preferences');scopeMode=scopeInfo.selection?.mode||'all';scopeNicheInput=scopeInfo.selection?.niche||'';scopeCityInput=scopeInfo.selection?.city?scopeInfo.selection.city+' / SP':'';if(view==='prospects')render();}catch(e){n(e.message);}
 }
 function moveCalendar(delta){
  const [y,m]=calendarMonth.split('-').map(Number),next=new Date(Date.UTC(y,m-1+delta,1));
@@ -93,7 +93,7 @@ function glyph(key){
 function workspaceTabs(){return '<nav class="workspace-tabs" aria-label="Seções do painel">'+Object.entries(tabs).filter(([key])=>platformContext.role==='master'?['overview','clients','credits','settings'].includes(key):key!=='clients').map(([key,label])=>'<button data-tab="'+key+'" class="'+(view===key?'active':'')+'" '+(view===key?'aria-current="page"':'')+'>'+esc(label)+'</button>').join('')+'</nav>';}
 function shell(){
  const active=tabs[view]||tabs.overview,connected=!!wa?.connected;
- root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["overview","clients","credits","settings"].includes(key):key!=="clients").map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p></div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div>'+workspaceTabs()+'<div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'Desconectado')+'</span></span>'+(platformContext.role!=="master"&&!connected?'<button class="wa-inline-connect" type="button" data-action="reconnect-qr">'+glyph('connections')+' Conectar</button>':'')+'<button class="icon-button refresh-button" data-action="refresh" title="Atualizar dados" aria-label="Atualizar dados">'+glyph('refresh')+'</button><button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+(platformContext.canReturnToMaster?'<div class="workspace-return">Você está no espaço de '+esc(platformContext.name)+'. <a href="/master">Voltar ao painel master</a></div>':'')+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>'+franciscaWidget();
+ root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["overview","clients","credits","settings"].includes(key):key!=="clients").map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button sidebar-switch" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+'</div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div>'+workspaceTabs()+'<div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'Desconectado')+'</span></span>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+(platformContext.role!=="master"&&!connected?'<button class="wa-inline-connect" type="button" data-action="reconnect-qr">'+glyph('connections')+' Conectar</button>':'')+'<button class="icon-button refresh-button" data-action="refresh" title="Atualizar dados" aria-label="Atualizar dados">'+glyph('refresh')+'</button><button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>'+franciscaWidget();
 }
 
 
@@ -161,7 +161,6 @@ async function toggleTrainingRecording(){
  }catch(e){stream?.getTracks().forEach(t=>t.stop());trainingRecording=false;trainingRecorder=null;n('Microfone indisponível: '+e.message);}
 }
 function franciscaWidget(){
- if(platformContext.role==='master')return '';
  return '<div class="francisca-widget"><button type="button" class="francisca-orb" data-action="francisca-toggle" aria-label="'+(franciscaOpen?'Fechar Francisca':'Conversar com Francisca por voz')+'" aria-expanded="'+String(franciscaOpen)+'"><span>F</span><small>Francisca</small></button>'+
  (franciscaOpen?'<section class="francisca-window" role="dialog" aria-label="Assistente Francisca"><div class="francisca-header"><span class="francisca-avatar">F</span><div><strong>Francisca</strong><small>Assistente do seu painel · voz e texto</small></div><button type="button" data-action="francisca-close" aria-label="Fechar Francisca">×</button></div><div class="francisca-log" role="log" aria-live="polite">'+(franciscaHistory.length?franciscaHistory.map(m=>'<div class="francisca-message '+(m.role==='user'?'sent':'received')+'">'+esc(m.text)+'</div>').join(''):'<div class="francisca-intro"><strong>Oi! Sou a Francisca.</strong><p>Posso explicar seus indicadores, créditos, conexões e orientações de atendimento. Minha atuação aqui é consultiva: nenhuma ação é executada sem você.</p></div>')+(franciscaBusy?'<div class="francisca-message received">Preparando sua resposta…</div>':'')+'</div><form id="francisca-form" class="francisca-compose"><input id="francisca-input" maxlength="700" placeholder="Pergunte ou fale com a Francisca…" autocomplete="off" aria-label="Sua pergunta para Francisca"><button type="submit" class="francisca-send" '+(franciscaBusy?'disabled':'')+' aria-label="Enviar pergunta">➤</button></form><div class="francisca-controls"><button type="button" class="francisca-mic '+(franciscaRecorder?.state==='recording'?'recording':'')+'" data-action="francisca-record-toggle">'+(franciscaRecorder?.state==='recording'?'■ Parar gravação':'🎙 Conversar por voz')+'</button><button type="button" class="francisca-sound" data-action="francisca-sound">'+(franciscaVoiceOn?'🔊 Voz ligada':'🔇 Voz desligada')+'</button></div><p class="francisca-privacy">Microfone usado somente quando ativado. A conversa é processada pelo servidor da sua conta e seus fornecedores de IA; áudio não é salvo pelo painel.</p></section>':'')+'</div>';
 }
@@ -202,7 +201,7 @@ async function franciscaReply(input,isAudio=false){
   franciscaHistory=franciscaHistory.slice(-20);
   renderFrancisca();
   if(franciscaVoiceOn)void speakFrancisca(result.answer);
- }catch(e){n(e.message);}
+ }catch(e){franciscaHistory.push({role:'assistant',text:'Não consegui responder agora. '+String(e.message||'Tente novamente.').slice(0,120)});franciscaHistory=franciscaHistory.slice(-20);renderFrancisca();}
  finally{franciscaBusy=false;renderFrancisca();}
 }
 async function toggleFranciscaRecording(){
@@ -425,8 +424,7 @@ function conversations(){
 
 function prospecting(){
  const scopes=scopeInfo?.options||{},chosen=scopeInfo?.selection||{};
- const options=[['all','Todos os nichos · todas as cidades disponíveis'],['niche-all','Um nicho · todas as cidades disponíveis'],['niche-city','Um nicho · uma cidade'],['all-city','Todos os nichos · uma cidade']];
- const needNiche=scopeMode.startsWith('niche'),needCity=scopeMode.endsWith('-city');
+ const allNiches=!scopeMode.startsWith('niche'),allCities=!scopeMode.endsWith('-city');
  const calendar=prospectCalendar||{month:calendarMonth,days:[],totals:{approached:0,closed:0}},lookup=new Map((calendar.days||[]).map(x=>[x.date,x]));
  const [year,month]=calendarMonth.split('-').map(Number);
  const numberOfDays=new Date(year,month,0).getDate(),firstWeekday=(new Date(year,month-1,1).getDay()+6)%7;
@@ -434,11 +432,14 @@ function prospecting(){
  const calendarCells=[...Array(firstWeekday)].map(()=>'<div class="calendar-empty" aria-hidden="true"></div>');
  for(let day=1;day<=numberOfDays;day++){
   const date=calendarMonth+'-'+String(day).padStart(2,'0'),info=lookup.get(date)||{approachedCount:0,closedCount:0,conversionRate:0};
-  calendarCells.push('<div class="calendar-day '+(date===calendarDay?'selected':'')+'"><div class="calendar-day-number">'+day+'</div><button type="button" class="calendar-day-counter" data-action="calendar-day" data-date="'+date+'" data-kind="approached" aria-label="Ver abordadas de '+date+'"><strong>'+Number(info.approachedCount||0)+'</strong><small>Abordadas</small></button><button type="button" class="calendar-day-counter closed" data-action="calendar-day" data-date="'+date+'" data-kind="closed" aria-label="Ver fechadas de '+date+'"><strong>'+Number(info.closedCount||0)+'</strong><small>Fechadas</small></button><small class="calendar-day-rate">'+Number(info.conversionRate||0).toLocaleString('pt-BR')+'% conversão</small></div>');
+  calendarCells.push('<div class="calendar-day '+(date===calendarDay?'selected':'')+'"><div class="calendar-day-number">'+day+'</div><div class="calendar-day-stats"><button type="button" class="calendar-day-counter" data-action="calendar-day" data-date="'+date+'" data-kind="approached" title="Ver empresas abordadas" aria-label="Ver empresas abordadas em '+date+'"><b>'+Number(info.approachedCount||0)+'</b><small>Abord.</small></button><button type="button" class="calendar-day-counter closed" data-action="calendar-day" data-date="'+date+'" data-kind="closed" title="Ver empresas fechadas" aria-label="Ver empresas fechadas em '+date+'"><b>'+Number(info.closedCount||0)+'</b><small>Fech.</small></button></div><small class="calendar-day-rate">'+Number(info.conversionRate||0).toLocaleString('pt-BR')+'% conversão</small></div>');
  }
  const selected=lookup.get(calendarDay),items=selected?.[calendarCategory]||[],typeLabel=calendarCategory==='closed'?'Fechadas':'Abordadas';
- return '<div class="prospect-dashboard"><div class="workspace-head"><div><span class="kicker">PROSPECÇÃO AUTOMÁTICA</span><h2>Encontre oportunidades no seu ritmo.</h2><p>Defina onde o sistema deve pesquisar. A descoberta é automática a partir das 5h e mantém o histórico das abordagens.</p></div><span class="tag '+(state?.settings?.discovery_auto_enabled?'green':'')+'">'+(state?.settings?.discovery_auto_enabled?'Pesquisa automática ligada':'Pesquisa pausada')+'</span></div>'+
- '<section class="panel scope-panel"><div class="heading"><div><h3>O que você quer prospectar?</h3><p>Escolha a abrangência. Você não precisa clicar em “Pesquisar” a cada dia.</p></div><span class="tag">Sua preferência</span></div><form id="scope-form" class="scope-form"><label>Tipo de pesquisa<select name="mode" id="scope-mode">'+options.map(([v,label])=>'<option value="'+v+'" '+(v===scopeMode?'selected':'')+'>'+label+'</option>').join('')+'</select></label><label class="'+(needNiche?'':'scope-hidden')+'">Nicho<input name="niche" list="scope-niches" value="'+esc(chosen.niche||'')+'" '+(needNiche?'required':'')+' placeholder="Ex.: oficina ou contabilidade" autocomplete="off"><datalist id="scope-niches">'+(scopes.segments||[]).map(x=>'<option value="'+esc(x.id)+'" label="'+esc(x.label)+'"></option>').join('')+'</datalist></label><label class="'+(needCity?'':'scope-hidden')+'">Cidade<input name="city" list="scope-cities" value="'+esc(chosen.city||'')+'" '+(needCity?'required':'')+' placeholder="Ex.: Sorocaba" autocomplete="address-level2"><datalist id="scope-cities">'+(scopes.cities||[]).map(x=>'<option value="'+esc(x)+'"></option>').join('')+'</datalist></label><label class="scope-check"><input type="checkbox" name="enabled" value="on" '+(chosen.enabled?"checked":"")+'> Ativar descoberta automática às 5h</label><button type="submit" class="primary">Salvar preferência</button></form><p class="scope-limitation">'+esc(scopes.coverage||'A pesquisa depende dos nichos e cidades atualmente suportados.')+' Atualmente: '+Number(scopes.cities?.length||0)+' cidades e '+Number(scopes.segments?.length||0)+' nichos disponíveis. A preferência não inicia mensagens sem autorização.</p></section>'+
+ return '<div class="prospect-dashboard">'+
+ '<section class="panel scope-panel"><div class="scope-heading"><div><span class="kicker">PROSPECÇÃO AUTOMÁTICA</span><h2>O que você quer prospectar?</h2><p>Escolha seus nichos e regiões. A descoberta pesquisa automaticamente a partir das 5h.</p></div><span class="tag '+(state?.settings?.discovery_auto_enabled?'green':'')+'">'+(state?.settings?.discovery_auto_enabled?'Pesquisa ativa':'Pesquisa pausada')+'</span></div>'+
+ '<form id="scope-form" class="scope-form"><div class="scope-field '+(allNiches?'is-all':'')+'"><div class="scope-field-top"><label for="scope-niche">Nicho</label><button type="button" class="scope-mode-button '+(allNiches?'active':'')+'" data-action="scope-toggle-niche" aria-pressed="'+allNiches+'">Todos '+(allNiches?'✓':'')+'</button></div><input id="scope-niche" name="niche" list="scope-niches" value="'+esc(scopeNicheInput)+'" '+(allNiches?'readonly data-action="scope-toggle-niche"':'required')+' placeholder="'+(allNiches?'Todos os nichos selecionados':'Ex.: oficina ou contabilidade')+'" autocomplete="off"><datalist id="scope-niches">'+(scopes.segments||[]).map(x=>'<option value="'+esc(x.id)+'" label="'+esc(x.label)+'"></option>').join('')+'</datalist></div>'+
+ '<div class="scope-field '+(allCities?'is-all':'')+'"><div class="scope-field-top"><label for="scope-city">Cidade / Estado</label><button type="button" class="scope-mode-button '+(allCities?'active':'')+'" data-action="scope-toggle-city" aria-pressed="'+allCities+'">Brasil inteiro '+(allCities?'✓':'')+'</button></div><input id="scope-city" name="city" list="scope-cities" value="'+esc(scopeCityInput)+'" '+(allCities?'readonly data-action="scope-toggle-city"':'required')+' placeholder="'+(allCities?'Brasil inteiro selecionado':'Ex.: Sorocaba / SP')+'" autocomplete="address-level2"><datalist id="scope-cities">'+(scopes.cities||[]).map(x=>'<option value="'+esc(x)+' / SP"></option>').join('')+'</datalist></div>'+
+ '<button type="submit" class="primary scope-save">Salvar preferência</button></form><p class="scope-limitation">A opção “Brasil inteiro” significa pesquisar em todas as regiões que a fonte oferece no momento; a cobertura nacional ainda está em expansão. Atualmente: '+Number(scopes.cities?.length||0)+' cidades e '+Number(scopes.segments?.length||0)+' nichos. A pesquisa não inicia mensagens sem autorização.</p></section>'+
  '<section class="panel calendar-panel"><div class="calendar-head"><div><span class="kicker">HISTÓRICO DE PROSPECÇÃO</span><h3>Calendário de resultados</h3><p>Veja as empresas abordadas e os fechamentos confirmados, dia a dia.</p></div><div class="calendar-nav"><button type="button" class="secondary compact" data-action="calendar-prev" aria-label="Mês anterior">‹</button><strong>'+esc(fullMonth)+'</strong><button type="button" class="secondary compact" data-action="calendar-next" aria-label="Próximo mês">›</button></div></div><div class="calendar-month-totals"><span><strong>'+Number(calendar.totals?.approached||0)+'</strong> abordadas no mês</span><span><strong>'+Number(calendar.totals?.closed||0)+'</strong> vendas confirmadas no mês</span></div><div class="calendar-scroll"><div class="calendar-week-grid">'+['SEG','TER','QUA','QUI','SEX','SÁB','DOM'].map(x=>'<span>'+x+'</span>').join('')+'</div><div class="calendar-days-grid">'+calendarCells.join('')+'</div></div><p class="calendar-definition">'+esc(calendar.conversionDefinition||'A taxa compara empresas abordadas naquele dia com as que têm venda confirmada registrada.')+'</p></section>'+
  (calendarDay?'<section class="panel calendar-details"><div class="heading"><div><span class="kicker">DETALHES DO DIA</span><h3>'+esc(new Date(calendarDay+'T12:00:00').toLocaleDateString('pt-BR',{day:'numeric',month:'long',year:'numeric'}))+'</h3></div><div class="calendar-detail-tabs"><button type="button" data-action="calendar-day" data-date="'+calendarDay+'" data-kind="approached" class="'+(calendarCategory==='approached'?'active':'')+'">Abordadas · '+Number(selected?.approachedCount||0)+'</button><button type="button" data-action="calendar-day" data-date="'+calendarDay+'" data-kind="closed" class="'+(calendarCategory==='closed'?'active':'')+'">Fechadas · '+Number(selected?.closedCount||0)+'</button></div></div>'+(items.length?'<div class="calendar-company-list">'+items.map(x=>'<div><span class="calendar-company-avatar">'+esc((x.business||'E')[0])+'</span><span><strong>'+esc(x.business)+'</strong><small>'+esc(x.city||'Sem cidade informada')+(x.confirmedTime===false?' · data estimada':'')+'</small></span><span class="tag '+(calendarCategory==='closed'?'green':'')+'">'+typeLabel.slice(0,-1)+'</span></div>').join('')+'</div>':'<div class="empty"><p>Nenhuma empresa registrada nesta categoria e data.</p></div>')+'</section>':'')+
  '</div>';
@@ -665,7 +666,26 @@ document.addEventListener("click",async ev=>{
    finally{handoffPending=false;render();}
    return;
   }
-  if(action==='francisca-toggle'){franciscaOpen=!franciscaOpen;renderFrancisca();return;}
+  if(action==='switch-workspace'){
+    const mode=platformContext.role==='master'?'production':'master';
+    const response=await post('/api/platform/workspace',{mode});
+    location.assign('/'+response.next);return;
+   }
+   if(action==='scope-toggle-niche'||action==='scope-toggle-city'){
+    scopeNicheInput=q('#scope-niche')?.value||scopeNicheInput;
+    scopeCityInput=q('#scope-city')?.value||scopeCityInput;
+    const nicheSelected=scopeMode.startsWith('niche');
+    const citySelected=scopeMode.endsWith('-city');
+    const nextNiche=action==='scope-toggle-niche'?!nicheSelected:nicheSelected;
+    const nextCity=action==='scope-toggle-city'?!citySelected:citySelected;
+    scopeMode=nextNiche?(nextCity?'niche-city':'niche-all'):(nextCity?'all-city':'all');
+    render();return;
+   }
+   if(action==='francisca-toggle'){
+    franciscaOpen=!franciscaOpen;
+    if(notice.includes('Abra o espaço de um cliente para conversar com a Francisca'))n('');
+    renderFrancisca();return;
+   }
   if(action==='francisca-close'){franciscaOpen=false;stopFranciscaSound();renderFrancisca();return;}
   if(action==='francisca-sound'){franciscaVoiceOn=!franciscaVoiceOn;if(!franciscaVoiceOn)stopFranciscaSound();renderFrancisca();return;}
   if(action==='francisca-record-toggle'){await toggleFranciscaRecording();return;}
@@ -757,9 +777,15 @@ document.addEventListener("submit",async ev=>{
   await franciscaReply(text);return;
  }
  if(ev.target.id==='scope-form'){
-  const payload=Object.fromEntries(new FormData(ev.target));
-  try{scopeInfo=await post('/api/prospecting/preferences',payload);scopeMode=scopeInfo.selection?.mode||'all';n('Pesquisa automática configurada. O sistema respeitará as cotas e os contatos autorizados.');render();}
-  catch(e){n(e.message);}
+  scopeNicheInput=q('#scope-niche')?.value.trim()||'';
+  scopeCityInput=q('#scope-city')?.value.trim()||'';
+  const payload={mode:scopeMode,niche:scopeNicheInput,city:scopeCityInput,enabled:'on'};
+  try{
+   scopeInfo=await post('/api/prospecting/preferences',payload);
+   scopeMode=scopeInfo.selection?.mode||'all';
+   n('Preferência salva. A pesquisa automática seguirá esse foco a partir das 5h.');
+   render();
+  }catch(e){n(e.message);}
   return;
  }
  if(ev.target.id==="search-form"){
@@ -807,7 +833,7 @@ document.addEventListener("change",async e=>{
  if(e.target.name==="training-mode"){trainingMode=e.target.value;trainingAllConfirmed=false;render();return;}
  if(e.target.id==='training-all-confirm'){trainingAllConfirmed=e.target.checked;return;}
  if(e.target.id==='client-status-filter'){clientStatusFilter=e.target.value;render();return;}
- if(e.target.id==='scope-mode'){scopeMode=e.target.value;render();return;}
+
  const t=e.target;
  if(t.id==='approach-offer'){offerType=t.value;return;}
  if(t.dataset?.selectLead){
@@ -830,6 +856,9 @@ document.addEventListener("change",async e=>{
  }
 });
 document.addEventListener("input",e=>{
+ if(e.target.id==='scope-niche'){scopeNicheInput=e.target.value;return;}
+ if(e.target.id==='scope-city'){scopeCityInput=e.target.value;return;}
+
  if(e.target.id==='training-input'){trainingRecordedText=e.target.value;return;}
  if(e.target.id==='client-search'){
   clientSearch=e.target.value;const cursor=e.target.selectionStart;render();

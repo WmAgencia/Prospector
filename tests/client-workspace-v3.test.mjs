@@ -19,6 +19,9 @@ test('search scope is constrained to real supported industries and cities',()=>{
  assert.equal(db.getSetting('cities'),'Sorocaba');
  assert.equal(db.getSetting('segments'),'oficina');
  assert.throws(()=>preference.saveScope({mode:'niche-city',niche:'oficina',city:'Cidade imaginária'}),/cidade disponível/);
+ const withState=preference.saveScope({mode:'niche-city',niche:'oficina',city:'Sorocaba / SP'});
+ assert.equal(withState.selection.city,'Sorocaba');
+ assert.throws(()=>preference.saveScope({mode:'all-city',city:'Sorocaba / RJ'}),/cidade disponível/);
  const all=preference.saveScope({mode:'all'});
  assert.equal(all.selection.citiesCovered,preference.scopeOptions().cities.length);
  assert.equal(all.selection.nichesCovered,preference.scopeOptions().segments.length);

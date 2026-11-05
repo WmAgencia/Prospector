@@ -91,9 +91,11 @@ test('Prospecting shows configured automatic scope and a month of real calendar 
  vm.runInContext("scopeInfo={selection:{mode:'all',enabled:false},options:{cities:['Sorocaba'],segments:[{id:'oficina',label:'Oficinas'}],coverage:'Cobertura limitada'}};prospectCalendar={days:[{date:'2026-11-05',approachedCount:2,closedCount:1,conversionRate:50,approached:[{business:'Oficina A',city:'Sorocaba'}],closed:[{business:'Oficina B',city:'Sorocaba'}]}],totals:{approached:2,closed:1}};calendarMonth='2026-11';render();",h.context);
  assert.match(h.viewEl.innerHTML,/scope-form/);
  assert.match(h.viewEl.innerHTML,/calendar-days-grid/);
- assert.match(h.viewEl.innerHTML,/Ativar descoberta automática/);
- assert.match(h.viewEl.innerHTML,/Abordadas/);
- assert.match(h.viewEl.innerHTML,/Fechadas/);
+ assert.match(h.viewEl.innerHTML,/scope-toggle-niche/);
+ assert.match(h.viewEl.innerHTML,/scope-toggle-city/);
+ assert.match(h.viewEl.innerHTML,/Brasil inteiro/);
+ assert.match(h.viewEl.innerHTML,/data-kind="approached"/);
+ assert.match(h.viewEl.innerHTML,/data-kind="closed"/);
  assert.doesNotMatch(h.viewEl.innerHTML,/Empresas não abordadas|Pesquisar empresas/);
  assert.ok(!h.fetches.some(x=>x.method==='POST'),'opening the page must not trigger searches or WhatsApp sends');
 });

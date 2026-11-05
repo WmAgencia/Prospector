@@ -463,7 +463,7 @@ async function handler(req,res){
   }
   if(!protectedAccess(req,res,url.pathname))return;
   const pathname=decodeURIComponent(url.pathname);
-  if(await handleFranciscaPanel(req,res,url,{json,respond}))return;
+  if(await handleFranciscaPanel(req,res,url,{json,respond},{masterAuthorized:authorized(req)||isPrimaryClient(req)}))return;
   if(await handleTraining(req,res,url,{json,respond}))return;
   if(pathname==='/api/events'){
    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});

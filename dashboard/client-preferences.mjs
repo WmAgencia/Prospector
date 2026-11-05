@@ -3,12 +3,18 @@ import {LOCATIONS,SEGMENTS,resolveLocation,resolveSegment} from './osm-discovery
 
 const allCities=[...new Set(Object.values(LOCATIONS).map(x=>x.label))];
 const allSegments=Object.keys(SEGMENTS);
+const selectedCity=input=>{
+ const text=String(input||'').trim();
+ const match=text.match(/^(.+?)\s*(?:\/|,|\s-\s)\s*([a-zA-Z]{2})$/);
+ if(match&&match[2].toUpperCase()!=='SP')return null;
+ return resolveLocation(match?match[1].trim():text);
+};
 export const scopeOptions=()=>({cities:allCities,segments:allSegments.map(id=>({id,label:SEGMENTS[id].label})),coverage:'Apenas os nichos e cidades suportados pela fonte OSM configurada. Nenhuma busca garante cobertura nacional.'});
 export function currentScope(){return {...getSetting('prospecting_scope_preference',{mode:'all',niche:'',city:'',updatedAt:null}),enabled:getSetting('discovery_auto_enabled',false)===true};}
 export function saveScope(input={}){
  const mode=String(input.mode||'');
  if(!['all','niche-all','niche-city','all-city'].includes(mode))throw Error('Escolha a abrangência da pesquisa');
- const city=mode.endsWith('-city')?resolveLocation(input.city):null;
+ const city=mode.endsWith('-city')?selectedCity(input.city):null;
  const niche=mode.startsWith('niche-')?resolveSegment(input.niche):null;
  if(mode.endsWith('-city')&&!city)throw Error('Selecione uma cidade disponível na lista');
  if(mode.startsWith('niche-')&&!niche)throw Error('Selecione um nicho disponível na lista');
