@@ -134,3 +134,22 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media(prefers-reduced-motion:reduce){
  .primary:hover,.button-dark:hover,.credit-packet:hover{transform:none!important;transition:none!important}
 }
+
+/* Final contrast and legacy-theme collision fixes. */
+.credit-balance,.credit-balance>span,.credit-balance p{color:#41315d!important}
+.credit-balance>strong{color:#6031ed!important}
+.credit-balance .secondary{background:#fff!important;color:#6336e6!important;border:1px solid #d9c9ff!important}
+.pipeline-graphic{border-color:#e8e0f8!important;background:linear-gradient(145deg,#fff,#fbf9ff)!important;box-shadow:0 8px 28px #5834c411}
+.pipeline-graphic h3{color:#2c1c55!important}
+.pipeline-bars>div{color:#665a81!important}
+.pipeline-bars strong{color:#6038d9!important}
+.pipeline-track{background:#eee6fc!important}
+.pipeline-track i{background:linear-gradient(90deg,#8f66ff,#6235fa)!important}
+.pipeline-bars>div:nth-child(2) i{background:linear-gradient(90deg,#7d87ff,#5134e5)!important}
+.result-table th{color:#584577!important;background:#f3eeff!important}
+.result-table td{color:#3f3157!important;border-color:#ede7fa!important}
+.result-table tbody tr:hover,.selected-row{background:#f5f1ff!important}
+.kanban-column-head strong{color:#392b63!important}
+.kanban-column-head>span{background:#e2d5ff!important;color:#5d30de!important}
+.wa-alert-copy strong{color:#6e4a12!important}.wa-alert-copy span{color:#84652f!important}
+.chat-handoff:focus-visible,.prospector-dialog button:focus-visible{outline-color:#8f65ff!important}
