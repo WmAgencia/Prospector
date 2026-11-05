@@ -31,7 +31,7 @@ let prospectPrefs={mode:'all',niche:'',city:'',options:{cities:[],segments:[]}};
 let calendarMonth=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).slice(0,7);
 let calendarData=null,calendarDetail=null,calendarBusy=false;
 let waQrOpen=false,waQrConnectedAt=0;
-let trainingStep=1,trainingRecording=false,dictation=null,franciscaOpen=false;
+let trainingStep=1,trainingReconfiguring=false,trainingRecording=false,dictation=null,franciscaOpen=false;
 let waAccounts=[],connectionSession='';
 const waSessionQuery=()=>connectionSession?'?sessionId='+encodeURIComponent(connectionSession):'';
 let waRefreshing=null,qrOpening=false;
@@ -130,7 +130,7 @@ function trainingReviewPanel(t){
 }
 function trainingView(){
  const t=trainingState||{},profile=t.profile,draft=t.draft,running=t.runs?.find(x=>x.status==='RUNNING');
- if(profile){
+ if(profile&&!trainingReconfiguring){
   return '<div class="workspace-head"><div><span class="kicker">INTELIGÊNCIA DO SEU NEGÓCIO</span><h2>Contexto configurado.</h2><p>A Francisca conhece as orientações que você aprovou. Ensine novas informações a qualquer momento.</p></div><span class="tag green">Perfil ativo</span></div><div class="training-configured-grid">'+trainingManualPanel(t)+trainingReviewPanel(t)+'</div><div class="training-more"><button type="button" class="secondary" data-action="training-reconfigure">Refazer configuração por etapas</button><button type="button" class="secondary" data-action="training-chats">Carregar novas conversas</button></div>';
  }
  const stages=['Sua empresa','Ensine conversando','Análise de conversas','Aprovar perfil'];
@@ -151,6 +151,33 @@ function trainingView(){
   current='<div class="training-wizard-content">'+trainingReviewPanel(t)+'</div><div class="training-wizard-navigation"><button class="secondary" data-action="training-prev">Voltar</button>'+(draft?'':'<button class="primary" data-action="training-next">Continuar treinamento</button>')+'</div>';
  }
  return '<div class="workspace-head"><div><span class="kicker">CONFIGURAÇÃO GUIADA</span><h2>Treine a IA em quatro etapas.</h2><p>Explique seu negócio, ensine com suas palavras e aprove o contexto que será usado nas conversas.</p></div><span class="tag">Etapa '+trainingStep+' de 4</span></div>'+progress+current;
+}
+function startTrainingDictation(){
+ const Engine=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(trainingRecording){dictation?.stop();return;}
+ const input=q('#training-input');
+ if(!Engine){n('Este navegador não oferece ditado por voz. Use o campo de texto ou atualize seu navegador.');return;}
+ if(!input){n('Abra a etapa de conversa para ditar.');return;}
+ const recognition=new Engine();
+ recognition.lang='pt-BR';recognition.interimResults=false;recognition.continuous=true;
+ dictation=recognition;trainingRecording=true;
+ const button=q('[data-action="training-dictate"]');
+ if(button){button.textContent='Parar microfone';button.setAttribute('aria-label','Parar ditado');}
+ recognition.onresult=event=>{
+  const parts=[];
+  for(let i=event.resultIndex;i<event.results.length;i++)if(event.results[i].isFinal)parts.push(event.results[i][0].transcript.trim());
+  if(parts.length){input.value=(input.value.trim()+' '+parts.join(' ')).trim();input.focus();}
+ };
+ recognition.onerror=event=>{
+  if(event.error!=='no-speech'&&event.error!=='aborted')n('Não foi possível reconhecer a voz: '+event.error);
+ };
+ recognition.onend=()=>{
+  trainingRecording=false;dictation=null;
+  const mic=q('[data-action="training-dictate"]');
+  if(mic){mic.textContent='Falar naturalmente';mic.setAttribute('aria-label','Usar microfone para ditar orientação');}
+ };
+ try{recognition.start();n('Ditado iniciado. Fale naturalmente; revise o texto antes de enviar.');}
+ catch(e){trainingRecording=false;dictation=null;n('Não foi possível acessar o microfone: '+e.message);}
 }
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
 async function loadProspectExperience(){
@@ -237,13 +264,22 @@ async function platformAction(action,el){
   const answer=await confirmInApp({title:suspend?'Suspender acesso?':'Reativar acesso?',description:suspend?'O gestor '+(client?.name||'selecionado')+' deixará de acessar o painel e seu processo de atendimento será interrompido.':'O cliente voltará a acessar seu ambiente privado.',danger:suspend,confirmLabel:suspend?'Suspender conta':'Reativar conta'});
   if(!answer)return true;await post('/api/platform/clients/'+el.dataset.client+'/status',{status:el.dataset.status});await loadClients();n('Acesso atualizado.');return true;
  }
- if(action==='training-chats'){const r=await api('/api/training/chats');trainingChats=r.items||[];render();if(r.failures?.length)n('Não foi possível ler '+r.failures.length+' canal(is). Os demais estão disponíveis.');return true;}
+ if(action==='training-reconfigure'){trainingReconfiguring=true;trainingStep=1;render();return true;}
+ if(action==='training-next'){trainingStep=trainingStep===4?2:Math.min(4,trainingStep+1);render();return true;}
+ if(action==='training-prev'){trainingStep=Math.max(1,trainingStep-1);render();return true;}
+ if(action==='training-dictate'){startTrainingDictation();return true;}
+ if(action==='training-chats'){
+  if(trainingState?.profile){trainingReconfiguring=true;trainingStep=3;}
+  const r=await api('/api/training/chats');trainingChats=r.items||[];render();
+  if(r.failures?.length)n('Não foi possível ler '+r.failures.length+' canal(is). Os demais estão disponíveis.');
+  return true;
+ }
  if(action==='training-edit-profile'){trainingState=await post('/api/training/edit',{});render();return true;}
  if(action==='training-analyze'){
   if(trainingBusy)return true;
   if(trainingMode==='all'&&!trainingAllConfirmed){n('Confirme que o histórico usado é comercial e autorizado antes de analisar tudo.');return true;}
   trainingBusy=true;render();
-  try{await post('/api/training/analyze',{mode:trainingMode,keys:[...trainingSelection],confirmedAll:trainingMode==='all'&&trainingAllConfirmed});await loadTraining();n('Análise iniciada. O relatório aparecerá para revisão.');}finally{trainingBusy=false;render();}return true;
+  try{await post('/api/training/analyze',{mode:trainingMode,keys:[...trainingSelection],confirmedAll:trainingMode==='all'&&trainingAllConfirmed});trainingStep=4;await loadTraining();n('Análise iniciada. O relatório aparecerá para revisão.');}finally{trainingBusy=false;render();}return true;
  }
  return false;
 }
@@ -274,7 +310,7 @@ async function platformSubmit(ev){
  const button=ev.target.querySelector('button');if(button)button.disabled=true;
  try{
   if(id==='client-create'){const r=await post('/api/platform/clients',input);clientAccess=location.origin+r.accessPath;await loadClients();n('Cliente criado. Copie o link privado para compartilhar.');}
-  else{trainingState=await post('/api/training/'+({ 'training-business':'business','training-chat':'chat','training-approve':'approve'})[id],input);n(id==='training-approve'?'Perfil aprovado e ativo.':'Informações de treinamento salvas.');}
+  else{trainingState=await post('/api/training/'+({ 'training-business':'business','training-chat':'chat','training-approve':'approve'})[id],input);if(id==='training-business')trainingStep=2;if(id==='training-approve'){trainingStep=4;trainingReconfiguring=false;}n(id==='training-approve'?'Perfil aprovado e ativo.':'Informações de treinamento salvas.');}
  }catch(e){n(e.message);}finally{trainingBusy=false;busy=false;render();}return true;
 }
 function pipelineGraphic(k){
