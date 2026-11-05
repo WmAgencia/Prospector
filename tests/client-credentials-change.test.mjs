@@ -12,7 +12,7 @@ test('changing email/password requires current password and revokes other login 
   const oldToken=store.get(existing.id).token_hash;
   assert.throws(()=>store.changeCredentials(existing.id,{currentPassword:'errada',newEmail:'nova@example.test'}),/Senha atual incorreta/);
   assert.equal(store.get(existing.id).token_hash,oldToken);
-  assert.throws(()=>store.changeCredentials(existing.id,{currentPassword:'senhaOriginal123',newPassword:'curta'}),/10 a 128/);
+  assert.throws(()=>store.changeCredentials(existing.id,{currentPassword:'senhaOriginal123',newPassword:'curta'}),/entre 10 e 128/);
   const changed=store.changeCredentials(existing.id,{currentPassword:'senhaOriginal123',newEmail:'nova@example.test',newPassword:'senhaNova123'});
   assert.equal(changed.email,'nova@example.test');
   assert.notEqual(changed.token_hash,oldToken);
