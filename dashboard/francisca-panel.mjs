@@ -4,6 +4,9 @@ import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {availableApproachCredits} from './tenant-credits.mjs';
 import {daySP} from './radar.mjs';
+import path from 'node:path';
+import {openPlatformStore} from './platform-store.mjs';
+import {masterAnalytics} from './platform-analytics.mjs';
 import {monthlyProspectingCalendar} from './prospecting-calendar.mjs';
 import {interpretFranciscaAction,applyFranciscaAction,currentProspectingSchedule} from './francisca-panel-actions.mjs';
 
@@ -39,7 +42,21 @@ async function readAudio(req){
  const recognized=await transcribeAudio({buffer:Buffer.concat(parts),filename:'fala.'+ext});
  return cap(recognized.text,700);
 }
-export function franciscaPanelContext(){
+let masterStore=null;
+export function franciscaPanelContext({masterAuthorized=false}={}){
+ const owner=masterAuthorized&&!process.env.PROSPECTOR_TENANT_ID;
+ let master=null;
+ if(owner){
+  try{
+   masterStore||=openPlatformStore(path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform'));
+   const analytics=masterAnalytics(masterStore);
+   master={clientsActive:analytics.clients.active,clientsTotal:analytics.clients.total,
+    revenueTodayCents:analytics.revenue.todayCents,revenueMonthCents:analytics.revenue.monthCents,
+    verifiedPaymentsMonth:analytics.revenue.paymentsMonth,
+    availableCredits:analytics.credits.available,pendingRequests:analytics.credits.pendingRequests,
+    billingConfigured:analytics.billing.configured};
+  }catch(error){console.warn('[francisca master summary]',String(error.message).slice(0,80));}
+ }
  const business=getSetting('training_business',null);
  const profile=getSetting('training_active',null);
  const leads=one('SELECT COUNT(*) AS n FROM leads')?.n||0;
@@ -57,7 +74,7 @@ export function franciscaPanelContext(){
   leads,stages,chats,totalSent,approachedToday,closedToday,day,
   monthlyApproaches:Number(calendar.totals?.approached||0),
   scheduledProspecting:currentProspectingSchedule(),
-  latestCompanies:last};
+  latestCompanies:last,master};
 }
 export async function handleFranciscaPanel(req,res,url,{json,respond},{masterAuthorized=false}={}){
  const route=url.pathname;
@@ -87,7 +104,20 @@ export async function handleFranciscaPanel(req,res,url,{json,respond},{masterAut
   const history=serverHistory.length?serverHistory:(Array.isArray(data?.history)?data.history:[]).slice(-10)
    .filter(x=>['user','assistant'].includes(x.role)&&typeof x.text==='string')
    .map(x=>({role:x.role,content:cap(x.text,400)}));
-  const details=franciscaPanelContext();
+  const details=franciscaPanelContext({masterAuthorized});
+  const question=transcript.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  if(details.master&&/quantos? clientes ativos|total de clientes ativos|clientes ativos temos/.test(question)){
+   const answer='No painel Master temos '+details.master.clientsActive+' clientes ativos, de '+details.master.clientsTotal+' contas cadastradas.';
+   noteConversation(key,history,transcript,answer);
+   respond(res,200,{transcript,answer,voiceAvailable:true,readOnly:true,tenantScoped:true});return true;
+  }
+  if(details.master&&/(faturamento|recebemos|receita)/.test(question)&&/(hoje|mes|mensal)/.test(question)){
+   const cents=/hoje/.test(question)?details.master.revenueTodayCents:details.master.revenueMonthCents;
+   const period=/hoje/.test(question)?'hoje':'neste mês';
+   const answer='O total de recebimentos verificados '+period+' é R$ '+(cents/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'. Pedidos não pagos não entram no faturamento.';
+   noteConversation(key,history,transcript,answer);
+   respond(res,200,{transcript,answer,voiceAvailable:true,readOnly:true,tenantScoped:true});return true;
+  }
   const prepared=interpretFranciscaAction(transcript);
   if(prepared){
    // Only deterministic, allowlisted actions touching the authenticated tenant.
