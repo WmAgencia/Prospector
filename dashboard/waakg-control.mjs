@@ -3,6 +3,7 @@
 import {getSetting,setSetting} from "./db.mjs";
 import {randomUUID} from 'node:crypto';
 import {managedSessions,isManagedSession,registerSession,nextConnectedSession,rotationCursor} from './waakg-session-registry.mjs';
+import {sessionOutreachBudget,sessionCanApproach} from './session-outreach-budget.mjs';
 const base="https://wa-akg-production-f9f0.up.railway.app";
 const sessionKey="waakg_primary_session_id";
 let cachedKey="",pendingKey=null;
@@ -168,7 +169,7 @@ export async function waIdentityStatus(){
 export async function waSessionList(){
  const listed=await waRequest('/api/sessions');
  const arr=Array.isArray(listed.data)?listed.data:[];
- const items=await Promise.all(managedSessions().map(async row=>({...row,...await waControlStatus(row.session_id,arr)})));
+ const items=await Promise.all(managedSessions().map(async row=>({...row,...await waControlStatus(row.session_id,arr),outreach:sessionOutreachBudget(row.session_id)})));
  return {items,connected:items.some(x=>x.connected),rotation:'round_robin',globalCadence:true};
 }
 export async function waCreateSession(label){
@@ -180,13 +181,13 @@ export async function waCreateSession(label){
  registerSession(sessionId,name);
  return {sessionId,label:name,...await waConnect(sessionId)};
 }
-export async function selectApproachSender(){
+export async function selectApproachSender({at=Date.now()}={}){
  const pool=await waSessionList(),cursor=rotationCursor();
- const sessionId=nextConnectedSession(managedSessions().map(x=>x.session_id),pool.items.filter(x=>x.connected).map(x=>x.session_id),cursor);
- return {connected:!!sessionId,sessionId,cursor};
+ const sessionId=nextConnectedSession(managedSessions().map(x=>x.session_id),pool.items.filter(x=>x.connected&&sessionCanApproach(x.session_id,at)).map(x=>x.session_id),cursor);
+ return {connected:!!sessionId,sessionId,cursor,reason:!sessionId&&pool.items.some(x=>x.connected)?'COOLDOWN':'OFFLINE'};
 }
 export async function waOperationalStatus(){
- if(managedSessions().length<=1)return waControlStatus();
+ if(managedSessions().length<=1){const status=await waControlStatus();return {...status,approachReady:status.connected&&sessionCanApproach(status.sessionId)};}
  const pool=await waSessionList();
- return {ok:pool.items.some(x=>x.ok),connected:pool.connected,status:pool.connected?'CONNECTED':'DISCONNECTED',totalSessions:pool.items.length,sessionId:selectedWaSession()};
+ return {ok:pool.items.some(x=>x.ok),connected:pool.connected,approachReady:pool.items.some(x=>x.connected&&!x.outreach.cooling),status:pool.connected?'CONNECTED':'DISCONNECTED',totalSessions:pool.items.length,sessionId:selectedWaSession()};
 }

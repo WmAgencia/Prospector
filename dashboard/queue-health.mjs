@@ -7,7 +7,7 @@ import {insideApproachWindow} from './outreach-window.mjs';
 import {coldFirstApproachEnabled,autonomousReadyCount,approachQueueStatus} from './prospecting-queue.mjs';
 
 export const INITIAL_PENDING_MAX_AGE_MINUTES=8;
-export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={}){
+export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,senderReady=true}={}){
  const b=initialBudget(at),hour=hourSP(at);
  const selected=String(getSetting('autonomous_campaign_id','')||'');
  const campaign=selected?one('SELECT id,name,enabled FROM workflows WHERE id=?',selected):null;
@@ -50,6 +50,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={
  let reason='READY';
  if(getSetting('paused',true))reason='PAUSED';
  else if(waStatus!=='CONNECTED')reason='WHATSAPP_OFFLINE';
+ else if(!senderReady)reason='SESSION_COOLDOWN';
  else if(autonomous){
   if(!insideApproachWindow(at))reason='OUTSIDE_WINDOW';
   else if(invitationQueue.ready===0)reason=invitationQueue.awaitingConsent>0?'AWAITING_CONSENT':'NO_ELIGIBLE_LEADS';

@@ -11,6 +11,7 @@ import {insideApproachWindow} from './outreach-window.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
 import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
 import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
+import {sessionCanApproach,recordApproachConfirmation} from './session-outreach-budget.mjs';
 
 export const APPROACH_INTERVAL_MS=90_000;
 // Railway production always requires documented permission; tests may opt in explicitly.
@@ -218,8 +219,9 @@ export async function tickApproachQueue(deps={}){
    return {status:'SKIPPED'};
   }
   const rotating=!deps.getWaStatus&&!deps.getSession;
-  const wa=rotating?await selectApproachSender():await getWaStatus(),session=rotating?wa.sessionId:(getSession()||wa.sessionId);
-  if(!wa.connected||!session)return {status:'OFFLINE'};
+  const wa=rotating?await selectApproachSender({at:time}):await getWaStatus(),session=rotating?wa.sessionId:(getSession()||wa.sessionId);
+  if(!wa.connected||!session)return {status:wa.reason||'OFFLINE'};
+  if(!sessionCanApproach(session,time))return {status:'COOLDOWN'};
   // Transaction reserves the global clock *before* invoking the provider.
   // Timestamp can only move forward. The interval is enforced after restarts.
   const reserved=tx(()=>{
@@ -231,6 +233,7 @@ export async function tickApproachQueue(deps={}){
    if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return false;
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
    if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS'))return false;
+   if(!sessionCanApproach(session,nowMs))return false;
    if(rotating&&rotationCursor()!==wa.cursor)return false;
    // Reserve both the attempt and its next random interval atomically. Polling,
    // failures and process restarts never reroll or shorten the chosen wait.
@@ -248,6 +251,7 @@ export async function tickApproachQueue(deps={}){
   try{
    const result=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/send',{method:'POST',data:{message:{text:message}}});
    if(result.status!==true)throw Error('Gateway não confirmou entrega');
+   recordApproachConfirmation(session,next.id,currentTime());
    run("UPDATE prospecting_batch_items SET status='SENT',error=NULL WHERE id=?",next.id);
    run("UPDATE initial_contacts SET status='SENT' WHERE job_id=?",next.id);
    const lead=one('SELECT * FROM leads WHERE id=?',next.lead_id);
