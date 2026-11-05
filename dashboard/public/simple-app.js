@@ -666,7 +666,26 @@ document.addEventListener("click",async ev=>{
    finally{handoffPending=false;render();}
    return;
   }
-  if(action==='francisca-toggle'){franciscaOpen=!franciscaOpen;renderFrancisca();return;}
+  if(action==='switch-workspace'){
+    const mode=platformContext.role==='master'?'production':'master';
+    const response=await post('/api/platform/workspace',{mode});
+    location.assign('/'+response.next);return;
+   }
+   if(action==='scope-toggle-niche'||action==='scope-toggle-city'){
+    scopeNicheInput=q('#scope-niche')?.value||scopeNicheInput;
+    scopeCityInput=q('#scope-city')?.value||scopeCityInput;
+    const nicheSelected=scopeMode.startsWith('niche');
+    const citySelected=scopeMode.endsWith('-city');
+    const nextNiche=action==='scope-toggle-niche'?!nicheSelected:nicheSelected;
+    const nextCity=action==='scope-toggle-city'?!citySelected:citySelected;
+    scopeMode=nextNiche?(nextCity?'niche-city':'niche-all'):(nextCity?'all-city':'all');
+    render();return;
+   }
+   if(action==='francisca-toggle'){
+    franciscaOpen=!franciscaOpen;
+    if(notice.includes('Abra o espaço de um cliente para conversar com a Francisca'))n('');
+    renderFrancisca();return;
+   }
   if(action==='francisca-close'){franciscaOpen=false;stopFranciscaSound();renderFrancisca();return;}
   if(action==='francisca-sound'){franciscaVoiceOn=!franciscaVoiceOn;if(!franciscaVoiceOn)stopFranciscaSound();renderFrancisca();return;}
   if(action==='francisca-record-toggle'){await toggleFranciscaRecording();return;}
@@ -758,9 +777,15 @@ document.addEventListener("submit",async ev=>{
   await franciscaReply(text);return;
  }
  if(ev.target.id==='scope-form'){
-  const payload=Object.fromEntries(new FormData(ev.target));
-  try{scopeInfo=await post('/api/prospecting/preferences',payload);scopeMode=scopeInfo.selection?.mode||'all';n('Pesquisa automática configurada. O sistema respeitará as cotas e os contatos autorizados.');render();}
-  catch(e){n(e.message);}
+  scopeNicheInput=q('#scope-niche')?.value.trim()||'';
+  scopeCityInput=q('#scope-city')?.value.trim()||'';
+  const payload={mode:scopeMode,niche:scopeNicheInput,city:scopeCityInput,enabled:'on'};
+  try{
+   scopeInfo=await post('/api/prospecting/preferences',payload);
+   scopeMode=scopeInfo.selection?.mode||'all';
+   n('Preferência salva. A pesquisa automática seguirá esse foco a partir das 5h.');
+   render();
+  }catch(e){n(e.message);}
   return;
  }
  if(ev.target.id==="search-form"){
@@ -808,7 +833,7 @@ document.addEventListener("change",async e=>{
  if(e.target.name==="training-mode"){trainingMode=e.target.value;trainingAllConfirmed=false;render();return;}
  if(e.target.id==='training-all-confirm'){trainingAllConfirmed=e.target.checked;return;}
  if(e.target.id==='client-status-filter'){clientStatusFilter=e.target.value;render();return;}
- if(e.target.id==='scope-mode'){scopeMode=e.target.value;render();return;}
+
  const t=e.target;
  if(t.id==='approach-offer'){offerType=t.value;return;}
  if(t.dataset?.selectLead){
@@ -831,6 +856,9 @@ document.addEventListener("change",async e=>{
  }
 });
 document.addEventListener("input",e=>{
+ if(e.target.id==='scope-niche'){scopeNicheInput=e.target.value;return;}
+ if(e.target.id==='scope-city'){scopeCityInput=e.target.value;return;}
+
  if(e.target.id==='training-input'){trainingRecordedText=e.target.value;return;}
  if(e.target.id==='client-search'){
   clientSearch=e.target.value;const cursor=e.target.selectionStart;render();
