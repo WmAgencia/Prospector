@@ -120,4 +120,20 @@ test('paced replies wait before transport and cancel on new inbound, opt-out or 
  }finally{process.env.PROSPECTOR_REPLY_PACING_ENABLED='false';}
 });
 
+test('native typing is scoped to the originating customer and stopped on send or cancellation',async()=>{
+ process.env.PROSPECTOR_REPLY_PACING_ENABLED='true';
+ try{
+  for(const [i,cancel] of [false,true].entries()){
+   const msg=input({number:'1598777130'+i,body:'Como funciona o serviço?'}),events=[];
+   const before=sends.length;
+   const result=await agent.handleSalesTurn(msg.providerId,{...fake,qualify:async()=>({confirmed:false}),replyNow:()=>0,replyPause:async()=>{},preparingMs:4000,
+    presence:async(path,options)=>{assert.ok(path.includes(encodeURIComponent(msg.jid)));events.push(options.data.presence);if(cancel&&options.data.presence==='composing')db.run('UPDATE threads SET manual_takeover=1 WHERE lead_id=?',msg.lead.id);return {status:true};},
+    send:async(...args)=>{events.push('SEND');return fake.send(...args);}});
+   assert.equal(result.state,cancel?'HANDOFF':'SENT');
+   assert.deepEqual(events,cancel?['composing','paused']:['composing','SEND','paused']);
+   assert.equal(sends.length-before,cancel?0:1);
+  }
+ }finally{process.env.PROSPECTOR_REPLY_PACING_ENABLED='false';}
+});
+
 test.after(()=>{db.db.close();fs.rmSync(dir,{recursive:true,force:true});});

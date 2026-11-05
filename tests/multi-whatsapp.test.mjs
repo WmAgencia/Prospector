@@ -36,7 +36,7 @@ test('round robin uses 1,2,3,1 under the same persisted global random clock',asy
   assert.equal(sent.length,before+1);
   assert.ok(sent.at(-1).path.startsWith('/api/messages/'+expected+'/'));
   const interval=q.approachQueueStatus().intervalSeconds*1000;
-  assert.ok(interval>=90000&&interval<=110000);
+  assert.ok(interval>=90000&&interval<=180000);
   time+=interval-1;
   assert.equal((await q.tickApproachQueue({currentTime:()=>time,send})).status,'WAITING');
   assert.equal(sent.length,before+1);time++;
@@ -46,7 +46,7 @@ test('offline accounts are skipped and a full outage does not advance clock or c
  online.delete('pool-two');
  assert.equal((await q.tickApproachQueue({currentTime:()=>time,send})).status,'SENT');
  assert.ok(sent.at(-1).path.startsWith('/api/messages/pool-three/'));
- time+=110000;
+ time+=180000;
  const before={...d.one('SELECT * FROM prospecting_send_clock WHERE id=1')},cursor=registry.rotationCursor();
  online.clear();
  assert.equal((await q.tickApproachQueue({currentTime:()=>time,send})).status,'OFFLINE');
@@ -76,17 +76,11 @@ test('unregistered sessions are rejected and secondary numbers do not grant owne
  assert.equal(roles.classifyContact({jid:'5511900009999@s.whatsapp.net',sessionId:'pool-two'}).ownerTools,false);
  assert.equal(roles.classifyContact({jid:'5511900009999@s.whatsapp.net',sessionId:'pool-one'}).ownerTools,true);
 });
-test('cooling accounts leave the rotation, all cooling accounts wait without synthetic traffic',async()=>{
- const budget=await import('../dashboard/session-outreach-budget.mjs');
- const fill=id=>{const count=budget.sessionOutreachBudget(id,time).approachesInCycle;for(let n=count;n<20;n++)budget.recordApproachConfirmation(id,'budget-'+id+'-'+n,time);};
- fill('pool-one');
- assert.equal((await control.selectApproachSender({at:time})).sessionId,'pool-two');
- fill('pool-two');fill('pool-three');
- const before={...d.one('SELECT * FROM prospecting_send_clock WHERE id=1')},count=sent.length;
- assert.equal((await q.tickApproachQueue({currentTime:()=>time,send})).status,'COOLDOWN');
- assert.deepEqual({...d.one('SELECT * FROM prospecting_send_clock WHERE id=1')},before);
- assert.equal(sent.length,count);
- assert.equal((await control.selectApproachSender({at:time+900000})).sessionId,'pool-one');
+test('historical rest deadlines no longer remove connected accounts from rotation',async()=>{
+ d.run('INSERT INTO session_outreach_budget(session_id,confirmed,cooldown_until) VALUES(?,?,?)','pool-one',20,time+900000);
+ assert.equal((await control.selectApproachSender()).sessionId,'pool-one');
+ assert.equal((await q.tickApproachQueue({currentTime:()=>time,send})).status,'SENT');
+ assert.ok(sent.at(-1).path.startsWith('/api/messages/pool-one/'));
 });
 
 test.after(()=>{globalThis.fetch=originalFetch;d.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

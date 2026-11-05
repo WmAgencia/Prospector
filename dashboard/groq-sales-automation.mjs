@@ -35,7 +35,7 @@ export function interestNotice(lead,evidence){
  for(const row of all("SELECT identity FROM lead_origins WHERE lead_id=? AND source='maps_extension'",lead.lead_id))if(/^https:\/\/(?:www\.google\.[a-z.]+\/maps\/|maps\.google\.[a-z.]+\/|maps\.app\.goo\.gl\/)/i.test(row.identity))links.push('Maps: '+row.identity);
  return ['⭐ Interesse real no Prospector','Empresa: '+business.business,'Contato: '+(business.name||'não informado'),'Telefone: '+business.phone,...links,'Assumir conversa: https://wa.me/'+business.phone,'Interesse: '+String(evidence||lead.body||'Intenção confirmada').slice(0,180),'Próximo passo: assumir atendimento e confirmar escopo.'].join('\n');
 }
-export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',approvedProspectFollowup:getSetting('sales_followup_enabled',true)===true,alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true,inboundAutomationVersion:INBOUND_AUTOMATION_VERSION,replyPacing:{enabled:replyPacingEnabled(),minSeconds:8,maxSeconds:35}};}
+export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',approvedProspectFollowup:getSetting('sales_followup_enabled',true)===true,alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true,inboundAutomationVersion:INBOUND_AUTOMATION_VERSION,replyPacing:{enabled:replyPacingEnabled(),minSeconds:8,maxSeconds:35,typing:{enabled:replyPacingEnabled(),minSeconds:3,maxSeconds:5,scope:'prepared_customer_text_replies'}}};}
 function approvedProspectFollowup(identity,jid){
  if(getSetting('sales_followup_enabled',true)!==true||identity.role!=='PROSPECT_APPROACHED')return false;
  const number=String(jid||'').split('@')[0];
@@ -194,8 +194,13 @@ export async function handleSalesTurn(providerId,deps={}){
     one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
  if(stale())return finish(stale());
+ let typingStarted=false;
+ const presence=deps.presence||waRequest;
+ const presencePath='/api/chat/'+encodeURIComponent(session)+'/'+encodeURIComponent(r.jid)+'/presence';
+ try{
  const current=await waitForReplyPacing({incoming:r.body,reply:replyText,startedAt:replyStartedAt,stillCurrent:()=>!stale()},
-  {wait:deps.replyPause,now:deps.replyNow,jitter:deps.replyJitter});
+  {wait:deps.replyPause,now:deps.replyNow,jitter:deps.replyJitter,preparingMs:deps.preparingMs,
+   onPreparing:routing.text?async()=>{typingStarted=true;try{await presence(presencePath,{method:'POST',data:{presence:'composing'}});}catch{audit('REPLY_PRESENCE_UNAVAILABLE',r.lead_id,{stage:'PREPARING'});}}:undefined});
  if(!current||stale())return finish(stale()||'SUPERSEDED');
  run("UPDATE groq_auto_events SET state='SENDING' WHERE provider_id=?",providerId);
  const accepted=[];
@@ -230,6 +235,9 @@ export async function handleSalesTurn(providerId,deps={}){
   audit('GROQ_REPLY_DELIVERY_UNCERTAIN',r.lead_id,{deliveryMode:routing.mode,
     partsAccepted:accepted,partsLedger:partsFor(providerId),result});
   return finish(result,'TRANSPORT_UNCERTAIN');
+ }
+ }finally{
+  if(typingStarted)try{await presence(presencePath,{method:'POST',data:{presence:'paused'}});}catch{}
  }
 }
 let workerBusy=false;

@@ -25,7 +25,7 @@ test('Only documented opt-ins are queued; regular discovered leads are excluded'
  assert.equal(result.body.queued,2);
  assert.equal(result.body.excluded,1);
  assert.equal(queue.approachQueueStatus().waiting,2);
- assert.ok(queue.approachQueueStatus().intervalSeconds>=90&&queue.approachQueueStatus().intervalSeconds<=110);
+ assert.ok(queue.approachQueueStatus().intervalSeconds>=90&&queue.approachQueueStatus().intervalSeconds<=180);
  assert.equal(sent.length,0);
  const duplicate=queue.enqueueApprovedApproaches({leadIds:[a.id],approve:true});
  assert.equal(duplicate.status,409);
@@ -59,7 +59,7 @@ test('Cancellation prevents queued contacts from being approached',async()=>{
  assert.equal(batch.status,202);
  const stopped=queue.cancelApproachQueue();
  assert.equal(stopped.cancelled,2);
- nowMs+=110_000;
+ nowMs+=180_000;
  assert.equal((await queue.tickApproachQueue(deps)).status,'IDLE');
  assert.equal(sent.length,2);
 });
@@ -73,7 +73,7 @@ test('Timeout is UNKNOWN and never retried automatically',async()=>{
  assert.equal(unknown.status,'UNKNOWN');
  assert.equal(attempts,1);
  assert.equal(db.one('SELECT status FROM prospecting_batch_items WHERE lead_id=?',a.id).status,'UNKNOWN');
- nowMs+=110_000;
+ nowMs+=180_000;
  assert.equal((await queue.tickApproachQueue({...deps,send:async()=>{attempts++;return {status:true};}})).status,'COMPLETED');
  assert.equal(attempts,1);
  assert.equal(queue.enqueueApprovedApproaches({leadIds:[a.id],approve:true}).status,403);

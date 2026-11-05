@@ -22,3 +22,15 @@ test('generation time counts, waits are cancellable and slow generation adds no 
   assert.equal(waited,750);
  }finally{if(previous===undefined)delete process.env.PROSPECTOR_REPLY_PACING_ENABLED;else process.env.PROSPECTOR_REPLY_PACING_ENABLED=previous;}
 });
+
+test('real reply preparation announces typing only in its final 3 to 5 seconds',async()=>{
+ const previous=process.env.PROSPECTOR_REPLY_PACING_ENABLED;process.env.PROSPECTOR_REPLY_PACING_ENABLED='true';
+ try{
+  let waited=0,shownAt=-1,events=0;
+  assert.equal(await waitForReplyPacing({incoming:'',reply:'',startedAt:0,stillCurrent:()=>true},{now:()=>0,jitter:0,preparingMs:4000,wait:async ms=>{waited+=ms;},onPreparing:async()=>{shownAt=waited;events++;}}),true);
+  assert.equal(waited,8000);assert.equal(shownAt,4000);assert.equal(events,1);
+  waited=0;shownAt=-1;
+  await waitForReplyPacing({incoming:'',reply:'',startedAt:0,stillCurrent:()=>true},{now:()=>40000,jitter:0,preparingMs:3000,wait:async ms=>{waited+=ms;},onPreparing:async()=>{shownAt=waited;}});
+  assert.equal(shownAt,0);assert.equal(waited,3000);
+ }finally{if(previous===undefined)delete process.env.PROSPECTOR_REPLY_PACING_ENABLED;else process.env.PROSPECTOR_REPLY_PACING_ENABLED=previous;}
+});
