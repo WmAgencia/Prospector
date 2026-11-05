@@ -230,6 +230,7 @@ async function speakFrancisca(text){
    Promise.resolve(audio.play()).catch(error=>{stopFranciscaSound();reject(error);});
   });
  }catch(error){
+  stopFranciscaSound();
   if(franciscaVoiceActive)franciscaInlineError('A resposta em texto está disponível, mas a voz falhou. '+String(error.message||'').slice(0,80));
  }
 }
