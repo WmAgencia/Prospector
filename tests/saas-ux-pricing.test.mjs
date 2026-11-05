@@ -16,7 +16,7 @@ test('landing shows all credit packages and explicitly says no automatic charge'
  assert.match(landing,/não realiza cobrança automática/);
 });
 test('workspace exposes billing, logout, consent and Master UX elements',()=>{
- for(const t of ['data-action="logout-client"','function masterCreditRequests','credit-request-approve','client-searchbar','client-status-filter','training-all-confirm','setup-progress','request-credit-package'])assert.ok(app.includes(t),t);
+ for(const t of ['data-action="logout-client"','function masterCreditRequests','credit-request-approve','master-directory-toolbar','client-status-filter','training-all-confirm','setup-progress','request-credit-package'])assert.ok(app.includes(t),t);
  assert.match(css,/prospector-dialog::backdrop/);
  assert.match(css,/credit-packages-grid/);
 });
