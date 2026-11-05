@@ -376,6 +376,9 @@ async function platformAction(action,el){
   const answer=await confirmInApp({title:'Liberar créditos reservados?',description:'Libere somente se você verificou manualmente que as abordagens reservadas NÃO foram aceitas pelo canal. Uma entrega incerta pode ter ocorrido.',danger:true,confirmLabel:'Confirmo que não houve entrega'});
   if(!answer)return true;await post('/api/platform/clients/'+el.dataset.client+'/release-reservations',{confirmedNotSent:true});await loadClients();n('Reservas liberadas após conferência.');return true;
  }
+ if(action==='master-client-create'){masterCreateOpen=true;clientAccess='';render();q('.master-client-modal input[name=name]')?.focus();return true;}
+ if(action==='master-client-close'){masterCreateOpen=false;render();return true;}
+ if(action==='refresh-master'){await Promise.all([loadClients(),loadMasterMetrics()]);n('Dados atualizados.');return true;}
  if(action==='refresh-clients'){await loadClients();return true;}
  if(action==='request-credit-package'){
   const pack=creditState?.packages?.find(p=>p.id===el.dataset.package);
@@ -449,7 +452,17 @@ async function platformSubmit(ev){
  const input=Object.fromEntries(new FormData(ev.target));trainingBusy=true;busy=id==='client-create';
  const button=ev.target.querySelector('button');if(button)button.disabled=true;
  try{
-  if(id==='client-create'){const r=await post('/api/platform/clients',input);clientAccess=location.origin+r.accessPath;await loadClients();n('Cliente criado. Copie o link privado para compartilhar.');}
+  if(id==='client-create'){
+   if(input.planId==='custom'){
+    input.customPriceCents=Math.round(Number(input.customPriceBRL)*100);
+    if(!Number.isSafeInteger(input.customPriceCents)||!Number.isSafeInteger(Number(input.customCredits))||Number(input.customCredits)<1)throw Error('Defina os créditos e o valor do plano personalizado.');
+   }
+   delete input.customPriceBRL;
+   const r=await post('/api/platform/clients',input);
+   clientAccess=location.origin+r.accessPath;
+   await Promise.all([loadClients(),loadMasterMetrics()]);
+   n('Cliente criado. Compartilhe o convite privado com o responsável.');
+  }
   else{trainingState=await post('/api/training/'+({ 'training-business':'business','training-chat':'chat','training-approve':'approve'})[id],input);if(id==='training-business')trainingStep=1;if(id==='training-chat')trainingRecordedText='';if(id==='training-approve'){trainingWizardReopen=false;trainingStep=0;}n(id==='training-approve'?'Perfil aprovado e ativo.':'Informações de treinamento salvas.');}
  }catch(e){n(e.message);}finally{trainingBusy=false;busy=false;render();}return true;
 }
@@ -945,6 +958,11 @@ document.addEventListener("change",async e=>{
  if(e.target.name==="training-mode"){trainingMode=e.target.value;trainingAllConfirmed=false;render();return;}
  if(e.target.id==='training-all-confirm'){trainingAllConfirmed=e.target.checked;return;}
  if(e.target.id==='client-status-filter'){clientStatusFilter=e.target.value;render();return;}
+ if(e.target.id==='master-plan-select'){
+  const fields=q('#master-custom-fields'),custom=e.target.value==='custom';
+  if(fields){fields.hidden=!custom;for(const input of fields.querySelectorAll('input'))input.required=custom;}
+  return;
+ }
 
  const t=e.target;
  if(t.id==='approach-offer'){offerType=t.value;return;}
