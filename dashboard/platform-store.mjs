@@ -40,7 +40,7 @@ export function openPlatformStore(root){
  const unlimited=r=>r&&(r.is_internal===1||r.plan_id==='unlimited');
  const publicClient=r=>r?{id:r.id,name:r.name,email:r.email,status:r.status,createdAt:r.created_at,unlimited:unlimited(r),internal:r.is_internal===1,
   planId:r.is_internal===1?'unlimited':r.plan_id||'credits',customCredits:r.custom_credits||null,customPriceCents:r.custom_price_cents||null,
-  phone:r.contact_phone||null,cpfMasked:r.cpf_last4?'***.***.***-'+r.cpf_last4:null,
+  phone:r.contact_phone||null,cpfMasked:r.cpf_last4?'***.***.*'+r.cpf_last4.slice(0,2)+'-'+r.cpf_last4.slice(2):null,
   balance:balance(r.id),reserved:unlimited(r)?0:pending(r.id),available:unlimited(r)?null:balance(r.id)-pending(r.id)}:null;
  const get=id=>db.prepare('SELECT * FROM clients WHERE id=?').get(id);
  function adjust(id,amount,reason,reference=crypto.randomUUID()){
@@ -63,7 +63,7 @@ export function openPlatformStore(root){
   },
   requestCredits(clientId,packageId,requestKey){
    const client=get(clientId),pack=getCreditPackage(packageId);
-   if(!client||client.status!=='active'||client.is_internal===1)throw Error('Conta indisponível para recarga');
+   if(!client||client.status!=='active'||unlimited(client))throw Error('Conta indisponível para recarga');
    if(!pack)throw Error('Pacote inválido');
    if(!/^[a-f0-9-]{36}$/i.test(String(requestKey||'')))throw Error('Identificador da solicitação inválido');
    db.exec('BEGIN IMMEDIATE');try{
