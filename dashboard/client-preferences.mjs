@@ -4,7 +4,7 @@ import {LOCATIONS,SEGMENTS,resolveLocation,resolveSegment} from './osm-discovery
 const allCities=[...new Set(Object.values(LOCATIONS).map(x=>x.label))];
 const allSegments=Object.keys(SEGMENTS);
 export const scopeOptions=()=>({cities:allCities,segments:allSegments.map(id=>({id,label:SEGMENTS[id].label})),coverage:'Apenas os nichos e cidades suportados pela fonte OSM configurada. Nenhuma busca garante cobertura nacional.'});
-export function currentScope(){return getSetting('prospecting_scope_preference',{mode:'all',niche:'',city:'',updatedAt:null});}
+export function currentScope(){return {...getSetting('prospecting_scope_preference',{mode:'all',niche:'',city:'',updatedAt:null}),enabled:getSetting('discovery_auto_enabled',false)===true};}
 export function saveScope(input={}){
  const mode=String(input.mode||'');
  if(!['all','niche-all','niche-city','all-city'].includes(mode))throw Error('Escolha a abrangência da pesquisa');
@@ -20,7 +20,9 @@ export function saveScope(input={}){
  setSetting('segments',selectedSegments.join(','));
  setSetting('cities',selectedCities.join(','));
  setSetting('discovery_brazil_wide',false);
- const selected={mode,niche:segmentKey,city:city?.label||'',updatedAt:now(),citiesCovered:selectedCities.length,nichesCovered:selectedSegments.length};
+ const enabled=input.enabled===true||input.enabled==='on';
+ setSetting('discovery_auto_enabled',enabled);
+ const selected={mode,niche:segmentKey,city:city?.label||'',enabled,updatedAt:now(),citiesCovered:selectedCities.length,nichesCovered:selectedSegments.length};
  setSetting('prospecting_scope_preference',selected);
  audit('PROSPECTING_SCOPE_CHANGED',null,{mode,niche:segmentKey||null,city:city?.label||null});
  return {selection:selected,options:scopeOptions()};
