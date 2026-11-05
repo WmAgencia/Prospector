@@ -174,6 +174,21 @@ export function openPlatformStore(root){
     }db.exec('COMMIT');
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
+  confirmVerifiedPayment({requestId,packageId,amountCents,sessionId,eventId}={}){
+   if(!/^[a-f\d-]{36}$/i.test(requestId||'')||!/^cs_live_[\w]+$/.test(sessionId||'')||!/^evt_[\w]+$/.test(eventId||''))throw Error('Identificadores de pagamento inválidos');
+   db.exec('BEGIN IMMEDIATE');
+   try{
+    const duplicate=db.prepare('SELECT * FROM verified_payments WHERE stripe_session_id=? OR request_id=? OR stripe_event_id=?').get(sessionId,requestId,eventId);
+    if(duplicate){db.exec('COMMIT');return {ok:true,duplicate:true,requestId};}
+    const item=selectRequest.get(requestId);
+    if(!item||item.status!=='PENDING'||item.package_id!==packageId||item.price_cents!==amountCents||!get(item.client_id))throw Error('Valor ou pedido não confere');
+    const at=new Date().toISOString();
+    db.prepare('INSERT INTO verified_payments VALUES(?,?,?,?,?,?,?)').run(sessionId,item.id,item.client_id,eventId,amountCents,item.credits,at);
+    db.prepare('INSERT OR IGNORE INTO credit_events VALUES(?,?,?,?,?,?)').run(crypto.randomUUID(),item.client_id,item.credits,'Créditos de pagamento Stripe confirmado','stripe-payment:'+item.id,at);
+    db.prepare("UPDATE credit_requests SET status='APPROVED',updated_at=? WHERE id=?").run(at,item.id);
+    db.exec('COMMIT');return {ok:true,duplicate:false,requestId:item.id};
+   }catch(e){db.exec('ROLLBACK');throw e;}
+  },
   list:()=>db.prepare('SELECT * FROM clients ORDER BY created_at DESC').all().map(publicClient),
   create({name,email,phone='',cpf='',planId='credits',customCredits,customPriceCents}={}){
    name=String(name||'').trim();email=String(email||'').trim().toLowerCase();
