@@ -148,7 +148,8 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
  if(currentBatch())return {status:'ACTIVE'};
  if(!insideApproachWindow(at))return {status:'OUTSIDE_WINDOW'};
  const atMs=at.getTime();
- const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL ORDER BY created_at DESC LIMIT 6000");
+ const sort=getSetting('discovery_stock_replenishment_enabled',false)===true?'ASC':'DESC';
+ const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL ORDER BY created_at "+sort+" LIMIT 6000");
  const byIdentity=new Map();
  for(const lead of rows){const key=businessIdentity(lead);if(key){if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(lead);}}
  const selected=[],keys=new Set();
@@ -187,7 +188,11 @@ export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
  closeStaleBatch(at);
  if(currentBatch())return {status:'ACTIVE'};
  const atMs=at.getTime();
- const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL AND created_at>=? ORDER BY created_at DESC LIMIT 3000",new Date(atMs-18*3600_000).toISOString());
+ const stockMode=getSetting('discovery_stock_replenishment_enabled',false)===true;
+ // Carry untouched leads into the next day; prefer oldest stock first.
+ const rows=stockMode
+  ?all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL ORDER BY created_at ASC LIMIT 3000")
+  :all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL AND created_at>=? ORDER BY created_at DESC LIMIT 3000",new Date(atMs-18*3600_000).toISOString());
  const selected=[];
  for(const lead of rows){
   if(selected.length>=Math.max(1,Math.min(300,Number(maxBatch)||200)))break;
