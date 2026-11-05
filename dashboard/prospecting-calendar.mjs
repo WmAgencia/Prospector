@@ -20,7 +20,7 @@ export function monthlyProspectingCalendar(month){
  const from=new Date(begin.getTime()-24*3600000).toISOString(),to=new Date(next.getTime()+24*3600000).toISOString();
  const hasBatch=tableExists('prospecting_batch_items');
  const approachSql=hasBatch
- ? "SELECT i.lead_id,l.business,l.city,l.segment,l.phone,COALESCE(CASE WHEN b.status='SENT' THEN b.updated_at END,CASE WHEN j.status='SENT' THEN j.updated_at END,i.created_at) AS at, CASE WHEN b.status='SENT' OR j.status='SENT' THEN 1 ELSE 0 END AS confirmed_time FROM initial_contacts i JOIN leads l ON l.id=i.lead_id LEFT JOIN prospecting_batch_items b ON b.id=i.job_id LEFT JOIN jobs j ON j.id=i.job_id WHERE i.status='SENT'"
+ ? "SELECT i.lead_id,l.business,l.city,l.segment,l.phone,COALESCE(CASE WHEN b.status='SENT' THEN b.attempt_at END,CASE WHEN j.status='SENT' THEN j.updated_at END,i.created_at) AS at, CASE WHEN b.status='SENT' OR j.status='SENT' THEN 1 ELSE 0 END AS confirmed_time FROM initial_contacts i JOIN leads l ON l.id=i.lead_id LEFT JOIN prospecting_batch_items b ON b.id=i.job_id LEFT JOIN jobs j ON j.id=i.job_id WHERE i.status='SENT'"
  : "SELECT i.lead_id,l.business,l.city,l.segment,l.phone,COALESCE(CASE WHEN j.status='SENT' THEN j.updated_at END,i.created_at) AS at, CASE WHEN j.status='SENT' THEN 1 ELSE 0 END AS confirmed_time FROM initial_contacts i JOIN leads l ON l.id=i.lead_id LEFT JOIN jobs j ON j.id=i.job_id WHERE i.status='SENT'";
  const approaches=all(approachSql);
  const closed=tableExists('sales_outcomes')?all(
