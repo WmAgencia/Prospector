@@ -28,6 +28,6 @@ export function effectiveDiscoveryScope(preferences=getProspectingPreferences())
 }
 export function availableDiscoveryOptions(){
  return {cities:Object.values(LOCATIONS).map(c=>c.label),
-  segments:[...new Map(Object.values(SEGMENTS).map(s=>[s.label,s.label])).values()],
+  segments:Object.entries(SEGMENTS).map(([id,entry])=>({id,label:entry.label})),
   limitation:'A pesquisa automática usa cidades e categorias suportadas pela fonte atual; não cobre literalmente todas as cidades do mundo.'};
 }
