@@ -26,7 +26,7 @@ db.exec("CREATE TABLE IF NOT EXISTS groq_auto_events(provider_id TEXT PRIMARY KE
 run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify before retry' WHERE state IN ('PROCESSING','SENDING')");
 const digits=s=>String(s||'').replace(/\D/g,'');
 const optedOut=s=>/\b(pare|parar|stop|sair|remover|nao me contate|não me contate|sem interesse|nao tenho interesse)\b/i.test(String(s||''));
-export function ownerTarget(){const preferred=personalPhone();if(preferred)return preferred;const raw=digits(process.env.PROSPECTOR_HOT_LEAD_PHONE);const val=raw.length===11?'55'+raw:raw;return /^55\d{10,11}$/.test(val)?val:null;}
+export function ownerTarget(){const configured=digits(getSetting('sales_notification_phone','')),normalized=configured.length===11?'55'+configured:configured;if(/^55\d{10,11}$/.test(normalized))return normalized;const preferred=personalPhone();if(preferred)return preferred;const raw=digits(process.env.PROSPECTOR_HOT_LEAD_PHONE);const val=raw.length===11?'55'+raw:raw;return /^55\d{10,11}$/.test(val)?val:null;}
 export function interestNotice(lead,evidence){
  const business=one('SELECT * FROM leads WHERE id=?',lead.lead_id)||lead;
  const links=[];

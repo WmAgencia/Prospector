@@ -1,5 +1,15 @@
 # Prospector — Consecom
 
+## Interface e apresentação comercial
+
+A landing e os painéis usam o mesmo tema claro com cartões brancos, menu compacto e destaques verde-lima, inspirado na referência fornecida pelo operador. O arquivo `dashboard/public/product-theme.css` é compartilhado pelos espaços de cliente, master, cadastro e acesso administrativo. A navegação superior mantém os nomes das seções; o menu móvel continua exibindo os rótulos completos.
+
+A apresentação explica a pesquisa automática a partir das 05h, as primeiras abordagens das 08h às 17h30, a continuidade da conversa pela IA e o aviso de interesse no WhatsApp pessoal. A operação depende de configuração, perfil aprovado, números conectados, saldo e contatos elegíveis. O campo **WhatsApp pessoal para avisos de interessados** fica em **Treinamento da IA → Sobre sua empresa**. Esse destino não concede privilégios administrativos e é omitido do contexto enviado ao modelo.
+
+O teto da fila é **250 novos contatos abordados por dia e por operação**, compartilhado entre os números, no dia de São Paulo. Entregas incertas e em andamento também contam, para não abrir espaço indevido para novos disparos. O limite é conferido novamente dentro da reserva transacional. Respostas a conversas existentes e avisos ao gestor são independentes desse teto. O plano interno ilimitado não remove esse controle operacional. Não é um limite oficial de segurança do WhatsApp nem uma garantia contra bloqueios.
+
+A calculadora foi substituída por uma seção explicativa: 250 abordagens × 1% = 2,5 contratos em média matemática, apresentada como cerca de 2 a 3 por lote. Não há promessa de mínimo ou fechamento diário. O horário de descoberta é ajustado para 05h por migração, preservando pausa, autorização e ativação da operação.
+
 ## Painel master, clientes e treinamento
 
 O acesso administrativo é exclusivamente master: dashboard, clientes, acessos e créditos. A operação atual da Consecom pertence à única conta interna ilimitada, que reutiliza o banco operacional existente, sem cópia, limpeza ou mudança dos fluxos em andamento. O master abre essa conta pelo botão **Abrir minha operação**; suas APIs operacionais ficam bloqueadas enquanto não estiver no espaço de um cliente. A conta interna também tem login próprio por e-mail ou telefone. As sessões de cliente não concedem permissões de master.
