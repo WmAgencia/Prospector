@@ -1,3 +1,4 @@
+process.env.PROSPECTOR_REPLY_PACING_ENABLED='false';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -92,4 +93,31 @@ test('Interest-only mode silently alerts owner but never auto-responds to custom
   if(oldAlerts===undefined)delete process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED;else process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED=oldAlerts;
  }
 });
+test('paced replies wait before transport and cancel on new inbound, opt-out or takeover',async()=>{
+ process.env.PROSPECTOR_REPLY_PACING_ENABLED='true';
+ try{
+  const ordinary=input({number:'15987771200',body:'Como funciona o serviço?'});
+  let waited=0;
+  const result=await agent.handleSalesTurn(ordinary.providerId,{...fake,qualify:async()=>({confirmed:false}),
+   replyNow:()=>0,replyJitter:0,replyPause:async ms=>{waited+=ms;}});
+  assert.equal(result.state,'SENT');
+  assert.ok(waited>=8000&&waited<=35000);
+  for(const [i,change] of ['newer','suppressed','takeover'].entries()){
+   const msg=input({number:'1598777120'+(i+1),body:'Como funciona o serviço?'});
+   const before=sends.length;let pauses=0;
+   const result=await agent.handleSalesTurn(msg.providerId,{...fake,qualify:async()=>({confirmed:false}),
+    replyNow:()=>0,replyJitter:0,replyPause:async()=>{
+     pauses++;
+     if(change==='takeover')db.run('UPDATE threads SET manual_takeover=1 WHERE lead_id=?',msg.lead.id);
+     if(change==='suppressed')db.run('INSERT INTO suppressions(phone,reason,created_at) VALUES(?,?,?)',msg.lead.phone,'optout',db.now());
+     if(change==='newer')db.run('INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',db.id(),'consecom-principal',msg.jid,'newer:'+msg.providerId,msg.lead.id,'Outra pergunta','REVIEW',db.now(),db.now());
+    }});
+   assert.equal(result.state,change==='newer'?'SUPERSEDED':'HANDOFF');
+   assert.equal(pauses,1);
+   assert.equal(sends.length,before);
+   assert.equal(db.one("SELECT COUNT(*) n FROM messages WHERE provider_id=?",'groq:'+msg.providerId).n,0);
+  }
+ }finally{process.env.PROSPECTOR_REPLY_PACING_ENABLED='false';}
+});
+
 test.after(()=>{db.db.close();fs.rmSync(dir,{recursive:true,force:true});});

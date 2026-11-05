@@ -1,3 +1,4 @@
+process.env.PROSPECTOR_REPLY_PACING_ENABLED='false';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

@@ -19,6 +19,7 @@ import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
 import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,acceptPart,partsFor} from './groq-reply-channels.mjs';
 import {waControlStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
+import {replyPacingEnabled,waitForReplyPacing} from './reply-pacing.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_auto_events(provider_id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,at TEXT NOT NULL,error TEXT)");
 run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify before retry' WHERE state IN ('PROCESSING','SENDING')");
 const digits=s=>String(s||'').replace(/\D/g,'');
@@ -32,7 +33,7 @@ export function interestNotice(lead,evidence){
  for(const row of all("SELECT identity FROM lead_origins WHERE lead_id=? AND source='maps_extension'",lead.lead_id))if(/^https:\/\/(?:www\.google\.[a-z.]+\/maps\/|maps\.google\.[a-z.]+\/|maps\.app\.goo\.gl\/)/i.test(row.identity))links.push('Maps: '+row.identity);
  return ['⭐ Interesse real no Prospector','Empresa: '+business.business,'Contato: '+(business.name||'não informado'),'Telefone: '+business.phone,...links,'Assumir conversa: https://wa.me/'+business.phone,'Interesse: '+String(evidence||lead.body||'Intenção confirmada').slice(0,180),'Próximo passo: assumir atendimento e confirmar escopo.'].join('\n');
 }
-export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',approvedProspectFollowup:getSetting('sales_followup_enabled',true)===true,alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true};}
+export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',approvedProspectFollowup:getSetting('sales_followup_enabled',true)===true,alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true,replyPacing:{enabled:replyPacingEnabled(),minSeconds:8,maxSeconds:35}};}
 function approvedProspectFollowup(identity,jid){
  if(getSetting('sales_followup_enabled',true)!==true||identity.role!=='PROSPECT_APPROACHED')return false;
  const number=String(jid||'').split('@')[0];
@@ -53,6 +54,7 @@ const active=new Set();
 export async function handleSalesTurn(providerId,deps={}){
  const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.segment,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
  if(!r)return {state:'SKIP'};
+ const replyStartedAt=(deps.replyNow||Date.now)();
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
  const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
  const allowTest=identity.role==='OWNER'&&identity.testSandbox===true;
@@ -189,6 +191,9 @@ export async function handleSalesTurn(providerId,deps={}){
     one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
  if(stale())return finish(stale());
+ const current=await waitForReplyPacing({incoming:r.body,reply:replyText,startedAt:replyStartedAt,stillCurrent:()=>!stale()},
+  {wait:deps.replyPause,now:deps.replyNow,jitter:deps.replyJitter});
+ if(!current||stale())return finish(stale()||'SUPERSEDED');
  run("UPDATE groq_auto_events SET state='SENDING' WHERE provider_id=?",providerId);
  const accepted=[];
  const mark=(part)=>{acceptPart(providerId,part);accepted.push(part);
