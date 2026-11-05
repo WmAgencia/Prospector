@@ -175,11 +175,31 @@ export function openPlatformStore(root){
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
   list:()=>db.prepare('SELECT * FROM clients ORDER BY created_at DESC').all().map(publicClient),
-  create({name,email}){
-   name=String(name||'').trim();email=String(email||'').trim();
-   if(!name||name.length>100||!/^\S+@\S+\.\S+$/.test(email)||email.length>200)throw Error('Informe nome e e-mail válidos');
+  create({name,email,phone='',cpf='',planId='credits',customCredits,customPriceCents}={}){
+   name=String(name||'').trim();email=String(email||'').trim().toLowerCase();
+   if(!name||name.length>100||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>200)throw Error('Informe nome e e-mail válidos');
+   if(db.prepare('SELECT 1 FROM clients WHERE lower(email)=?').get(email))throw Error('E-mail já cadastrado');
+   if(!new Set(['credits','unlimited','custom',...CREDIT_PACKAGES.map(p=>p.id)]).has(planId))throw Error('Plano inválido');
+   const digits=String(cpf||'').replace(/\D/g,'');
+   if(digits){
+    if(digits.length!==11||/^(\d)\1{10}$/.test(digits))throw Error('CPF inválido');
+    for(const n of [9,10]){
+     let sum=0;for(let i=0;i<n;i++)sum+=Number(digits[i])*(n+1-i);
+     if(Number(digits[n])!==((sum*10)%11)%10)throw Error('CPF inválido');
+    }
+   }
+   const normalizedPhone=phone?loginPhone(phone):null;
+   if(phone&&!normalizedPhone)throw Error('Telefone inválido');
+   const credits=planId==='custom'?Number(customCredits):null;
+   const price=planId==='custom'?Number(customPriceCents):null;
+   if(planId==='custom'&&(!Number.isSafeInteger(credits)||credits<1||credits>1000000||!Number.isSafeInteger(price)||price<0||price>100000000))throw Error('Informe créditos e preço válidos para o plano personalizado');
    const id=crypto.randomUUID(),token=crypto.randomBytes(36).toString('base64url');
-   db.prepare('INSERT INTO clients(id,name,email,status,token_hash,secret,created_at) VALUES(?,?,?,?,?,?,?)').run(id,name,email,'active',hash(token),crypto.randomBytes(48).toString('base64url'),new Date().toISOString());
+   const key=process.env.PROSPECTOR_CPF_HMAC_SECRET||process.env.ADMIN_SESSION_SECRET||'';
+   if(digits&&!key)throw Error('Configure uma chave privada antes de armazenar documentos');
+   // Only a keyed digest and masked suffix are retained, never the full CPF.
+   const cpfDigest=digits?crypto.createHmac('sha256',key).update(digits).digest('hex'):null;
+   db.prepare('INSERT INTO clients(id,name,email,status,token_hash,secret,created_at,plan_id,custom_credits,custom_price_cents,contact_phone,cpf_last4,cpf_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id,name,email,'active',hash(token),crypto.randomBytes(48).toString('base64url'),new Date().toISOString(),planId,credits,price,normalizedPhone,digits?digits.slice(-4):null,cpfDigest);
    return {client:publicClient(get(id)),token};
   },
   authenticate:token=>db.prepare("SELECT * FROM clients WHERE token_hash=? AND status='active'").get(hash(token)),
