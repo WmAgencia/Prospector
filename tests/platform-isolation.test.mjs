@@ -16,6 +16,14 @@ test('master creates clients; client APIs use separate processes and cannot acce
  const call=async(p,input,cookie)=>{const r=await fetch(base+p,{method:input===undefined?'GET':'POST',headers:{...(input===undefined?{}:{'Content-Type':'application/json'}),...(cookie?{Cookie:cookie}:{})},body:input===undefined?undefined:JSON.stringify(input)});return {status:r.status,body:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
  let ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,100));}assert.equal(ready,true);
  const a=(await call('/api/platform/clients',{name:'Fictícia A',email:'a@example.test'})).body;
+ assert.equal((await call('/api/state')).status,403,'master cannot use operational APIs');
+ const primary=await call('/api/platform/primary-client',{name:'Operação interna',email:'owner@example.test',phone:'11999990003',password:'only-a-synthetic-password'});
+ assert.equal(primary.body.unlimited,true);
+ const primaryLogin=await call('/api/platform/signin',{identifier:'11999990003',password:'only-a-synthetic-password'});
+ assert.equal(primaryLogin.body.next,'/#/overview');const primaryCookie=primaryLogin.cookie;
+ assert.equal((await call('/api/state',undefined,primaryCookie)).status,200,'owner uses the existing operational workspace');
+ assert.equal((await call('/api/platform/clients',undefined,primaryCookie)).status,403,'owner client is not master');
+ assert.equal((await fetch(base+'/conheca')).status,200);
  const b=(await call('/api/platform/clients',{name:'Fictícia B',email:'b@example.test'})).body;
  const ca=(await call('/api/platform/login',{token:a.token})).cookie,cb=(await call('/api/platform/login',{token:b.token})).cookie;
  assert.equal((await call('/api/platform/clients',undefined,ca)).status,403);

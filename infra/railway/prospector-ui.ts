@@ -56,7 +56,7 @@ async function proxy(req:Request){
  const url=new URL(req.url);
  const clientCookie=(req.headers.get("cookie")||"").split(";").map(x=>x.trim()).find(x=>x.startsWith("ps_client="))||"";
  const masterAuthorized=authorized(req);
- const publicClientAccess=new Set(["/client/access","/api/platform/login","/api/platform/logout"]).has(url.pathname);
+ const publicClientAccess=new Set(["/","/conheca","/cadastro","/entrar","/landing.css","/landing.js","/client/access","/api/platform/login","/api/platform/logout","/api/platform/signup","/api/platform/signin"]).has(url.pathname);
  const oauthBrowser=url.pathname==="/oauth/authorize"||url.pathname==="/oauth/approve";
  const publicMcp=new Set(["/mcp","/.well-known/oauth-protected-resource","/.well-known/oauth-protected-resource/mcp","/.well-known/oauth-authorization-server","/oauth/register","/oauth/token"]).has(url.pathname);
  if(!publicMcp&&!masterAuthorized&&!clientCookie&&!publicClientAccess){
@@ -69,6 +69,8 @@ async function proxy(req:Request){
  if(["POST","PUT","PATCH","DELETE"].includes(method)){const origin=req.headers.get("origin");const allowedOrigins=new Set(["https://"+(Bun.env.RAILWAY_PUBLIC_DOMAIN||"prospector-ui-production.up.railway.app"),...(Bun.env.FRONTEND_ORIGIN||"").split(",").map(s=>s.trim()).filter(Boolean)]);if(origin&&!allowedOrigins.has(origin))return new Response("Origem não autorizada",{status:403});}
  const remote=new URL(url.pathname+url.search,upstream);
  const headers=new Headers();
+ const clientIp=(req.headers.get("x-real-ip")||req.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim()||"");
+ if(clientIp){const at=String(Date.now());headers.set("X-Prospector-Client-IP",clientIp);headers.set("X-Prospector-Client-At",at);headers.set("X-Prospector-Client-Signature",createHmac("sha256",upstreamToken).update(clientIp+"|"+at).digest("hex"));}
  for(const name of ["accept","accept-language","content-type","range","last-event-id","if-none-match","if-modified-since",...(publicMcp?["authorization","mcp-protocol-version","mcp-session-id","origin"]:[])]){const val=req.headers.get(name);if(val)headers.set(name,val);}
  if(oauthBrowser){headers.set("X-Forwarded-Host",url.host);headers.set("X-Forwarded-Proto",url.protocol.slice(0,-1));}
  if(["POST","PUT","PATCH","DELETE"].includes(method)&&!publicMcp)headers.set("Origin",oauthBrowser?(req.headers.get("origin")||url.origin):new URL(upstream).origin);
@@ -149,121 +151,17 @@ Bun.serve({hostname:"0.0.0.0",port:Number(Bun.env.PORT||3000),async fetch(req:Re
  return proxy(req);
 }});
 
-// Safe startup smoke test: only HTTP status codes are logged, never keys or customer data.
+// Safe startup smoke test: reads only; no customer actions or identifiers are logged.
 void (async()=>{
  try{
   const local="http://127.0.0.1:"+Number(Bun.env.PORT||3000);
   const exchange=await fetch(local+"/_access/exchange",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:Bun.env.ACCESS_LOGIN_PASSWORD})});
-  const issuedCookie=exchange.headers.get("set-cookie")?.split(";")[0]||"";
-  const loginPage=await fetch(local+"/access");
-  const html=await loginPage.text();
-  const badPassword=await fetch(local+"/_access/exchange",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:"invalid-login-prospector"})});
-  console.info("[login-smoke] "+JSON.stringify({pageHttp:loginPage.status,passwordForm:html.includes('id="password"')&&html.includes('Entrar no Prospector'),validPassword:exchange.status===200,invalidRejected:badPassword.status===401,secureCookie:exchange.headers.get("set-cookie")?.includes("HttpOnly; Secure")||false}));
-
-  if(exchange.status!==200||!issuedCookie)throw Error("exchange HTTP "+exchange.status);
-  const state=await fetch(local+"/api/state",{headers:{"Cookie":issuedCookie}});
-  const stateJson=state.ok?await state.clone().json():{};
-  console.info("[prospector-status] "+JSON.stringify({paused:stateJson.settings?.paused,autoInitial:stateJson.settings?.auto_initial,automationEnabled:stateJson.settings?.automation_enabled,braveConfigured:stateJson.searchConfigured,found:stateJson.stats?.found,contacted:stateJson.stats?.contacted,responded:stateJson.stats?.responded,jobStatuses:(stateJson.jobs||[]).reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{}),recentDiscoveries:(stateJson.discoveries||[]).length,whatsapp:stateJson.connection?.status}));
-  const conn=stateJson.connection||{};
-  console.info("[gateway-wa] status="+String(conn.status||"unknown")+" qr="+Boolean(conn.qr)+" userPresent="+Boolean(conn.user)+" error="+String(conn.error||"none").slice(0,160));
-
-  const page=await fetch(local+"/",{headers:{"Cookie":issuedCookie}});
-  const published=await fetch(local+"/studio/sites/wrs-brasil.html");
-  const js=await fetch(local+"/app.js",{headers:{"Cookie":issuedCookie}});
-  const patched=js.status===200&&(await js.text()).includes("connectionPollEvery2500ms");
-  const sameOriginPost=await fetch(local+"/api/automations/test",{method:"POST",headers:{"Cookie":issuedCookie,"Content-Type":"application/json","Origin":"https://prospector-ui-production.up.railway.app"},body:JSON.stringify({text:"pode sim",context:"sample_offer"})});
-  
-  if(Bun.env.RUN_GROQ_SMOKE==="true"){
-   try{
-    const response=await fetch(local+"/api/ai/test",{method:"POST",headers:{"Cookie":issuedCookie,"Content-Type":"application/json","Origin":"https://prospector-ui-production.up.railway.app"},body:"{}"});
-    const result=await response.json().catch(()=>({}));
-    console.info("[groq-smoke] "+JSON.stringify({http:response.status,ok:result.ok===true,provider:result.provider||null,model:result.model||null,code:result.code||null}));
-   }catch(e){console.info("[groq-smoke] "+JSON.stringify({ok:false,errorType:e?.name||"network_error"}));}
-  }
-  if(Bun.env.RUN_SYSTEM_SMOKE==="true"){
-   const calls=[
-    ["waStatus","/api/wa-akg/status","GET",null],
-    ["inbox","/api/wa-akg/inbox","GET",null],
-    ["placesStatus","/api/google-places/status","GET",null],
-    ["noDraft","/api/wa-akg/draft","POST",{id:"nonexistent-test-id"}],
-    ["unsignedWebhook","/api/wa-akg/webhook","POST",{event:"test"}]
-   ];
-   for(const [name,path,method,payload] of calls){
-    try{
-     const headers={Cookie:issuedCookie,"Content-Type":"application/json","Origin":"https://prospector-ui-production.up.railway.app"};
-     // Gateway rejects unsigned callbacks if proxied; verify 401 rather than accepting.
-     const rr=await fetch(local+path,{method,headers,body:method==="GET"?undefined:JSON.stringify(payload),signal:AbortSignal.timeout(6000)});
-     const body=await rr.json().catch(()=>({}));
-     console.info("[system-smoke] "+JSON.stringify({test:name,http:rr.status,configured:name==="waStatus"?body.webhookSecretConfigured:undefined,apiKeyConfigured:name==="waStatus"?body.apiKeyConfigured:undefined,items:name==="inbox"?body.total:undefined}));
-    }catch(e){console.info("[system-smoke] "+JSON.stringify({test:name,error:e?.name||"UNKNOWN"}));}
-   }
-  }
-  if(Bun.env.RUN_FIVE_TAB_SMOKE==="true"){
-   const checks=[["index","/index.html"],["ui","/simple-app.js"],["style","/simple-app.css"],["prospects","/api/prospecting?city=Sorocaba&niche=oficinas%20mecanicas"],["wa","/api/whatsapp/status"]];
-   for(const [name,path] of checks){
-    try{
-     const response=await fetch(local+path,{headers:{Cookie:issuedCookie,Accept:"application/json"},signal:AbortSignal.timeout(18000)});
-     const body=name==="wa"||name==="prospects"?await response.json().catch(()=>({})):null;
-     const details=name==="wa"?{connected:body?.connected===true,reason:body?.status||"UNAVAILABLE",loginOk:body?.ok===true}:name==="prospects"?{hasResults:Array.isArray(body?.results),total:body?.total}:null;
-     console.info("[five-tab-smoke] "+JSON.stringify({test:name,http:response.status,ok:response.ok,details}));
-    }catch(e){console.info("[five-tab-smoke] "+JSON.stringify({test:name,ok:false,errorType:e?.name||"request_failed"}));}
-   }
-  }
-  if(Bun.env.RUN_CONNECT_SMOKE==="true"){
-   try{
-    const result=await fetch(local+"/api/whatsapp/connect",{method:"POST",headers:{"Cookie":issuedCookie,"Content-Type":"application/json","Origin":"https://prospector-ui-production.up.railway.app"},body:"{}",signal:AbortSignal.timeout(28000)});
-    const body=await result.json().catch(()=>({}));
-    console.info("[connect-smoke] "+JSON.stringify({http:result.status,ok:body.ok===true,hasSession:!!body.sessionId,errorType:body.ok?null:String(body.error||"").slice(0,100)}));
-    if(result.ok){
-     const qr=await fetch(local+"/api/whatsapp/qr",{headers:{Cookie:issuedCookie},signal:AbortSignal.timeout(20000)});
-     const j=await qr.json().catch(()=>({}));
-     console.info("[connect-smoke] "+JSON.stringify({qrHttp:qr.status,qrAvailable:!!j.qr,connected:j.connected===true,state:j.status||null}));
-    }
-   }catch(e){console.info("[connect-smoke] "+JSON.stringify({ok:false,errorType:e.name||"unknown"}));}
-  }
-  if(Bun.env.RUN_QR_SMOKE==="true"){
-   for(const name of ["status","qr"]){
-    try{
-     const response=await fetch(local+"/api/whatsapp/"+name,{headers:{Cookie:issuedCookie},signal:AbortSignal.timeout(20000)});
-     const j=await response.json().catch(()=>({}));
-     console.info("[qr-smoke] "+JSON.stringify({test:name,http:response.status,connected:j.connected===true,state:j.status||"UNKNOWN",hasQr:!!j.qr,session:!!j.sessionId,hasError:Boolean(j.message&&j.status==="ERROR")}));
-    }catch(e){console.info("[qr-smoke] "+JSON.stringify({test:name,errorType:e.name||"network"}));}
-   }
-  }
-  if(Bun.env.RUN_ORIGIN_SMOKE==="true"){
-   const origin="https://prospector-consecom-preview.vercel.app";
-   const tests=[
-    ["vercel-origin", "/api/automations/test","POST",{text:"Olá, tudo bem?",context:"general_interest"}],
-    ["new-chat-list","/api/whatsapp/chats","GET",null],
-    ["new-prospect-list","/api/prospecting?city=Sorocaba&niche=oficinas%20mecanicas","GET",null]
-   ];
-   for(const [name,path,method,data] of tests){
-    try{
-     const resp=await fetch(local+path,{method,headers:{"Cookie":issuedCookie,"Content-Type":"application/json","Origin":origin},body:method==="GET"?undefined:JSON.stringify(data),signal:AbortSignal.timeout(11000)});
-     console.info("[origin-smoke] "+JSON.stringify({test:name,http:resp.status,ok:resp.ok}));
-    }catch(e){console.info("[origin-smoke] "+JSON.stringify({test:name,errorType:e.name||"unknown"}));}
-   }
-  }
-  if(Bun.env.RUN_SEARCH_SMOKE==="true"){
-   try{
-    const response=await fetch(local+"/api/prospecting/search",{method:"POST",headers:{"Cookie":issuedCookie,"Content-Type":"application/json","Origin":"https://prospector-consecom-preview.vercel.app"},body:JSON.stringify({niche:"oficinas mecânicas",city:"Sorocaba"}),signal:AbortSignal.timeout(85000)});
-    const j=await response.json().catch(()=>({}));
-    console.info("[prospecting-smoke] "+JSON.stringify({http:response.status,ok:j.ok===true,newBusinesses:Number(j.added)||0,total:Number(j.total)||0,source:j.source||null,errorType:response.ok?null:String(j.error||"").slice(0,140)}));
-   }catch(e){console.info("[prospecting-smoke] "+JSON.stringify({ok:false,errorType:e.name||"NETWORK"}));}
-  }
-  if(Bun.env.RUN_OWNER_TOOLS_SMOKE==="true"){
-   const tests=["/api/groq/capabilities","/api/groq/healthcheck","/api/groq/owner","/api/groq/models"];
-   for(const path of tests){
-    try{
-     const r=await fetch(local+path,{method:"GET",headers:{"Cookie":issuedCookie,"Accept":"application/json"},signal:AbortSignal.timeout(12500)});
-     const j=await r.json().catch(()=>({}));
-     const summary=path.endsWith("capabilities")?{count:j.count,hasLeadEdit:Array.isArray(j.tools)&&j.tools.some(x=>x.name==="update_lead"),hasMeeting:Array.isArray(j.tools)&&j.tools.some(x=>x.name==="create_meeting")}:path.endsWith("healthcheck")?{ok:j.ok,tools:j.toolCount,settingsReadable:j.settingsReadable}:path.endsWith("owner")?{active:j.active,provider:j.provider}: {configured:j.configured,modelCount:Array.isArray(j.models)?j.models.length:0,actionsModel:!!j.selection?.actions};
-     console.info("[owner-tools-smoke] "+JSON.stringify({route:path,http:r.status,summary}));
-    }catch(e){console.info("[owner-tools-smoke] "+JSON.stringify({route:path,error:e.name||"unknown"}));}
-   }
-   try{const noAuth=await fetch(local+"/api/groq/capabilities",{signal:AbortSignal.timeout(5000)});console.info("[owner-tools-smoke] "+JSON.stringify({route:"/api/groq/capabilities unauthenticated",http:noAuth.status}));}catch{}
-  }
-  console.info("[gateway-smoke] session=200 api="+state.status+" page="+page.status+" publicSite="+published.status+" appPolling="+patched+" postStatus="+sameOriginPost.status);
- }catch(ex){console.error("[gateway-smoke] failure: "+String(ex).slice(0,160));}
+  const issued=exchange.headers.get("set-cookie")?.split(";")[0]||"";
+  if(exchange.status!==200||!issued)throw Error("administrative access unavailable");
+  const context=await fetch(local+"/api/platform/context",{headers:{Cookie:issued}});
+  const role=context.ok?(await context.json()).role:null;
+  const publicPage=await fetch(local+"/conheca");
+  const signup=await fetch(local+"/cadastro");
+  console.info("[gateway-smoke] "+JSON.stringify({masterHttp:context.status,masterRole:role,landingHttp:publicPage.status,signupHttp:signup.status}));
+ }catch{console.warn("[gateway-smoke] public or administrative access unavailable");}
 })();
-
