@@ -2,7 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {getCreditPackage} from './credit-packages.mjs';
+import {getCreditPackage,CREDIT_PACKAGES} from './credit-packages.mjs';
 export function openPlatformStore(root){
  fs.mkdirSync(root,{recursive:true});
  const db=new DatabaseSync(path.join(root,'platform.sqlite'));
@@ -13,6 +13,8 @@ export function openPlatformStore(root){
  db.exec(`CREATE TABLE IF NOT EXISTS client_passwords(client_id TEXT PRIMARY KEY REFERENCES clients(id),email TEXT NOT NULL UNIQUE,salt TEXT NOT NULL,password_hash TEXT NOT NULL,privacy_version TEXT NOT NULL,created_at TEXT NOT NULL);`);
  const clientCols=db.prepare('PRAGMA table_info(clients)').all().map(x=>x.name);
  if(!clientCols.includes('is_internal'))db.exec('ALTER TABLE clients ADD COLUMN is_internal INTEGER NOT NULL DEFAULT 0');
+ for(const [column,definition] of [['plan_id',"TEXT NOT NULL DEFAULT 'credits'"],['custom_credits','INTEGER'],['custom_price_cents','INTEGER'],['contact_phone','TEXT'],['cpf_last4','TEXT'],['cpf_digest','TEXT']])
+  if(!clientCols.includes(column))db.exec('ALTER TABLE clients ADD COLUMN '+column+' '+definition);
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS only_one_internal_client ON clients(is_internal) WHERE is_internal=1');
  if(!db.prepare('PRAGMA table_info(client_passwords)').all().some(x=>x.name==='phone'))db.exec('ALTER TABLE client_passwords ADD COLUMN phone TEXT');
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS unique_login_phone ON client_passwords(phone) WHERE phone IS NOT NULL');
@@ -30,10 +32,14 @@ export function openPlatformStore(root){
  const hash=x=>crypto.createHash('sha256').update(String(x)).digest('hex');
  const balance=id=>Number(db.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM credit_events WHERE client_id=?').get(id).n);
  const pending=id=>Number(db.prepare("SELECT COUNT(*) AS n FROM credit_reservations WHERE client_id=? AND state='RESERVED'").get(id).n);
- const publicClient=r=>r?{id:r.id,name:r.name,email:r.email,status:r.status,createdAt:r.created_at,unlimited:r.is_internal===1,balance:balance(r.id),reserved:pending(r.id),available:r.is_internal===1?null:balance(r.id)-pending(r.id)}:null;
+ const unlimited=r=>r&&(r.is_internal===1||r.plan_id==='unlimited');
+ const publicClient=r=>r?{id:r.id,name:r.name,email:r.email,status:r.status,createdAt:r.created_at,unlimited:unlimited(r),internal:r.is_internal===1,
+  planId:r.is_internal===1?'unlimited':r.plan_id||'credits',customCredits:r.custom_credits||null,customPriceCents:r.custom_price_cents||null,
+  phone:r.contact_phone||null,cpfMasked:r.cpf_last4?'***.***.***-'+r.cpf_last4:null,
+  balance:balance(r.id),reserved:unlimited(r)?0:pending(r.id),available:unlimited(r)?null:balance(r.id)-pending(r.id)}:null;
  const get=id=>db.prepare('SELECT * FROM clients WHERE id=?').get(id);
  function adjust(id,amount,reason,reference=crypto.randomUUID()){
-  if(get(id)?.is_internal===1)throw Error('A conta interna já possui uso ilimitado e não precisa de recarga');
+  if(unlimited(get(id)))throw Error('Esta conta tem plano ilimitado e não precisa de recarga');
   if(!get(id)||!Number.isSafeInteger(amount)||!amount||Math.abs(amount)>10000000)throw Error('Ajuste de créditos inválido');
   db.exec('BEGIN IMMEDIATE');
   try{
@@ -146,6 +152,7 @@ export function openPlatformStore(root){
   reserve(id,reference){
    db.exec('BEGIN IMMEDIATE');try{
     if(get(id)?.status!=='active')throw Error('Conta indisponível');
+    if(unlimited(get(id))){db.exec('COMMIT');return true;}
     const existing=db.prepare('SELECT state FROM credit_reservations WHERE client_id=? AND reference=?').get(id,reference);
     if(existing&&existing.state!=='RELEASED'){db.exec('COMMIT');return false;}
     if(balance(id)-pending(id)<1){db.exec('COMMIT');return false;}
@@ -153,6 +160,7 @@ export function openPlatformStore(root){
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
   settle(id,reference,accepted){
+   if(unlimited(get(id)))return;
    db.exec('BEGIN IMMEDIATE');try{
     const r=db.prepare('SELECT state FROM credit_reservations WHERE client_id=? AND reference=?').get(id,reference);
     if(r?.state==='RESERVED'){
