@@ -61,8 +61,8 @@ if(!reducedMotion&&'IntersectionObserver' in window){
    reveal.unobserve(entry.target);
   }
  },{threshold:.08});
- document.querySelectorAll('.p2-section-heading,.p2-journey article,.p2-tour,.p2-setup-list article,.p2-benefits-grid article,.p2-pricing-grid .p2-plan,.p2-questions,.p2-last-cta-inner').forEach((el,i)=>{
-  el.style.setProperty('--p2-reveal-delay',(i%4)*45+'ms');
+ document.querySelectorAll('.p3-centered-title,.p3-flow-card,.p3-product,.p3-benefits-strip,.p3-price-card,.p3-scenario-cards article,.p3-faq,.p3-final-cta').forEach((el,i)=>{
+  el.style.setProperty('--p3-reveal-delay',(i%4)*45+'ms');
   el.classList.add('motion-ready');
   reveal.observe(el);
  });
