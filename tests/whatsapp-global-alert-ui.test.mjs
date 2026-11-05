@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const src=fs.readFileSync(new URL('../dashboard/public/simple-app.js',import.meta.url),'utf8');
-const withoutStartup=src.replace(/await reload\(\);\s*await refreshWa\(\);\s*$/, '');
+const withoutStartup=src.slice(0,src.lastIndexOf('\nawait reload();'));
 assert.notEqual(withoutStartup,src,'Expected startup block in UI');
 const app={innerHTML:''};
 const doc={querySelector:()=>app,addEventListener:()=>{},hidden:false};
