@@ -218,6 +218,13 @@ function overview(){
   ['conversing','Conversando','Atendimento assumido por você']
  ];
  const total=Object.values(k.counts||{}).reduce((x,y)=>x+Number(y||0),0);
+ const startupChecks=[
+  {label:'Conectar WhatsApp',done:!!wa?.connected,tab:'connections'},
+  {label:'Treinar sua IA',done:!!(state?.settings?.training_active||trainingState?.profile),tab:'training'},
+  {label:'Ter créditos disponíveis',done:platformContext.unlimited===true||Number(platformContext.available||0)>0,tab:'credits'}
+ ];
+ const setupReady=startupChecks.every(x=>x.done);
+ const startupPanel=setupReady?'':'<section class="setup-progress" aria-label="Prepare sua operação"><div><span class="kicker">COMECE POR AQUI</span><strong>Prepare seu espaço para prospectar</strong><p>Conexão, treinamento e saldo precisam estar prontos antes de iniciar uma operação.</p></div><div class="setup-items">'+startupChecks.map(x=>'<button type="button" data-tab="'+x.tab+'" class="setup-item '+(x.done?'done':'')+'"><span aria-hidden="true">'+(x.done?'✓':'○')+'</span>'+x.label+'</button>').join('')+'</div></section>';
  const stat=(label,value,description)=>'<div class="kanban-metric"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong><small>'+esc(description)+'</small></div>';
  const item=(lead,col)=>{
   const due=lead.blocked?'Não contatar':lead.nextEligibleAt?(lead.eligibleAgain?'Recontato liberado':'Retorna '+new Date(lead.nextEligibleAt).toLocaleDateString('pt-BR')):'';
@@ -228,6 +235,7 @@ function overview(){
  return '<div class="kanban-dashboard" id="overview-board">'+
   '<div class="kanban-overview-head"><div><span class="kicker">PIPELINE COMERCIAL</span><h2>Visão da operação</h2><p>Todos os contatos e oportunidades em uma única tela.</p></div><button class="secondary compact" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div>'+
   '<div class="kanban-metrics">'+stat('Empresas acompanhadas',total,'Com atividade registrada')+stat('Abordando',k.counts?.approaching||0,'Em contato')+stat('Interessados',k.counts?.interested||0,'Prioridade comercial')+stat('Conversando',k.counts?.conversing||0,'Atendimento humano')+'</div>'+
+  startupPanel+
   pipelineGraphic(k)+'<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>Acompanhe cada etapa e abra a conversa pelo cartão.</small></div>'+
   '<div class="kanban-columns" aria-label="Kanban comercial">'+definition.map(([key,label,description])=>
    '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items">'+
