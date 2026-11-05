@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/personal-alerts-');
+process.env.WA_AKG_SESSION_ID='alert-channel';
+const d=await import('../dashboard/db.mjs');
+const {ownerTarget,flushInterestAlerts}=await import('../dashboard/groq-sales-automation.mjs');
+const {queueNotice}=await import('../dashboard/notifications.mjs');
+const {classifyContact}=await import('../dashboard/whatsapp-roles.mjs');
+const {handleTraining,trainingPrompt}=await import('../dashboard/training.mjs');
+test('personal notification number persists, receives the interest notice once and grants no owner privileges',async()=>{
+ let status;await handleTraining({method:'POST'},null,new URL('http://test/api/training/business'),{json:async()=>({name:'Empresa fictícia',description:'Consultoria',notificationPhone:'11999990004'}),respond:(_r,s)=>{status=s;}});
+ assert.equal(status,200);assert.equal(ownerTarget(),'5511999990004');
+ assert.equal(classifyContact({jid:ownerTarget()+'@s.whatsapp.net',sessionId:'alert-channel'}).ownerTools,false);
+ assert.doesNotMatch(trainingPrompt(),/5511999990004/);
+ queueNotice('synthetic-interest','GROQ_HOT_LEAD','Interesse fictício para teste');const sends=[];
+ const deps={status:async()=>({connected:true}),send:async(path)=>{sends.push(path);return {status:true};}};
+ assert.equal(await flushInterestAlerts(deps),1);assert.ok(sends[0].includes('/5511999990004%40s.whatsapp.net/send'));
+ assert.equal(await flushInterestAlerts(deps),0);assert.equal(sends.length,1);
+});

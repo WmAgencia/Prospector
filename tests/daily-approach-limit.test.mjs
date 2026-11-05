@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/daily-limit-');
+process.env.WA_AKG_SESSION_ID='limit-channel';process.env.PROSPECTOR_COLD_FIRST_APPROACH='true';
+const d=await import('../dashboard/db.mjs'),q=await import('../dashboard/prospecting-queue.mjs');
+const {dailyApproachBudget}=await import('../dashboard/daily-approach-limit.mjs');
+test('the daily cap spans numbers and batches, counts uncertain sends and leaves customer replies independent',async()=>{
+ const at=Date.parse('2026-11-05T13:00:00Z');const leads=Array.from({length:251},(_,i)=>d.addLead({business:'Fictícia '+i,phone:'55119000'+String(i).padStart(5,'0'),source:'MANUAL'}).lead);
+ const batch=q.enqueueApprovedApproaches({leadIds:leads.map(x=>x.id),approve:true,operatorApproved:true});assert.equal(batch.status,202);
+ const items=d.all('SELECT id FROM prospecting_batch_items ORDER BY created_at,id');
+ d.tx(()=>{for(const x of items.slice(0,249))d.run("UPDATE prospecting_batch_items SET status='SENT',attempt_at=? WHERE id=?",new Date(at).toISOString(),x.id);});
+ d.run("UPDATE prospecting_batch_items SET status='UNKNOWN' WHERE id=?",items[0].id);
+ assert.equal(dailyApproachBudget(new Date(at)).counted,249);let sends=0;
+ const deps={currentTime:()=>at,getSession:()=> 'limit-channel',getWaStatus:async()=>({connected:true}),send:async()=>{sends++;return {status:true};}};
+ assert.equal((await q.tickApproachQueue(deps)).status,'SENT');
+ assert.equal((await q.tickApproachQueue({...deps,currentTime:()=>at+300000})).status,'DAILY_LIMIT');
+ assert.equal(sends,1);assert.equal(dailyApproachBudget(new Date(at)).remaining,0);
+ assert.equal(dailyApproachBudget(new Date(at+86400000)).remaining,250);
+ assert.equal(q.approachQueueStatus().repliesIndependent,true);
+});

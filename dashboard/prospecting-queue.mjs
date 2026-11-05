@@ -3,6 +3,7 @@
 // A send timeout is UNKNOWN and is never retried automatically.
 import {db,id,one,all,run,tx,now,audit,getSetting,setSetting,getThread,addMessage} from './db.mjs';
 import {daySP} from './radar.mjs';
+import {dailyApproachBudget} from './daily-approach-limit.mjs';
 import {reserveApproachCredit,settleApproachCredit,availableApproachCredits} from './tenant-credits.mjs';
 import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt} from './approach-cadence.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
@@ -95,7 +96,7 @@ export function approachQueueStatus(){
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
  return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
   intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,senderRotation:{mode:'round_robin',sessions:managedSessions().length,lastSession:rotationCursor()},nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),approachDueAt(clock))).toISOString():null,
-  status:b?.status||'IDLE',availableCredits:availableApproachCredits(),repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
+  status:b?.status||'IDLE',dailyBudget:dailyApproachBudget(),availableCredits:availableApproachCredits(),repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
 export function enqueueApprovedApproaches(input={}){
  if(input.operatorApproved===true&&input.offerType!==undefined&&!['portfolio','promotion','corporate'].includes(input.offerType))return {status:400,body:{error:'Tipo de oferta inválido'}};
@@ -212,6 +213,7 @@ export async function tickApproachQueue(deps={}){
   const expired=closeStaleBatch(new Date(time));
   if(expired)return expired;
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
+  if(dailyApproachBudget(new Date(time)).remaining===0)return {status:'DAILY_LIMIT',limit:250};
   const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
   if(!next){run("UPDATE prospecting_batches SET status='COMPLETED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);return {status:'COMPLETED'};}
@@ -232,6 +234,7 @@ export async function tickApproachQueue(deps={}){
    const latest=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
    const nowMs=currentTime();
    if(nowMs<approachDueAt(latest)||!insideApproachWindow(new Date(nowMs)))return false;
+   if(dailyApproachBudget(new Date(nowMs)).remaining===0)return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return false;
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;

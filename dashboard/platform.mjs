@@ -80,7 +80,7 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
   fs.createReadStream(fileURLToPath(new URL('./public/landing.html',import.meta.url))).pipe(res);return true;
  }
- if(req.method==='GET'&&['/landing.css','/landing.js'].includes(p)){
+ if(req.method==='GET'&&['/landing.css','/landing.js','/product-theme.css'].includes(p)){
   res.writeHead(200,{'Content-Type':p.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','Cache-Control':'no-cache'});fs.createReadStream(fileURLToPath(new URL('./public'+p,import.meta.url))).pipe(res);return true;
  }
  if((p==='/api/platform/signup'||p==='/api/platform/signin')&&req.method==='POST'){
@@ -98,7 +98,7 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  }
  if(p==='/client/access'&&req.method==='GET'){
   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
-  res.end('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Acesso Prospector</title><style>body{font:16px system-ui;background:#f4f7f6;display:grid;place-items:center;min-height:90vh}main{background:white;padding:40px;border-radius:20px;max-width:400px}a{color:#207c59}</style><main><h1>Seu espaço no Prospector</h1><p id="message">Validando seu acesso…</p><a href="/access">Acesso administrativo</a></main><script>(async()=>{const token=location.hash.slice(1);history.replaceState(null,"","/client/access");const m=document.getElementById("message");if(!token){m.textContent="Use o link privado recebido da sua agência.";return;}try{const r=await fetch("/api/platform/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})});if(!r.ok)throw Error();location.replace("/");}catch{m.textContent="Acesso inválido ou suspenso. Solicite um novo link."}})()</script></html>');return true;
+  res.end('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Acesso Prospector</title><link rel="stylesheet" href="/product-theme.css"><style>body{font:16px system-ui;background:#f4f7f6;display:grid;place-items:center;min-height:90vh}main{background:white;padding:40px;border-radius:20px;max-width:400px}a{color:#207c59}</style><body class="token-access"><main><h1>Seu espaço no Prospector</h1><p id="message">Validando seu acesso…</p><a href="/access">Acesso administrativo</a></main><script>(async()=>{const token=location.hash.slice(1);history.replaceState(null,"","/client/access");const m=document.getElementById("message");if(!token){m.textContent="Use o link privado recebido da sua agência.";return;}try{const r=await fetch("/api/platform/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})});if(!r.ok)throw Error();location.replace("/");}catch{m.textContent="Acesso inválido ou suspenso. Solicite um novo link."}})()</script></html>');return true;
  }
  if(p==='/api/platform/login'&&req.method==='POST'){
   const ip=accessClientKey(req);if(limiter.blocked(ip)){respond(res,429,{error:'Muitas tentativas'});return true;}
