@@ -27,7 +27,12 @@ export function openPlatformStore(root){
   request_key TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   UNIQUE(client_id,request_key)
  );
- CREATE INDEX IF NOT EXISTS idx_credit_requests_status ON credit_requests(status,created_at);`);
+ CREATE INDEX IF NOT EXISTS idx_credit_requests_status ON credit_requests(status,created_at);
+ CREATE TABLE IF NOT EXISTS verified_payments(
+  stripe_session_id TEXT PRIMARY KEY,request_id TEXT NOT NULL UNIQUE REFERENCES credit_requests(id),
+  client_id TEXT NOT NULL REFERENCES clients(id),stripe_event_id TEXT NOT NULL UNIQUE,
+  price_cents INTEGER NOT NULL,credits INTEGER NOT NULL,created_at TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS idx_verified_payments_date ON verified_payments(created_at);`);
  const loginPhone=value=>{let x=String(value||'').replace(/\D/g,'');if(x.length===11)x='55'+x;return /^55\d{11}$/.test(x)?x:null;};
  const hash=x=>crypto.createHash('sha256').update(String(x)).digest('hex');
  const balance=id=>Number(db.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM credit_events WHERE client_id=?').get(id).n);
