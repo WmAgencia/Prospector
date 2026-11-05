@@ -31,7 +31,8 @@ export async function transcribeAudio({buffer,filename,fetchFn=fetch,phoneMode=f
  form.append('response_format','json');
  form.append('prompt',phoneMode?
   'Áudio brasileiro de telefone e DDD. Transcreva fielmente cada número pronunciado, inclusive números falados em grupos, mantendo a ordem, sem completar nenhum dígito. Não adivinhe o número.':
-  'Conversa da agência Consecom Brasil. A palavra Consecom escreve-se C-O-N-S-E-C-O-M. Francisca é o nome da voz. Termos: Consecom Brasil, site, orçamento, atendimento, WhatsApp, DDD, números de telefone ditados em grupos.');
+  (process.env.PROSPECTOR_TENANT_ID?'Conversa empresarial em português brasileiro. Nome da empresa: '+String(process.env.PROSPECTOR_TENANT_NAME||'').slice(0,70)+'. ': 'Conversa da agência Consecom Brasil. A palavra Consecom escreve-se C-O-N-S-E-C-O-M. ')+
+  'Francisca é o nome da voz. Termos: site, orçamento, atendimento, WhatsApp, DDD, números de telefone ditados em grupos.');
  const res=await fetchFn('https://api.groq.com/openai/v1/audio/transcriptions',{
   method:'POST',headers:{Authorization:'Bearer '+key,Accept:'application/json'},
   body:form,signal:AbortSignal.timeout(24000)});
@@ -39,7 +40,7 @@ export async function transcribeAudio({buffer,filename,fetchFn=fetch,phoneMode=f
  const data=await res.json().catch(()=>({}));
  // The specific agency name is often split phonetically by Whisper. Correct
  // common spelling variants without changing the rest of the transcript.
- const content=String(data.text||'').trim().slice(0,2000).replace(/\b(?:conse\s*com|consecon|concecom|consecone|consecom)\b/gi,'Consecom');
+ const content=String(data.text||'').trim().slice(0,2000).replace(/\b(?:conse\s*com|consecon|concecom|consecone|consecom)\b/gi,process.env.PROSPECTOR_TENANT_ID?match=>match:'Consecom');
  if(content.length<2)throw Error('TRANSCRIPT_EMPTY');
  // Avoid hallucinating common boilerplate for silence.
  if(/^(?:legendas? (?:por|pela)|obrigad[oa] por assistir|inscreva-se no canal)[.!\s]*$/i.test(content))throw Error('TRANSCRIPT_UNCERTAIN');
