@@ -198,3 +198,9 @@ body.p3-site{background:#f7f7ff;color:var(--deep);font:400 14px/1.55 'DM Sans',s
  .p3-footer{flex-direction:column;gap:18px}.p3-footer nav{gap:10px 16px}
 }
 @media(prefers-reduced-motion:reduce){.p3-site *{animation:none!important;transition:none!important;scroll-behavior:auto!important}.p3-hero-panel,.p3-price-card,.p3-pill{transform:none!important}}
+
+/* Visual polish: never hide sales content if scripts or observers fail. */
+@media(prefers-reduced-motion:no-preference){
+ @keyframes prospectorSoftReveal{from{opacity:.55;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+ .p3-site .motion-ready.is-visible{animation:prospectorSoftReveal .48s ease-out both;animation-delay:var(--p3-reveal-delay,0ms)}
+}
