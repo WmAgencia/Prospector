@@ -9,6 +9,8 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {openPlatformStore} from './platform-store.mjs';
 import {CREDIT_PACKAGES} from './credit-packages.mjs';
+import {masterAnalytics} from './platform-analytics.mjs';
+import {billingReady,checkoutForRequest,handleStripeWebhook} from './stripe-billing.mjs';
 import {createAccessLimiter,accessClientKey} from './access-rate-limit.mjs';
 const isWorker=!!process.env.PROSPECTOR_TENANT_ID;
 const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform');
@@ -96,6 +98,7 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   return false;
  }
  const p=url.pathname;
+ if(p==='/api/platform/billing/webhook'){await handleStripeWebhook(req,res,{respond,ledger:registry()});return true;}
  if(req.method==='GET'&&(p==='/conheca'||p==='/cadastro'||p==='/entrar'||p==='/'&&!authorized(req)&&!clientFromRequest(req))){
   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
   fs.createReadStream(fileURLToPath(new URL('./public/landing.html',import.meta.url))).pipe(res);return true;
@@ -169,7 +172,8 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   }catch(e){passwordLimiter.failed(ip);respond(res,422,{error:String(e.message).slice(0,180)});}
   return true;
  }
- if(p==='/api/platform/credits'&&client){respond(res,200,{...registry().publicClient(client),items:registry().events(client.id),package:{credits:250,priceBrl:9.9},packages:CREDIT_PACKAGES,requests:registry().listCreditRequests(client.id)});return true;}
+ if(p==='/api/platform/credits'&&client){respond(res,200,{...registry().publicClient(client),items:registry().events(client.id),package:{credits:250,priceBrl:9.9},packages:CREDIT_PACKAGES,requests:registry().listCreditRequests(client.id),automaticBilling:billingReady()});return true;}
+ if(p==='/api/platform/analytics'&&req.method==='GET'){if(!ownerMaster&&!authorized(req)){respond(res,403,{error:'Acesso exclusivo do Master'});return true;}respond(res,200,{...masterAnalytics(registry()),packages:CREDIT_PACKAGES});return true;}
  if(p==='/api/platform/credit-requests'){
   if(req.method==='GET'){
    if(ownerMaster)respond(res,200,{items:registry().listCreditRequests()});
@@ -181,7 +185,7 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   if(req.method==='POST'){
    if(!client||client.is_internal===1){respond(res,403,{error:'Disponível somente para clientes'});return true;}
    const input=await json(req);
-   try{respond(res,201,{request:registry().requestCredits(client.id,input.packageId,input.requestKey)});}
+   try{const request=registry().requestCredits(client.id,input.packageId,input.requestKey);respond(res,201,{request,checkoutUrl:checkoutForRequest(request),automaticBilling:billingReady()});}
    catch(e){respond(res,422,{error:String(e.message).slice(0,200)});}
    return true;
   }
