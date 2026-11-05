@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {fileURLToPath} from 'node:url';
+const read=p=>fs.readFileSync(fileURLToPath(new URL('../'+p,import.meta.url)),'utf8');
+const landing=read('dashboard/public/landing.html');
+const theme=read('dashboard/public/landing-redesign.css');
+const appIndex=read('dashboard/public/index.html');
+const appTheme=read('dashboard/public/dashboard-purple.css');
+const server=read('dashboard/server.mjs');
+test('real app loads purple presentation after the old base styles',()=>{
+ const base=appIndex.indexOf('href="/product-theme.css"');
+ const final=appIndex.indexOf('href="/dashboard-purple.css"');
+ assert.ok(base>=0&&final>base);
+ assert.ok(server.includes("'dashboard-purple.css'"));
+ assert.match(appTheme,/\.nav\.active/);
+ assert.match(appTheme,/\.kanban-column\.kanban-interested/);
+ assert.match(appTheme,/\.credit-packet\.featured/);
+ assert.match(appTheme,/@media\(max-width:700px\)/);
+ assert.match(appTheme,/prefers-reduced-motion/);
+});
+test('approved marketing visual has synthetic dashboard, alert, product demo and honest credits',()=>{
+ assert.match(landing,/Uma plataforma/);
+ assert.match(landing,/Mais <em>oportunidades/);
+ assert.match(landing,/Menos trabalho manual/);
+ assert.match(landing,/p3-hero-panel/);
+ assert.match(landing,/p3-lead-popup/);
+ assert.match(landing,/Demonstração com dados fictícios/);
+ assert.match(landing,/Situações fictícias/);
+ assert.match(landing,/não são depoimentos de clientes/i);
+ assert.match(landing,/não realiza cobrança automática/);
+ assert.match(theme,/\.p3-price-featured/);
+ assert.match(theme,/\.p3-demo-shell/);
+});
