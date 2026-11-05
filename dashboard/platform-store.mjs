@@ -2,6 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {getCreditPackage} from './credit-packages.mjs';
 export function openPlatformStore(root){
  fs.mkdirSync(root,{recursive:true});
  const db=new DatabaseSync(path.join(root,'platform.sqlite'));
@@ -15,6 +16,16 @@ export function openPlatformStore(root){
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS only_one_internal_client ON clients(is_internal) WHERE is_internal=1');
  if(!db.prepare('PRAGMA table_info(client_passwords)').all().some(x=>x.name==='phone'))db.exec('ALTER TABLE client_passwords ADD COLUMN phone TEXT');
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS unique_login_phone ON client_passwords(phone) WHERE phone IS NOT NULL');
+ // Purchase requests never grant credit until the Master verifies payment.
+ db.exec(`CREATE TABLE IF NOT EXISTS credit_requests(
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES clients(id),
+  package_id TEXT NOT NULL, credits INTEGER NOT NULL, price_cents INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('PENDING','APPROVED','DECLINED')),
+  request_key TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(client_id,request_key)
+ );
+ CREATE INDEX IF NOT EXISTS idx_credit_requests_status ON credit_requests(status,created_at);`);
  const loginPhone=value=>{let x=String(value||'').replace(/\D/g,'');if(x.length===11)x='55'+x;return /^55\d{11}$/.test(x)?x:null;};
  const hash=x=>crypto.createHash('sha256').update(String(x)).digest('hex');
  const balance=id=>Number(db.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM credit_events WHERE client_id=?').get(id).n);
@@ -32,7 +43,44 @@ export function openPlatformStore(root){
    db.exec('COMMIT');return balance(id);
   }catch(e){db.exec('ROLLBACK');throw e;}
  }
+ const selectRequest=db.prepare("SELECT r.id,r.client_id,r.package_id,r.credits,r.price_cents,r.status,r.created_at,r.updated_at,c.name AS client_name,c.email AS client_email FROM credit_requests r JOIN clients c ON c.id=r.client_id WHERE r.id=?");
  return {db,get,balance,adjust,publicClient,pending,
+  listCreditRequests(clientId=null){
+   return clientId
+    ?db.prepare("SELECT r.id,r.client_id,r.package_id,r.credits,r.price_cents,r.status,r.created_at,r.updated_at FROM credit_requests r WHERE r.client_id=? ORDER BY r.created_at DESC LIMIT 100").all(clientId)
+    :db.prepare("SELECT r.id,r.client_id,r.package_id,r.credits,r.price_cents,r.status,r.created_at,r.updated_at,c.name AS client_name,c.email AS client_email FROM credit_requests r JOIN clients c ON c.id=r.client_id ORDER BY CASE WHEN r.status='PENDING' THEN 0 ELSE 1 END,r.created_at DESC LIMIT 250").all();
+  },
+  requestCredits(clientId,packageId,requestKey){
+   const client=get(clientId),pack=getCreditPackage(packageId);
+   if(!client||client.status!=='active'||client.is_internal===1)throw Error('Conta indisponível para recarga');
+   if(!pack)throw Error('Pacote inválido');
+   if(!/^[a-f0-9-]{36}$/i.test(String(requestKey||'')))throw Error('Identificador da solicitação inválido');
+   db.exec('BEGIN IMMEDIATE');try{
+    const existing=db.prepare('SELECT id FROM credit_requests WHERE client_id=? AND request_key=?').get(clientId,requestKey);
+    if(existing){db.exec('COMMIT');return selectRequest.get(existing.id);}
+    const pendingCount=db.prepare("SELECT COUNT(*) n FROM credit_requests WHERE client_id=? AND status='PENDING'").get(clientId).n;
+    if(pendingCount>=3)throw Error('Você já possui três pedidos aguardando confirmação. Acompanhe-os no seu painel.');
+    const id=crypto.randomUUID(),at=new Date().toISOString();
+    db.prepare('INSERT INTO credit_requests(id,client_id,package_id,credits,price_cents,status,request_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(id,clientId,pack.id,pack.credits,pack.priceCents,'PENDING',requestKey,at,at);
+    db.exec('COMMIT');return selectRequest.get(id);
+   }catch(e){db.exec('ROLLBACK');throw e;}
+  },
+  settleCreditRequest(requestId,{approved,confirmedPayment}={}){
+   db.exec('BEGIN IMMEDIATE');try{
+    const item=selectRequest.get(requestId);
+    if(!item)throw Error('Pedido não encontrado');
+    if(item.status!=='PENDING'){db.exec('COMMIT');return item;}
+    if(approved===true){
+     if(confirmedPayment!==true)throw Error('Confirme o pagamento antes de liberar créditos');
+     if(get(item.client_id)?.status!=='active')throw Error('Cliente suspenso: reative antes de aprovar');
+     db.prepare('INSERT OR IGNORE INTO credit_events VALUES(?,?,?,?,?,?)').run(crypto.randomUUID(),item.client_id,item.credits,
+      'Recarga '+item.credits+' créditos · pagamento confirmado','credit-request:'+item.id,new Date().toISOString());
+    }
+    const status=approved===true?'APPROVED':'DECLINED';
+    db.prepare('UPDATE credit_requests SET status=?,updated_at=? WHERE id=?').run(status,new Date().toISOString(),item.id);
+    db.exec('COMMIT');return selectRequest.get(item.id);
+   }catch(e){db.exec('ROLLBACK');throw e;}
+  },
   signup({name,email,password,phone,privacyAcknowledged}){
    email=String(email||'').trim().toLowerCase();password=String(password||'');
    if(privacyAcknowledged!==true||password.length<10||password.length>128)throw Error('Use uma senha de 10 a 128 caracteres e confirme a leitura sobre seus dados');
