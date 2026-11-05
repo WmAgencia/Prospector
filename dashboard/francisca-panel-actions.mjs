@@ -26,6 +26,7 @@ export function interpretFranciscaAction(text,at=new Date()){
  if(!/(?:program|agend|configur|ativ|inici|comec|prospect|pesquis|busc|procur|encontr)/.test(input))return null;
  if(!/(?:prospect|pesquis|empresa|nicho|contato|lead)/.test(input))return null;
  const niche=findNiche(input),city=findCity(input);
+ if(/(?:todos os nichos|todos nichos|todas as cidades|todos os segmentos|todos os ramos)/.test(input)&&/amanha|proximo dia/.test(input))return {kind:'schedule_discovery',mode:city?'all-city':'all',niche:'',city:city?.label||'',startDay:tomorrowSP(at)};
  if(!niche||!city)return null; // Never invent or broaden unsupported niches/cities.
  if(/amanha|proximo dia/.test(input))return {kind:'schedule_discovery',mode:'niche-city',niche,city:city.label,startDay:tomorrowSP(at)};
  if(/(?:agora|hoje|a partir de ja|imediatamente)/.test(input))
@@ -34,14 +35,16 @@ export function interpretFranciscaAction(text,at=new Date()){
 }
 export function applyFranciscaAction(action){
  if(!action||!['schedule_discovery','configure_discovery'].includes(action.kind))throw Error('Ação não autorizada');
- if(action.mode!=='niche-city'||!SEGMENTS[action.niche]||!resolveLocation(action.city))throw Error('Nicho ou cidade não suportado');
+ if(!['niche-city','all','all-city'].includes(action.mode))throw Error('Abrangência não suportada');
+ if(action.mode==='niche-city'&&(!SEGMENTS[action.niche]||!resolveLocation(action.city)))throw Error('Nicho ou cidade não suportado');
+ if(action.mode==='all-city'&&!resolveLocation(action.city))throw Error('Cidade não suportada');
  if(action.kind==='schedule_discovery'){
   const today=daySP(),day=action.startDay;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||day<=today||day>tomorrowSP(new Date(Date.now()+7*86400000)))throw Error('Data não permitida');
   const saved={...action,status:'SCHEDULED',createdAt:now()};
   setSetting('prospecting_schedule',saved);
   audit('FRANCISCA_DISCOVERY_SCHEDULED',null,{day,niche:action.niche,city:action.city});
-  return {ok:true,action:'scheduled_discovery',date:day,message:'Programei a pesquisa de '+SEGMENTS[action.niche].label.toLowerCase()+' em '+action.city+' para '+day+' a partir das 5h. Isso não autoriza enviar WhatsApps.'};
+  return {ok:true,action:'scheduled_discovery',date:day,message:'Programei a pesquisa de '+(action.mode==='all'?'todos os nichos e cidades cadastrados':action.mode==='all-city'?'todos os nichos em '+action.city:SEGMENTS[action.niche].label.toLowerCase()+' em '+action.city)+' para amanhã, '+day+', a partir das 5h. Isso não autoriza enviar WhatsApps.'};
  }
  const result=saveScope({mode:action.mode,niche:action.niche,city:action.city,enabled:true});
  audit('FRANCISCA_DISCOVERY_ACTIVATED',null,{niche:action.niche,city:action.city});
