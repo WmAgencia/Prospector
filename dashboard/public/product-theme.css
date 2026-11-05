@@ -144,3 +144,5 @@ body:has(.kanban-dashboard) .content{display:block!important}
 .training-all-confirm input{width:19px;height:19px;flex:none;margin-top:0;accent-color:#186943}
 @media(max-width:1180px){.setup-progress{flex-direction:column;align-items:stretch}}
 @media(max-width:700px){.setup-progress{padding:15px}.setup-items{display:grid;grid-template-columns:1fr}.setup-item{width:100%;justify-content:flex-start}}
+
+.credit-preference{display:flex;justify-content:space-between;align-items:center;gap:18px;background:#e7f7d7;border:1px solid #b2d895;border-radius:16px;padding:17px 20px;margin:15px 0 18px}.credit-preference strong{font-size:14px;color:#214c2c}.credit-preference p{font-size:12px;color:#4a6847;line-height:1.6;margin:4px 0 0}.credit-preference button{flex:none;min-height:43px}@media(max-width:700px){.credit-preference{flex-direction:column;align-items:stretch}.credit-preference button{width:100%;justify-content:center}}
