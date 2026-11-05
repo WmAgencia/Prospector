@@ -762,7 +762,7 @@ document.addEventListener("click",async ev=>{
   if(action==='select-wa'){
    connectionSession=String(el.dataset.session||'');qrResult=null;
    const chosen=waAccounts.find(x=>x.session_id===connectionSession);
-   if(chosen?.connected){wa={...wa,connected:true,status:'CONNECTED'};waQrOpen=true;waQrConnectedAt=0;render();return;}
+   if(chosen?.connected){waQrOpen=true;waQrConnectedAt=0;await refreshWa();render();return;}
    await openWhatsappQr();return;
   }
   if(action==='add-wa'){
