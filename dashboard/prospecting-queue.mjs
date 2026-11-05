@@ -9,7 +9,8 @@ import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
 import {insideApproachWindow} from './outreach-window.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
-import {waRequest,selectedWaSession,waControlStatus} from './waakg-control.mjs';
+import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
+import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
 
 export const APPROACH_INTERVAL_MS=90_000;
 // Railway production always requires documented permission; tests may opt in explicitly.
@@ -91,7 +92,7 @@ export function approachQueueStatus(){
  const unknown=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='UNKNOWN'")?.n||0;
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
  return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
-  intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),clock.last_attempt_ms+clock.interval_ms)).toISOString():null,
+  intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,senderRotation:{mode:'round_robin',sessions:managedSessions().length,lastSession:rotationCursor()},nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),clock.last_attempt_ms+clock.interval_ms)).toISOString():null,
   status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
 export function enqueueApprovedApproaches(input={}){
@@ -216,7 +217,8 @@ export async function tickApproachQueue(deps={}){
    run("UPDATE prospecting_batch_items SET status='SKIPPED',error='Elegibilidade alterada',attempt_at=? WHERE id=?",now(),next.id);
    return {status:'SKIPPED'};
   }
-  const wa=await getWaStatus(),session=getSession()||wa.sessionId;
+  const rotating=!deps.getWaStatus&&!deps.getSession;
+  const wa=rotating?await selectApproachSender():await getWaStatus(),session=rotating?wa.sessionId:(getSession()||wa.sessionId);
   if(!wa.connected||!session)return {status:'OFFLINE'};
   // Transaction reserves the global clock *before* invoking the provider.
   // Timestamp can only move forward. The interval is enforced after restarts.
@@ -229,9 +231,12 @@ export async function tickApproachQueue(deps={}){
    if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return false;
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
    if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS'))return false;
+   if(rotating&&rotationCursor()!==wa.cursor)return false;
    // Reserve both the attempt and its next random interval atomically. Polling,
    // failures and process restarts never reroll or shorten the chosen wait.
    run('UPDATE prospecting_send_clock SET last_attempt_ms=?,interval_ms=? WHERE id=1',nowMs,chooseApproachInterval(latest.interval_ms));
+   bindLeadSession(next.lead_id,session);
+   if(rotating)advanceRotation(session);
    run("UPDATE prospecting_batch_items SET status='SENDING',attempt_at=? WHERE id=? AND status='QUEUED'",new Date(nowMs).toISOString(),next.id);
    // No duplicate recipient attempts even after crashes.
    run('INSERT OR IGNORE INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)',next.lead_id,next.phone,'UNKNOWN',next.id,new Date(nowMs).toISOString());

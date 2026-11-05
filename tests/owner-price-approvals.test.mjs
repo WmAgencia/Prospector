@@ -17,6 +17,22 @@ function fixture(){
 }
 const event=(request,text='350')=>({jid:'5515981817336@s.whatsapp.net',sessionId:'price-session',providerId:'decision-'+request.id,text:'PRECO '+request.id+' '+text});
 const deps=(send=async()=>({status:true}))=>({getStatus:async()=>({connected:true,sessionId:'price-session'}),transmit:send,getSessionIdentity:async()=> '5515999999999@s.whatsapp.net'});
+
+test('primary owner approves a customer quote that is sent only through its secondary origin',async()=>{
+ const {registerSession,bindLeadSession}=await import('../dashboard/waakg-session-registry.mjs');
+ registerSession('price-secondary','Comercial 2');
+ const lead=fixture();bindLeadSession(lead.id,'price-secondary');
+ const {request}=p.requestPriceApproval({leadId:lead.id,providerId:'secondary-question',question:'Valor?',sessionId:'price-secondary'});
+ assert.ok(request);
+ const paths=[];
+ const transport={...deps(async(path)=>{paths.push(path);return {status:true};}),getStatus:async sessionId=>({connected:true,sessionId})};
+ await p.flushPriceApprovals(transport);
+ assert.ok(paths.length>=1);assert.ok(paths.every(path=>path.startsWith('/api/messages/price-session/')));
+ assert.equal((await p.processPriceDecision({...event(request),sessionId:'price-secondary'},transport)).ok,false);
+ paths.length=0;
+ assert.equal((await p.processPriceDecision(event(request,'550'),transport)).ok,true);
+ assert.equal(paths.length,1);assert.ok(paths[0].startsWith('/api/messages/price-secondary/'));
+});
 test('request idempotency, owner buttons and confirmation links carry request only',async()=>{
  const lead=fixture(),input={leadId:lead.id,providerId:'q1',question:'Quanto custa?',sessionId:'price-session'};
  const a=p.requestPriceApproval(input),b=p.requestPriceApproval(input);

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'auto-outreach-window-'));
 process.env.PROSPECTOR_DATA_DIR=dir;
+process.env.WA_AKG_SESSION_ID='test-session';
 const d=await import('../dashboard/db.mjs');
 const q=await import('../dashboard/prospecting-queue.mjs');
 const {insideApproachWindow}=await import('../dashboard/outreach-window.mjs');

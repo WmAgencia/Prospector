@@ -17,6 +17,7 @@ function createHarness({mapsConfigured=false,previewReady=0}={}){
  const field={value:'',focus(){},selectionStart:0,setSelectionRange(){}};
  const city={value:'',focus(){}};
  const composer={value:'',focus(){}};
+ const waLabel={value:'Comercial extra'};
  const document={
   hidden:false,
   addEventListener(name,cb){listeners[name]=cb;},
@@ -27,6 +28,7 @@ function createHarness({mapsConfigured=false,previewReady=0}={}){
    if(sel==='#niche')return field;
    if(sel==='#city')return city;
    if(sel==='#chat-text')return composer;
+   if(sel==='#new-wa-label')return waLabel;
    if(sel==='#send-form')return sendForm;
    if(sel==='#send-form button[type="submit"]')return sendButton;
    return null;
@@ -47,7 +49,11 @@ function createHarness({mapsConfigured=false,previewReady=0}={}){
   else if(route.startsWith('/api/prospecting?'))data=base;
   else if(route==='/api/maps/status')data={configured:mapsConfigured,jobs:[]};
   else if(route==='/api/prospecting/queue'&&opts.method!=='POST')data={active:false,waiting:0,intervalSeconds:90};
+  else if(route==='/api/whatsapp/sessions'&&opts.method==='POST')data={sessionId:'pool-extra',label:'Comercial extra'};
+  else if(route==='/api/whatsapp/sessions')data={items:[{session_id:'pool-main',label:'Principal',connected:true,status:'CONNECTED'},{session_id:'pool-extra',label:'Comercial extra',connected:false,status:'SCAN_QR'}]};
   else if(route==='/api/whatsapp/status')data={ok:true,connected:false,status:'DISCONNECTED'};
+  else if(route.startsWith('/api/whatsapp/status?'))data={ok:true,connected:false,status:'SCAN_QR',hasSession:true};
+  else if(route.startsWith('/api/whatsapp/qr?'))data={connected:false,status:'SCAN_QR',qr:'data:image/png;base64,AAAA'};
   else if(route==='/api/prospecting/search')data={ok:true,source:'OpenStreetMap',added:2};
   else if(route==='/api/ai/draft')data={ok:true,draft:'Claro! Posso explicar melhor?',profile:{profileLabel:'Quer entender os detalhes',nextAction:'Explicar de modo simples',confidence:'moderate'},requiresApproval:true,autoSend:false};
   else if(route.startsWith('/api/whatsapp/interactive-preview'))data={ok:true,mode:'introduction',title:'Consecom Brasil',body:'Gostaria de conhecer nossa proposta?',buttons:[{displayText:'Quero saber mais'},{displayText:'Ver um exemplo'},{displayText:'Falar com alguém'}]};
@@ -88,6 +94,17 @@ test('Prospecção starts with no hidden city/niche filter and displays existing
  assert.ok(!h.fetches.some(f=>f.method==='POST'),'opening the tab must not trigger provider calls or messaging');
  assert.match(h.root.innerHTML,/data-tab="prospects"/);
  assert.match(h.root.innerHTML,/data-tab="connections"/);
+});
+
+test('connections add a separate account and request its own QR without switching the primary',async()=>{
+ const h=createHarness();
+ await vm.runInContext("view='connections';refreshWa()",h.context);
+ assert.match(h.viewEl.innerHTML,/Adicionar WhatsApp/);
+ assert.match(h.viewEl.innerHTML,/Comercial extra/);
+ await h.listeners.click({target:{closest:()=>({dataset:{action:'add-wa'}})}});
+ assert.ok(h.fetches.some(f=>f.route==='/api/whatsapp/sessions'&&f.method==='POST'&&f.body.name==='Comercial extra'));
+ assert.ok(h.fetches.some(f=>f.route==='/api/whatsapp/qr?sessionId=pool-extra'));
+ assert.ok(!h.fetches.some(f=>f.route==='/api/settings'&&f.method==='POST'));
 });
 test('clicking Abordar is the approval and does not require a second browser confirmation',async()=>{
  const h=createHarness({previewReady:1});await vm.runInContext('reload()',h.context);

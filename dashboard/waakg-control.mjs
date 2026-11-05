@@ -1,6 +1,8 @@
 // Private WA-AKG control-plane for the Prospector dashboard.
 // All credentials remain in Railway variables; no admin tokens sent to the browser.
 import {getSetting,setSetting} from "./db.mjs";
+import {randomUUID} from 'node:crypto';
+import {managedSessions,isManagedSession,registerSession,nextConnectedSession,rotationCursor} from './waakg-session-registry.mjs';
 const base="https://wa-akg-production-f9f0.up.railway.app";
 const sessionKey="waakg_primary_session_id";
 let cachedKey="",pendingKey=null;
@@ -62,10 +64,11 @@ export async function waRequest(path,{method="GET",data}={}){
  if(!result.res.ok||result.json.status===false)throw errorFrom(result.res,result.json);
  return result.json;
 }
-export async function waControlStatus(){
- const sessionId=selectedWaSession();
+export async function waControlStatus(requestedSession,listedSessions){
+ const sessionId=requestedSession||selectedWaSession();
+ if(requestedSession&&!isManagedSession(requestedSession))return {ok:false,connected:false,status:'UNAUTHORIZED_SESSION'};
  try{
-  const data=await waRequest("/api/sessions");
+  const data=Array.isArray(listedSessions)?{data:listedSessions}:await waRequest("/api/sessions");
   const arr=Array.isArray(data.data)?data.data:[];
   const target=(sessionId?arr.find(x=>x.sessionId===sessionId):arr.find(x=>x.sessionId==="consecom-principal"))||null;
   if(target&&!sessionId)setSetting(sessionKey,target.sessionId);
@@ -80,11 +83,11 @@ export async function waControlStatus(){
   const connected=status==="CONNECTED"&&live.hasInstance===true&&Boolean(live.me?.id||live.me?.jid);
   const transportStale=status==="CONNECTED"&&!connected;
   return {ok:true,connected,status:transportStale?"DISCONNECTED":status,
-   transportStale,sessionId:picked,hasSession:true,totalSessions:arr.length,qrAvailable:!connected};
+   transportStale,sessionId:picked,numberSuffix:String(live.me?.id||live.me?.jid||'').split('@')[0].split(':')[0].slice(-4),hasSession:true,totalSessions:arr.length,qrAvailable:!connected};
  }catch(e){return {ok:false,connected:false,status:"ERROR",message:String(e.message).slice(0,180),sessionId,hasSession:!!sessionId};}
 }
-export async function waConnect(){
- let state=await waControlStatus();
+export async function waConnect(requestedSession){
+ let state=await waControlStatus(requestedSession);
  if(!state.ok)throw Error(state.message);
  let sessionId=state.sessionId;
  if(!sessionId){
@@ -92,6 +95,12 @@ export async function waConnect(){
   sessionId=created.data?.sessionId||"";
   if(!safeId(sessionId))throw Error("WA-AKG não criou uma sessão válida");
   setSetting(sessionKey,sessionId);
+ }
+ if(requestedSession&&requestedSession!==selectedWaSession()){
+  // New gateway sessions enable their own bot by default. Keep all customer
+  // automation in Prospector so the gateway cannot answer in parallel.
+  const config=await waRequest('/api/sessions/'+encodeURIComponent(sessionId)+'/bot-config',{method:'POST',data:{botMode:'SPECIFIC',botAllowedJids:[],autoReplyMode:'SPECIFIC',autoReplyAllowedJids:[],welcomeMessage:null,enableSticker:false,enableVideoSticker:false,enablePing:false,enableUptime:false}});
+  if(config.data?.botMode!=='SPECIFIC'||config.data?.autoReplyMode!=='SPECIFIC'||!Array.isArray(config.data?.botAllowedJids)||config.data.botAllowedJids.length||!Array.isArray(config.data?.autoReplyAllowedJids)||config.data.autoReplyAllowedJids.length)throw Error('O gateway não confirmou a exclusividade do atendimento pelo Prospector');
  }
  if(state.transportStale){
   // WA-AKG still has a stale CONNECTED instance, but no authenticated user:
@@ -110,8 +119,8 @@ export async function waConnect(){
  }
  return {ok:true,sessionId,connected:state.connected,message:state.connected?"WhatsApp conectado":"Sessão iniciada. Escaneie o QR Code."};
 }
-export async function waGetQR(){
- const status=await waControlStatus();
+export async function waGetQR(requestedSession){
+ const status=await waControlStatus(requestedSession);
  if(!status.ok||!status.sessionId)return {status:status.status,connected:false,message:status.message||"Clique em Conectar para iniciar a sessão",qr:null};
  if(status.connected)return {status:"CONNECTED",connected:true,qr:null};
  try{
@@ -123,20 +132,20 @@ export async function waGetQR(){
   return {status:status.status,connected:false,qr:null,message:"Aguardando QR Code. O servidor pode demorar alguns segundos."};
  }
 }
-export async function waDisconnect(){
- const current=await waControlStatus();
+export async function waDisconnect(requestedSession){
+ const current=await waControlStatus(requestedSession);
  if(!current.ok)throw Error("Não foi possível verificar o WhatsApp antes da desconexão. Confira a conexão do gateway.");
  if(!current.hasSession)return {ok:true,connected:false,status:"DISCONNECTED",verified:true};
  const sid=current.sessionId;
  // stop only pauses the socket; logout revokes the pairing and requires a
  // fresh QR Code. Never claim success before read-back verification.
- setSetting("paused",true);
+ if(!requestedSession)setSetting("paused",true);
  setSetting("waakg_disconnect_requested_at",new Date().toISOString());
  if(current.status!=="LOGGED_OUT"){
   await waRequest("/api/sessions/"+encodeURIComponent(sid)+"/logout",{method:"POST",data:{}});
  }
  for(let attempt=0;attempt<7;attempt++){
-  const check=await waControlStatus();
+  const check=await waControlStatus(requestedSession);
   if(check.ok&&!check.connected&&check.status==="LOGGED_OUT"){
    setSetting("waakg_disconnect_verified_at",new Date().toISOString());
    return {ok:true,connected:false,status:check.status,verified:true,reconnectRequiresQr:true};
@@ -155,4 +164,29 @@ export async function waIdentityStatus(){
   const digits=raw.split("@")[0].split(":")[0].replace(/\\D/g,"");
   return {connected:state.connected,numberSuffix:digits?digits.slice(-4):null,sessionFound:true};
  }catch{return {connected:state.connected,numberSuffix:null,sessionFound:true};}
+}
+export async function waSessionList(){
+ const listed=await waRequest('/api/sessions');
+ const arr=Array.isArray(listed.data)?listed.data:[];
+ const items=await Promise.all(managedSessions().map(async row=>({...row,...await waControlStatus(row.session_id,arr)})));
+ return {items,connected:items.some(x=>x.connected),rotation:'round_robin',globalCadence:true};
+}
+export async function waCreateSession(label){
+ const name=String(label||'').trim();
+ if(!name||name.length>70)throw Error('Informe um nome de até 70 caracteres para o WhatsApp');
+ const sessionId='prospector-'+randomUUID();
+ const created=await waRequest('/api/sessions',{method:'POST',data:{name,sessionId}});
+ if(created.data?.sessionId!==sessionId)throw Error('O gateway não confirmou a criação da sessão');
+ registerSession(sessionId,name);
+ return {sessionId,label:name,...await waConnect(sessionId)};
+}
+export async function selectApproachSender(){
+ const pool=await waSessionList(),cursor=rotationCursor();
+ const sessionId=nextConnectedSession(managedSessions().map(x=>x.session_id),pool.items.filter(x=>x.connected).map(x=>x.session_id),cursor);
+ return {connected:!!sessionId,sessionId,cursor};
+}
+export async function waOperationalStatus(){
+ if(managedSessions().length<=1)return waControlStatus();
+ const pool=await waSessionList();
+ return {ok:pool.items.some(x=>x.ok),connected:pool.connected,status:pool.connected?'CONNECTED':'DISCONNECTED',totalSessions:pool.items.length,sessionId:selectedWaSession()};
 }
