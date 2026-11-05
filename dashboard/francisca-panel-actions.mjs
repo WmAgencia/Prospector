@@ -26,6 +26,9 @@ export function interpretFranciscaAction(text,at=new Date()){
  if(!/(?:program|agend|configur|ativ|inici|comec|prospect|pesquis|busc|procur|encontr)/.test(input))return null;
  if(!/(?:prospect|pesquis|empresa|nicho|contato|lead)/.test(input))return null;
  const niche=findNiche(input),city=findCity(input);
+ // A nationwide request is NOT the same as the finite set of cities supported by OSM.
+ if(/(?:todo o pais|pais inteiro|todo o brasil|brasil inteiro|territorio nacional|nivel nacional|todas as cidades do brasil|todo pais)/.test(input))
+  return {kind:'unsupported_nationwide'};
  if(/(?:todos os nichos|todos nichos|todas as cidades|todos os segmentos|todos os ramos)/.test(input)&&/amanha|proximo dia/.test(input))return {kind:'schedule_discovery',mode:city?'all-city':'all',niche:'',city:city?.label||'',startDay:tomorrowSP(at)};
  if(!niche||!city)return null; // Never invent or broaden unsupported niches/cities.
  if(/amanha|proximo dia/.test(input))return {kind:'schedule_discovery',mode:'niche-city',niche,city:city.label,startDay:tomorrowSP(at)};
@@ -34,7 +37,9 @@ export function interpretFranciscaAction(text,at=new Date()){
  return null;
 }
 export function applyFranciscaAction(action){
- if(!action||!['schedule_discovery','configure_discovery'].includes(action.kind))throw Error('Ação não autorizada');
+ if(action?.kind==='unsupported_nationwide')return {ok:false,action:'coverage_not_supported',
+  message:'Posso preparar pesquisas nos nichos e cidades cadastrados no Prospector, mas ainda não tenho cobertura nacional. Não agendei uma pesquisa para todo o Brasil. Se quiser, podemos usar todas as cidades disponíveis.',
+  uiAction:{kind:'open_prospecting',label:'Ver cidades disponíveis'}};\n if(!action||!['schedule_discovery','configure_discovery'].includes(action.kind))throw Error('Ação não autorizada');
  if(!['niche-city','all','all-city'].includes(action.mode))throw Error('Abrangência não suportada');
  if(action.mode==='niche-city'&&(!SEGMENTS[action.niche]||!resolveLocation(action.city)))throw Error('Nicho ou cidade não suportado');
  if(action.mode==='all-city'&&!resolveLocation(action.city))throw Error('Cidade não suportada');
