@@ -23,8 +23,8 @@ function findNiche(words){
 }
 export function interpretFranciscaAction(text,at=new Date()){
  const input=norm(text);
- if(!/(?:program|agend|configur|ativ|inici|comec|prospect|pesquis|busc|procur|encontr)/.test(input))return null;
- if(!/(?:prospect|pesquis|empresa|nicho|contato|lead)/.test(input))return null;
+ if(!/(?:program|agend|configur|ativ|inici|comec|prospec|prepar|pesquis|busc|procur|encontr)/.test(input))return null;
+ if(!/(?:prospec|pesquis|empresa|nicho|contato|lead)/.test(input))return null;
  const niche=findNiche(input),city=findCity(input);
  // A nationwide request is NOT the same as the finite set of cities supported by OSM.
  if(/(?:todo o pais|pais inteiro|todo o brasil|brasil inteiro|territorio nacional|nivel nacional|todas as cidades do brasil|todo pais)/.test(input))
