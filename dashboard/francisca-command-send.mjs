@@ -30,7 +30,7 @@ export async function executeFranciscaSend(command){
   const chats=await remoteChats();
   const matches=(chats.items||[]).filter(x=>{
    const name=norm(x.name||x.business);
-   return /^\\d{10,15}@s\\.whatsapp\\.net$/.test(x.jid)&&
+   return /^\d{10,15}@s\.whatsapp\.net$/.test(x.jid)&&
     (name===target||(target.length>=4&&name.includes(target)));
   });
   if(matches.length!==1)return {ok:false,message:matches.length?'Mais de uma conversa tem esse nome. Especifique o contato.':'Não encontrei esse contato nas conversas conectadas. Confira o nome no WhatsApp.'};
