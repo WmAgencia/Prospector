@@ -32,6 +32,8 @@ let calendarMonth=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_P
 let calendarData=null,calendarDetail=null,calendarBusy=false;
 let waQrOpen=false,waQrConnectedAt=0;
 let trainingStep=1,trainingReconfiguring=false,trainingRecording=false,dictation=null,franciscaOpen=false;
+let franciscaBusy=false,franciscaRecording=false,franciscaHistory=[],franciscaAudio=null,franciscaAbort=null,franciscaRecorder=null,franciscaStream=null,franciscaDiscard=false;
+
 let waAccounts=[],connectionSession='';
 const waSessionQuery=()=>connectionSession?'?sessionId='+encodeURIComponent(connectionSession):'';
 let waRefreshing=null,qrOpening=false;
@@ -80,9 +82,68 @@ function glyph(key){
  return '<svg class="icon" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(paths[key]||paths.check)+'</svg>';
 }
 function workspaceTabs(){return '<nav class="workspace-tabs" aria-label="Seções do painel">'+Object.entries(tabs).filter(([key])=>platformContext.role==='master'?['overview','clients','credits','settings'].includes(key):key!=='clients').map(([key,label])=>'<button data-tab="'+key+'" class="'+(view===key?'active':'')+'" '+(view===key?'aria-current="page"':'')+'>'+esc(label)+'</button>').join('')+'</nav>';}
+function franciscaPanel(){
+ if(platformContext.role==='master')return '';
+ const messages=franciscaHistory.slice(-12);
+ return '<div class="francisca-dock">'+(franciscaOpen?'<section class="francisca-widget" role="dialog" aria-label="Converse com Francisca"><div class="francisca-widget-header"><span class="francisca-orb">F</span><div><strong>Francisca</strong><small>Assistente de voz · Seu espaço</small></div><button type="button" data-action="francisca-close" aria-label="Fechar Francisca">×</button></div><div class="francisca-widget-body" id="francisca-messages" role="log">'+(messages.length?messages.map(m=>'<div class="francisca-msg '+(m.role==='user'?'user':'assistant')+'"><strong>'+(m.role==='user'?'Você':'Francisca')+'</strong><p>'+esc(m.content)+'</p></div>').join(''):'<div class="francisca-welcome"><strong>Oi! Sou a Francisca.</strong><p>Me pergunte sobre seu painel, sua operação ou seu treinamento. Posso explicar os dados do seu espaço sem alterar nada.</p><small>Ex.: “Quantas empresas temos?” ou “Qual é o perfil aprovado?”</small></div>')+'</div><div class="francisca-controls"><form id="francisca-form"><input name="text" maxlength="1300" autocomplete="off" placeholder="Pergunte ou use o microfone..." aria-label="Pergunta para Francisca" '+(franciscaBusy?'disabled':'')+'><button class="francisca-send" type="submit" '+(franciscaBusy?'disabled':'')+' aria-label="Enviar pergunta">'+glyph('arrow')+'</button></form><div class="francisca-voice-row"><button type="button" data-action="francisca-voice" class="francisca-talk '+(franciscaRecording?'recording':'')+'" '+(franciscaBusy?'disabled':'')+'>'+glyph('conversations')+' '+(franciscaRecording?'Enviar áudio':'Falar com Francisca')+'</button><button type="button" data-action="francisca-interrupt" class="francisca-interrupt">Interromper</button></div><p>'+(franciscaRecording?'Gravando. Toque em Enviar áudio quando terminar.':franciscaBusy?'Francisca está preparando a resposta…':'Conversa privada deste espaço · Modo consulta')+'</p></div></section>':'')+'<button class="francisca-fab" type="button" data-action="francisca-toggle" aria-label="'+(franciscaOpen?'Fechar':'Abrir')+' Francisca, assistente de voz"><span>F</span><i></i></button></div>';
+}
+async function sendFranciscaTurn({text='',audioBase64=null,audioType=null}={}){
+ if(franciscaBusy)return;
+ franciscaBusy=true;
+ const utterance=String(text||'').trim();
+ if(utterance){franciscaHistory.push({role:'user',content:utterance});}
+ render();
+ franciscaAbort=new AbortController();
+ try{
+  const body={history:franciscaHistory.slice(-8,-(utterance?1:0)||undefined)};
+  if(audioBase64){body.audioBase64=audioBase64;body.audioType=audioType;}
+  else body.text=utterance;
+  const result=await api('/api/assistant/panel/turn',{method:'POST',body:JSON.stringify(body),signal:franciscaAbort.signal});
+  if(audioBase64)franciscaHistory.push({role:'user',content:result.transcript||'[Mensagem de voz]'});
+  franciscaHistory.push({role:'assistant',content:result.text});
+  if(franciscaAudio){franciscaAudio.pause();franciscaAudio=null;}
+  if(result.audioBase64){
+   franciscaAudio=new Audio('data:'+result.audioMimeType+';base64,'+result.audioBase64);
+   franciscaAudio.play().catch(()=>n('Não foi possível reproduzir o áudio. Leia a resposta da Francisca.'));
+  }else if(result.audioError)n(result.audioError+'. A resposta em texto está disponível.');
+ }catch(e){if(e.name!=='AbortError')n(e.message);}
+ finally{franciscaBusy=false;franciscaAbort=null;render();const log=q('#francisca-messages');if(log)log.scrollTop=log.scrollHeight;}
+}
+async function toggleFranciscaRecording(){
+ if(franciscaRecording){franciscaRecorder?.stop();return;}
+ if(franciscaBusy)return;
+ if(!window.MediaRecorder||!navigator.mediaDevices?.getUserMedia){n('Seu navegador não permite gravação de áudio nesta página. Use a caixa de texto.');return;}
+ try{
+  const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+  const preferred=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg'];
+  const mimeType=preferred.find(t=>MediaRecorder.isTypeSupported(t));
+  const recorder=new MediaRecorder(stream,mimeType?{mimeType}:undefined);
+  const blobs=[];franciscaStream=stream;franciscaRecorder=recorder;franciscaRecording=true;franciscaDiscard=false;
+  recorder.ondataavailable=e=>{if(e.data?.size)blobs.push(e.data);};
+  recorder.onstop=async()=>{
+   stream.getTracks().forEach(t=>t.stop());franciscaRecording=false;franciscaStream=null;franciscaRecorder=null;
+   const discard=franciscaDiscard;franciscaDiscard=false;
+   if(discard){render();return;}
+   const blob=new Blob(blobs,{type:recorder.mimeType||'audio/webm'});
+   if(blob.size<100||blob.size>1_500_000){n('Gravação fora do limite. Tente um áudio mais curto.');render();return;}
+   const reader=new FileReader();
+   reader.onload=()=>sendFranciscaTurn({audioBase64:String(reader.result).split(',')[1],audioType:(recorder.mimeType||'audio/webm').split(';')[0]});
+   reader.readAsDataURL(blob);
+  };
+  recorder.start(250);
+  setTimeout(()=>{if(recorder.state==='recording'){n('Tempo máximo de áudio atingido. Enviando a gravação.');recorder.stop();}},30000);
+  render();
+ }catch(e){franciscaRecording=false;franciscaStream?.getTracks().forEach(t=>t.stop());franciscaStream=null;n('Não foi possível acessar o microfone: '+e.message);}
+}
+function interruptFrancisca(){
+ franciscaAbort?.abort();if(franciscaAudio){franciscaAudio.pause();franciscaAudio.currentTime=0;franciscaAudio=null;}
+ if(franciscaRecording&&franciscaRecorder?.state==='recording'){franciscaDiscard=true;franciscaRecorder.stop();}
+ franciscaBusy=false;render();
+}
 function shell(){
  const active=tabs[view]||tabs.overview,connected=!!wa?.connected;
  root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["overview","clients","credits","settings"].includes(key):key!=="clients").map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p></div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div>'+workspaceTabs()+'<div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'WhatsApp offline')+'</span></span>'+(platformContext.role!=='master'&&!connected?'<button type="button" class="wa-header-connect" data-action="reconnect-qr">Conectar</button>':'')+'<button class="icon-button refresh-button" data-action="refresh" title="Atualizar dados" aria-label="Atualizar dados">'+glyph('refresh')+'</button><button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+(platformContext.canReturnToMaster?'<div class="workspace-return">Você está no espaço de '+esc(platformContext.name)+'. <a href="/master">Voltar ao painel master</a></div>':'')+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>';
+ root.insertAdjacentHTML('beforeend',franciscaPanel());
 }
 
 
@@ -650,6 +711,10 @@ document.addEventListener("click",async ev=>{
    finally{handoffPending=false;render();}
    return;
   }
+  if(action==='francisca-toggle'){franciscaOpen=!franciscaOpen;if(!franciscaOpen)interruptFrancisca();else render();return;}
+  if(action==='francisca-close'){franciscaOpen=false;interruptFrancisca();return;}
+  if(action==='francisca-voice'){await toggleFranciscaRecording();return;}
+  if(action==='francisca-interrupt'){interruptFrancisca();return;}
   if(action==='calendar-prev'||action==='calendar-next'){
    changeMonth(action==='calendar-prev'?-1:1);await loadProspectCalendar();return;
   }
@@ -736,6 +801,11 @@ document.addEventListener("submit",async ev=>{
  ev.preventDefault();
  if(await platformSubmit(ev))return;
 
+ if(ev.target.id==='francisca-form'){
+  const text=String(new FormData(ev.target).get('text')||'').trim();
+  if(text)await sendFranciscaTurn({text});
+  return;
+ }
  if(ev.target.id==='prospect-preference-form'){
   const data=Object.fromEntries(new FormData(ev.target));
   try{
