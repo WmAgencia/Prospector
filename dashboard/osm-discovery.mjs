@@ -5,7 +5,7 @@ import {one,all,run,id,now,phone,addLead,getSetting,audit} from './db.mjs';
 import {recordOrigin} from './discovery.mjs';
 import {upsertBusinessMeta} from './lead-catalog.mjs';
 import {daySP,hourSP,radarSnapshot} from './radar.mjs';
-import {discoveryStockSnapshot} from './discovery-stock.mjs';
+import {dailyRefillBudget} from './discovery-stock.mjs';
 
 export const LOCATIONS={
   sorocaba:{label:'Sorocaba',lat:-23.5015,lon:-47.4526,radius:9500},
@@ -184,7 +184,7 @@ export async function discoverLocal(payload={},automatic=false){
   if(!Array.isArray(data.elements))throw Error('A fonte não retornou uma lista válida');
   let added=0,examined=0,withPhone=0;
   const stockMode=automatic&&getSetting('discovery_stock_replenishment_enabled',false)===true;
- const inventory=stockMode?discoveryStockSnapshot():null;
+ const inventory=stockMode?dailyRefillBudget():null;
  const quota=automatic?(inventory?inventory.missing:Math.max(0,Math.min(150,Number(getSetting('discovery_target_daily',150))||150)-radarSnapshot().foundToday)):70;
   const candidates=prioritizeOSMResults(data.elements.slice(0,200));
   for(const item of candidates){
@@ -253,7 +253,7 @@ export async function dailyLocalDiscovery(input=new Date()){
  // O horário de envio/pausa não interrompe as pesquisas de empresas.
  // Respeitamos os limites da fonte pública mesmo quando a meta não é alcançada.
  const stockMode=getSetting('discovery_stock_replenishment_enabled',false)===true;
- const stock=stockMode?discoveryStockSnapshot(input):null;
+ const stock=stockMode?dailyRefillBudget(input):null;
  const target=stock?stock.fundedTarget:Math.min(150,Math.max(1,Number(getSetting('discovery_target_daily',150))||150));
  const snapshot=radarSnapshot(input);
  if(stock&&stock.missing===0)return {status:stock.credits===0?'NO_CREDITS':'STOCK_FULL',stock,target};
@@ -288,7 +288,7 @@ export async function dailyLocalDiscovery(input=new Date()){
   run("INSERT INTO settings(key,value) VALUES('osm_auto_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(cursor+1));
   const segmentId=Object.keys(SEGMENTS).find(k=>SEGMENTS[k]===choice.segment);
   const result=await discoverLocal({city:choice.city.label,segment:segmentId},true);
-  return {...result,target,foundToday:radarSnapshot().foundToday,...(stockMode?{stock:discoveryStockSnapshot()}: {})};
+  return {...result,target,foundToday:radarSnapshot().foundToday,...(stockMode?{stock:dailyRefillBudget()}: {})};
  }catch(e){
   audit('DISCOVERY_AUTO_REVIEW',null,{provider:'osm',message:String(e.message).slice(0,180)});
   return {status:'SOURCE_ERROR',error:String(e.message).slice(0,180)};
