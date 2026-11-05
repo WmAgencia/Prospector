@@ -263,3 +263,9 @@
  .p2-faq summary{font-size:13px}.p2-questions-title p{font-size:13px}
 }
 @media(prefers-reduced-motion:reduce){.p2-site *{scroll-behavior:auto!important;animation:none!important;transition:none!important}.p2-button:hover,.p2-benefits-grid article:hover,.p2-plan:hover{transform:none!important}}
+
+/* Soft first-view entrance, with reduced-motion fallback. */
+@media(prefers-reduced-motion:no-preference){
+ .p2-site .motion-ready{opacity:0;transform:translateY(16px);transition:opacity .54s ease,transform .54s ease;transition-delay:var(--p2-reveal-delay,0ms)}
+ .p2-site .motion-ready.is-visible{opacity:1;transform:translateY(0)}
+}
