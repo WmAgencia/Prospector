@@ -20,12 +20,13 @@ export function parseFranciscaSendCommand(text){
  // A phone number is an explicit destination, never treated as an instruction by itself.
  const numberPhrase=/(?:n[uú]mero|telefone|whats(?:app)?)[^\d+]{0,12}(\+?\d[\d\s().-]{8,22})/i.exec(s);
  const phone=numberPhrase?fullPhone(numberPhrase[1]):null;
- const sendIntent=/(?:envie|enviar|envia|manda|mande|responda|responde|responder|mensagem)/i.test(s);
+ const sendIntent=/\b(?:envie|enviar|envia|manda|mande|responda|responde|responder)\b/i.test(s);
  if(phone&&sendIntent){
   const tail=s.slice(numberPhrase.index+numberPhrase[0].length);
   const trailing=/(?:envie|enviar|envia|manda|mande)\s+(?:(?:uma|a)\s+)?mensagem\s*[:,-]?\s*(.+)/i.exec(tail);
+  const after=/(?:dizendo|falando|com a mensagem|a mensagem|mensagem)\s*[:,-]?\s*(.+)/i.exec(tail);
   const leading=/(?:envie|enviar|envia|manda|mande)\s+(?:(?:uma|a)\s+)?mensagem\s+(.+?)\s+(?:para|ao)\s+(?:o\s+)?(?:n[uú]mero|telefone)/i.exec(s);
-  const message=cap(trailing?.[1]||leading?.[1]||'',1100).replace(/^[\s:"“]+|[\s"”]+$/g,'').trim();
+  const message=cap(trailing?.[1]||after?.[1]||leading?.[1]||'',1100).replace(/^[\s:"“]+|[\s"”]+$/g,'').trim();
   if(!message)return {error:'Diga também o texto da mensagem para esse número.'};
   return {recipient:phone,message,generate:false,isPhone:true};
  }
