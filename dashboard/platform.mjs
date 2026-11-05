@@ -72,7 +72,7 @@ async function proxy(req,res,client){
 export async function handlePlatform(req,res,url,{authorized,json,respond}){
  if(isWorker){
   if(url.pathname==='/api/platform/context'&&authorized(req)){respond(res,200,{role:'client',name:process.env.PROSPECTOR_TENANT_NAME});return true;}
-  const allowed=/^\/api\/(?:training(?:\/|$)|state$|events$|kanban$|sales\/(?:status|outcomes)$|whatsapp\/(?:sessions|status|qr|connect|disconnect|chats|chat-messages|handoff|reply|reply-remote)$|prospecting(?:\/|$)|outreach\/consent-policy$|ai\/status$|settings$|maps(?:\/|$)|import$|threads\/[^/]+\/(?:messages|read)$|wa-akg\/webhook$)/;
+  const allowed=/^\/api\/(?:training(?:\/|$)|state$|events$|kanban$|sales\/(?:status|outcomes)$|whatsapp\/(?:sessions|status|qr|connect|disconnect|chats|chat-messages|handoff|reply|reply-remote)$|prospecting(?:\/|$)|outreach\/consent-policy$|ai\/status$|settings(?:\/|$)|maps(?:\/|$)|import$|threads\/[^/]+\/(?:messages|read)$|wa-akg\/webhook$)/;
   if(url.pathname.startsWith('/api/')&&!allowed.test(url.pathname)&&url.pathname!=='/api/auth/exchange'){respond(res,403,{error:'Recurso indisponível neste espaço de trabalho'});return true;}
   return false;
  }
@@ -121,6 +121,18 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
    'ps_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'
   ]);
   respond(res,200,{ok:true});return true;
+ }
+ if(p==='/api/platform/account'&&req.method==='POST'){
+  if(!client){respond(res,403,{error:'Abra uma conta de cliente'});return true;}
+  const ip=accessClientKey(req);
+  if(passwordLimiter.blocked(ip)){respond(res,429,{error:'Muitas tentativas. Tente mais tarde.'});return true;}
+  try{
+   const updated=registry().changeCredentials(client.id,await json(req));
+   passwordLimiter.clear(ip);
+   res.setHeader('Set-Cookie',clientCookie(updated));
+   respond(res,200,{ok:true,email:updated.email,message:'Conta atualizada. Outras sessões foram encerradas.'});
+  }catch(e){passwordLimiter.failed(ip);respond(res,422,{error:String(e.message).slice(0,180)});}
+  return true;
  }
  if(p==='/api/platform/credits'&&client){respond(res,200,{...registry().publicClient(client),items:registry().events(client.id),package:{credits:250,priceBrl:9.9},packages:CREDIT_PACKAGES,requests:registry().listCreditRequests(client.id)});return true;}
  if(p==='/api/platform/credit-requests'){
