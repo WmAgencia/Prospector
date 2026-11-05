@@ -29,4 +29,22 @@ test('manual training merges guidance into a reviewable draft and preserves the 
  assert.equal((await call('/api/training/edit',{})).status,200);assert.match(d.getSetting('training_draft').text,/Respostas curtas/);
  assert.equal((await call('/api/training/analyze',{mode:'selected',keys:['forged-key']})).status,422);
 });
+test('training all chats requires explicit authorization',async()=>{
+ const r=await call('/api/training/analyze',{mode:'all'},async()=>({choice:{content:'ok'}}));
+ assert.equal(r.status,422);
+ assert.match(r.body.error,/Confirme/);
+});
+
+test('an empty summary response retries once with a text-oriented model',async()=>{
+ let tasks=[];
+ const chats=(await call('/api/training/chats')).body.items;
+ const model=async args=>{tasks.push(args.task);return {choice:{content:args.task==='quick'?'Sugestão de abordagem: perguntas curtas. Pontos para revisão: critérios comerciais.':''}};};
+ const result=await call('/api/training/analyze',{mode:'selected',keys:[chats[0].key]},model);
+ assert.equal(result.status,202);
+ for(let i=0;i<70&&d.getSetting('training_draft')?.id!==result.body.id;i++)await new Promise(r=>setTimeout(r,5));
+ const draft=d.getSetting('training_draft');
+ assert.equal(draft.id,result.body.id);
+ assert.deepEqual(tasks,['summarization','quick']);
+ assert.match(draft.text,/Pontos para revisão/);
+});
 test.after(()=>{globalThis.fetch=originalFetch;});

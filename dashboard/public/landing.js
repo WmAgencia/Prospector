@@ -1,7 +1,15 @@
 const dialog=document.querySelector('#auth-dialog'),form=document.querySelector('#auth-form');let mode='signup',sending=false;
 const $=s=>document.querySelector(s);
 function openAuth(next){mode=next;const signup=mode==='signup';document.querySelectorAll('.signup-only').forEach(x=>x.hidden=!signup);$('#signup-name').required=signup;$('#signup-phone').required=signup;$('#signup-email').type=signup?'email':'text';$('#signup-email').required=true;$('#signup-email').placeholder=signup?'voce@agencia.com.br':'E-mail ou celular com DDD';$('#identifier-label').textContent=signup?'E-mail profissional':'E-mail ou celular';$('#signup-password').autocomplete=signup?'new-password':'current-password';$('#auth-title').textContent=signup?'Vamos começar?':'Bom ter você de volta.';$('#auth-description').textContent=signup?'Crie sua conta gratuita. Você prepara a operação antes de comprar créditos.':'Entre no seu espaço para continuar de onde parou.';$('#auth-eyebrow').textContent=signup?'SEU ESPAÇO COMEÇA AQUI':'SEU PAINEL PROSPECTOR';$('#auth-submit').textContent=signup?'Criar conta gratuita ↗':'Entrar no meu painel ↗';$('#auth-switch').replaceChildren(document.createTextNode(signup?'Já tem uma conta? ':'Primeira vez aqui? '));const b=document.createElement('button');b.type='button';b.dataset.switch=signup?'signin':'signup';b.textContent=signup?'Entrar':'Criar conta';$('#auth-switch').append(b);$('#login-help').hidden=signup;$('#auth-message').textContent='';if(!dialog.open)dialog.showModal();}
-document.addEventListener('click',e=>{const link=e.target.closest('[data-auth],[data-switch]');if(link){e.preventDefault();openAuth(link.dataset.auth||link.dataset.switch);}});
+const packageLabels={essencial:'Essencial · 50 créditos · R$ 4,90',padrao:'Padrão · 250 créditos · R$ 9,90',pro:'Pro · 1.000 créditos · R$ 34,90',agencia:'Agência · 5.000 créditos · R$ 149,90'};
+document.addEventListener('click',e=>{
+ const link=e.target.closest('[data-auth],[data-switch]');
+ if(!link)return;
+ e.preventDefault();openAuth(link.dataset.auth||link.dataset.switch);
+ if(link.dataset.package&&packageLabels[link.dataset.package]){
+  $('#auth-description').textContent='Pacote selecionado: '+packageLabels[link.dataset.package]+'. Crie sua conta gratuitamente. A recarga é liberada pela Consecom após confirmação de pagamento; não haverá cobrança no cadastro.';
+ }
+});
 $('.close-dialog').addEventListener('click',()=>{if(!sending)dialog.close();});dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(!sending&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom))dialog.close();}});dialog.addEventListener('cancel',e=>{if(sending)e.preventDefault();});
 $('#password-toggle').addEventListener('click',()=>{const input=$('#signup-password'),show=input.type==='password';input.type=show?'text':'password';$('#password-toggle').textContent=show?'Ocultar':'Mostrar';$('#password-toggle').setAttribute('aria-label',show?'Ocultar senha':'Mostrar senha');});
 $('#privacy-link').addEventListener('click',e=>{e.preventDefault();$('#privacy-description').hidden=!$('#privacy-description').hidden;});

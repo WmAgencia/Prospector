@@ -36,6 +36,19 @@ test('master creates clients; client APIs use separate processes and cannot acce
  await call('/api/platform/clients/'+a.client.id+'/credits',{amount:250,reference:'payment',reason:'Recarga'});
  assert.equal((await call('/api/platform/credits',undefined,ca)).body.balance,250);
  assert.equal((await call('/api/platform/credits',undefined,cb)).body.balance,0);
+ // A request records intent but never credits the wallet before Master approval.
+ const pendingOrder=await call('/api/platform/credit-requests',{packageId:'essencial',requestKey:'11111111-1111-4111-8111-111111111111'},cb);
+ assert.equal(pendingOrder.status,201);
+ assert.equal(pendingOrder.body.request.status,'PENDING');
+ assert.equal((await call('/api/platform/credits',undefined,cb)).body.balance,0);
+ assert.equal((await call('/api/platform/credit-requests',undefined,ca)).body.items.length,0);
+ assert.equal((await call('/api/platform/credit-requests/'+pendingOrder.body.request.id+'/approve',{confirmedPayment:true},cb)).status,403);
+ assert.equal((await call('/api/platform/credit-requests/'+pendingOrder.body.request.id+'/approve',{confirmedPayment:false})).status,422);
+ assert.equal((await call('/api/platform/credit-requests/'+pendingOrder.body.request.id+'/approve',{confirmedPayment:true})).body.request.status,'APPROVED');
+ assert.equal((await call('/api/platform/credits',undefined,cb)).body.balance,50);
+ assert.equal((await call('/api/platform/credit-requests/'+pendingOrder.body.request.id+'/approve',{confirmedPayment:true})).status,200);
+ assert.equal((await call('/api/platform/credits',undefined,cb)).body.balance,50);
+
  const tampered=ca.slice(0,-3)+'bad';assert.equal((await call('/api/state',undefined,tampered)).status,401);
  await call('/api/platform/clients/'+a.client.id+'/status',{status:'suspended'});
  assert.equal((await call('/api/state',undefined,ca)).status,401);
