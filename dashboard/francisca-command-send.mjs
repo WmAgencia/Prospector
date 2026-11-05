@@ -4,12 +4,31 @@ import crypto from 'node:crypto';
 import {all,one,audit} from './db.mjs';
 import {sendChatMessage} from './waakg-bridge.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
+import {waOperationalStatus} from './waakg-control.mjs';
 import {groqChat} from './groq-models.mjs';
 
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const cap=(s,n=900)=>String(s||'').trim().slice(0,n);
+const fullPhone=value=>{
+ const digits=String(value||'').replace(/\D/g,'');
+ const local=digits.startsWith('55')&&digits.length>=12?digits.slice(2):digits;
+ return /^\d{10,11}$/.test(local)?'55'+local:null;
+};
 export function parseFranciscaSendCommand(text){
  const s=String(text||'').trim();
+ // Voice recognition often splits "número X, envia a mensagem Y" into two sentences.
+ // A phone number is an explicit destination, never treated as an instruction by itself.
+ const numberPhrase=/(?:n[uú]mero|telefone|whats(?:app)?)[^\d+]{0,12}(\+?\d[\d\s().-]{8,22})/i.exec(s);
+ const phone=numberPhrase?fullPhone(numberPhrase[1]):null;
+ const sendIntent=/(?:envie|enviar|envia|manda|mande|responda|responde|responder|mensagem)/i.test(s);
+ if(phone&&sendIntent){
+  const tail=s.slice(numberPhrase.index+numberPhrase[0].length);
+  const trailing=/(?:envie|enviar|envia|manda|mande)\s+(?:(?:uma|a)\s+)?mensagem\s*[:,-]?\s*(.+)/i.exec(tail);
+  const leading=/(?:envie|enviar|envia|manda|mande)\s+(?:(?:uma|a)\s+)?mensagem\s+(.+?)\s+(?:para|ao)\s+(?:o\s+)?(?:n[uú]mero|telefone)/i.exec(s);
+  const message=cap(trailing?.[1]||leading?.[1]||'',1100).replace(/^[\s:"“]+|[\s"”]+$/g,'').trim();
+  if(!message)return {error:'Diga também o texto da mensagem para esse número.'};
+  return {recipient:phone,message,generate:false,isPhone:true};
+ }
  const m=/^(?:francisca[,! ]*)?(?:por favor[, ]*)?(?:envie|enviar|manda|mande|envia|responda|responde|responder)\s+(?:uma\s+mensagem\s+)?(?:para\s+|a\s+|ao\s+|à\s+)?(.+)$/i.exec(s);
  if(!m)return null;
  const rest=m[1].trim().replace(/^(?:o|a)\s+(?=[A-Za-zÀ-ÿ])/i,'').replace(/^mensagem\s+de\s+/i,'');
@@ -22,18 +41,24 @@ export function parseFranciscaSendCommand(text){
 }
 export async function executeFranciscaSend(command){
  if(command.error)return {ok:false,message:command.error};
+ // Do not initiate an external message from an unconnected tenant, even if the model suggests it.
+ let wa;
+ try{wa=await waOperationalStatus();}
+ catch{return {ok:false,reason:'whatsapp_unavailable',message:'Não consegui verificar a conexão do WhatsApp. Abra Conexões para conferir antes de enviar.'};}
+ if(!wa.connected)return {ok:false,reason:'whatsapp_disconnected',message:'Seu WhatsApp ainda não está conectado ao Prospector. Toque em Conectar WhatsApp para abrir o QR Code. Nenhuma mensagem foi enviada.'};
  const target=norm(command.recipient);
+ const targetPhone=command.isPhone?fullPhone(command.recipient):null;
  const candidates=all("SELECT l.id,l.business,l.phone,t.id AS thread_id FROM leads l JOIN threads t ON t.lead_id=l.id WHERE t.jid IS NOT NULL ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1500")
-  .filter(x=>{const name=norm(x.business);return name===target||(target.length>=4&&name.includes(target));});
+  .filter(x=>{const name=norm(x.business);return command.isPhone?fullPhone(x.phone)===targetPhone:name===target||(target.length>=4&&name.includes(target));});
  if(!candidates.length){
   // Some WhatsApp contacts are still remote-only and not in the leads table.
   const chats=await remoteChats();
   const matches=(chats.items||[]).filter(x=>{
    const name=norm(x.name||x.business);
    return /^\d{10,15}@s\.whatsapp\.net$/.test(x.jid)&&
-    (name===target||(target.length>=4&&name.includes(target)));
+    (command.isPhone?fullPhone(x.phone)===targetPhone:name===target||(target.length>=4&&name.includes(target)));
   });
-  if(matches.length!==1)return {ok:false,message:matches.length?'Mais de uma conversa tem esse nome. Especifique o contato.':'Não encontrei esse contato nas conversas conectadas. Confira o nome no WhatsApp.'};
+  if(matches.length!==1)return {ok:false,message:matches.length?'Mais de uma conversa tem esse nome. Especifique o contato.':'Não encontrei uma conversa anterior autorizada com esse contato. Nenhuma mensagem foi enviada. Confira a conversa na aba Conversas.'};
   const remote=matches[0],incoming=await remoteMessages(remote.jid);
   if(!incoming.some(x=>x.direction==='in'))return {ok:false,message:'Essa conversa ainda não recebeu mensagem do contato, então não vou enviar por este comando.'};
   let message=command.message;
