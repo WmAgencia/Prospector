@@ -311,6 +311,13 @@ async function toggleFranciscaRecording(){
   if(!franciscaVoiceActive)return;
   const {createFranciscaVoiceSession}=voiceModule;
   franciscaVoiceSession=createFranciscaVoiceSession({
+   canInterrupt:()=>franciscaVoiceActive&&franciscaVoiceState==='speaking',
+   onInterrupt:()=>{
+    // Playback stops immediately; the mic stays live and captures the new turn.
+    stopFranciscaSound();
+    franciscaVoiceState='hearing';
+    renderFrancisca();
+   },
    onState:status=>{
     if(status==='off'&&franciscaVoiceActive){franciscaVoiceActive=false;franciscaVoiceSession=null;}
     franciscaVoiceState=status;renderFrancisca();
