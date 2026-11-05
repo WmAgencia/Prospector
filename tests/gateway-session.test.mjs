@@ -24,6 +24,14 @@ async function login(call){
 }
 const backendCookie=n=>new Response('{}',{headers:{'set-cookie':'ps_session=session-'+n+'; Max-Age=7776000; HttpOnly; Secure'}});
 
+test('administrative entry sends an authenticated master through the client-cookie clearing route',async()=>{
+ const call=gateway(async()=>{throw Error('entry navigation must not call the operational backend');});
+ assert.equal((await call('/master')).headers.get('location'),'/access');
+ const cookie=await login(call);
+ const response=await call('/access',{headers:{cookie:cookie+'; ps_client=old-client'}});
+ assert.equal(response.status,302);assert.equal(response.headers.get('location'),'/master');
+});
+
 test('gateway renews a rejected backend session and recovers the original GET',async()=>{
  let exchanges=0,calls=0;
  const call=gateway(async(url,options)=>{
