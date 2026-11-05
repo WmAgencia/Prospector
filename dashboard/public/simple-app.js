@@ -219,7 +219,27 @@ async function platformAction(action,el){
  return false;
 }
 async function platformSubmit(ev){
- const id=ev.target.id;if(!['client-create','training-business','training-chat','training-approve'].includes(id))return false;
+ const id=ev.target.id;
+ if(id==='client-hours-form'){
+  ev.preventDefault();
+  const d=Object.fromEntries(new FormData(ev.target));
+  try{
+   await post('/api/settings',{client_outreach_hours:{start:d.start,end:d.end}});
+   if(state?.settings)state.settings.client_outreach_hours={start:d.start,end:d.end};
+   n('Horário das abordagens atualizado.');render();
+  }catch(e){n(e.message);}return true;
+ }
+ if(id==='account-profile'){
+  ev.preventDefault();
+  const d=Object.fromEntries(new FormData(ev.target));
+  try{
+   const result=await post('/api/platform/account',d);
+   platformContext.email=result.email;
+   n(result.message||'Conta atualizada com segurança.');
+   render();
+  }catch(e){n(e.message);}return true;
+ }
+ if(!['client-create','training-business','training-chat','training-approve'].includes(id))return false;
  ev.preventDefault();if(trainingBusy||busy)return true;
  const input=Object.fromEntries(new FormData(ev.target));trainingBusy=true;busy=id==='client-create';
  const button=ev.target.querySelector('button');if(button)button.disabled=true;
@@ -347,20 +367,17 @@ function connections(){
  return '<div class="connections-simplified">'+whatsappAccountsPanel()+whatsappConnectModal()+'</div>';
 }
 function settings(){
- if(platformContext.role==="master")return masterSettings();
- const s=state?.settings||{};
- const policy=consentPolicy||{enforced:true,canDisable:false,policyStatus:'OPT_IN_REQUIRED',message:'Conferindo política de mensagens…',policyUrl:'https://whatsappbusiness.com/policy/'};
- return '<section class="panel settings"><span class="kicker">PREFERÊNCIAS</span><h2>Configurações</h2><p class="intro">Opções essenciais da operação, sem ferramentas extras.</p><div class="setting-line"><div><strong>Prospecção pausada</strong><small>Não iniciar campanhas ou envios automaticamente.</small></div><label class="switch"><input id="s-paused" type="checkbox" '+(s.paused?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>Abordagem automática</strong><small>08h às 17h30; intervalo aleatório de 90 a 180 segundos entre contatos e três meses para reabordar.</small></div><label class="switch"><input id="s-autonomous" type="checkbox" '+(s.autonomous_outreach_enabled?"checked":"")+'><span></span></label></div><div class="setting-line consent-policy-line"><div><strong>Proteção de autorização no WhatsApp</strong><small>Exige autorização antes do primeiro WhatsApp comercial. Empresas encontradas no Maps não são automaticamente autorizadas.</small><small class="consent-policy-status" role="status">'+esc(policy.enforced?'Proteção ativa':'Proteção desativada')+' · '+esc(policy.canDisable?'Controle disponível':'Aguardando mudança oficial da Meta')+'</small></div><label class="switch" title="'+esc(policy.canDisable?'Alterar proteção de consentimento':policy.message)+'"><input id="s-consent-guard" type="checkbox" aria-label="Exigir autorização antes de mensagens comerciais" '+(policy.enforced?'checked':'')+' '+(!policy.canDisable||consentPolicyBusy?'disabled':'')+'><span></span></label></div><p class="footnote consent-policy-note">'+esc(policy.message)+' <a href="'+esc(policy.policyUrl||'https://whatsappbusiness.com/policy/')+'" target="_blank" rel="noopener noreferrer">Ver política oficial</a>.</p><div class="setting-line"><div><strong>Descoberta automática</strong><small>Pesquisa pública programada no OpenStreetMap.</small></div><label class="switch"><input id="s-discovery" type="checkbox" '+(s.discovery_auto_enabled?"checked":"")+'><span></span></label></div><div class="setting-line"><div><strong>IA de conversação</strong><small>A IA continua as conversas das empresas abordadas. Valores de propostas exigem sua aprovação pelo WhatsApp.</small></div><span class="tag '+(ai?.configured?"green":"")+'">'+(ai?.configured?"Configurada":"Não configurada")+'</span></div><div class="setting-line"><div><strong>Integração WhatsApp</strong><small>Seus números conectados em um só lugar.</small></div><button class="secondary compact" data-tab="connections">Gerenciar conexão</button></div><p class="footnote">Com a abordagem automática ativada, leads elegíveis entram na fila sem seleção individual. Você pode pausar a prospecção a qualquer momento. Interessados são encaminhados ao seu WhatsApp pessoal.</p></section>'+
- '<section class="panel"><span class="kicker">FRANCISCA · VOZ</span><h2>Diagnóstico das ligações</h2>'+
- '<p class="intro">Métricas agregadas dos últimos 7 dias. Nenhuma gravação ou transcrição é salva neste painel.</p>'+
- cards([
-  ['Respostas medidas',voiceMetrics?.turns??'—','Turnos concluídos'],
-  ['Tempo médio',voiceMetrics?.turns?(voiceMetrics.avgMs/1000).toFixed(1)+' s':'—','Preparação das respostas e voz'],
-  ['Interrupções',voiceMetrics?.interruptions??'—','Turnos cortados pelo interlocutor'],
-  ['Áudio em partes',voiceMetrics?.turns?String(voiceMetrics.avgSegments)+' segmentos':'—','Média de segmentos por resposta']
- ])+
- (voiceMetrics?.turns?'<p class="footnote">Tempo médio por etapa: transcrição '+(voiceMetrics.sttMs/1000).toFixed(1)+' s · processamento '+(voiceMetrics.llmMs/1000).toFixed(1)+' s · voz '+(voiceMetrics.ttsMs/1000).toFixed(1)+' s. Transcrições incertas: '+voiceMetrics.uncertain+' · Falhas de processamento: '+voiceMetrics.failures+'.</p>':'<p class="footnote">Os indicadores aparecerão após as primeiras chamadas na nova versão.</p>')+
- '</section>';
+ if(platformContext.role==='master')return masterSettings();
+ const hours=state?.settings?.client_outreach_hours||{start:'08:00',end:'17:30'};
+ const options=[];
+ for(let minute=480;minute<=1050;minute+=15){
+  const t=String(Math.floor(minute/60)).padStart(2,'0')+':'+String(minute%60).padStart(2,'0');
+  options.push(t);
+ }
+ return '<div class="workspace-head"><div><span class="kicker">PREFERÊNCIAS DA CONTA</span><h2>Configurações</h2><p>Somente o essencial para personalizar sua rotina e proteger seu acesso.</p></div></div>'+
+ '<div class="client-settings-grid"><section class="panel settings-hours"><span class="kicker">HORÁRIO DE ABORDAGENS</span><h3>Quando a operação pode iniciar conversas?</h3><p>A pesquisa de empresas pode começar às 5h. As primeiras abordagens seguem a janela comercial definida abaixo.</p><form id="client-hours-form" class="settings-simple-form"><div class="hours-pair"><label>Início das abordagens<select name="start">'+options.filter(t=>t<='17:00').map(t=>'<option value="'+t+'" '+((hours.start||'08:00')===t?'selected':'')+'>'+t+'</option>').join('')+'</select></label><label>Final das abordagens<select name="end">'+options.filter(t=>t>='08:30').map(t=>'<option value="'+t+'" '+((hours.end||'17:30')===t?'selected':'')+'>'+t+'</option>').join('')+'</select></label></div><button class="primary">Salvar horário</button></form><p class="footnote">Horário de Brasília · A escolha pode restringir a janela de 08:00 a 17:30, nunca ampliá-la. Respostas a mensagens recebidas não seguem esta janela de primeiras abordagens.</p></section>'+
+ '<section class="panel settings-account"><span class="kicker">SEGURANÇA DA SUA CONTA</span><h3>E-mail e senha</h3><p>Para alterar seus dados, confirme a senha atual. Outras sessões serão encerradas.</p><form id="account-profile" class="settings-simple-form"><label>Novo e-mail<input type="email" name="newEmail" required maxlength="200" autocomplete="email" value="'+esc(platformContext.email||'')+'"></label><label>Senha atual<input type="password" name="currentPassword" required maxlength="128" autocomplete="current-password"></label><label>Nova senha <small>(opcional)</small><input type="password" name="newPassword" minlength="10" maxlength="128" autocomplete="new-password" placeholder="Deixe vazio para manter a senha"></label><button class="primary">Atualizar minha conta</button></form></section></div>'+
+ '<section class="panel settings-utilities"><div><span class="kicker">ACESSOS RÁPIDOS</span><h3>Gerencie sua operação</h3><p>As conexões, a inteligência e os créditos ficam em suas próprias áreas, sem opções técnicas desnecessárias.</p></div><div class="actions"><button class="secondary" data-tab="connections">WhatsApps conectados</button><button class="secondary" data-tab="training">Treinamento da IA</button><button class="secondary" data-tab="credits">Meus créditos</button></div></section>';
 }
 function render(){
  shell();
