@@ -79,7 +79,7 @@ function createHarness({mapsConfigured=false,previewReady=0}={}){
   setInterval:()=>1,clearInterval(){},Date,crypto:{randomUUID:()=> 'mock'},
  });
  // Runtime starts after the top-level await only in the actual browser.
- const source=app.replace(/await reload\(\);\s*await refreshWa\(\);\s*$/,'');
+ const source=app.slice(0,app.lastIndexOf('\nawait reload();'));
  assert.notEqual(source,app,'expected app boot sequence was not found');
  vm.runInContext(source,context,{filename:'simple-app.js',timeout:2500});
  return {context,root,viewEl,notice,field,city,composer,fetches,listeners,sendForm,sendButton,getPendingSubmit:()=>pendingSubmit};
