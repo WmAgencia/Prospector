@@ -3,6 +3,7 @@
 import {db,one,run,now,audit,phone} from './db.mjs';
 import {testModeAllowed} from './groq-live-test-guard.mjs';
 import {selectedWaSession} from './waakg-control.mjs';
+import {isManagedSession} from './waakg-session-registry.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS contact_relationships(phone TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('EXISTING_CLIENT')),evidence TEXT NOT NULL,source TEXT NOT NULL,updated_at TEXT NOT NULL)");
 const fullPhone=x=>{
  const p=phone(x);
@@ -16,13 +17,13 @@ export function verifiedOwnerPhone(){
 export function classifyContact({jid,sessionId}={}){
  const inbound=/^\d{12,13}@s\.whatsapp\.net$/.test(String(jid||''));
  const number=inbound?fullPhone(String(jid).split('@')[0]):null;
- if(!number||!sessionId||sessionId!==selectedWaSession())return {role:'UNVERIFIED',authorized:false,reason:'UNVERIFIED_SESSION'};
+ if(!number||!sessionId||!isManagedSession(sessionId))return {role:'UNVERIFIED',authorized:false,reason:'UNVERIFIED_SESSION'};
  const owner=verifiedOwnerPhone();
  if(owner&&number===owner)return {
   role:'OWNER',authorized:true,
   // Explicitly enabled owner operations require an EXACT verified owner JID and
   // current WA-AKG session. QA mode alone must never grant these privileges.
-  ownerTools:!testModeAllowed(number)||process.env.PROSPECTOR_OWNER_OPERATIONS_ENABLED==='true',
+  ownerTools:sessionId===selectedWaSession()&&(!testModeAllowed(number)||process.env.PROSPECTOR_OWNER_OPERATIONS_ENABLED==='true'),
   testSandbox:testModeAllowed(number),reason:'OWNER_JID_EXACT'};
  const relationship=one("SELECT kind FROM contact_relationships WHERE phone=? AND kind='EXISTING_CLIENT'",number);
  const lead=one("SELECT id,stage FROM leads WHERE phone=?",number);

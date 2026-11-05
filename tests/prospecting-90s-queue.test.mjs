@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 const dir=fs.mkdtempSync(os.tmpdir()+'/prospector-90s-');
 process.env.PROSPECTOR_DATA_DIR=dir;
+process.env.WA_AKG_SESSION_ID='test-session';
 const db=await import('../dashboard/db.mjs');
 const queue=await import('../dashboard/prospecting-queue.mjs');
 

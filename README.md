@@ -4,6 +4,14 @@ Painel operacional de prospecção com fila determinística, WhatsApp via WA-AKG
 
 ## Fluxo automático de produção
 
+### Vários WhatsApps simultâneos
+
+Em **Conexões → Adicionar WhatsApp**, dê um nome para a conexão e escaneie o QR Code com o número correspondente. Cada conexão tem seu próprio status, QR e botão de desconexão; o Prospector não impõe uma quantidade fixa de números. A quantidade efetiva depende da capacidade e das permissões do gateway.
+
+As primeiras abordagens alternam em ordem circular entre as sessões conectadas: 1 → 2 → 3 → 1. Há **um único relógio global de 90–110 segundos** e diferença mínima de 5 segundos entre sorteios, mesmo mudando de número. Sessões offline são puladas; se todas estiverem offline, o giro e o relógio não avançam. A posição do giro e a origem da conversa ficam persistidas no banco.
+
+Cada cliente continua no número que iniciou sua abordagem: apresentação, respostas do Groq, áudio e propostas aprovadas usam essa origem, sem trocar de número durante o atendimento. A lista de leads e os bloqueios são globais, impedindo abordar a mesma pessoa repetidamente por números diferentes. Webhooks de sessões não cadastradas são ignorados; comandos administrativos permanecem exclusivos da sessão principal. Desconectar um número pela sua ficha não desconecta os demais nem libera envios para contatos bloqueados.
+
 O fluxo autorizado pelo operador permite a primeira saudação comercial sem consentimento prévio quando `PROSPECTOR_COLD_FIRST_APPROACH=true`. Isso não marca o contato como consentido. A resposta da pessoa libera a continuidade daquela conversa; recusas, bloqueios, atendimento humano e clientes existentes permanecem protegidos.
 
 - Pesquisa automática a partir das 07h00 e preparação da fila entre 07h00 e 08h00.

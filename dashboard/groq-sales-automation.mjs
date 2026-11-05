@@ -21,6 +21,7 @@ import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,a
 import {waControlStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
 import {replyPacingEnabled,waitForReplyPacing} from './reply-pacing.mjs';
 import {INBOUND_AUTOMATION_VERSION} from './inbound-automation.mjs';
+import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_auto_events(provider_id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,at TEXT NOT NULL,error TEXT)");
 run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify before retry' WHERE state IN ('PROCESSING','SENDING')");
 const digits=s=>String(s||'').replace(/\D/g,'');
@@ -41,10 +42,10 @@ function approvedProspectFollowup(identity,jid){
  const lead=one("SELECT id FROM leads WHERE phone=?",number);
  return !!lead&&conversationAuthorized(lead.id);
 }
-export function queueInboundTurn({providerId,jid}={}){
+export function queueInboundTurn({providerId,jid,sessionId}={}){
  if(!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
- const identity=classifyContact({jid,sessionId:selectedWaSession()});
  const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
+ const identity=classifyContact({jid,sessionId:sessionId||(lead?leadSession(lead.id):selectedWaSession())});
  const intro=lead?introductionStatus(lead.id):null;
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(lead.id))return false;
  const allowed=approvedProspectFollowup(identity,jid);
@@ -66,14 +67,14 @@ export async function handleSalesTurn(providerId,deps={}){
  if(identity.role==='UNVERIFIED')return finish('SKIPPED','UNVERIFIED_SENDER');
  if(identity.role==='OWNER'&&!allowTest)return finish('HANDOFF','OWNER_PRIVILEGED_CHANNEL');
  if(!salesFollowup&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
- if(r.session_id!==selectedWaSession())return finish('SKIPPED','SESSION');
+ if(!isManagedSession(r.session_id)||leadSession(r.lead_id)!==r.session_id)return finish('SKIPPED','SESSION');
  if(!allowTest&&(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP)||r.phone===personalPhone()))return finish('SKIPPED','OWNER');
  if(optedOut(r.body)||['OPT_OUT','NO_INTEREST'].includes(salesEnding(r.body))||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT_OR_REFUSAL');
  if(detectAutomaticReply(r.body))return finish('SKIPPED','AUTOMATIC_RESPONSE');
  if(identity.role!=='EXISTING_CLIENT'&&['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(r.stage))return finish('SKIPPED','ALREADY_HANDOFF');
  const stale=()=>{
   const current=one('SELECT l.stage,l.phone,t.manual_takeover,i.state inbox_state,i.body FROM leads l JOIN threads t ON t.lead_id=l.id JOIN waakg_inbox i ON i.provider_id=? WHERE l.id=?',providerId,r.lead_id);
-  if(!current||current.manual_takeover||current.inbox_state!=='REVIEW'||current.stage!==r.stage||current.phone!==r.phone||current.body!==r.body||selectedWaSession()!==r.session_id||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return 'HANDOFF';
+  if(!current||current.manual_takeover||current.inbox_state!=='REVIEW'||current.stage!==r.stage||current.phone!==r.phone||current.body!==r.body||leadSession(r.lead_id)!==r.session_id||!isManagedSession(r.session_id)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return 'HANDOFF';
   if(classifyContact({jid:r.jid,sessionId:r.session_id}).role!==identity.role)return 'HANDOFF';
   const currentIntro=introductionStatus(r.lead_id);
   if((currentIntro&&currentIntro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))||(salesFollowup&&!approvedProspectFollowup(identity,r.jid)))return 'HANDOFF';
@@ -126,7 +127,7 @@ export async function handleSalesTurn(providerId,deps={}){
  if(!salesFollowup&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&!allowTest)return finish('REVIEW','AI_AUTOREPLY_DISABLED');
  if(r.inbox_state!=='REVIEW'||r.manual_takeover)return finish('HANDOFF');
  if(one("SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",r.jid)?.provider_id!==providerId)return finish('SUPERSEDED');
- const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
+ const wa=deps.status?await deps.status(r.session_id):await waControlStatus(r.session_id),session=r.session_id;
  if(stale())return finish(stale());
  if(!wa.connected||!session)return finish('REVIEW','WA_OFFLINE');
  const incoming=classifyInbound(r.body);

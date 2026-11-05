@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 const dir=fs.mkdtempSync(os.tmpdir()+'/operator-outreach-');
 process.env.PROSPECTOR_DATA_DIR=dir;
+process.env.WA_AKG_SESSION_ID='synthetic';
 const db=await import('../dashboard/db.mjs');
 db.setSetting('paused',false);
 const queue=await import('../dashboard/prospecting-queue.mjs');

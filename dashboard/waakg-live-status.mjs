@@ -1,7 +1,7 @@
 // Cache the ACTUAL WA-AKG transport state for the synchronous dashboard
 // snapshot. Legacy Baileys runs separately and is intentionally disabled when
 // WHATSAPP_TRANSPORT=waakg. Never equate its disconnected status to WA-AKG.
-import {waControlStatus} from './waakg-control.mjs';
+import {waOperationalStatus as waControlStatus} from './waakg-control.mjs';
 let latest={status:'VERIFYING',connected:false,ok:false,message:null,checkedAt:0};
 let pending=null;
 export function gatewayConnectionView(legacy,{transport=process.env.WHATSAPP_TRANSPORT,at=Date.now()}={}){

@@ -13,6 +13,7 @@ import {routeIntroductionReply} from "./prospecting-introduction.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
+import {isManagedSession,boundLeadSession,leadSession,bindLeadSession} from './waakg-session-registry.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS waakg_manual_outbox(id TEXT PRIMARY KEY,inbox_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,requested_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT)");
@@ -54,7 +55,7 @@ export async function receiveWebhook(req){
  const data=payload.data||{},key=data.key||{};
  if(data.isGroup===true||key.fromMe===true||data.fromMe===true)return {status:200,body:{accepted:true,ignored:true}};
  const sid=String(payload.sessionId||"");
- if(process.env.WA_AKG_SESSION_ID&&process.env.WA_AKG_SESSION_ID!==sid)return {status:200,body:{accepted:true,ignored:true}};
+ if(!isManagedSession(sid))return {status:200,body:{accepted:true,ignored:true}};
  const jid=String(key.remoteJid||data.from||"");
  if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid))return {status:200,body:{accepted:true,ignored:true}};
  const providerId=String(key.id||data.id||"");
@@ -86,7 +87,13 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
   return {status:200,body:{accepted:true,processed:accepted,owner:true,
     ownerToolsAuthorized:identity.ownerTools}};
  }
+ const existingLead=one('SELECT id FROM leads WHERE phone=?',number);
+ const existingRoute=existingLead?boundLeadSession(existingLead.id):'';
+ if(existingRoute&&existingRoute!==sid)return {status:200,body:{accepted:true,ignored:true,reason:'CONVERSATION_SESSION_MISMATCH'}};
  const lead=addLead({business:"Contato WhatsApp "+number.slice(-4),phone:number,source:"WHATSAPP_INBOUND",contact_permission:false}).lead;
+ const bound=boundLeadSession(lead.id);
+ if(bound&&bound!==sid)return {status:200,body:{accepted:true,ignored:true,reason:'CONVERSATION_SESSION_MISMATCH'}};
+ bindLeadSession(lead.id,sid);
  const thread=getThread(lead.id,jid);
  const firstInbound=!one("SELECT id FROM messages WHERE thread_id=? AND direction=\'in\' LIMIT 1",thread.id);
  addMessage({threadId:thread.id,providerId:unique,direction:"in",body:content,status:"received"});
@@ -119,7 +126,7 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  if(firstInbound&&state!=='AUTO_REPLY')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
  const introRoute=identity.role==='PROSPECT_APPROACHED'?
   routeIntroductionReply({leadId:lead.id,providerId:unique,body:content,inboxState:state,receivedAt:at}):{managed:false,queueAi:true};
- if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid});
+ if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid,sessionId:sid});
  return {status:200,body:{accepted:true,processed:true}};
 }
 // Decisão do operador (2026-11-04): a primeira mensagem é fria e genérica, então
@@ -166,9 +173,9 @@ export async function sendApproved(input){
  const opted=!!one("SELECT phone FROM suppressions WHERE phone=?",lead.phone);
  const consent=lead.contact_permission===1||!!one("SELECT id FROM messages WHERE thread_id=(SELECT id FROM threads WHERE lead_id=?) AND direction='in' LIMIT 1",lead.id);
  if(opted||!consent||one("SELECT manual_takeover FROM threads WHERE lead_id=?",lead.id)?.manual_takeover===1)return {status:403,body:{error:"Sem autorização para envio"}};
- const apiKey=process.env.WA_AKG_API_KEY||"",session=process.env.WA_AKG_SESSION_ID||"";
+ const apiKey=process.env.WA_AKG_API_KEY||"",session=item.session_id;
  if(!configuredBase||!apiKey||!session||process.env.WA_AKG_MANUAL_SEND!=="true")return {status:503,body:{error:"Gateway não habilitado para envio"}};
- if(session!==item.session_id)return {status:409,body:{error:"Sessão de origem divergente"}};
+ if(!isManagedSession(session)||leadSession(lead.id)!==session)return {status:409,body:{error:"Sessão de origem divergente"}};
  if(one("SELECT id FROM waakg_manual_outbox WHERE inbox_id=?",inboxId))return {status:409,body:{error:"Já houve tentativa de envio; não repetir automaticamente"}};
  const mid=id(),at=now();
  run("INSERT INTO waakg_manual_outbox(id,inbox_id,state,requested_at,updated_at) VALUES(?,?,?,?,?)",mid,inboxId,"UNKNOWN",at,at);
@@ -196,7 +203,7 @@ export async function sendChatMessage(input={}){
  if(one("SELECT id FROM waakg_operator_outbox WHERE id=?",requestId))return {status:409,body:{error:"Essa mensagem já foi processada ou enviada. Confira a conversa antes de repetir."}};
  if(one("SELECT phone FROM suppressions WHERE phone=?",thread.phone))return {status:403,body:{error:"Contato optou por não receber mensagens"}};
  if(!one("SELECT id FROM messages WHERE thread_id=? AND direction='in' LIMIT 1",threadId))return {status:403,body:{error:"O envio pelo painel está limitado a conversas iniciadas pelo cliente"}};
- const wa=await waControlStatus();const session=selectedWaSession();
+ const session=leadSession(thread.lead_id),wa=await waControlStatus(session);
  if(!wa.connected||!session)return {status:503,body:{error:"Conecte seu WhatsApp na aba Conexões"}};
  const at=now();
  // UNKNOWN is deliberate: after a timeout the provider may have delivered the message.

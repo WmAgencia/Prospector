@@ -6,6 +6,7 @@ import {conversationAuthorized} from './operator-outreach.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
 import {selectedWaSession,waControlStatus} from './waakg-control.mjs';
+import {leadSession} from './waakg-session-registry.mjs';
 import {remoteChats} from './waakg-conversations.mjs';
 import {takeover} from './runtime.mjs';
 
@@ -31,7 +32,7 @@ export function conversationHandoffStatus(chatId){
  const row=resolve(chatId);
  if(!row)return {chatId:String(chatId||''),manualTakeover:false,canTakeover:false,canDeliverToAi:false,reason:'CONVERSATION_NOT_SUPPORTED'};
  const valid=validJid(row.jid);
- const role=valid?classifyContact({jid:row.jid,sessionId:selectedWaSession()}):{role:'UNVERIFIED'};
+ const role=valid?classifyContact({jid:row.jid,sessionId:row.lead?leadSession(row.lead.id):selectedWaSession()}):{role:'UNVERIFIED'};
  const suppressed=!!row.lead?.phone&&!!one('SELECT 1 FROM suppressions WHERE phone=?',row.lead.phone);
  const eligibleStage=!['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(row.lead?.stage);
  const genericAi=process.env.AI_CONVERSATION_AUTOSEND==='true'||process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true';

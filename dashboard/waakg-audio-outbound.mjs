@@ -1,6 +1,7 @@
 // Manually approved Francisca audio replies, 1:1 inbound chats only.
 import {db,one,run,now,addMessage,audit,addLead,getThread,stage,phone} from './db.mjs';
 import {selectedWaSession,waControlStatus} from './waakg-control.mjs';
+import {leadSession} from './waakg-session-registry.mjs';
 import {makeFranciscaVoice,voiceStatus,checkVoiceText} from './francisca-tts.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS waakg_voice_outbox(id TEXT PRIMARY KEY,jid TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
@@ -19,7 +20,7 @@ export async function sendApprovedVoice(input={},deps={}){
  const lead=one('SELECT * FROM leads WHERE phone=?',number);
  if(!lead||!one("SELECT 1 FROM threads t JOIN messages m ON m.thread_id=t.id WHERE t.lead_id=? AND m.direction='in' LIMIT 1",lead.id))
   return {status:403,body:{error:'Áudio de resposta permitido apenas em conversas iniciadas pelo cliente'}};
- const remote=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||remote.sessionId;
+ const session=leadSession(lead.id),remote=deps.status?await deps.status(session):await waControlStatus(session);
  if(!remote.connected||!session)return {status:503,body:{error:'WhatsApp não conectado'}};
  run('INSERT INTO waakg_voice_outbox(id,jid,status,created_at,updated_at) VALUES(?,?,?,?,?)',requestId,jid,'UNKNOWN',now(),now());
  try{

@@ -10,6 +10,7 @@ import {threeMonthsAfter} from './prospecting-recontact.mjs';
 import {priceQuestion} from './sales-policy.mjs';
 import {detectAutomaticReply,friendlyGreeting,portfolioQuestion} from './portfolio-offer-550.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
+import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
@@ -93,13 +94,13 @@ export async function tickIntroductions(deps={}){
    item.lead_id,'prospect-queue:'+item.greeting_id,'prospect-queue:'+item.greeting_id,item.created_at);
   if(!conversationAuthorized(item.lead_id)||blocked||takeover?.manual_takeover===1||
     ['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)||extra||
-    identified.role!=='PROSPECT_APPROACHED'||session()!==item.session_id){
+    identified.role!=='PROSPECT_APPROACHED'||(deps.session?session()!==item.session_id:!isManagedSession(item.session_id)||leadSession(item.lead_id)!==item.session_id)){
    return false;
   }
   return true;
   };
   if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
-  const wa=await status();
+  const wa=await status(item.session_id);
   if(!wa.connected)return {state:'OFFLINE'};
   if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
   // Reserve before attempting transport; an uncertain result must not be resent.

@@ -23,6 +23,8 @@ function savedProspectSession(){
 }
 let prospectSession=savedProspectSession();
 const root=q("#app");
+let waAccounts=[],connectionSession='';
+const waSessionQuery=()=>connectionSession?'?sessionId='+encodeURIComponent(connectionSession):'';
 let waRefreshing=null,qrOpening=false;
 function whatsappNotice(){
  if(!wa||wa.connected)return "";
@@ -150,9 +152,12 @@ function prospecting(){
   '<p class="prospect-disclaimer">Selecionar empresas e clicar Abordar aprova somente essa lista, com intervalo aleatório de 90 a 110 segundos entre contatos. A IA continua após respostas; bloqueios e pedidos de não contato são respeitados.</p>'+
   '</section></div>';
 }
+function whatsappAccountsPanel(){
+ return '<section class="panel" style="margin-bottom:20px"><h3>Seus WhatsApps</h3><p>As abordagens alternam entre os números conectados, com um único intervalo global de 90 a 110 segundos. Cada conversa continua no número de origem.</p><div class="actions"><input id="new-wa-label" maxlength="70" placeholder="Nome do WhatsApp, por exemplo Comercial 2" aria-label="Nome do novo WhatsApp"><button class="primary" data-action="add-wa" '+(busy?'disabled':'')+'>Adicionar WhatsApp</button></div>'+waAccounts.map(item=>'<div class="setting-line"><div><strong>'+esc(item.label)+'</strong><small>'+esc(item.connected?'Conectado':item.status||'Desconectado')+'</small></div><button class="secondary compact" data-action="select-wa" data-session="'+esc(item.session_id)+'">'+(connectionSession===item.session_id?'Selecionado':'Gerenciar / QR Code')+'</button></div>').join('')+'</section>';
+}
 function connections(){
  const connected=!!wa?.connected,status=wa?.status||"DISCONNECTED",qr=qrResult?.qr;
- return '<section class="connect-layout"><div class="panel connect-info"><span class="kicker">INTEGRAÇÃO WHATSAPP</span><h2>Conecte seu WhatsApp em segundos.</h2><p>Você não precisa acessar outro sistema. O Prospector gera o QR Code aqui e cuida da integração com o gateway.</p><div class="connection-status '+(connected?"connected":"")+'"><span class="pulse '+(connected?"ok":"")+'"></span><span><strong>'+(connected?"WhatsApp conectado":"WhatsApp não conectado")+'</strong><small>'+esc(status==="ERROR"?(wa?.message||"Falha de comunicação"):connected?"Pronto para receber conversas":"Clique em Conectar para iniciar a sessão")+'</small></span></div><div class="actions">'+(connected?'<button class="secondary" data-action="disconnect">Desconectar</button>':'<button class="primary" data-action="connect" '+(busy?"disabled":"")+'>'+(busy?"Conectando...":"Conectar WhatsApp")+'</button>')+'</div><div class="steps"><strong>Como conectar</strong><p>1. Abra o WhatsApp no celular.</p><p>2. Vá em <b>Aparelhos conectados</b> e toque em <b>Conectar aparelho</b>.</p><p>3. Escaneie o QR Code mostrado ao lado.</p></div></div><div class="panel qr-panel"><div class="qr-frame">'+(connected?'<div class="qr-placeholder"><span>✓</span><h3>WhatsApp conectado!</h3><p>Suas conversas aparecerão na aba Conversas.</p></div>':qr?'<img class="qr-image" src="'+esc(qr)+'" alt="QR Code de conexão do WhatsApp"><p>Escaneie com a câmera do WhatsApp</p>':'<div class="qr-placeholder"><span>▦</span><h3>'+esc(wa?.hasSession?"Aguardando QR Code":"Pronto para conectar")+'</h3><p>'+esc(qrResult?.message||"Clique em Conectar WhatsApp para gerar seu código.")+'</p></div>')+'</div><p class="footnote">QR temporário e protegido. As abordagens automáticas obedecem ao horário e ao intervalo aleatório de 90 a 110 segundos.</p></div></section>'+'<section class="panel" style="margin-top:20px"><div class="heading"><div><h3>Groq Cloud · modelos inteligentes</h3><p>O Prospector escolhe automaticamente entre os modelos disponíveis.</p></div><span class="tag '+(groqOwner?.active?'green':'')+'">'+(groqOwner?.active?'Assistente configurado':'IA em configuração')+'</span></div><p class="footnote">Assistente autorizado somente para o número final '+esc(groqOwner?.ownerSuffix||'—')+'. Operações sensíveis exigem confirmação.</p>'+(groqModels?.selection?'<div class="model-grid">'+Object.entries(groqModels.selection).map(([task,model])=>'<div class="model-cell"><small>'+esc({conversation:'Conversa',actions:'Operações do sistema',quick:'Respostas rápidas',summarization:'Resumos',complex:'Análises complexas',transcription:'Transcrição (preparado)'}[task]||task)+'</small><strong>'+esc(model||'Indisponível')+'</strong></div>').join('')+'</div>':'<p class="footnote">Consultando os modelos da sua conta…</p>')+'</section>';
+ return whatsappAccountsPanel()+'<section class="connect-layout"><div class="panel connect-info"><span class="kicker">INTEGRAÇÃO WHATSAPP</span><h2>Conecte seu WhatsApp em segundos.</h2><p>Você não precisa acessar outro sistema. O Prospector gera o QR Code aqui e cuida da integração com o gateway.</p><div class="connection-status '+(connected?"connected":"")+'"><span class="pulse '+(connected?"ok":"")+'"></span><span><strong>'+(connected?"WhatsApp conectado":"WhatsApp não conectado")+'</strong><small>'+esc(status==="ERROR"?(wa?.message||"Falha de comunicação"):connected?"Pronto para receber conversas":"Clique em Conectar para iniciar a sessão")+'</small></span></div><div class="actions">'+(connected?'<button class="secondary" data-action="disconnect">Desconectar</button>':'<button class="primary" data-action="connect" '+(busy?"disabled":"")+'>'+(busy?"Conectando...":"Conectar WhatsApp")+'</button>')+'</div><div class="steps"><strong>Como conectar</strong><p>1. Abra o WhatsApp no celular.</p><p>2. Vá em <b>Aparelhos conectados</b> e toque em <b>Conectar aparelho</b>.</p><p>3. Escaneie o QR Code mostrado ao lado.</p></div></div><div class="panel qr-panel"><div class="qr-frame">'+(connected?'<div class="qr-placeholder"><span>✓</span><h3>WhatsApp conectado!</h3><p>Suas conversas aparecerão na aba Conversas.</p></div>':qr?'<img class="qr-image" src="'+esc(qr)+'" alt="QR Code de conexão do WhatsApp"><p>Escaneie com a câmera do WhatsApp</p>':'<div class="qr-placeholder"><span>▦</span><h3>'+esc(wa?.hasSession?"Aguardando QR Code":"Pronto para conectar")+'</h3><p>'+esc(qrResult?.message||"Clique em Conectar WhatsApp para gerar seu código.")+'</p></div>')+'</div><p class="footnote">QR temporário e protegido. As abordagens automáticas obedecem ao horário e ao intervalo aleatório de 90 a 110 segundos.</p></div></section>'+'<section class="panel" style="margin-top:20px"><div class="heading"><div><h3>Groq Cloud · modelos inteligentes</h3><p>O Prospector escolhe automaticamente entre os modelos disponíveis.</p></div><span class="tag '+(groqOwner?.active?'green':'')+'">'+(groqOwner?.active?'Assistente configurado':'IA em configuração')+'</span></div><p class="footnote">Assistente autorizado somente para o número final '+esc(groqOwner?.ownerSuffix||'—')+'. Operações sensíveis exigem confirmação.</p>'+(groqModels?.selection?'<div class="model-grid">'+Object.entries(groqModels.selection).map(([task,model])=>'<div class="model-cell"><small>'+esc({conversation:'Conversa',actions:'Operações do sistema',quick:'Respostas rápidas',summarization:'Resumos',complex:'Análises complexas',transcription:'Transcrição (preparado)'}[task]||task)+'</small><strong>'+esc(model||'Indisponível')+'</strong></div>').join('')+'</div>':'<p class="footnote">Consultando os modelos da sua conta…</p>')+'</section>';
 }
 function settings(){
  const s=state?.settings||{};
@@ -180,13 +185,18 @@ async function refreshWa(redraw=true){
  if(waRefreshing)return waRefreshing;
  waRefreshing=(async()=>{
   try{
-   const w=await api("/api/whatsapp/status");
+   if(view==='connections'){
+    const pool=await api('/api/whatsapp/sessions').catch(()=>({items:[]}));
+    waAccounts=Array.isArray(pool.items)?pool.items:[];
+    if(!connectionSession&&waAccounts.length)connectionSession=waAccounts[0].session_id;
+   }
+   const w=await api("/api/whatsapp/status"+(view==='connections'?waSessionQuery():''));
    const wasConnected=!!wa?.connected;
    const changed=!wa||wa.connected!==w.connected||wa.status!==w.status||wa.ok!==w.ok||wa.transportStale!==w.transportStale;
    const oldQr=qrResult?.qr||null;wa=w;
    if(w.connected)qrResult=null;
    else if(view==="connections"&&w.hasSession&&["SCAN_QR","CONNECTING","INITIALIZING"].includes(w.status)){
-    qrResult=await api("/api/whatsapp/qr").catch(e=>({qr:null,message:e.message}));
+    qrResult=await api("/api/whatsapp/qr"+waSessionQuery()).catch(e=>({qr:null,message:e.message}));
    }else if(view==="connections")qrResult=null;
    if(redraw&&(changed||(view==="connections"&&oldQr!==(qrResult?.qr||null))))render();
    if(view==="conversations"&&w.connected&&(!wasConnected||!remoteChats.length))await loadChats();
@@ -204,7 +214,7 @@ async function openWhatsappQr(){
  qrOpening=true;busy=true;
  nav("connections");
  try{
-  await post("/api/whatsapp/connect",{});
+  await post("/api/whatsapp/connect",{sessionId:connectionSession||undefined});
   await refreshWa();
   n(wa?.connected?"WhatsApp conectado.":"Sessão iniciada. Escaneie o QR Code quando ele aparecer.");
  }catch(error){n("Não foi possível iniciar a reconexão: "+error.message);}
@@ -397,15 +407,28 @@ document.addEventListener("click",async ev=>{
   if(action==="maps-poll"){await updateMapsJob();return;}
   if(action==="import-csv"){await importMapsCSV();return;}
   if(action==="reconnect-qr"||action==="connect"){await openWhatsappQr();return;}
+  if(action==='select-wa'){
+   connectionSession=String(el.dataset.session||'');qrResult=null;
+   await refreshWa();render();return;
+  }
+  if(action==='add-wa'){
+   if(busy)return;
+   const name=q('#new-wa-label')?.value?.trim();
+   if(!name){n('Informe um nome para identificar o WhatsApp.');return;}
+   busy=true;render();
+   try{const created=await post('/api/whatsapp/sessions',{name});connectionSession=created.sessionId;qrResult=null;await refreshWa();n('WhatsApp adicionado. Escaneie o QR Code deste número.');}
+   finally{busy=false;render();}
+   return;
+  }
   if(action==="disconnect"){
-   if(!confirm("Desconectar este WhatsApp? Será necessário escanear um novo QR Code para entrar novamente. A prospecção ficará pausada."))return;
+   if(!confirm("Desconectar este WhatsApp? Será necessário escanear um novo QR Code. Os outros números continuarão conectados."))return;
    busy=true;render();
    try{
-    const out=await post("/api/whatsapp/disconnect",{});
+    const out=await post("/api/whatsapp/disconnect",{sessionId:connectionSession||undefined});
     if(out.verified!==true||out.connected!==false)throw Error("O gateway não confirmou o encerramento da sessão.");
     qrResult=null;wa={ok:true,connected:false,status:"LOGGED_OUT",hasSession:true};
     await refreshWa();
-    n("WhatsApp desconectado e prospecção pausada. Para reconectar, abra o QR Code.");
+    n("Este WhatsApp foi desconectado. Para reconectar, abra o QR Code.");
    }finally{busy=false;render();}
    return;
   }

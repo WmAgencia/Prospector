@@ -1,9 +1,10 @@
 // Remote WA-AKG chat synchronization and manual replies.
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 import {db,one,all,run,now,phone,addLead,getThread,addMessage,audit,stage} from "./db.mjs";
+import {leadSession} from './waakg-session-registry.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS waakg_remote_outbox(id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL)");
 const jidAllowed=j=>/^\d{10,15}@s\.whatsapp\.net$/.test(j);
-function currentId(){const s=selectedWaSession();if(!s)throw Error("Conecte seu WhatsApp em Conexões");return encodeURIComponent(s);}
+function currentId(jid){const lead=jid?one('SELECT id FROM leads WHERE phone=?',phone(jid.split('@')[0])):null;const s=lead?leadSession(lead.id):selectedWaSession();if(!s)throw Error("Conecte seu WhatsApp em Conexões");return encodeURIComponent(s);}
 export async function remoteChats(){
  const s=await waControlStatus();
  if(!s.connected)return {connected:false,items:[]};
@@ -24,9 +25,9 @@ export function mergeAudioTranscripts(remote,transcriptions){
  return out.sort((a,b)=>toTime(a.at)-toTime(b.at)).slice(-100);
 }
 export async function remoteMessages(jid){
- const s=await waControlStatus();if(!s.connected)throw Error("WhatsApp não conectado");
+ const s=await waControlStatus(decodeURIComponent(currentId(jid)));if(!s.connected)throw Error("WhatsApp não conectado");
  if(!/^[0-9]{10,15}@(s\.whatsapp\.net|lid|g\.us)$/.test(jid))throw Error("Conversa inválida");
- const result=await waRequest("/api/chat/"+currentId()+"/"+encodeURIComponent(jid));
+ const result=await waRequest("/api/chat/"+currentId(jid)+"/"+encodeURIComponent(jid));
  const arr=Array.isArray(result.data)?result.data:[];
  const output=arr.slice(-100).map(x=>({id:x.id||x.keyId,direction:x.fromMe?"out":"in",
   body:typeof x.content==="string"?x.content:String(x.caption||"["+String(x.type||"Mídia")+"]"),
@@ -34,7 +35,7 @@ export async function remoteMessages(jid){
  // Only confirmed transcripts from local storage, not media captions supplied
  // by an untrusted WhatsApp message.
  const rows=one("SELECT name FROM sqlite_master WHERE type='table' AND name='inbound_audio_jobs'")?
-  all("SELECT a.provider_id,m.body,m.at FROM inbound_audio_jobs a JOIN messages m ON m.provider_id=a.provider_id WHERE a.jid=? AND a.state='DONE' ORDER BY m.at DESC LIMIT 60",jid):[];
+  all("SELECT a.provider_id,m.body,m.at FROM inbound_audio_jobs a JOIN messages m ON m.provider_id=a.provider_id WHERE a.jid=? AND a.session_id=? AND a.state='DONE' ORDER BY m.at DESC LIMIT 60",jid,decodeURIComponent(currentId(jid))):[];
  return mergeAudioTranscripts(output,rows);
 }
 export async function sendRemoteReply(input={}){
@@ -49,7 +50,7 @@ export async function sendRemoteReply(input={}){
  if(/^\s*(parar|pare|stop|remover|não me contate|nao me contate)\b/i.test(recent))return {status:403,body:{error:"O contato solicitou não receber mensagens"}};
  run("INSERT INTO waakg_remote_outbox(id,jid,state,created_at) VALUES(?,?,?,?)",requestId,jid,"UNKNOWN",now());
  try{
-  const result=await waRequest("/api/messages/"+currentId()+"/"+encodeURIComponent(jid)+"/send",{method:"POST",data:{message:{text}}});
+  const result=await waRequest("/api/messages/"+currentId(jid)+"/"+encodeURIComponent(jid)+"/send",{method:"POST",data:{message:{text}}});
   if(result.status!==true)return {status:502,body:{error:"WA-AKG não confirmou o envio",delivery:"UNKNOWN"}};
   run("UPDATE waakg_remote_outbox SET state='SENT' WHERE id=?",requestId);
   const lead=addLead({business:"Contato WhatsApp "+normalized.slice(-4),phone:normalized,source:"WHATSAPP_INBOUND",contact_permission:false}).lead;
