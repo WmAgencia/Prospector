@@ -76,7 +76,7 @@ function createHarness({mapsConfigured=false,previewReady=0}={}){
  const context=vm.createContext({
   document,window:{addEventListener(){}},location:{hash:'#/prospects'},
   fetch,URL,URLSearchParams,console,confirm:()=>false,
-  setInterval:()=>1,clearInterval(){},Date,crypto:{randomUUID:()=> 'mock'},
+  setInterval:()=>1,clearInterval(){},setTimeout:()=>1,clearTimeout(){},Date,crypto:{randomUUID:()=> 'mock'},
  });
  // Runtime starts after the top-level await only in the actual browser.
  const source=app.slice(0,app.lastIndexOf('\nawait reload();'));
