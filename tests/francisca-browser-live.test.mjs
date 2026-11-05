@@ -33,8 +33,9 @@ test('Francisca browser VAD sends utterances after silence, re-listens and stops
  const states=[],session=createFranciscaVoiceSession({
   onTurn:async blob=>{assert.ok(blob.size>200);turns++;},
   onState:state=>states.push(state),
-  onError:msg=>{throw Error(msg);}
- },silenceMs:235});
+  onError:msg=>{throw Error(msg);},
+  silenceMs:235
+ });
  try{
   await session.start();
   assert.equal(states.at(-1),'listening');
