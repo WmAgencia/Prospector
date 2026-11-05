@@ -149,7 +149,7 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  }
  if(p==='/api/platform/context'){
   if(ownerMaster)respond(res,200,{role:'master',name:client.name,email:client.email,canSwitchWorkspace:true,internalAccount:true,package:{credits:250,priceBrl:9.9}});
-  else if(client)respond(res,200,{role:'client',...registry().publicClient(client),canSwitchWorkspace:primary,internalAccount:primary,canReturnToMaster:false,package:{credits:250,priceBrl:9.9}});
+  else if(client)respond(res,200,{role:'client',...registry().publicClient(client),needsPasswordSetup:!registry().hasPassword(client.id),canSwitchWorkspace:primary,internalAccount:primary,canReturnToMaster:false,package:{credits:250,priceBrl:9.9}});
   else if(authorized(req))respond(res,200,{role:'master',name:'Consecom Brasil',canSwitchWorkspace:false,package:{credits:250,priceBrl:9.9}});
   else respond(res,401,{error:'Acesso necessário'});return true;
  }
@@ -159,6 +159,16 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
    'ps_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'
   ]);
   respond(res,200,{ok:true});return true;
+ }
+ if(p==='/api/platform/account/setup'&&req.method==='POST'){
+  if(!client){respond(res,403,{error:'O convite de cliente não está autenticado'});return true;}
+  try{
+   const input=await json(req);
+   const updated=registry().setupPassword(client.id,input.password);
+   res.setHeader('Set-Cookie',clientCookie(updated));
+   respond(res,200,{ok:true,email:updated.email,message:'Senha criada. Seu convite inicial foi invalidado.'});
+  }catch(e){respond(res,422,{error:String(e.message).slice(0,150)});}
+  return true;
  }
  if(p==='/api/platform/account'&&req.method==='POST'){
   if(!client){respond(res,403,{error:'Abra uma conta de cliente'});return true;}
