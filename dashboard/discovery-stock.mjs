@@ -49,13 +49,16 @@ export function dailyRefillBudget(at=new Date(),options={}){
  const day=localStockDay(at);
  let checkpoint=getSetting('discovery_stock_checkpoint',null);
  if(checkpoint?.day!==day){
-  checkpoint={day,startedAt:at.toISOString(),carryover:Math.min(stock.target,stock.ready)};
+  checkpoint={day,startedAt:at.toISOString(),carryover:Math.min(stock.target,stock.ready),fundedTarget:stock.fundedTarget};
   setSetting('discovery_stock_checkpoint',checkpoint);
  }
  // Already discovered business numbers count against today's budget even after
  // they are approached; their removal from "ready" must NOT trigger more search.
  const added=one("SELECT COUNT(*) AS n FROM leads WHERE created_at>=? AND phone IS NOT NULL",checkpoint.startedAt)?.n||0;
- const need=Math.max(0,stock.fundedTarget-checkpoint.carryover-added);
- return {...stock,day,carryover:checkpoint.carryover,foundSinceCheckpoint:added,
+ // Credits consumed by today's actual approaches must not shrink the morning
+ // discovery budget; a later top-up can increase it up to the 250 cap.
+ const dailyFundedTarget=Math.min(stock.target,Math.max(checkpoint.fundedTarget||0,stock.fundedTarget));
+ const need=Math.max(0,dailyFundedTarget-checkpoint.carryover-added);
+ return {...stock,fundedTarget:dailyFundedTarget,day,carryover:checkpoint.carryover,foundSinceCheckpoint:added,
   missing:need,full:need===0,checkpointAt:checkpoint.startedAt};
 }
