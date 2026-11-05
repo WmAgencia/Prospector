@@ -31,7 +31,9 @@ let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
 let outreachHours={start:'08:00',end:'17:30'};
-let trainingRecordTimeout=null,franciscaOpen=false,franciscaVoiceOn=true,franciscaHistory=[],franciscaBusy=false,franciscaRecorder=null,franciscaAudio=null,franciscaRecordTimeout=null,franciscaConversationId=crypto.randomUUID();
+let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
+let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
+let noticeTimer=null,noticeToken=0;
 let calendarMonth=(()=>{const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).formatToParts(new Date()).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return parts.year+'-'+parts.month;})();
 async function loadCalendar(){
  try{prospectCalendar=await api('/api/prospecting/calendar?month='+encodeURIComponent(calendarMonth));if(view==='prospects')render();}catch(e){n('Calendário indisponível: '+e.message);}
@@ -47,7 +49,19 @@ function moveCalendar(delta){
 const waSessionQuery=()=>connectionSession?'?sessionId='+encodeURIComponent(connectionSession):'';
 let waRefreshing=null,qrOpening=false;
 function whatsappNotice(){return '';}
-function n(msg){notice=String(msg||"");const el=q("#notice");if(el){el.textContent=notice;el.classList.toggle("hidden",!notice);el.setAttribute("role",notice?"status":"none")}}
+function n(msg){
+ // Alerts are ephemeral: newer messages replace and restart the timeout.
+ notice=String(msg||'');const id=++noticeToken;
+ if(noticeTimer){clearTimeout(noticeTimer);noticeTimer=null;}
+ const el=q('#notice');
+ if(el){el.textContent=notice;el.classList.toggle('hidden',!notice);el.setAttribute('role',notice?'status':'none');}
+ if(notice)noticeTimer=setTimeout(()=>{
+  if(noticeToken!==id)return;
+  notice='';noticeTimer=null;
+  const current=q('#notice');
+  if(current){current.textContent='';current.classList.add('hidden');current.setAttribute('role','none');}
+ },4300);
+}
 async function api(path,opts={}){
  const r=await fetch(path,{credentials:"same-origin",cache:"no-store",...opts,headers:{"Accept":"application/json",...(opts.body?{"Content-Type":"application/json"}:{}),...(opts.headers||{})}});
  let data=await r.json().catch(()=>({}));
@@ -71,7 +85,7 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
  });
 }
 
-function nav(viewName){if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();}
+function nav(viewName){n('');if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();}
 
 function glyph(key){
  if(globalThis.ProspectorIcons)return globalThis.ProspectorIcons.svg(key);
@@ -623,7 +637,16 @@ async function loadMessages(id){
 }
 async function loadKanban(){try{kanban=await api('/api/kanban');salesResults=await api('/api/sales/outcomes').catch(()=>null);if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
 async function reload(){
- if(!workspaceInitialized){workspaceInitialized=true;try{platformContext=await api("/api/platform/context");}catch{}if(platformContext.role!=="master"&&view==="clients")view="overview";if(platformContext.role==="master"&&(!location.hash||!["overview","clients","credits","settings"].includes(view)))view="overview";}
+ if(!workspaceInitialized){
+  workspaceInitialized=true;
+  try{platformContext=await api('/api/platform/context');}
+  catch(e){root.innerHTML='<main class="load-error"><h2>Não foi possível acessar o painel</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';return;}
+  if(platformContext.role!=='master'&&view==='clients')view='overview';
+  if(platformContext.role==='master'&&(!location.hash||!['overview','clients','credits','settings'].includes(view)))view='overview';
+  // Show a working dashboard immediately; large API snapshots and WhatsApp
+  // sync are loaded after first paint instead of delaying the whole layout.
+  render();
+ }
  try{
   if(platformContext.role==="master"){await loadClients();lastRefresh=Date.now();render();return;}
   state=await api("/api/state");lastRefresh=Date.now();
@@ -669,7 +692,9 @@ document.addEventListener("click",async ev=>{
   if(action==='switch-workspace'){
     const mode=platformContext.role==='master'?'production':'master';
     const response=await post('/api/platform/workspace',{mode});
-    location.assign('/'+response.next);return;
+    // A hash-only navigation does not recreate the authenticated app context.
+    // Change the query string as well, forcing a full, credentialed page load.
+    location.replace('/?workspace='+encodeURIComponent(mode)+(response.next||'#/overview'));return;
    }
    if(action==='scope-toggle-niche'||action==='scope-toggle-city'){
     scopeNicheInput=q('#scope-niche')?.value||scopeNicheInput;
