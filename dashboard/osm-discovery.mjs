@@ -255,8 +255,15 @@ export async function dailyLocalDiscovery(input=new Date()){
  const last=Date.parse(getSetting('osm_last_auto_at','')||'')||0;
  // Espaçamento real de 45 minutos, incluindo tentativas que falharam.
  if(input.getTime()-last<OSM_COOLDOWN_MS)return {status:'COOLDOWN',foundToday:snapshot.foundToday,target,nextAt:new Date(last+OSM_COOLDOWN_MS).toISOString()};
- const cities=String(getSetting('cities','Sorocaba,Votorantim,Campinas')).split(',').map(x=>resolveLocation(x.trim())).filter(Boolean);
- const segments=String(getSetting('segments','psicólogo,nutricionista,massoterapeuta,fisioterapeuta,esteticista')).split(',').map(x=>resolveSegment(x.trim())).filter(Boolean);
+ // Client-selected automated discovery: stored within the tenant's own database.
+ // "All" means all currently supported OSM categories/locations, never worldwide coverage.
+ const choice=getSetting('prospecting_preferences',null);
+ const cities=choice?.mode==='niche_city'?[resolveLocation(choice.city)].filter(Boolean):
+  ['all','niche_all_cities'].includes(choice?.mode)?Object.values(LOCATIONS):
+  String(getSetting('cities','Sorocaba,Votorantim,Campinas')).split(',').map(x=>resolveLocation(x.trim())).filter(Boolean);
+ const segments=choice?.mode==='all'?Object.values(SEGMENTS):
+  ['niche_all_cities','niche_city'].includes(choice?.mode)?[resolveSegment(choice.niche)].filter(Boolean):
+  String(getSetting('segments','psicólogo,nutricionista,massoterapeuta,fisioterapeuta,esteticista')).split(',').map(x=>resolveSegment(x.trim())).filter(Boolean);
  const uniqueCities=[...new Map(cities.map(x=>[x.label,x])).values()];
  const uniqueSegments=[...new Map(segments.map(x=>[x.filter+':'+x.value,x])).values()];
  if(!uniqueCities.length||!uniqueSegments.length)return {status:'NO_SUPPORTED_CITY_OR_SEGMENT'};
