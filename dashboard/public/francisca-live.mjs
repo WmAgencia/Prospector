@@ -1,10 +1,10 @@
 // Hands-free, turn-based browser voice interaction. A user explicitly starts the
 // microphone, a small VAD detects the end of each utterance, and the same source
 // stays connected until they close the call. No recording is retained on disk.
-export function createFranciscaVoiceSession({onTurn,onState=()=>{},onError=()=>{},silenceMs=950,maxTurnMs=28000}){
+export function createFranciscaVoiceSession({onTurn,onState=()=>{},onError=()=>{},onInterrupt=()=>{},canInterrupt=()=>false,silenceMs=950,maxTurnMs=28000}){
  let active=false,stream=null,context=null,analyser=null,source=null,timer=null,recorder=null;
  let startedAt=0,lastSpeechAt=0,speechStartedAt=0,ambient=.003,finishing=false,processing=false;
- let generation=0,chunks=[],mime='',samples=null;
+ let generation=0,chunks=[],mime='',samples=null,bargeStarted=0;
  const state=next=>{if(active||next==='off')onState(next);};
  const closeStream=()=>{
   if(timer){clearInterval(timer);timer=null;}
@@ -29,8 +29,7 @@ export function createFranciscaVoiceSession({onTurn,onState=()=>{},onError=()=>{
    finally{
     processing=false;
     if(active&&thisGeneration===generation){
-     lastSpeechAt=0;speechStartedAt=0;ambient=.003;
-     state('listening');
+     if(recorder){state('hearing');}else{lastSpeechAt=0;speechStartedAt=0;ambient=.003;state('listening');}
     }
    }
   };
@@ -67,8 +66,24 @@ export function createFranciscaVoiceSession({onTurn,onState=()=>{},onError=()=>{
   return Math.sqrt(sum/bytes.length);
  }
  function poll(){
-  if(!active||processing||finishing||document.hidden)return;
+  if(!active||finishing||document.hidden)return;
   const rms=level(),now=Date.now();
+  if(processing){
+   // Keep measuring the microphone while the assistant is speaking.
+   // A sustained new user utterance interrupts playback and starts recording
+   // without disconnecting the underlying microphone stream.
+   const userSpeech=canInterrupt()&&rms>Math.max(.035,ambient*3.3);
+   if(userSpeech){
+    if(!bargeStarted)bargeStarted=now;
+    if(now-bargeStarted>=210){
+     bargeStarted=0;
+     try{onInterrupt();}catch(error){onError(error?.message||'Falha ao interromper');}
+     processing=false;
+     record();
+    }
+   }else bargeStarted=0;
+   return;
+  }
   // The noise floor follows ambient input slowly, but never treats room noise
   // as confirmed user speech without a stronger signal.
   const loud=rms>Math.max(.009,ambient*2.35);
@@ -112,7 +127,7 @@ export function createFranciscaVoiceSession({onTurn,onState=()=>{},onError=()=>{
   }catch(error){stop();throw error;}
  }
  function stop(){
-  const wasActive=active;active=false;generation++;processing=false;finishing=false;
+  const wasActive=active;active=false;generation++;processing=false;finishing=false;bargeStarted=0;
   closeStream();if(wasActive)state('off');
  }
  return {start,stop,get active(){return active;},get processing(){return processing;}};
