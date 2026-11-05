@@ -30,6 +30,7 @@ const root=q("#app");
 let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
+let trainingRecordTimeout=null,franciscaOpen=false,franciscaVoiceOn=true,franciscaHistory=[],franciscaBusy=false,franciscaRecorder=null,franciscaAudio=null,franciscaRecordTimeout=null,franciscaConversationId=crypto.randomUUID();
 let calendarMonth=(()=>{const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).formatToParts(new Date()).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return parts.year+'-'+parts.month;})();
 async function loadCalendar(){
  try{prospectCalendar=await api('/api/prospecting/calendar?month='+encodeURIComponent(calendarMonth));if(view==='prospects')render();}catch(e){n('Calendário indisponível: '+e.message);}
@@ -91,7 +92,7 @@ function glyph(key){
 function workspaceTabs(){return '<nav class="workspace-tabs" aria-label="Seções do painel">'+Object.entries(tabs).filter(([key])=>platformContext.role==='master'?['overview','clients','credits','settings'].includes(key):key!=='clients').map(([key,label])=>'<button data-tab="'+key+'" class="'+(view===key?'active':'')+'" '+(view===key?'aria-current="page"':'')+'>'+esc(label)+'</button>').join('')+'</nav>';}
 function shell(){
  const active=tabs[view]||tabs.overview,connected=!!wa?.connected;
- root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["overview","clients","credits","settings"].includes(key):key!=="clients").map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p></div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div>'+workspaceTabs()+'<div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'Desconectado')+'</span></span>'+(platformContext.role!=="master"&&!connected?'<button class="wa-inline-connect" type="button" data-action="reconnect-qr">'+glyph('connections')+' Conectar</button>':'')+'<button class="icon-button refresh-button" data-action="refresh" title="Atualizar dados" aria-label="Atualizar dados">'+glyph('refresh')+'</button><button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+(platformContext.canReturnToMaster?'<div class="workspace-return">Você está no espaço de '+esc(platformContext.name)+'. <a href="/master">Voltar ao painel master</a></div>':'')+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>';
+ root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["overview","clients","credits","settings"].includes(key):key!=="clients").map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p></div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div>'+workspaceTabs()+'<div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'Desconectado')+'</span></span>'+(platformContext.role!=="master"&&!connected?'<button class="wa-inline-connect" type="button" data-action="reconnect-qr">'+glyph('connections')+' Conectar</button>':'')+'<button class="icon-button refresh-button" data-action="refresh" title="Atualizar dados" aria-label="Atualizar dados">'+glyph('refresh')+'</button><button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+(platformContext.canReturnToMaster?'<div class="workspace-return">Você está no espaço de '+esc(platformContext.name)+'. <a href="/master">Voltar ao painel master</a></div>':'')+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>'+franciscaWidget();
 }
 
 
@@ -127,6 +128,102 @@ function creditsView(){
  '<div class="credit-packages-grid">'+packs.map(p=>'<article class="credit-packet '+(p.id==='padrao'?'featured':'')+'"><div class="credit-packet-top"><span>'+esc(p.name)+'</span>'+(p.id==='padrao'?'<span class="tag green">Mais indicado</span>':'')+'</div><strong class="credit-packet-volume">'+Number(p.credits).toLocaleString('pt-BR')+'</strong><small>abordagens</small><div class="credit-packet-price">'+moneyFromCents(p.priceCents)+'</div><p>'+'R$ '+(p.priceCents/100/p.credits).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:5})+' por abordagem</p><button class="primary" data-action="request-credit-package" data-package="'+esc(p.id)+'">Solicitar '+esc(p.name)+'</button></article>').join('')+'</div>'+
  '<section class="panel"><div class="heading"><div><h3>Meus pedidos de recarga</h3><p>Um pedido não é uma cobrança automática.</p></div><button class="secondary compact" data-action="refresh-credits">Atualizar</button></div>'+(requests.length?'<div class="orders-list">'+requests.slice(0,15).map(x=>'<div class="order-row"><div class="order-identity"><strong>'+Number(x.credits).toLocaleString('pt-BR')+' créditos · '+moneyFromCents(x.price_cents)+'</strong><small>'+stamp(x.created_at)+'</small></div><span class="tag '+(x.status==='APPROVED'?'green':'')+'">'+(x.status==='PENDING'?'Aguardando confirmação':x.status==='APPROVED'?'Créditos liberados':'Não aprovado')+'</span></div>').join('')+'</div>':'<div class="empty"><p>Você ainda não solicitou uma recarga.</p></div>')+'</section>'+
  '<section class="panel"><h3>Histórico de créditos</h3>'+(c.items?.length?'<div class="table-wrap"><table class="result-table"><thead><tr><th>Data</th><th>Descrição</th><th>Créditos</th></tr></thead><tbody>'+c.items.map(x=>'<tr><td>'+stamp(x.created_at)+'</td><td>'+esc(x.reason)+'</td><td class="'+(x.amount>0?'credit-positive':'')+'">'+(x.amount>0?'+':'')+esc(x.amount)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty"><p>O extrato aparecerá depois da primeira recarga ou abordagem.</p></div>')+'</section>';
+}
+function voiceMime(){
+ if(!window.MediaRecorder)return '';
+ return ['audio/webm','audio/mp4','audio/ogg'].find(type=>MediaRecorder.isTypeSupported(type))||'';
+}
+async function toggleTrainingRecording(){
+ if(trainingRecorder?.state==='recording'){trainingRecorder.stop();return;}
+ if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){n('Seu navegador não permite gravação de áudio neste contexto. Use o campo de texto.');return;}
+ trainingRecordedText=q('#training-input')?.value||trainingRecordedText;
+ let stream;
+ try{
+  const mime=voiceMime();if(!mime)throw Error('Formato de gravação indisponível');
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  const rec=new MediaRecorder(stream,{mimeType:mime}),chunks=[];
+  trainingRecorder=rec;
+  rec.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
+  rec.onstop=async()=>{
+   if(trainingRecordTimeout)clearTimeout(trainingRecordTimeout);trainingRecordTimeout=null;
+   stream.getTracks().forEach(t=>t.stop());trainingRecording=false;trainingRecorder=null;
+   try{
+    const blob=new Blob(chunks,{type:mime});
+    if(blob.size>5*1024*1024)throw Error('Gravação acima de 5 MB');
+    const result=await api('/api/training/voice-note',{method:'POST',headers:{'Content-Type':mime},body:blob});
+    trainingRecordedText=[trainingRecordedText,result.text].filter(Boolean).join('\n');
+    if(view==='training')render();n('Áudio transcrito. Revise o texto antes de enviar como orientação.');
+   }catch(e){if(view==='training')render();n(e.message);}
+  };
+  rec.start();trainingRecording=true;render();
+  trainingRecordTimeout=setTimeout(()=>{if(rec.state==='recording')rec.stop();},45000);
+ }catch(e){stream?.getTracks().forEach(t=>t.stop());trainingRecording=false;trainingRecorder=null;n('Microfone indisponível: '+e.message);}
+}
+function franciscaWidget(){
+ if(platformContext.role==='master')return '';
+ return '<div class="francisca-widget"><button type="button" class="francisca-orb" data-action="francisca-toggle" aria-label="'+(franciscaOpen?'Fechar Francisca':'Conversar com Francisca por voz')+'" aria-expanded="'+String(franciscaOpen)+'"><span>F</span><small>Francisca</small></button>'+
+ (franciscaOpen?'<section class="francisca-window" role="dialog" aria-label="Assistente Francisca"><div class="francisca-header"><span class="francisca-avatar">F</span><div><strong>Francisca</strong><small>Assistente do seu painel · voz e texto</small></div><button type="button" data-action="francisca-close" aria-label="Fechar Francisca">×</button></div><div class="francisca-log" role="log" aria-live="polite">'+(franciscaHistory.length?franciscaHistory.map(m=>'<div class="francisca-message '+(m.role==='user'?'sent':'received')+'">'+esc(m.text)+'</div>').join(''):'<div class="francisca-intro"><strong>Oi! Sou a Francisca.</strong><p>Posso explicar seus indicadores, créditos, conexões e orientações de atendimento. Minha atuação aqui é consultiva: nenhuma ação é executada sem você.</p></div>')+(franciscaBusy?'<div class="francisca-message received">Preparando sua resposta…</div>':'')+'</div><form id="francisca-form" class="francisca-compose"><input id="francisca-input" maxlength="700" placeholder="Pergunte ou fale com a Francisca…" autocomplete="off" aria-label="Sua pergunta para Francisca"><button type="submit" class="francisca-send" '+(franciscaBusy?'disabled':'')+' aria-label="Enviar pergunta">➤</button></form><div class="francisca-controls"><button type="button" class="francisca-mic '+(franciscaRecorder?.state==='recording'?'recording':'')+'" data-action="francisca-record-toggle">'+(franciscaRecorder?.state==='recording'?'■ Parar gravação':'🎙 Conversar por voz')+'</button><button type="button" class="francisca-sound" data-action="francisca-sound">'+(franciscaVoiceOn?'🔊 Voz ligada':'🔇 Voz desligada')+'</button></div><p class="francisca-privacy">Microfone usado somente quando ativado. A conversa é processada pelo servidor da sua conta e seus fornecedores de IA; áudio não é salvo pelo painel.</p></section>':'')+'</div>';
+}
+function renderFrancisca(){
+ const old=q('.francisca-widget');
+ if(!old)return;
+ const wrap=document.createElement('div');wrap.innerHTML=franciscaWidget();
+ const next=wrap.firstElementChild;if(old&&next)old.replaceWith(next);
+ q('.francisca-log')?.scrollTo({top:q('.francisca-log').scrollHeight,behavior:'smooth'});
+}
+function stopFranciscaSound(){
+ if(franciscaAudio){try{franciscaAudio.pause();franciscaAudio.src='';}catch{}franciscaAudio=null;}
+}
+async function speakFrancisca(text){
+ if(!franciscaVoiceOn)return;
+ try{
+  const resp=await fetch('/api/ai/francisca-speak',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+  if(!resp.ok)throw Error('Áudio indisponível');
+  const audioBlob=await resp.blob(),url=URL.createObjectURL(audioBlob);
+  stopFranciscaSound();const audio=new Audio(url);franciscaAudio=audio;
+  audio.onended=()=>{URL.revokeObjectURL(url);if(franciscaAudio===audio)franciscaAudio=null;};
+  audio.onerror=()=>{URL.revokeObjectURL(url);if(franciscaAudio===audio)franciscaAudio=null;};
+  await audio.play();
+ }catch{n('Francisca respondeu por texto; a reprodução da voz não está disponível.');}
+}
+async function franciscaReply(input,isAudio=false){
+ if(franciscaBusy)return;
+ franciscaBusy=true;renderFrancisca();
+ try{
+  let result;
+  if(isAudio){
+   const resp=await fetch('/api/ai/francisca-turn',{method:'POST',credentials:'same-origin',headers:{'Content-Type':input.type,'X-Francisca-Conversation':franciscaConversationId},body:input});
+   result=await resp.json().catch(()=>({}));if(!resp.ok)throw Error(result.error||'Falha ao conversar');
+  }else{
+   result=await post('/api/ai/francisca-turn',{text:input,history:franciscaHistory.slice(-10),conversationId:franciscaConversationId});
+  }
+  franciscaHistory.push({role:'user',text:result.transcript||String(input).slice(0,700)},{role:'assistant',text:result.answer});
+  franciscaHistory=franciscaHistory.slice(-20);
+  renderFrancisca();
+  if(franciscaVoiceOn)void speakFrancisca(result.answer);
+ }catch(e){n(e.message);}
+ finally{franciscaBusy=false;renderFrancisca();}
+}
+async function toggleFranciscaRecording(){
+ if(franciscaRecorder?.state==='recording'){franciscaRecorder.stop();return;}
+ if(franciscaBusy)return;
+ stopFranciscaSound();if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){n('O navegador não permite áudio. Escreva para a Francisca.');return;}
+ let stream;
+ try{
+  const mime=voiceMime();if(!mime)throw Error('Formato de áudio indisponível');
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  const rec=new MediaRecorder(stream,{mimeType:mime}),chunks=[];franciscaRecorder=rec;
+  rec.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
+  rec.onstop=async()=>{
+   if(franciscaRecordTimeout)clearTimeout(franciscaRecordTimeout);franciscaRecordTimeout=null;
+   stream.getTracks().forEach(t=>t.stop());franciscaRecorder=null;renderFrancisca();
+   const blob=new Blob(chunks,{type:mime});
+   if(blob.size>0&&blob.size<=5*1024*1024)await franciscaReply(blob,true);
+   else n('Áudio vazio ou grande demais para transcrever.');
+  };
+  rec.start();renderFrancisca();
+  franciscaRecordTimeout=setTimeout(()=>{if(rec.state==='recording')rec.stop();},45000);
+ }catch(e){stream?.getTracks().forEach(t=>t.stop());franciscaRecorder=null;n('Não foi possível acessar o microfone: '+e.message);}
 }
 function trainingConversation(t){
  return '<section class="panel training-manual"><div class="heading"><div><span class="kicker">DO SEU JEITO</span><h3>O que seu atendimento precisa saber?</h3><p>Explique com suas próprias palavras. A IA transformará suas orientações em um perfil para sua revisão.</p></div></div>'+
