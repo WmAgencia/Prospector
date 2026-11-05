@@ -50,10 +50,10 @@ export function franciscaPanelContext(){
   discoveryEnabled:getSetting('discovery_auto_enabled',false),creditBalance:credit===null?'ilimitado':Math.max(0,Number(credit)||0),
   leads,stages,chats,totalSent,latestCompanies:last};
 }
-export async function handleFranciscaPanel(req,res,url,{json,respond}){
+export async function handleFranciscaPanel(req,res,url,{json,respond},{masterAuthorized=false}={}){
  const route=url.pathname;
  if(!['/api/ai/francisca-turn','/api/ai/francisca-speak'].includes(route))return false;
- if(!process.env.PROSPECTOR_TENANT_ID){respond(res,403,{error:'Abra o espaço de um cliente para conversar com a Francisca'});return true;}
+ if(!process.env.PROSPECTOR_TENANT_ID&&!masterAuthorized){respond(res,403,{error:'Acesso autenticado necessário para conversar com a Francisca'});return true;}
  if(req.method!=='POST'){respond(res,405,{error:'Método não permitido'});return true;}
  if(route.endsWith('francisca-speak')){
   try{
