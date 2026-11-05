@@ -301,6 +301,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .francisca-send{height:40px;width:40px;display:grid;place-items:center;border:0;border-radius:50%;background:#7140fa;color:white;font-size:16px;cursor:pointer}
 .francisca-controls{display:flex;justify-content:space-between;gap:9px;padding:2px 13px 10px}
 .francisca-controls button{background:#f5f0ff;border:1px solid #e5dafa;border-radius:99px;color:#5a32cb;min-height:37px;padding:8px 12px;font-size:10px;font-weight:800;cursor:pointer}
+.francisca-controls .francisca-mic{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:850;min-height:42px}
+.francisca-voice-status{margin:0!important;padding:3px 16px 8px!important;font-size:11px;line-height:1.5;color:#65518e;text-align:center;background:#fff}
+.francisca-voice-status[role="status"]{min-height:29px}
+.francisca-controls .francisca-mic.recording{color:#6c31d4;background:#eee5ff;border-color:#cebbfa}
+.francisca-voice-status,.francisca-controls{transition:background .2s ease}
+@media(prefers-reduced-motion:reduce){.francisca-controls .francisca-mic.recording{animation:none!important}}
 .francisca-controls .recording{color:#a82d52;background:#ffedf4;border-color:#f4bccf;animation:voicePulse .7s alternate infinite}
 .francisca-privacy{font-size:9px;color:#968aa6;line-height:1.45;padding:0 14px 11px;margin:0!important}
 @keyframes voicePulse{to{opacity:.65;box-shadow:0 0 0 5px #e2649033}}
