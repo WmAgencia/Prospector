@@ -30,6 +30,25 @@ export function clientFromRequest(req){
  try{const claim=JSON.parse(Buffer.from(p,'base64url'));const c=registry().get(claim.id);return c?.status==='active'&&claim.exp>Date.now()&&claim.v===c.token_hash?c:null;}catch{return null;}
 }
 export function isPrimaryClient(req){return !isWorker&&clientFromRequest(req)?.is_internal===1;}
+
+const primaryModeCookieName='ps_primary_mode';
+function primaryModeCookie(client,mode){
+ const payload=Buffer.from(JSON.stringify({id:client.id,v:client.token_hash,mode,exp:Date.now()+7*86400000})).toString('base64url');
+ return primaryModeCookieName+'='+payload+'.'+sign(payload)+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800';
+}
+function primaryMode(req,client){
+ if(!client||client.is_internal!==1)return 'production';
+ const cookie=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(primaryModeCookieName+'='))?.slice(primaryModeCookieName.length+1)||'';
+ const [payload,mac,...rest]=cookie.split('.');
+ if(!payload||!mac||rest.length)return 'production';
+ const expected=sign(payload),got=Buffer.from(mac),safe=Buffer.from(expected);
+ if(got.length!==safe.length||!crypto.timingSafeEqual(got,safe))return 'production';
+ try{
+  const claim=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));
+  return claim.id===client.id&&claim.v===client.token_hash&&claim.exp>Date.now()&&claim.mode==='master'?'master':'production';
+ }catch{return 'production';}
+}
+
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const port=s.address().port;await new Promise(r=>s.close(r));return port;}
 export function workerEnvironment(client,port){
  const allowed=['PATH','Path','SystemRoot','TEMP','TMP','HOME','NODE_ENV','GROQ_API_KEY','GROQ_MODEL','WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD','FRANCISCA_PYTHON','EDGE_TTS_PYTHON','FRANCISCA_TTS_ENABLED','PUBLIC_BASE_URL'];
@@ -106,13 +125,29 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   const c=registry().authenticate((await json(req)).token);if(!c){limiter.failed(ip);respond(res,401,{error:'Acesso inválido'});return true;}
   limiter.clear(ip);res.setHeader('Set-Cookie',clientCookie(c));respond(res,200,{ok:true});return true;
  }
- if(p==='/master'&&req.method==='GET'){
-  res.writeHead(302,{'Location':'/#/clients','Set-Cookie':cookieName+'=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});res.end();return true;
- }
  const client=clientFromRequest(req);
+ const primary=client?.is_internal===1;
+ const ownerMaster=primary&&primaryMode(req,client)==='master';
+ if(p==='/master'&&req.method==='GET'){
+  if(primary){
+   res.writeHead(302,{'Location':'/#/clients','Set-Cookie':primaryModeCookie(client,'master'),'Cache-Control':'no-store'});
+  }else{
+   res.writeHead(302,{'Location':'/#/clients','Set-Cookie':cookieName+'=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0','Cache-Control':'no-store'});
+  }
+  res.end();return true;
+ }
+ if(p==='/api/platform/workspace'&&req.method==='POST'){
+  if(!primary){respond(res,403,{error:'Troca de painéis disponível somente para a conta interna autorizada.'});return true;}
+  const input=await json(req),mode=String(input.mode||'');
+  if(!['master','production'].includes(mode)){respond(res,422,{error:'Modo inválido'});return true;}
+  res.setHeader('Set-Cookie',primaryModeCookie(client,mode));
+  respond(res,200,{ok:true,role:mode==='master'?'master':'client',next:mode==='master'?'#/clients':'#/overview'});
+  return true;
+ }
  if(p==='/api/platform/context'){
-  if(client)respond(res,200,{role:'client',...registry().publicClient(client),canReturnToMaster:authorized(req),package:{credits:250,priceBrl:9.9}});
-  else if(authorized(req))respond(res,200,{role:'master',name:'Consecom Brasil',package:{credits:250,priceBrl:9.9}});
+  if(ownerMaster)respond(res,200,{role:'master',name:'Consecom Brasil',canSwitchWorkspace:true,internalAccount:true,package:{credits:250,priceBrl:9.9}});
+  else if(client)respond(res,200,{role:'client',...registry().publicClient(client),canSwitchWorkspace:primary,internalAccount:primary,canReturnToMaster:false,package:{credits:250,priceBrl:9.9}});
+  else if(authorized(req))respond(res,200,{role:'master',name:'Consecom Brasil',canSwitchWorkspace:false,package:{credits:250,priceBrl:9.9}});
   else respond(res,401,{error:'Acesso necessário'});return true;
  }
  if(p==='/api/platform/logout'&&req.method==='POST'){
@@ -137,7 +172,8 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  if(p==='/api/platform/credits'&&client){respond(res,200,{...registry().publicClient(client),items:registry().events(client.id),package:{credits:250,priceBrl:9.9},packages:CREDIT_PACKAGES,requests:registry().listCreditRequests(client.id)});return true;}
  if(p==='/api/platform/credit-requests'){
   if(req.method==='GET'){
-   if(client)respond(res,200,{items:registry().listCreditRequests(client.id)});
+   if(ownerMaster)respond(res,200,{items:registry().listCreditRequests()});
+   else if(client)respond(res,200,{items:registry().listCreditRequests(client.id)});
    else if(authorized(req))respond(res,200,{items:registry().listCreditRequests()});
    else respond(res,401,{error:'Acesso necessário'});
    return true;
@@ -152,14 +188,14 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  }
  const creditAction=p.match(/^\/api\/platform\/credit-requests\/([a-f0-9-]{36})\/(approve|decline)$/i);
  if(creditAction&&req.method==='POST'){
-  if(client||!authorized(req)){respond(res,403,{error:'Acesso exclusivo do Master'});return true;}
+  if((client&&!ownerMaster)||(!ownerMaster&&!authorized(req))){respond(res,403,{error:'Acesso exclusivo do Master'});return true;}
   const input=await json(req);
   try{respond(res,200,{request:registry().settleCreditRequest(creditAction[1],{approved:creditAction[2]==='approve',confirmedPayment:input.confirmedPayment===true})});}
   catch(e){respond(res,422,{error:String(e.message).slice(0,200)});}
   return true;
  }
  if(p.startsWith('/api/platform/')){
-  if(client||!authorized(req)){respond(res,403,{error:'Acesso exclusivo do painel master'});return true;}
+  if((client&&!ownerMaster)||(!ownerMaster&&!authorized(req))){respond(res,403,{error:'Acesso exclusivo do painel master'});return true;}
   if(p==='/api/platform/primary-client'&&req.method==='POST'){respond(res,200,registry().configurePrimary(await json(req)));return true;}
   if(p==='/api/platform/clients'&&req.method==='GET'){respond(res,200,{items:registry().list()});return true;}
   if(p==='/api/platform/clients'&&req.method==='POST'){const r=registry().create(await json(req));respond(res,201,{...r,accessPath:'/client/access#'+r.token});return true;}
