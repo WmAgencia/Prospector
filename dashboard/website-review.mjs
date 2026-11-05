@@ -4,7 +4,10 @@ export const STATUSES=['UNCERTAIN','NOT_FOUND_AFTER_CHECK','NO_WEBSITE','HAS_WEB
 export function evidence(input,old){
  const status=String(input.website_status||old.website_status||'UNCERTAIN');
  if(!STATUSES.includes(status))throw Error('Status do site inválido');
- if(status===old.website_status)return null;
+ // Evidence belongs to the reviewed URL as well as the classification.
+ const website=String(input.website??old.website??'').trim();
+ const websiteChanged=website!==String(old.website??'').trim();
+ if(status===old.website_status&&!websiteChanged)return null;
  const needsReview=status!=='UNCERTAIN';
  if(!needsReview)return null;
  const sources=[...new Set(String(input.site_review_sources||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean))];

@@ -84,4 +84,26 @@ test('autonomous queue reads real WA session and reports missing permission inst
  }
 });
 
+test('enabled cold first approach reports the real autonomous inventory without granting consent',()=>{
+ const previous=process.env.PROSPECTOR_COLD_FIRST_APPROACH;
+ const lead=db.addLead({business:'Elegível para saudação',phone:'5515987766001',city:'Sorocaba',source:'TEST'}).lead;
+ const blocked=db.addLead({business:'Não contatar',phone:'5515987766002',source:'TEST'}).lead;
+ db.run('INSERT INTO suppressions(phone,reason,created_at) VALUES(?,?,?)',blocked.phone,'optout',db.now());
+ db.setSetting('autonomous_outreach_enabled',true);db.setSetting('paused',false);
+ try{
+  process.env.PROSPECTOR_COLD_FIRST_APPROACH='true';
+  const status=queueHealth({at,waStatus:'CONNECTED'});
+  assert.equal(status.reason,'READY');
+  assert.ok(status.queue.ready>=1);
+  assert.equal(status.queue.awaitingConsent,0);
+  assert.equal(status.eligibleWaiting,true);
+  assert.equal(db.one('SELECT contact_permission FROM leads WHERE id=?',lead.id).contact_permission,0);
+  assert.equal(JSON.stringify(status).includes(lead.phone),false);
+  assert.equal(queueHealth({at:new Date(at.toISOString().slice(0,10)+'T10:59:59Z'),waStatus:'CONNECTED'}).reason,'OUTSIDE_WINDOW');
+ }finally{
+  if(previous===undefined)delete process.env.PROSPECTOR_COLD_FIRST_APPROACH;else process.env.PROSPECTOR_COLD_FIRST_APPROACH=previous;
+  db.setSetting('autonomous_outreach_enabled',false);
+ }
+});
+
 test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

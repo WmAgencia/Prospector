@@ -1,5 +1,6 @@
 import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
+import {accessClientKey,createAccessLimiter} from './access-rate-limit.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -269,7 +270,7 @@ if(envIsProd&&(authToken.length<40||sessionSecret.length<40)){
 }
 const authCookieName='ps_session';
 const sessionSeconds=90*24*60*60;
-const attempts=new Map();
+const accessLimiter=createAccessLimiter();
 function safeEqual(a,b){
  const aa=Buffer.from(String(a||''),'utf8'),bb=Buffer.from(String(b||''),'utf8');
  return aa.length===bb.length&&crypto.timingSafeEqual(aa,bb);
@@ -300,17 +301,15 @@ function showAccess(res){
  res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"});res.end(accessHtml);
 }
 async function exchangeAccess(req,res){
- const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim();
- const nowMs=Date.now(),previous=attempts.get(ip)||{count:0,reset:nowMs+600000};
- const item=previous.reset<nowMs?{count:0,reset:nowMs+600000}:previous;
- if(item.count>=8)return respond(res,429,{error:'Muitas tentativas'});
+ const ip=accessClientKey(req);
+ if(accessLimiter.blocked(ip))return respond(res,429,{error:'Muitas tentativas'});
  const bytes=await body(req,4096);let token='';
  try{token=String(JSON.parse(bytes.toString('utf8')).token||'');}catch{}
  if(!safeEqual(token,authToken)){
-  attempts.set(ip,{count:item.count+1,reset:item.reset});
+  accessLimiter.failed(ip);
   return respond(res,401,{error:'Link inválido'});
  }
- attempts.delete(ip);res.setHeader('Set-Cookie',newSessionCookie());
+ accessLimiter.clear(ip);res.setHeader('Set-Cookie',newSessionCookie());
  return respond(res,200,{ok:true});
 }
 function protectedAccess(req,res,pathname){

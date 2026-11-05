@@ -64,13 +64,28 @@ function closeStaleBatch(at=new Date()){
 // Operador liberou a abordagem fria (2026-11-04). O opt-in por contato continua
 // valendo para o Groq: a primeira resposta da pessoa é o que libera a conversa.
 export const coldFirstApproachEnabled=()=>process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
+// Read-only inventory using the sender's eligibility checks. Consent statistics
+// from legacy workflows do not describe the autonomous first-greeting queue.
+export function autonomousReadyCount(at=new Date()){
+ const rows=all("SELECT id,business,city,phone,stage FROM leads WHERE phone IS NOT NULL ORDER BY created_at DESC LIMIT 6000");
+ const byIdentity=new Map();
+ for(const lead of rows){const key=businessIdentity(lead);if(key){if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(lead);}}
+ const keys=new Set();let ready=0;
+ for(const lead of rows){
+  if(!['DISCOVERED','NO_INTEREST'].includes(lead.stage)||!recontactDecision(lead,at.getTime()).eligible||!eligibleLead(lead.id,'',false,true))continue;
+  const key=businessIdentity(lead);
+  if(key&&(keys.has(key)||(byIdentity.get(key)||[]).some(other=>other.id!==lead.id&&unsafeSister(other,at.getTime()))))continue;
+  ready++;if(key)keys.add(key);
+ }
+ return ready;
+}
 export function approachQueueStatus(){
  const b=currentBatch();
  const clock=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
  const waiting=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='QUEUED'")?.n||0;
  const unknown=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='UNKNOWN'")?.n||0;
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
- return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
+ return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
   intervalSeconds:90,nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),clock+APPROACH_INTERVAL_MS)).toISOString():null,
   status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
