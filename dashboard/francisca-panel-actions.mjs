@@ -39,7 +39,8 @@ export function interpretFranciscaAction(text,at=new Date()){
 export function applyFranciscaAction(action){
  if(action?.kind==='unsupported_nationwide')return {ok:false,action:'coverage_not_supported',
   message:'Posso preparar pesquisas nos nichos e cidades cadastrados no Prospector, mas ainda não tenho cobertura nacional. Não agendei uma pesquisa para todo o Brasil. Se quiser, podemos usar todas as cidades disponíveis.',
-  uiAction:{kind:'open_prospecting',label:'Ver cidades disponíveis'}};\n if(!action||!['schedule_discovery','configure_discovery'].includes(action.kind))throw Error('Ação não autorizada');
+  uiAction:{kind:'open_prospecting',label:'Ver cidades disponíveis'}};
+ if(!action||!['schedule_discovery','configure_discovery'].includes(action.kind))throw Error('Ação não autorizada');
  if(!['niche-city','all','all-city'].includes(action.mode))throw Error('Abrangência não suportada');
  if(action.mode==='niche-city'&&(!SEGMENTS[action.niche]||!resolveLocation(action.city)))throw Error('Nicho ou cidade não suportado');
  if(action.mode==='all-city'&&!resolveLocation(action.city))throw Error('Cidade não suportada');

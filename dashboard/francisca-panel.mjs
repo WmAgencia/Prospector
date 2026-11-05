@@ -183,7 +183,7 @@ export async function handleFranciscaPanel(req,res,url,{json,respond},{masterAut
   if(answer.length<2)throw Error('A IA não conseguiu formular a resposta');
   let uiAction=null;
   // Unexecuted assistant tool-call text is never presented as a real action.
-  if(/(?:comando enviado|scheduleProspecting\s*\(|\x60{3}|tool_call|function_call|^\s*\{[^}]*"(?:date|niches|country)"/im.test(answer)){
+  if(/(?:comando enviado|scheduleProspecting\s*\(|\x60{3}|tool_call|function_call|^\s*\{[^}]*"(?:date|niches|country)")/im.test(answer)){
    answer='Não executei esse comando. Para organizar a pesquisa, preciso utilizar os nichos e cidades que o Prospector realmente atende.';
    uiAction={kind:'open_prospecting',label:'Abrir Prospecção'};
   }else if(!/^(?:oi|ol[aá])(?:[!,. ]|$)/i.test(transcript.trim())){
