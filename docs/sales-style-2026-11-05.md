@@ -1,6 +1,6 @@
 # Adaptação do atendimento — 05/11/2026
 
-Foram analisados localmente três arquivos de conversa fornecidos pelo operador. Somente padrões de linguagem e exemplos fictícios foram incorporados. Nomes, telefones, endereços, documentos, links privados, dados de pagamento, credenciais e transcrições originais não integram o perfil nem os testes.
+Foram analisados localmente cinco arquivos de conversa fornecidos pelo operador. Somente padrões de linguagem e 14 exemplos fictícios foram incorporados. Nomes, telefones, endereços, documentos, links privados, dados de pagamento, credenciais e transcrições originais não integram o perfil nem os testes.
 
 Esta é uma adaptação de instruções e exemplos enviados ao modelo, sem fine-tuning dos pesos do Groq. Os áudios constavam como mídia oculta no texto exportado; seu conteúdo não foi inferido. Os exemplos mostram apresentação comercial, negociação, suporte e pós-venda; não se presume que todo trecho comprove fechamento.
 
@@ -9,6 +9,7 @@ Esta é uma adaptação de instruções e exemplos enviados ao modelo, sem fine-
 - Português próximo, direto e contextual: “pra”, “a gente”, explicação concreta e uma pergunta por vez.
 - Explicar a utilidade do site para o negócio e, quando aprovado, mostrar portfólio verificado.
 - Pedir somente materiais necessários à etapa atual e combinar um próximo passo.
+- Reconhecer perguntas curtas sobre a proposta e deixar os detalhes para leitura posterior quando a pessoa estiver atendendo clientes, sem insistir nem confundir isso com ausência automática.
 - Aceitar ajustes sem alegar que foram feitos; reuniões e condições especiais dependem do responsável.
 - Não copiar preços antigos, descontos, urgência, horários pessoais, garantias de Google ou dados de outros clientes. A oferta atual aprovada permanece separada do tom de voz.
 - Não assumir a identidade pessoal do proprietário; manter transparência sobre o atendimento virtual.

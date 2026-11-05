@@ -6,7 +6,7 @@ import {getSetting} from './db.mjs';
 import {conversationAuthorized,operatorOffer} from './operator-outreach.mjs';
 import {requestPriceApproval,approvedPriceForLead} from './owner-price-approvals.mjs';
 import {prospectSalesContext,priceQuestion,salesEnding} from './sales-policy.mjs';
-import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup,safeGeneralReply} from './portfolio-offer-550.mjs';
+import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,proposalRequestWhileBusy,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup,safeGeneralReply} from './portfolio-offer-550.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
@@ -149,6 +149,7 @@ export async function handleSalesTurn(providerId,deps={}){
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});
   return finish('REVIEW','GROQ_UNAVAILABLE');
  }
+ if(fixedOffer&&proposalRequestWhileBusy(r.body))draft.draft=fixedOfferPitch({business:r.business,segment:r.segment},new Date(),{busy:true});
  let replyText=refineChatReply(draft.draft,{state:dialogue,incoming:r.body});
  if(!replyText){
   audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});

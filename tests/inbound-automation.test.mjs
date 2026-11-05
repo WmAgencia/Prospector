@@ -32,6 +32,8 @@ test('contextual human replies and questions about AI are not machine confirmati
   'Prazer, eu sou a pessoa responsável. Como funciona sua proposta?',
   'Já estou com uma pessoa cuidando disso.',
   'Podemos conversar pessoalmente hoje?',
+  'Estou atendendo agora, manda os detalhes da proposta que vejo depois.',
+  'Estou com clientes, deixa a proposta aqui que depois respondo.',
   'Vocês usam inteligência artificial?',
   'Você é um assistente virtual?',
   'Não sou um robô, sou a pessoa responsável.',

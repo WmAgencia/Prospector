@@ -12,6 +12,7 @@ export function detectAutomaticReply(text=""){
 }
 export function portfolioQuestion(text=""){
  const n=norm(text);
+ if(proposalRequestWhileBusy(text)||/\b(?:(?:o )?que (?:seria|e) isso|que proposta (?:e essa|seria)|qual seria essa proposta)\b/.test(n))return true;
  return /(?:sobre o que(?: seria| e| se trata)?)|(?:do que (?:se trata|seria))|(?:qual (?:e |seria )?(?:a |essa |sua )?(?:proposta|oferta|ideia))|(?:me explica|explica|pode explicar|pode me falar|queria entender|pode falar|do que se trata)|(?:quanto (?:custa|fica|sai))|(?:qual (?:e )?o (?:preco|valor))|(?:valor do site|preco do site|a proposta)|(?:e o valor|e o preco)/.test(n);
 }
 export function isBaseOfferQuestion(text=""){
@@ -57,11 +58,16 @@ export function brDeliveryDate(at=new Date()){
  const target=new Date(Date.UTC(parts.year,parts.month-1,parts.day+3,12));
  return new Intl.DateTimeFormat("pt-BR",{timeZone:"UTC",day:"numeric",month:"long",year:"numeric"}).format(target);
 }
-export function fixedOfferPitch(lead={},at=new Date()){
+export function proposalRequestWhileBusy(text=''){
+ const n=norm(text);
+ return /(?:estou|to) (?:com.{0,30}clientes?|atendendo)|\b(?:ocupad[oa]|desocupando|quando (?:eu )?puder|vejo depois)\b/.test(n)&&
+  /(?:deix[ae]|mand[ae]|envi[ae]|pode deixar).{0,45}(?:proposta|detalhes|informacoes)/.test(n);
+}
+export function fixedOfferPitch(lead={},at=new Date(),{busy=false}={}){
  const what=siteFocus(lead.segment,lead.business);
  // The dates of a separate portfolio presentation are NOT asserted unless independently verified.
  const first="Vou te explicar melhor: a ideia é fazer um site profissional pra vocês, com "+what+". A gente inclui Master SEO pra ajudar nas buscas do Google, sem garantir posição.";
- const second="Estamos ampliando nosso portfólio nesse segmento. O site fica em R$ 550, com domínio pago por um ano e previsão de até 3 dias depois de receber o material e confirmar o escopo. Com tudo alinhado hoje, a referência é "+brDeliveryDate(at)+". Faz sentido pra vocês?";
+ const second="Estamos ampliando nosso portfólio nesse segmento. O site fica em R$ 550, com domínio pago por um ano e previsão de até 3 dias depois de receber o material e confirmar o escopo. Com tudo alinhado hoje, a referência é "+brDeliveryDate(at)+(busy?'. Quando tiver um tempinho, pode olhar com calma.':'. Faz sentido pra vocês?');
  return first+"\n\n"+second;
 }
 export function fixedOfferPriceReply(at=new Date()){

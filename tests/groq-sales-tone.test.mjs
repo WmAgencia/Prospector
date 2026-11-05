@@ -10,7 +10,7 @@ test('Sales playbook is anonymized and covers consultative commercial behavior',
  assert.match(txt,/não improvise/);
  assert.match(txt,/sem parecer robô/);
  assert.match(txt,/nunca publique detalhes privados/);
- assert.equal(SALES_FEW_SHOTS.length,12);
+ assert.equal(SALES_FEW_SHOTS.length,14);
  assert.match(txt,/JEITO DE FALAR/);
  assert.match(txt,/não siga links/);
  assert.match(SALES_TONE_VERSION,/consecom-sales-/);
