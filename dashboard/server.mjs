@@ -2,6 +2,7 @@ import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
 import {handlePlatform,isPrimaryClient} from './platform.mjs';
 import {handleTraining} from './training.mjs';
+import {handleFranciscaPanel} from './francisca-panel.mjs';
 import {monthlyProspectingCalendar} from './prospecting-calendar.mjs';
 import {currentScope,scopeOptions,saveScope,getOutreachHours,saveOutreachHours} from './client-preferences.mjs';
 import {accessClientKey,createAccessLimiter} from './access-rate-limit.mjs';
@@ -462,6 +463,7 @@ async function handler(req,res){
   }
   if(!protectedAccess(req,res,url.pathname))return;
   const pathname=decodeURIComponent(url.pathname);
+  if(await handleFranciscaPanel(req,res,url,{json,respond}))return;
   if(await handleTraining(req,res,url,{json,respond}))return;
   if(pathname==='/api/events'){
    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
