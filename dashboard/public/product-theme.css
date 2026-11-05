@@ -129,3 +129,18 @@ body:has(.kanban-dashboard) .content{display:block!important}
 @media(max-width:940px){.kanban-columns{grid-template-columns:repeat(4,minmax(250px,1fr));padding-bottom:10px}.account-logout{min-height:39px}}
 @media(max-width:700px){.credit-packages-grid{grid-template-columns:1fr}.credit-summary-grid{gap:12px}.credit-packet{padding:18px}.credit-packet-volume{font-size:34px;margin:13px 0 0}.credit-packet-price{margin-top:12px}.credit-packages-grid{gap:10px}.client-searchbar{align-items:stretch}.client-searchbar label{min-width:100%}.client-search-count{padding:0}.order-row{padding:14px}.order-actions{width:100%}.order-actions .primary{flex:1}.prospector-dialog-form{padding:21px}.prospector-dialog-actions{flex-wrap:wrap}.prospector-dialog-actions button{flex:1}.account-logout{padding:9px 11px;font-size:12px}.top .useravatar{display:none}}
 @media(prefers-reduced-motion:reduce){.credit-packet,.account-logout{transition:none!important}.credit-packet:hover{transform:none!important}}
+
+/* Guided first-run and privacy-first AI training. */
+.setup-progress{display:flex;align-items:center;justify-content:space-between;gap:22px;background:#f1f9ed;border:1px solid #cae3c4;border-radius:16px;padding:18px 21px;margin:19px 0 5px}
+.setup-progress>div:first-child{max-width:405px;min-width:0}
+.setup-progress strong{display:block;color:#183b29;font-size:15px;margin:4px 0}
+.setup-progress p{margin:0;font-size:12px;color:#46614d;line-height:1.6}
+.setup-items{display:flex;gap:8px;flex-wrap:wrap}
+.setup-item{display:flex;align-items:center;gap:7px;border:1px solid #bbd7ba;background:#fff;color:#1e573a;border-radius:10px;padding:11px 13px;min-height:43px;font-size:12px;font-weight:750;cursor:pointer}
+.setup-item:hover{background:#e1f2dc}
+.setup-item.done{color:#315e41;border-color:#d7e7d6;background:#eaf7e5}
+.setup-item>span{font-size:16px;line-height:1}
+.training-all-confirm{display:flex;align-items:flex-start;gap:10px;padding:15px;background:#fff8e6;border:1px solid #ead6ac;border-radius:12px;margin:12px 0 16px;color:#644c23;font-size:12px;line-height:1.55;font-weight:650}
+.training-all-confirm input{width:19px;height:19px;flex:none;margin-top:0;accent-color:#186943}
+@media(max-width:1180px){.setup-progress{flex-direction:column;align-items:stretch}}
+@media(max-width:700px){.setup-progress{padding:15px}.setup-items{display:grid;grid-template-columns:1fr}.setup-item{width:100%;justify-content:flex-start}}
