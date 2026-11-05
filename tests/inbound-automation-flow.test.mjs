@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/automation-flow-');
+process.env.WA_AKG_SESSION_ID='synthetic';
+process.env.PROSPECTOR_REPLY_PACING_ENABLED='false';
+process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED='true';
+process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY='true';
+const d=await import('../dashboard/db.mjs');
+const q=await import('../dashboard/prospecting-queue.mjs');
+const bridge=await import('../dashboard/waakg-bridge.mjs');
+const intro=await import('../dashboard/prospecting-introduction.mjs');
+const {conversationAuthorized}=await import('../dashboard/operator-outreach.mjs');
+let sequence=0;
+function inbound(lead,text){const unique='synthetic:automation-'+(++sequence);bridge.recordInboundTranscript({sessionId:'synthetic',jid:lead.phone+'@s.whatsapp.net',unique,content:text});return unique;}
+test('canned greeting cannot start introduction, grant consent or queue AI; later human reply can',async()=>{
+ const lead=d.addLead({business:'Empresa fictícia',phone:'5511900001001',source:'MANUAL'}).lead;
+ assert.equal(q.enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true}).status,202);
+ assert.equal((await q.tickApproachQueue({currentTime:()=>Date.parse('2026-11-05T12:00:00Z'),getWaStatus:async()=>({connected:true,sessionId:'synthetic'}),getSession:()=> 'synthetic',send:async()=>({status:true})})).status,'SENT');
+ const machine=inbound(lead,'Seja muito bem vindo à Empresa Exemplo! Como podemos ajudar?');
+ assert.equal(d.one('SELECT state FROM waakg_inbox WHERE provider_id=?',machine).state,'AUTO_REPLY');
+ assert.equal(d.one('SELECT contact_permission FROM leads WHERE id=?',lead.id).contact_permission,0);
+ assert.equal(intro.introductionStatus(lead.id).stage,'GREETING_SENT');
+ assert.equal(d.one('SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id=?',machine).n,0);
+ assert.equal(conversationAuthorized(lead.id),false);
+ inbound(lead,'Oi, sou a pessoa responsável. Sobre o que seria a proposta?');
+ assert.equal(intro.introductionStatus(lead.id).stage,'WAITING');
+ assert.equal(conversationAuthorized(lead.id),true);
+ inbound(lead,'Estamos ausentes no momento. Retornaremos assim que possível.');
+ assert.equal(conversationAuthorized(lead.id),false,'even a previously authorized conversation must not continue with an autoresponder');
+ let sends=0;
+ const blocked=await intro.tickIntroductions({currentTime:()=>Date.parse(intro.introductionStatus(lead.id).due_at)+1,session:()=> 'synthetic',status:async()=>({connected:true,sessionId:'synthetic'}),send:async()=>{sends++;return {status:true};}});
+ assert.notEqual(blocked.state,'SENT');
+ assert.equal(sends,0);
+});
+test('new inbound AI gets no reply; contact redirect creates no second lead and goes to human review',()=>{
+ const lead=d.addLead({business:'Contato fictício',phone:'5511900001002',source:'MANUAL'}).lead;
+ const machine=inbound(lead,'Sou uma inteligência artificial. Como posso ajudar?');
+ assert.equal(d.one('SELECT state FROM waakg_inbox WHERE provider_id=?',machine).state,'AUTO_REPLY');
+ assert.equal(d.one('SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id=?',machine).n,0);
+ const count=d.one('SELECT COUNT(*) n FROM leads').n;
+ const redirect=inbound(lead,'Fale com o responsável pelo número (11) 90000-9999.');
+ assert.equal(d.one('SELECT state FROM waakg_inbox WHERE provider_id=?',redirect).state,'HUMAN');
+ assert.equal(d.one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id).manual_takeover,1);
+ assert.equal(d.one('SELECT COUNT(*) n FROM leads').n,count);
+ assert.equal(d.one('SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id=?',redirect).n,0);
+});
+test('explicit opt-out takes priority over an automatic response label',()=>{
+ const lead=d.addLead({business:'Contato optout',phone:'5511900001003',source:'MANUAL'}).lead;
+ const pid=inbound(lead,'Mensagem automática: não mande mais mensagens para este número.');
+ assert.equal(d.one('SELECT state FROM waakg_inbox WHERE provider_id=?',pid).state,'OPT_OUT');
+ assert.ok(d.one('SELECT phone FROM suppressions WHERE phone=?',lead.phone));
+});
+test.after(()=>{d.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

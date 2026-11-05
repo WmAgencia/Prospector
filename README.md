@@ -11,6 +11,7 @@ O fluxo autorizado pelo operador permite a primeira saudação comercial sem con
 - `PROSPECTOR_APPROACH_START_DATE=AAAA-MM-DD` impede novas abordagens antes da data inicial em São Paulo, sem impedir respostas a mensagens recebidas.
 - Saudação personalizada; após resposta elegível, apresentação em 30 segundos e continuidade pelo Groq. Respostas automáticas de estabelecimentos não liberam a sequência.
 - Respostas do atendimento aguardam de 8 a 35 segundos, com variação e tempo proporcional à leitura e ao tamanho da resposta. O tempo de geração e síntese já conta nessa espera; nova mensagem, bloqueio ou atendimento humano cancela a resposta pendente. `PROSPECTOR_REPLY_PACING_ENABLED=false` desativa a espera adicional.
+- O tom comercial usa padrões anonimizados das conversas fornecidas pelo operador, com exemplos fictícios; os arquivos originais não são publicados nem enviados ao Groq. Menus, IA identificada, boas-vindas padronizadas e ausência aguardam uma resposta contextual. Recados que indicam outro telefone ou link de WhatsApp vão para revisão humana, sem cadastrar ou contatar o destino automaticamente.
 - Interesse confirmado, pedido de humano e negociações fora da oferta aprovada seguem os controles de encaminhamento ao operador.
 - Entrega incerta pausa a abordagem autônoma e nunca é repetida automaticamente. Recontato respeita três meses de calendário.
 
