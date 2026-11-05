@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/completion-clock-');
+process.env.WA_AKG_SESSION_ID='test-one';
+const d=await import('../dashboard/db.mjs');
+const q=await import('../dashboard/prospecting-queue.mjs');
+test('the global interval starts when transport finishes rather than when it starts',async()=>{
+ d.setSetting('paused',false);
+ const ids=[1,2].map(i=>d.addLead({business:'Fictícia '+i,phone:'55119000014'+String(i).padStart(2,'0')}).lead.id);
+ q.enqueueApprovedApproaches({leadIds:ids,approve:true,operatorApproved:true});
+ let time=Date.parse('2026-11-05T13:00:00Z'),calls=0;
+ const start=time;
+ const deps={currentTime:()=>time,getSession:()=> 'test-one',getWaStatus:async()=>({connected:true,sessionId:'test-one'}),send:async()=>{calls++;time+=7000;return {status:true};}};
+ assert.equal((await q.tickApproachQueue(deps)).status,'SENT');
+ const interval=q.approachQueueStatus().intervalSeconds*1000;
+ assert.equal(d.one('SELECT last_finished_ms FROM prospecting_send_clock WHERE id=1').last_finished_ms,start+7000);
+ time=start+interval;
+ assert.equal((await q.tickApproachQueue(deps)).status,'WAITING');assert.equal(calls,1);
+ time=start+7000+interval;
+ assert.equal((await q.tickApproachQueue(deps)).status,'SENT');assert.equal(calls,2);
+});
+test.after(()=>{d.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
