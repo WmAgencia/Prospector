@@ -363,6 +363,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  padding:7px 11px;color:#745e9c;font-size:10px;font-weight:800;
  line-height:1.1;white-space:nowrap;cursor:pointer;transition:background .18s,border-color .18s;
 }
+.scope-form .scope-mode-button{min-height:26px!important;height:26px!important;padding:4px 10px!important}
 .scope-mode-button.active{background:#e9ddff;border-color:#bda3fb;color:#6734d8;box-shadow:0 2px 7px #6c40d30b}
 .scope-mode-button:hover{border-color:#8c6bfa}
 .scope-form .scope-field>input{
