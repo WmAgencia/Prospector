@@ -7,6 +7,7 @@ document.addEventListener('click',e=>{
  if(!link)return;
  e.preventDefault();openAuth(link.dataset.auth||link.dataset.switch);
  if(link.dataset.package&&packageLabels[link.dataset.package]){
+  try{sessionStorage.setItem('prospector-preferred-package',link.dataset.package);}catch{}
   $('#auth-description').textContent='Pacote selecionado: '+packageLabels[link.dataset.package]+'. Crie sua conta gratuitamente. A recarga é liberada pela Consecom após confirmação de pagamento; não haverá cobrança no cadastro.';
  }
 });
