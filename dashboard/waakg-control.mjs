@@ -54,6 +54,12 @@ export async function getGatewayApiKey(){
 }
 export async function waRequest(path,{method="GET",data}={}){
  if(!path.startsWith("/api/")||path.includes(".."))throw Error("Rota interna inválida");
+ if(process.env.PROSPECTOR_TENANT_ID){
+  const parts=path.split('/').map(decodeURIComponent);
+  if(path==='/api/sessions'&&method==='POST'){
+   if(!String(data?.sessionId||'').startsWith('prospector-'))throw Error('Sessão inválida');
+  }else if(path!=='/api/sessions'&&!isManagedSession(parts[3]))throw Error('Canal não pertence a esta conta');
+ }
  const apiKey=await getGatewayApiKey();
  async function send(k){
   const res=await fetch(base+path,{method,headers:{"X-API-Key":k,"Accept":"application/json",...(data!==undefined?{"Content-Type":"application/json"}:{})},body:data!==undefined?JSON.stringify(data):undefined,signal:AbortSignal.timeout(14000)});
@@ -63,6 +69,7 @@ export async function waRequest(path,{method="GET",data}={}){
  let result=await send(apiKey);
  if(result.res.status===401&&!process.env.WA_AKG_API_KEY){cachedKey="";result=await send(await getGatewayApiKey());}
  if(!result.res.ok||result.json.status===false)throw errorFrom(result.res,result.json);
+ if(process.env.PROSPECTOR_TENANT_ID&&path==='/api/sessions'&&method==='GET')return {...result.json,data:(result.json.data||[]).filter(x=>isManagedSession(x.sessionId))};
  return result.json;
 }
 export async function waControlStatus(requestedSession,listedSessions){
@@ -71,7 +78,7 @@ export async function waControlStatus(requestedSession,listedSessions){
  try{
   const data=Array.isArray(listedSessions)?{data:listedSessions}:await waRequest("/api/sessions");
   const arr=Array.isArray(data.data)?data.data:[];
-  const target=(sessionId?arr.find(x=>x.sessionId===sessionId):arr.find(x=>x.sessionId==="consecom-principal"))||null;
+  const target=(sessionId?arr.find(x=>x.sessionId===sessionId):!process.env.PROSPECTOR_TENANT_ID?arr.find(x=>x.sessionId==="consecom-principal"):null)||null;
   if(target&&!sessionId)setSetting(sessionKey,target.sessionId);
   const picked=target?.sessionId||sessionId;
   if(!target)return {ok:true,connected:false,status:"DISCONNECTED",sessionId:picked,hasSession:false,totalSessions:arr.length,qrAvailable:false};
@@ -92,12 +99,12 @@ export async function waConnect(requestedSession){
  if(!state.ok)throw Error(state.message);
  let sessionId=state.sessionId;
  if(!sessionId){
-  const created=await waRequest("/api/sessions",{method:"POST",data:{name:"Consecom Principal",sessionId:"consecom-principal"}});
+  const created=await waRequest("/api/sessions",{method:"POST",data:{name:process.env.PROSPECTOR_TENANT_NAME||"Consecom Principal",sessionId:process.env.PROSPECTOR_TENANT_ID?'prospector-'+randomUUID():"consecom-principal"}});
   sessionId=created.data?.sessionId||"";
   if(!safeId(sessionId))throw Error("WA-AKG não criou uma sessão válida");
   setSetting(sessionKey,sessionId);
  }
- if(requestedSession&&requestedSession!==selectedWaSession()){
+ if(process.env.PROSPECTOR_TENANT_ID||requestedSession&&requestedSession!==selectedWaSession()){
   // New gateway sessions enable their own bot by default. Keep all customer
   // automation in Prospector so the gateway cannot answer in parallel.
   const config=await waRequest('/api/sessions/'+encodeURIComponent(sessionId)+'/bot-config',{method:'POST',data:{botMode:'SPECIFIC',botAllowedJids:[],autoReplyMode:'SPECIFIC',autoReplyAllowedJids:[],welcomeMessage:null,enableSticker:false,enableVideoSticker:false,enablePing:false,enableUptime:false}});
@@ -111,7 +118,7 @@ export async function waConnect(requestedSession){
   await waRequest("/api/sessions/"+encodeURIComponent(sessionId)+"/start",{method:"POST",data:{}});
  }
  // Configure webhook once, without exposing the shared secret to the browser.
- const destination="https://prospector-operacional-production.up.railway.app/api/wa-akg/webhook";
+ const destination="https://prospector-operacional-production.up.railway.app/api/wa-akg/webhook"+(process.env.PROSPECTOR_TENANT_ID?'?tenant='+encodeURIComponent(process.env.PROSPECTOR_TENANT_ID):'');
  const hookSecret=process.env.WA_AKG_WEBHOOK_SECRET||"";
  if(hookSecret.length>=40){
   const hooks=await waRequest("/api/webhooks/"+encodeURIComponent(sessionId));
@@ -179,6 +186,7 @@ export async function waCreateSession(label){
  const created=await waRequest('/api/sessions',{method:'POST',data:{name,sessionId}});
  if(created.data?.sessionId!==sessionId)throw Error('O gateway não confirmou a criação da sessão');
  registerSession(sessionId,name);
+ if(!selectedWaSession())setSetting(sessionKey,sessionId);
  return {sessionId,label:name,...await waConnect(sessionId)};
 }
 export async function selectApproachSender(){

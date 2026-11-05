@@ -54,9 +54,12 @@ const accessPage="<!doctype html>\n<html lang=\"pt-BR\"><head>\n<meta charset=\"
 
 async function proxy(req:Request){
  const url=new URL(req.url);
+ const clientCookie=(req.headers.get("cookie")||"").split(";").map(x=>x.trim()).find(x=>x.startsWith("ps_client="))||"";
+ const masterAuthorized=authorized(req);
+ const publicClientAccess=new Set(["/client/access","/api/platform/login","/api/platform/logout"]).has(url.pathname);
  const oauthBrowser=url.pathname==="/oauth/authorize"||url.pathname==="/oauth/approve";
  const publicMcp=new Set(["/mcp","/.well-known/oauth-protected-resource","/.well-known/oauth-protected-resource/mcp","/.well-known/oauth-authorization-server","/oauth/register","/oauth/token"]).has(url.pathname);
- if(!publicMcp&&!authorized(req)){
+ if(!publicMcp&&!masterAuthorized&&!clientCookie&&!publicClientAccess){
   if(req.method==="GET"&&url.pathname==="/oauth/authorize")return new Response(null,{status:302,headers:{"Location":"/access?next="+encodeURIComponent(url.pathname+url.search),"Cache-Control":"no-store"}});
   if(req.method==="GET"&&url.pathname==="/")return new Response(null,{status:302,headers:{"Location":"/access","Cache-Control":"no-store"}});
   return new Response("Acesso privado necessário",{status:401,headers:baseHeaders("text/plain; charset=utf-8")});
@@ -75,14 +78,19 @@ async function proxy(req:Request){
  if(!["GET","HEAD"].includes(method)){opts.body=req.body;(opts as RequestInit & {duplex:string}).duplex="half";}
  let response:Response;
  try{
-  if(!publicMcp)headers.set("Cookie",await getBackendCookie());
+  // Client cookies are validated by the backend. Never add administrator
+  // credentials for an unauthenticated client or retry it as the administrator.
+  if(!publicMcp){
+   const cookie=masterAuthorized?await getBackendCookie():"";
+   if(cookie||clientCookie)headers.set("Cookie",[cookie,clientCookie].filter(Boolean).join("; "));
+  }
   // Preserve only the short-lived OAuth approval cookie, never browser session cookies.
   if(oauthBrowser){const approval=(req.headers.get("cookie")||"").split(";").map(x=>x.trim()).find(x=>x.startsWith("ps_mcp_approval="));if(approval)headers.set("Cookie",headers.get("Cookie")+"; "+approval);}
   const usedCookie=headers.get("Cookie");
   response=await fetch(remote,opts);
   // Backend 401 is issued by its authentication guard before any mutation.
   // OAuth authorization failures must never be retried as administrator calls.
-  if(!publicMcp&&!oauthBrowser&&response.status===401){
+  if(!publicMcp&&!oauthBrowser&&masterAuthorized&&!clientCookie&&!publicClientAccess&&response.status===401){
    if(backendCookie===usedCookie){backendCookie="";backendCookieExpires=0;}
    headers.set("Cookie",await getBackendCookie());
    if(replay)opts.body=replay.body;
@@ -105,6 +113,7 @@ async function proxy(req:Request){
  const returned=new Headers();
  for(const name of ["content-type","content-disposition","etag","last-modified","accept-ranges","content-range","www-authenticate","mcp-protocol-version","mcp-session-id","allow"]){const val=response.headers.get(name);if(val)returned.set(name,val);}
  if(oauthBrowser){for(const value of response.headers.getSetCookie()){if(value.startsWith("ps_mcp_approval="))returned.append("Set-Cookie",value);}}
+ for(const value of response.headers.getSetCookie()){if(value.startsWith("ps_client="))returned.append("Set-Cookie",value);}
  returned.set("Cache-Control","no-store");returned.set("X-Content-Type-Options","nosniff");returned.set("X-Frame-Options","DENY");returned.set("Referrer-Policy","no-referrer");
  if(response.status>=300&&response.status<400){const location=response.headers.get("location");if(location){const target=new URL(location,remote);if(target.origin===remote.origin)returned.set("Location",target.pathname+target.search+target.hash);else if(oauthBrowser)returned.set("Location",target.href);}}
  return new Response(method==="HEAD"?null:response.body,{status:response.status,headers:returned});

@@ -50,6 +50,7 @@ function createHarness({mapsConfigured=false,previewReady=0}={}){
   else if(route==='/api/maps/status')data={configured:mapsConfigured,jobs:[]};
   else if(route==='/api/prospecting/queue'&&opts.method!=='POST')data={active:false,waiting:0,intervalSeconds:90};
   else if(route==='/api/whatsapp/sessions'&&opts.method==='POST')data={sessionId:'pool-extra',label:'Comercial extra'};
+  else if(route==='/api/whatsapp/connect')data={ok:true,sessionId:'pool-extra'};
   else if(route==='/api/whatsapp/sessions')data={items:[{session_id:'pool-main',label:'Principal',connected:true,status:'CONNECTED'},{session_id:'pool-extra',label:'Comercial extra',connected:false,status:'SCAN_QR'}]};
   else if(route==='/api/whatsapp/status')data={ok:true,connected:false,status:'DISCONNECTED'};
   else if(route.startsWith('/api/whatsapp/status?'))data={ok:true,connected:false,status:'SCAN_QR',hasSession:true};
@@ -99,7 +100,7 @@ test('Prospecção starts with no hidden city/niche filter and displays existing
 test('connections add a separate account and request its own QR without switching the primary',async()=>{
  const h=createHarness();
  await vm.runInContext("view='connections';refreshWa()",h.context);
- assert.match(h.viewEl.innerHTML,/Adicionar WhatsApp/);
+ assert.match(h.viewEl.innerHTML,/Conectar mais um WhatsApp/);
  assert.match(h.viewEl.innerHTML,/Comercial extra/);
  await h.listeners.click({target:{closest:()=>({dataset:{action:'add-wa'}})}});
  assert.ok(h.fetches.some(f=>f.route==='/api/whatsapp/sessions'&&f.method==='POST'&&f.body.name==='Comercial extra'));
