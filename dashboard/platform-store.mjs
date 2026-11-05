@@ -2,7 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {getCreditPackage} from './credit-packages.mjs';
+import {getCreditPackage,CREDIT_PACKAGES} from './credit-packages.mjs';
 export function openPlatformStore(root){
  fs.mkdirSync(root,{recursive:true});
  const db=new DatabaseSync(path.join(root,'platform.sqlite'));
@@ -13,6 +13,8 @@ export function openPlatformStore(root){
  db.exec(`CREATE TABLE IF NOT EXISTS client_passwords(client_id TEXT PRIMARY KEY REFERENCES clients(id),email TEXT NOT NULL UNIQUE,salt TEXT NOT NULL,password_hash TEXT NOT NULL,privacy_version TEXT NOT NULL,created_at TEXT NOT NULL);`);
  const clientCols=db.prepare('PRAGMA table_info(clients)').all().map(x=>x.name);
  if(!clientCols.includes('is_internal'))db.exec('ALTER TABLE clients ADD COLUMN is_internal INTEGER NOT NULL DEFAULT 0');
+ for(const [column,definition] of [['plan_id',"TEXT NOT NULL DEFAULT 'credits'"],['custom_credits','INTEGER'],['custom_price_cents','INTEGER'],['contact_phone','TEXT'],['cpf_last4','TEXT'],['cpf_digest','TEXT']])
+  if(!clientCols.includes(column))db.exec('ALTER TABLE clients ADD COLUMN '+column+' '+definition);
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS only_one_internal_client ON clients(is_internal) WHERE is_internal=1');
  if(!db.prepare('PRAGMA table_info(client_passwords)').all().some(x=>x.name==='phone'))db.exec('ALTER TABLE client_passwords ADD COLUMN phone TEXT');
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS unique_login_phone ON client_passwords(phone) WHERE phone IS NOT NULL');
@@ -25,15 +27,24 @@ export function openPlatformStore(root){
   request_key TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   UNIQUE(client_id,request_key)
  );
- CREATE INDEX IF NOT EXISTS idx_credit_requests_status ON credit_requests(status,created_at);`);
+ CREATE INDEX IF NOT EXISTS idx_credit_requests_status ON credit_requests(status,created_at);
+ CREATE TABLE IF NOT EXISTS verified_payments(
+  stripe_session_id TEXT PRIMARY KEY,request_id TEXT NOT NULL UNIQUE REFERENCES credit_requests(id),
+  client_id TEXT NOT NULL REFERENCES clients(id),stripe_event_id TEXT NOT NULL UNIQUE,
+  price_cents INTEGER NOT NULL,credits INTEGER NOT NULL,created_at TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS idx_verified_payments_date ON verified_payments(created_at);`);
  const loginPhone=value=>{let x=String(value||'').replace(/\D/g,'');if(x.length===11)x='55'+x;return /^55\d{11}$/.test(x)?x:null;};
  const hash=x=>crypto.createHash('sha256').update(String(x)).digest('hex');
  const balance=id=>Number(db.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM credit_events WHERE client_id=?').get(id).n);
  const pending=id=>Number(db.prepare("SELECT COUNT(*) AS n FROM credit_reservations WHERE client_id=? AND state='RESERVED'").get(id).n);
- const publicClient=r=>r?{id:r.id,name:r.name,email:r.email,status:r.status,createdAt:r.created_at,unlimited:r.is_internal===1,balance:balance(r.id),reserved:pending(r.id),available:r.is_internal===1?null:balance(r.id)-pending(r.id)}:null;
+ const unlimited=r=>r&&(r.is_internal===1||r.plan_id==='unlimited');
+ const publicClient=r=>r?{id:r.id,name:r.name,email:r.email,status:r.status,createdAt:r.created_at,unlimited:unlimited(r),internal:r.is_internal===1,
+  planId:r.is_internal===1?'unlimited':r.plan_id||'credits',customCredits:r.custom_credits||null,customPriceCents:r.custom_price_cents||null,
+  phone:r.contact_phone||null,cpfMasked:r.cpf_last4?'***.***.*'+r.cpf_last4.slice(0,2)+'-'+r.cpf_last4.slice(2):null,
+  balance:balance(r.id),reserved:unlimited(r)?0:pending(r.id),available:unlimited(r)?null:balance(r.id)-pending(r.id)}:null;
  const get=id=>db.prepare('SELECT * FROM clients WHERE id=?').get(id);
  function adjust(id,amount,reason,reference=crypto.randomUUID()){
-  if(get(id)?.is_internal===1)throw Error('A conta interna já possui uso ilimitado e não precisa de recarga');
+  if(unlimited(get(id)))throw Error('Esta conta tem plano ilimitado e não precisa de recarga');
   if(!get(id)||!Number.isSafeInteger(amount)||!amount||Math.abs(amount)>10000000)throw Error('Ajuste de créditos inválido');
   db.exec('BEGIN IMMEDIATE');
   try{
@@ -52,7 +63,7 @@ export function openPlatformStore(root){
   },
   requestCredits(clientId,packageId,requestKey){
    const client=get(clientId),pack=getCreditPackage(packageId);
-   if(!client||client.status!=='active'||client.is_internal===1)throw Error('Conta indisponível para recarga');
+   if(!client||client.status!=='active'||unlimited(client))throw Error('Conta indisponível para recarga');
    if(!pack)throw Error('Pacote inválido');
    if(!/^[a-f0-9-]{36}$/i.test(String(requestKey||'')))throw Error('Identificador da solicitação inválido');
    db.exec('BEGIN IMMEDIATE');try{
@@ -79,6 +90,22 @@ export function openPlatformStore(root){
     const status=approved===true?'APPROVED':'DECLINED';
     db.prepare('UPDATE credit_requests SET status=?,updated_at=? WHERE id=?').run(status,new Date().toISOString(),item.id);
     db.exec('COMMIT');return selectRequest.get(item.id);
+   }catch(e){db.exec('ROLLBACK');throw e;}
+  },
+  hasPassword(clientId){
+   return !!db.prepare('SELECT 1 FROM client_passwords WHERE client_id=?').get(clientId);
+  },
+  setupPassword(clientId,password){
+   const client=get(clientId),input=String(password||'');
+   if(!client||client.status!=='active'||this.hasPassword(clientId))throw Error('Este convite já foi utilizado');
+   if(input.length<10||input.length>128)throw Error('A senha deve ter de 10 a 128 caracteres');
+   const salt=crypto.randomBytes(24).toString('hex'),hash=crypto.scryptSync(input,salt,64).toString('hex');
+   db.exec('BEGIN IMMEDIATE');try{
+    db.prepare('INSERT INTO client_passwords(client_id,email,salt,password_hash,privacy_version,created_at,phone) VALUES(?,?,?,?,?,?,?)')
+     .run(clientId,client.email,salt,hash,'invite-activation',new Date().toISOString(),client.contact_phone||null);
+    // Rotate the initial invite token so it cannot be reused.
+    db.prepare('UPDATE clients SET token_hash=? WHERE id=?').run(crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex'),clientId);
+    db.exec('COMMIT');return get(clientId);
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
   changeCredentials(clientId,{currentPassword,newEmail,newPassword}={}){
@@ -146,6 +173,7 @@ export function openPlatformStore(root){
   reserve(id,reference){
    db.exec('BEGIN IMMEDIATE');try{
     if(get(id)?.status!=='active')throw Error('Conta indisponível');
+    if(unlimited(get(id))){db.exec('COMMIT');return true;}
     const existing=db.prepare('SELECT state FROM credit_reservations WHERE client_id=? AND reference=?').get(id,reference);
     if(existing&&existing.state!=='RELEASED'){db.exec('COMMIT');return false;}
     if(balance(id)-pending(id)<1){db.exec('COMMIT');return false;}
@@ -153,6 +181,7 @@ export function openPlatformStore(root){
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
   settle(id,reference,accepted){
+   if(unlimited(get(id)))return;
    db.exec('BEGIN IMMEDIATE');try{
     const r=db.prepare('SELECT state FROM credit_reservations WHERE client_id=? AND reference=?').get(id,reference);
     if(r?.state==='RESERVED'){
@@ -161,12 +190,47 @@ export function openPlatformStore(root){
     }db.exec('COMMIT');
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
+  confirmVerifiedPayment({requestId,packageId,amountCents,sessionId,eventId}={}){
+   if(!/^[a-f\d-]{36}$/i.test(requestId||'')||!/^cs_live_[\w]+$/.test(sessionId||'')||!/^evt_[\w]+$/.test(eventId||''))throw Error('Identificadores de pagamento inválidos');
+   db.exec('BEGIN IMMEDIATE');
+   try{
+    const duplicate=db.prepare('SELECT * FROM verified_payments WHERE stripe_session_id=? OR request_id=? OR stripe_event_id=?').get(sessionId,requestId,eventId);
+    if(duplicate){db.exec('COMMIT');return {ok:true,duplicate:true,requestId};}
+    const item=selectRequest.get(requestId);
+    if(!item||item.status!=='PENDING'||item.package_id!==packageId||item.price_cents!==amountCents||!get(item.client_id))throw Error('Valor ou pedido não confere');
+    const at=new Date().toISOString();
+    db.prepare('INSERT INTO verified_payments VALUES(?,?,?,?,?,?,?)').run(sessionId,item.id,item.client_id,eventId,amountCents,item.credits,at);
+    db.prepare('INSERT OR IGNORE INTO credit_events VALUES(?,?,?,?,?,?)').run(crypto.randomUUID(),item.client_id,item.credits,'Créditos de pagamento Stripe confirmado','stripe-payment:'+item.id,at);
+    db.prepare("UPDATE credit_requests SET status='APPROVED',updated_at=? WHERE id=?").run(at,item.id);
+    db.exec('COMMIT');return {ok:true,duplicate:false,requestId:item.id};
+   }catch(e){db.exec('ROLLBACK');throw e;}
+  },
   list:()=>db.prepare('SELECT * FROM clients ORDER BY created_at DESC').all().map(publicClient),
-  create({name,email}){
-   name=String(name||'').trim();email=String(email||'').trim();
-   if(!name||name.length>100||!/^\S+@\S+\.\S+$/.test(email)||email.length>200)throw Error('Informe nome e e-mail válidos');
+  create({name,email,phone='',cpf='',planId='credits',customCredits,customPriceCents}={}){
+   name=String(name||'').trim();email=String(email||'').trim().toLowerCase();
+   if(!name||name.length>100||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>200)throw Error('Informe nome e e-mail válidos');
+   if(db.prepare('SELECT 1 FROM clients WHERE lower(email)=?').get(email))throw Error('E-mail já cadastrado');
+   if(!new Set(['credits','unlimited','custom',...CREDIT_PACKAGES.map(p=>p.id)]).has(planId))throw Error('Plano inválido');
+   const digits=String(cpf||'').replace(/\D/g,'');
+   if(digits){
+    if(digits.length!==11||/^(\d)\1{10}$/.test(digits))throw Error('CPF inválido');
+    for(const n of [9,10]){
+     let sum=0;for(let i=0;i<n;i++)sum+=Number(digits[i])*(n+1-i);
+     if(Number(digits[n])!==((sum*10)%11)%10)throw Error('CPF inválido');
+    }
+   }
+   const normalizedPhone=phone?loginPhone(phone):null;
+   if(phone&&!normalizedPhone)throw Error('Telefone inválido');
+   const credits=planId==='custom'?Number(customCredits):null;
+   const price=planId==='custom'?Number(customPriceCents):null;
+   if(planId==='custom'&&(!Number.isSafeInteger(credits)||credits<1||credits>1000000||!Number.isSafeInteger(price)||price<0||price>100000000))throw Error('Informe créditos e preço válidos para o plano personalizado');
    const id=crypto.randomUUID(),token=crypto.randomBytes(36).toString('base64url');
-   db.prepare('INSERT INTO clients(id,name,email,status,token_hash,secret,created_at) VALUES(?,?,?,?,?,?,?)').run(id,name,email,'active',hash(token),crypto.randomBytes(48).toString('base64url'),new Date().toISOString());
+   const key=process.env.PROSPECTOR_CPF_HMAC_SECRET||process.env.ADMIN_SESSION_SECRET||'';
+   if(digits&&!key)throw Error('Configure uma chave privada antes de armazenar documentos');
+   // Only a keyed digest and masked suffix are retained, never the full CPF.
+   const cpfDigest=digits?crypto.createHmac('sha256',key).update(digits).digest('hex'):null;
+   db.prepare('INSERT INTO clients(id,name,email,status,token_hash,secret,created_at,plan_id,custom_credits,custom_price_cents,contact_phone,cpf_last4,cpf_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id,name,email,'active',hash(token),crypto.randomBytes(48).toString('base64url'),new Date().toISOString(),planId,credits,price,normalizedPhone,digits?digits.slice(-4):null,cpfDigest);
    return {client:publicClient(get(id)),token};
   },
   authenticate:token=>db.prepare("SELECT * FROM clients WHERE token_hash=? AND status='active'").get(hash(token)),

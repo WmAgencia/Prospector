@@ -55,6 +55,7 @@ import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
 import {waRequest,waControlStatus,waOperationalStatus,waSessionList,waCreateSession,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
 import {gatewayConnectionView,refreshGatewayConnection} from './waakg-live-status.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
+import {processProspectingSchedule} from './francisca-panel-actions.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
 import {kanbanSnapshot} from './kanban.mjs';
@@ -879,6 +880,8 @@ const interruptedSearches=reconcileInterruptedSearches();
 if(interruptedSearches.recovered)console.info('[osm discovery] Recuperadas '+interruptedSearches.recovered+' consultas interrompidas; mantidas na cota diária');
 let lastOSMStatus='',lastOSMLogAt=0;
 function checkOSMDiscovery(){
+ const scheduled=processProspectingSchedule();
+ if(scheduled.applied){console.info('[scheduled research] Activated approved scope at 05:00 São Paulo');notify();}
  return dailyLocalDiscovery().then(x=>{
   if(x?.source==='osm'&&x.added)notify();
   if(x?.source==='osm'||x?.status==='SOURCE_ERROR'||x?.status==='PROVIDER_LIMIT'){
