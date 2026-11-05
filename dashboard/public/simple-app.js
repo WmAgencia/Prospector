@@ -388,13 +388,15 @@ async function platformAction(action,el){
  if(action==='refresh-master'){await Promise.all([loadClients(),loadMasterMetrics()]);n('Dados atualizados.');return true;}
  if(action==='refresh-clients'){await loadClients();return true;}
  if(action==='request-credit-package'){
+  if(!creditState?.automaticBilling){n('O checkout automático está sendo configurado. Nenhuma cobrança ou recarga foi efetuada.');return true;}
   const pack=creditState?.packages?.find(p=>p.id===el.dataset.package);
   if(!pack)throw Error('Pacote não encontrado. Atualize seus créditos.');
-  const answer=await confirmInApp({title:'Solicitar '+pack.credits.toLocaleString('pt-BR')+' créditos',description:'Pacote '+pack.name+' no valor de '+moneyFromCents(pack.priceCents)+'. Esta solicitação NÃO realiza cobrança. O Master confirmará o pagamento antes de liberar o saldo.',confirmLabel:'Enviar pedido de recarga'});
+  const answer=await confirmInApp({title:'Comprar '+pack.credits.toLocaleString('pt-BR')+' créditos',description:'Pacote '+pack.name+' no valor de '+moneyFromCents(pack.priceCents)+'. Você será direcionado ao checkout seguro. O saldo só será liberado após confirmação do pagamento pelo provedor.',confirmLabel:'Continuar para o pagamento'});
   if(!answer)return true;
-  await post('/api/platform/credit-requests',{packageId:pack.id,requestKey:crypto.randomUUID()});
+  const order=await post('/api/platform/credit-requests',{packageId:pack.id,requestKey:crypto.randomUUID()});
+  if(!order.checkoutUrl)throw Error('Checkout indisponível. Nenhuma cobrança foi realizada.');
   preferredPackage='';try{sessionStorage.removeItem('prospector-preferred-package');}catch{}
-  await loadCredits();n('Solicitação registrada! Aguarde a confirmação da Consecom.');return true;
+  location.assign(order.checkoutUrl);return true;
  }
  if(action==='credit-request-approve'||action==='credit-request-decline'){
   const req=creditRequests.find(r=>r.id===el.dataset.request);
