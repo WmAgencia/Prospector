@@ -341,7 +341,7 @@ function whatsappConnectModal(){
  if(!waQrOpen)return '';
  const item=waAccounts.find(x=>x.session_id===connectionSession);
  const connected=wa?.connected===true,qr=qrResult?.qr;
- return '<div class="qr-modal-backdrop" role="presentation"><section role="dialog" aria-modal="true" aria-labelledby="qr-title" class="qr-connect-modal"><button class="qr-modal-close" type="button" data-action="close-qr" aria-label="Fechar QR Code">×</button><span class="kicker">WHATSAPP / CONEXÃO SEGURA</span><h2 id="qr-title">'+esc(item?.label||'Conectar WhatsApp')+'</h2><p>Abra o WhatsApp no celular, escolha Aparelhos conectados e toque em Conectar aparelho.</p><div class="qr-connect-visual">'+(connected?'<div class="qr-success"><span>✓</span><strong>WhatsApp conectado!</strong><small>Fechando automaticamente...</small></div>':qr?'<img class="qr-image" src="'+esc(qr)+'" alt="Código QR para conectar este WhatsApp"><small>Escaneie este QR Code pelo seu celular.</small>':'<div class="qr-wait"><span class="qr-spinner" aria-hidden="true"></span><strong>Aguardando QR Code</strong><small>'+esc(qrResult?.message||'Preparando uma sessão segura para o aparelho.')+'</small></div>')+'</div><div class="qr-modal-footer"><span class="tag '+(connected?'green':'')+'">'+(connected?'Conectado':wa?.status==='SCAN_QR'?'Aguardando leitura':'Conectando...')+'</span>'+(connected?'':'<button class="secondary compact" data-action="refresh-qr">Atualizar código</button>')+'</div>'+(connected?'':'<p class="footnote">O código muda periodicamente. Você pode fechar esta janela sem perder outros WhatsApps conectados.</p>')+'</section></div>';
+ return '<div class="qr-modal-backdrop" role="presentation"><section role="dialog" aria-modal="true" aria-labelledby="qr-title" class="qr-connect-modal"><button class="qr-modal-close" type="button" data-action="close-qr" aria-label="Fechar QR Code">×</button><span class="kicker">WHATSAPP / CONEXÃO SEGURA</span><h2 id="qr-title">'+esc(item?.label||'Conectar WhatsApp')+'</h2><p>Abra o WhatsApp no celular, escolha Aparelhos conectados e toque em Conectar aparelho.</p><div class="qr-connect-visual">'+(connected?'<div class="qr-success"><span>✓</span><strong>WhatsApp conectado!</strong><small>Fechando automaticamente...</small></div>':qr?'<img class="qr-image" src="'+esc(qr)+'" alt="Código QR para conectar este WhatsApp"><small>Escaneie este QR Code pelo seu celular.</small>':'<div class="qr-wait"><span class="qr-spinner" aria-hidden="true"></span><strong>Aguardando QR Code</strong><small>'+esc(qrResult?.message||'Preparando uma sessão segura para o aparelho.')+'</small></div>')+'</div><div class="qr-modal-footer"><span class="tag '+(connected?'green':'')+'">'+(connected?'Conectado':wa?.status==='SCAN_QR'?'Aguardando leitura':'Conectando...')+'</span>'+(connected?'<button class="secondary compact" data-action="disconnect">Desconectar este número</button>':'<button class="secondary compact" data-action="refresh-qr">Atualizar código</button>')+'</div>'+(connected?'':'<p class="footnote">O código muda periodicamente. Você pode fechar esta janela sem perder outros WhatsApps conectados.</p>')+'</section></div>';
 }
 function connections(){
  return '<div class="connections-simplified">'+whatsappAccountsPanel()+whatsappConnectModal()+'</div>';
@@ -383,8 +383,18 @@ async function refreshWa(redraw=true){
    const wasConnected=!!wa?.connected;
    const changed=!wa||wa.connected!==w.connected||wa.status!==w.status||wa.ok!==w.ok||wa.transportStale!==w.transportStale;
    const oldQr=qrResult?.qr||null;wa=w;
-   if(w.connected)qrResult=null;
-   else if(view==="connections"&&w.hasSession&&["SCAN_QR","CONNECTING","INITIALIZING"].includes(w.status)){
+   if(w.connected){
+    qrResult=null;
+    if(waQrOpen&&!waQrConnectedAt){
+     waQrConnectedAt=Date.now();
+     setTimeout(()=>{
+      if(waQrOpen&&wa?.connected&&Date.now()-waQrConnectedAt>=2000){
+       waQrOpen=false;waQrConnectedAt=0;render();n('WhatsApp conectado com sucesso.');
+      }
+     },2300);
+    }
+   }else waQrConnectedAt=0;
+   if(!w.connected&&view==="connections"&&w.hasSession&&["SCAN_QR","CONNECTING","INITIALIZING"].includes(w.status)){
     qrResult=await api("/api/whatsapp/qr"+waSessionQuery()).catch(e=>({qr:null,message:e.message}));
    }else if(view==="connections")qrResult=null;
    if(redraw&&(changed||(view==="connections"&&oldQr!==(qrResult?.qr||null))))render();
@@ -400,14 +410,14 @@ async function refreshWa(redraw=true){
 }
 async function openWhatsappQr(){
  if(qrOpening)return;
- qrOpening=true;busy=true;
- nav("connections");
+ qrOpening=true;waQrOpen=true;waQrConnectedAt=0;
+ if(view!=='connections')nav('connections');else render();
+ q('.qr-modal-close')?.focus();
  try{
-  await post("/api/whatsapp/connect",{sessionId:connectionSession||undefined});
+  await post('/api/whatsapp/connect',{sessionId:connectionSession||undefined});
   await refreshWa();
-  n(wa?.connected?"WhatsApp conectado.":"Sessão iniciada. Escaneie o QR Code quando ele aparecer.");
- }catch(error){n("Não foi possível iniciar a reconexão: "+error.message);}
- finally{qrOpening=false;busy=false;render();}
+ }catch(error){qrResult={qr:null,message:error.message};n('Falha ao conectar: '+error.message);}
+ finally{qrOpening=false;render();}
 }
 async function refreshAI(){try{ai=await api("/api/ai/status");if(view==="settings")render();}catch{}}
 async function refreshConsentPolicy(){
@@ -599,18 +609,28 @@ document.addEventListener("click",async ev=>{
   if(action==="maps-import"){if(!mapsJob?.id)return;if(!confirm("Importar as empresas desta pesquisa para sua base, sem autorizar mensagens automáticas?"))return;const out=await post("/api/maps/import",{id:mapsJob.id});mapsJob={...mapsJob,status:"IMPORTED",added:out.added};n(out.added+" empresas novas importadas e deduplicadas.");await loadProspects();return;}
   if(action==="maps-poll"){await updateMapsJob();return;}
   if(action==="import-csv"){await importMapsCSV();return;}
+  if(action==='close-qr'){waQrOpen=false;waQrConnectedAt=0;render();return;}
+  if(action==='refresh-qr'){await refreshWa();return;}
   if(action==="reconnect-qr"||action==="connect"){await openWhatsappQr();return;}
   if(action==='select-wa'){
    connectionSession=String(el.dataset.session||'');qrResult=null;
-   await refreshWa();render();return;
+   const chosen=waAccounts.find(x=>x.session_id===connectionSession);
+   if(chosen?.connected){wa={...wa,connected:true,status:'CONNECTED'};waQrOpen=true;waQrConnectedAt=0;render();return;}
+   await openWhatsappQr();return;
   }
   if(action==='add-wa'){
    if(busy)return;
    const name=q('#new-wa-label')?.value?.trim();
    const label=name||'WhatsApp '+(waAccounts.length+1);
    busy=true;render();
-   try{const created=await post('/api/whatsapp/sessions',{name:label});connectionSession=created.sessionId;qrResult=null;await refreshWa();n('WhatsApp adicionado. Escaneie o QR Code deste número.');}
-   finally{busy=false;render();}
+   try{
+    const created=await post('/api/whatsapp/sessions',{name:label});
+    connectionSession=created.sessionId;qrResult=null;
+    waQrOpen=true;waQrConnectedAt=0;
+    await refreshWa();
+    await openWhatsappQr();
+    n('Canal adicionado. Escaneie o QR Code.');
+   }finally{busy=false;render();}
    return;
   }
   if(action==="disconnect"){
@@ -736,6 +756,9 @@ setInterval(async()=>{
  if(view==="conversations"&&Date.now()-lastRefresh>24000)await reload();
  else if(Date.now()-lastRefresh>45000&&state)await reload();
 },7000);
+// A QR popup needs more frequent status updates than the ordinary dashboard.
+setInterval(()=>{if(waQrOpen&&!document.hidden&&!waRefreshing)refreshWa();},1600);
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&waQrOpen){waQrOpen=false;waQrConnectedAt=0;render();}});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWa()});
 window.addEventListener("online",()=>refreshWa());
 await reload();
