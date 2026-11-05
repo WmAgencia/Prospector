@@ -71,7 +71,7 @@ test('Approved button queue sends once, reply enters Groq and responds naturally
 test('A hard refusal is terminal, not queued for more AI replies',async()=>{
  const lead=eligible('Estética que recusou');
  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
- time+=90_000;assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
+ time+=110_000;assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
  const out=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
  unique:'consecom-principal:fullsales-2',content:'Sem interesse, obrigada.'});
  assert.equal(out.status,200);
@@ -85,7 +85,7 @@ test('A hard refusal is terminal, not queued for more AI replies',async()=>{
 test('Explicit interest transfers to human and records the result once',async()=>{
  const lead=eligible('Padaria interessada');
  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true}).status,202);
- time+=90_000;assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
+ time+=110_000;assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
  db.run("UPDATE prospecting_introductions SET stage='CONVERSING' WHERE lead_id=?",lead.id); // Mature conversation from prior introduction.
  const incoming='Quero fechar um site, podemos começar?';
  recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
@@ -142,7 +142,7 @@ test('No generated price is safe without individual operator approval',()=>{
 test('Named greeting waits for reply, sends Wesley exactly after 30s and transfers proposal to Francisca',async()=>{
  const lead=eligible('Mecânica Silva');
  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
- time+=90_000;
+ time+=110_000;
  assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
  assert.match(sent.at(-1).text,/Olá(?:, \p{Lu}\p{L}{1,29})?, (?:bom dia|boa tarde|boa noite)! Tudo bem\?/u);
  assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
@@ -216,7 +216,7 @@ test('Francisca never treats a second hello as a new conversation, even on an in
 test('Integrated WA bridge ignores a fictional automated menu and does not schedule Wesley introduction',async()=>{
  const lead=eligible('Oficina Menu Automático Fictícia');
  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
- time+=90000;
+ time+=110000;
  assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
  assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
  const unique='consecom-principal:fictional-autoreply-001';
@@ -230,7 +230,7 @@ test('Integrated WA bridge ignores a fictional automated menu and does not sched
 test('Integrated Francisca falls back safely when Groq fabricates R$350, 90% and four-day terms',async()=>{
  const lead=eligible('Buffet Fictício Guardrail');
  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
- time+=90000;
+ time+=110000;
  assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
  const first='consecom-principal:fictional-guardrail-hello';
  assert.equal(recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',unique:first,content:'Oi, tudo bem?'}).status,200);

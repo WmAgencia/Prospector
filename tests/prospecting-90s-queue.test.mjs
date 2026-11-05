@@ -24,7 +24,7 @@ test('Only documented opt-ins are queued; regular discovered leads are excluded'
  assert.equal(result.body.queued,2);
  assert.equal(result.body.excluded,1);
  assert.equal(queue.approachQueueStatus().waiting,2);
- assert.equal(queue.approachQueueStatus().intervalSeconds,90);
+ assert.ok(queue.approachQueueStatus().intervalSeconds>=90&&queue.approachQueueStatus().intervalSeconds<=110);
  assert.equal(sent.length,0);
  const duplicate=queue.enqueueApprovedApproaches({leadIds:[a.id],approve:true});
  assert.equal(duplicate.status,409);
@@ -35,7 +35,8 @@ test('Two initial greetings are never attempted less than 90 seconds apart',asyn
  assert.equal(first.status,'SENT');
  assert.equal(sent.length,1);
  assert.match(sent[0].body.message.text,/^Olá(?:, [A-Z]\p{L}{1,29})?, bom dia! Tudo bem\?$/u);
- nowMs+=89_999;
+ const interval=queue.approachQueueStatus().intervalSeconds*1000;
+ nowMs+=interval-1;
  const early=await queue.tickApproachQueue(deps);
  assert.equal(early.status,'WAITING');
  assert.equal(sent.length,1);
@@ -45,7 +46,7 @@ test('Two initial greetings are never attempted less than 90 seconds apart',asyn
  assert.equal(sent.length,2);
  assert.equal(sent.length,2);
  for(const x of sent)assert.match(x.body.message.text,/^Olá(?:, [A-Z]\p{L}{1,29})?, bom dia! Tudo bem\?$/u);
- assert.equal(sent[1].time-sent[0].time,90_000);
+ assert.equal(sent[1].time-sent[0].time,interval);
  assert.equal(db.one("SELECT COUNT(*) n FROM initial_contacts WHERE status='SENT'").n,2);
  assert.equal(db.one("SELECT COUNT(*) n FROM messages WHERE direction='out'").n,2);
  assert.equal((await queue.tickApproachQueue(deps)).status,'COMPLETED');
@@ -57,7 +58,7 @@ test('Cancellation prevents queued contacts from being approached',async()=>{
  assert.equal(batch.status,202);
  const stopped=queue.cancelApproachQueue();
  assert.equal(stopped.cancelled,2);
- nowMs+=90_000;
+ nowMs+=110_000;
  assert.equal((await queue.tickApproachQueue(deps)).status,'IDLE');
  assert.equal(sent.length,2);
 });
@@ -71,7 +72,7 @@ test('Timeout is UNKNOWN and never retried automatically',async()=>{
  assert.equal(unknown.status,'UNKNOWN');
  assert.equal(attempts,1);
  assert.equal(db.one('SELECT status FROM prospecting_batch_items WHERE lead_id=?',a.id).status,'UNKNOWN');
- nowMs+=90_000;
+ nowMs+=110_000;
  assert.equal((await queue.tickApproachQueue({...deps,send:async()=>{attempts++;return {status:true};}})).status,'COMPLETED');
  assert.equal(attempts,1);
  assert.equal(queue.enqueueApprovedApproaches({leadIds:[a.id],approve:true}).status,403);

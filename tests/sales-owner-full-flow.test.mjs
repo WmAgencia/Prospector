@@ -25,7 +25,7 @@ test('multiple selected public businesses independently reply, approve a quote a
  const leads=['Padaria Aurora','Oficina Horizonte','Clínica Campo'].map((business,i)=>d.addLead({business,phone:'55119990000'+String(i+10),source:'MANUAL',website:'https://example.org/'+i,instagram:'synthetic_business_'+i}).lead);
  assert.equal(q.enqueueApprovedApproaches({leadIds:leads.map(x=>x.id),approve:true,operatorApproved:true}).body.queued,3);
  for(let index=0;index<leads.length;index++){
-  assert.equal((await q.tickApproachQueue({currentTime:()=>time,getWaStatus:status,getSession:()=> 'synthetic',send})).status,'SENT');time+=90000;
+  assert.equal((await q.tickApproachQueue({currentTime:()=>time,getWaStatus:status,getSession:()=> 'synthetic',send})).status,'SENT');time+=110000;
   const lead=leads.find(x=>decodeURIComponent(delivered.at(-1).route).includes(x.phone));
   assert.ok(lead);
   incoming(lead,'Oi, pode falar');
@@ -55,7 +55,7 @@ test('multiple selected public businesses independently reply, approve a quote a
 test('a price question in the first reply respects Wesley introduction and then gets R$550 without owner approval',async()=>{
  const lead=d.addLead({business:'Empresa que pergunta logo o preço',phone:'5511999888877'}).lead;
  assert.equal(q.enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true}).status,202);
- time+=90000;
+ time+=110000;
  assert.equal((await q.tickApproachQueue({currentTime:()=>time,getWaStatus:status,getSession:()=> 'synthetic',send})).status,'SENT');
  const first=incoming(lead,'Qual o valor para o site?');
  assert.equal(intro.introductionStatus(lead.id).stage,'WAITING');
@@ -74,7 +74,7 @@ test('short proposal questions and busy humans receive approved details without 
   q.cancelApproachQueue();
   const lead=d.addLead({business:'Empresa fictícia de atendimento '+i,phone:'55119000022'+String(i).padStart(2,'0')}).lead;
   assert.equal(q.enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true}).status,202);
-  time+=90000;
+  time+=110000;
   assert.equal((await q.tickApproachQueue({currentTime:()=>time,getWaStatus:status,getSession:()=> 'synthetic',send})).status,'SENT');
   incoming(lead,'Pode falar');
   const due=Date.parse(intro.introductionStatus(lead.id).due_at);

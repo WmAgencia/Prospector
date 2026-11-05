@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import {spawnSync} from 'node:child_process';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/approach-clock-');
+const d=await import('../dashboard/db.mjs');
+const q=await import('../dashboard/prospecting-queue.mjs');
+test('polling and a fresh process preserve the chosen interval and attempt time',async()=>{
+ const last=Date.now();
+ d.run('UPDATE prospecting_send_clock SET last_attempt_ms=? WHERE id=1',last);
+ const before=d.one('SELECT * FROM prospecting_send_clock WHERE id=1');
+ for(let i=0;i<5;i++)assert.equal(q.approachQueueStatus().intervalSeconds,before.interval_ms/1000);
+ const source=new URL('../dashboard/prospecting-queue.mjs',import.meta.url).href;
+ const dbSource=new URL('../dashboard/db.mjs',import.meta.url).href;
+ const child=spawnSync(process.execPath,['--input-type=module','-e',`import '${source}';import {one} from '${dbSource}';console.log(JSON.stringify(one('SELECT * FROM prospecting_send_clock WHERE id=1')));`],{env:process.env,encoding:'utf8',timeout:20000});
+ assert.equal(child.status,0,child.stderr);
+ assert.deepEqual(JSON.parse(child.stdout),{...before});
+ assert.deepEqual({...d.one('SELECT * FROM prospecting_send_clock WHERE id=1')},{...before});
+});
+test.after(()=>{d.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
