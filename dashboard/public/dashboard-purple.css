@@ -330,3 +330,133 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  .setting-hour-fields{grid-template-columns:1fr}
 }
 @media(prefers-reduced-motion:reduce){.francisca-orb,.calendar-day,.chat-person{transition:none!important}.francisca-orb:hover{transform:none!important}.training-record.recording,.francisca-controls .recording{animation:none!important}}
+
+
+/* CLIENT UX V4 | compact layout with native, accessible controls */
+.workspace-switch-button{
+ display:inline-flex;align-items:center;justify-content:center;
+ min-height:36px;padding:8px 14px;border-radius:11px;
+ background:linear-gradient(120deg,#f4edff,#faf8ff);border:1px solid #d9c7fc;
+ color:#6434da;font:800 11px 'DM Sans',sans-serif;white-space:nowrap;
+ cursor:pointer;transition:background .18s,transform .18s;
+}
+.workspace-switch-button:hover{background:#e9dcff;transform:translateY(-1px)}
+.workspace-switch-button:focus-visible,.scope-mode-button:focus-visible,.calendar-day-counter:focus-visible{
+ outline:3px solid #8b60fc;outline-offset:3px;
+}
+.prospect-dashboard{max-width:1510px;margin:0 auto;display:grid;gap:12px}
+.prospect-dashboard .scope-panel,.prospect-dashboard .calendar-panel{margin:0!important;padding:16px 20px!important}
+.prospect-dashboard .scope-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
+.scope-heading .kicker{font-size:9px}
+.scope-heading h2{font:750 clamp(19px,2.1vw,25px) 'Plus Jakarta Sans',sans-serif;letter-spacing:-.055em;margin:4px 0;color:#23183e}
+.scope-heading p{font-size:11px!important;line-height:1.5!important;color:#7b708b!important;margin:0!important}
+.scope-heading .tag{flex:none;font-size:10px}
+.prospect-dashboard .scope-form{
+ display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;
+ align-items:end;gap:13px;margin:12px 0!important;
+}
+.scope-form .scope-field{min-width:0}
+.scope-field-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.scope-form .scope-field-top>label{font-size:12px;font-weight:800;color:#47345c;line-height:1.2}
+.scope-mode-button{
+ border:1px solid #d9cbed;background:#faf8ff;border-radius:99px;
+ padding:7px 11px;color:#745e9c;font-size:10px;font-weight:800;
+ line-height:1.1;white-space:nowrap;cursor:pointer;transition:background .18s,border-color .18s;
+}
+.scope-mode-button.active{background:#e9ddff;border-color:#bda3fb;color:#6734d8;box-shadow:0 2px 7px #6c40d30b}
+.scope-mode-button:hover{border-color:#8c6bfa}
+.scope-form .scope-field>input{
+ width:100%;min-height:42px!important;height:42px;padding:9px 12px;
+ border:1px solid #e2dafa;border-radius:11px;background:#fff;
+ color:#33254c;font-size:12px;cursor:text;
+}
+.scope-form .scope-field.is-all>input{
+ background:#f5f2fb!important;color:#9a8fae!important;
+ border-color:#ede7f7!important;cursor:pointer;opacity:.65;
+}
+.scope-form .scope-field.is-all>input::placeholder{color:#9d90b2;opacity:1}
+.scope-form .scope-save{min-height:42px!important;height:42px;white-space:nowrap;padding:0 17px}
+.prospect-dashboard .scope-limitation{
+ background:transparent!important;border-top:1px solid #f2eef8;border-radius:0!important;
+ padding:9px 0 0!important;font-size:10px!important;line-height:1.45!important;
+}
+.prospect-dashboard .calendar-head{align-items:center;margin-bottom:9px;gap:8px}
+.prospect-dashboard .calendar-head h3{font-size:18px;line-height:1.2;letter-spacing:-.035em}
+.prospect-dashboard .calendar-head p{font-size:10px;line-height:1.4}
+.prospect-dashboard .calendar-nav strong{font-size:12px;min-width:113px}
+.prospect-dashboard .calendar-nav button{min-width:30px;min-height:30px;font-size:20px;padding:2px 7px}
+.prospect-dashboard .calendar-month-totals{margin-bottom:10px;gap:8px}
+.prospect-dashboard .calendar-month-totals span{
+ padding:6px 10px;font-size:10px;background:#f8f4ff;border-radius:9px;
+}
+.prospect-dashboard .calendar-month-totals strong{font-size:13px}
+.prospect-dashboard .calendar-week-grid,.prospect-dashboard .calendar-days-grid{
+ grid-template-columns:repeat(7,minmax(0,1fr))!important;
+ gap:5px!important;min-width:0!important;
+}
+.prospect-dashboard .calendar-week-grid{margin-bottom:5px}
+.prospect-dashboard .calendar-week-grid span{padding:2px 0;font-size:9px}
+.prospect-dashboard .calendar-empty{min-height:0!important}
+.prospect-dashboard .calendar-day{
+ min-width:0;min-height:0!important;height:clamp(56px,calc((100dvh - 405px)/6),75px);
+ gap:3px;padding:5px 5px 4px;align-items:stretch;
+ border-radius:9px;background:#fff;overflow:hidden;
+}
+.prospect-dashboard .calendar-day-number{font-size:10px;line-height:1;font-weight:850;color:#37264f;padding:0}
+.prospect-dashboard .calendar-day-stats{display:grid;grid-template-columns:1fr 1fr;gap:3px;min-height:23px}
+.prospect-dashboard .calendar-day-counter{
+ min-width:0;min-height:23px;height:23px;padding:1px 3px;border-radius:6px;
+ display:flex;align-items:center;justify-content:center;gap:3px;
+ border:1px solid #e8e0fa;background:#f5f0ff;
+ font-size:9px;line-height:1.1;
+}
+.prospect-dashboard .calendar-day-counter.closed{background:#eaf7ed;border-color:#d5ecdc;color:#398251}
+.prospect-dashboard .calendar-day-counter b{font-size:11px;font-weight:850;line-height:1}
+.prospect-dashboard .calendar-day-counter small{font-size:8px;font-weight:750;white-space:nowrap}
+.prospect-dashboard .calendar-day-rate{font-size:8px;font-weight:750;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0;text-align:left;color:#7b6e8d}
+.prospect-dashboard .calendar-scroll{padding-bottom:2px}
+.prospect-dashboard .calendar-definition{font-size:9px;line-height:1.35;margin-top:7px!important}
+.prospect-dashboard .calendar-details{padding:16px!important;margin-top:0}
+/* Single-screen destinations should not waste viewport height on empty chrome.
+   Lists and actual long content still scroll as needed for accessibility. */
+@media(min-width:900px){
+ .body:has(.prospect-dashboard) .content,
+ .body:has(.training-wizard-card) .content{
+   padding-top:12px!important;padding-bottom:9px!important;
+ }
+ .body:has(.prospect-dashboard) .main-footer{padding-top:5px!important;padding-bottom:7px!important}
+ .body:has(.training-wizard-card) .main-footer{padding-top:5px!important;padding-bottom:7px!important}
+ .training-wizard-steps{margin:10px 0 13px;gap:7px}
+ .training-wizard-steps button{min-height:49px;padding:8px 10px}
+ .training-wizard-card{max-width:900px;padding:20px 25px!important}
+ .training-wizard-card>p{margin-bottom:13px}
+ .training-wizard-card .stack-form{gap:11px}
+ .body:has(.wa-directory) .content{padding-top:15px!important}
+ .body:has(.account-settings-grid) .content{padding-top:15px!important}
+}
+@media(max-width:1000px){
+ .prospect-dashboard .calendar-day-counter small{display:none}
+}
+@media(max-width:760px){
+ .prospect-dashboard{gap:10px}
+ .prospect-dashboard .scope-panel,.prospect-dashboard .calendar-panel{padding:13px!important}
+ .prospect-dashboard .scope-heading{align-items:flex-start}
+ .prospect-dashboard .scope-heading .tag{font-size:9px}
+ .prospect-dashboard .scope-form{grid-template-columns:1fr!important;gap:11px}
+ .scope-form .scope-field>input{height:43px}
+ .scope-form .scope-save{width:100%;height:44px}
+ .prospect-dashboard .calendar-head{align-items:start;display:flex;flex-wrap:wrap}
+ .prospect-dashboard .calendar-nav{width:100%;justify-content:space-between}
+ .prospect-dashboard .calendar-day{height:58px;padding:4px 3px;gap:3px}
+ .prospect-dashboard .calendar-day-stats{gap:2px;min-height:20px}
+ .prospect-dashboard .calendar-day-counter{height:20px;min-height:20px;padding:0;border-radius:5px}
+ .prospect-dashboard .calendar-day-counter b{font-size:9px}
+ .prospect-dashboard .calendar-day-number{font-size:9px}
+ .prospect-dashboard .calendar-day-rate{font-size:7px}
+ .prospect-dashboard .calendar-week-grid span{font-size:8px}
+ .workspace-switch-button{padding:6px 8px;min-height:31px;font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){
+ .workspace-switch-button,.scope-mode-button{transition:none!important}
+ .workspace-switch-button:hover{transform:none}
+}
