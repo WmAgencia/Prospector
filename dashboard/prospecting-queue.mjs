@@ -3,6 +3,7 @@
 // A send timeout is UNKNOWN and is never retried automatically.
 import {db,id,one,all,run,tx,now,audit,getSetting,setSetting,getThread,addMessage} from './db.mjs';
 import {daySP} from './radar.mjs';
+import {APPROACH_CADENCE,chooseApproachInterval} from './approach-cadence.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
@@ -19,7 +20,11 @@ db.exec("CREATE INDEX IF NOT EXISTS idx_prospecting_batch_items ON prospecting_b
 if(!db.prepare('PRAGMA table_info(prospecting_batches)').all().some(x=>x.name==='origin'))
  db.exec("ALTER TABLE prospecting_batches ADD COLUMN origin TEXT NOT NULL DEFAULT 'MANUAL'");
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_send_clock(id INTEGER PRIMARY KEY CHECK(id=1),last_attempt_ms INTEGER NOT NULL DEFAULT 0)");
-run("INSERT OR IGNORE INTO prospecting_send_clock(id,last_attempt_ms) VALUES(1,0)");
+if(!db.prepare('PRAGMA table_info(prospecting_send_clock)').all().some(c=>c.name==='interval_ms')){
+ db.exec('ALTER TABLE prospecting_send_clock ADD COLUMN interval_ms INTEGER NOT NULL DEFAULT 90000');
+ run('UPDATE prospecting_send_clock SET interval_ms=?',chooseApproachInterval(90000));
+}
+run('INSERT OR IGNORE INTO prospecting_send_clock(id,last_attempt_ms,interval_ms) VALUES(1,0,?)',chooseApproachInterval());
 // Crash safety: an interrupted network send may have been delivered.
 run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interrompido; conferir no WhatsApp' WHERE status='SENDING'");
 
@@ -81,12 +86,12 @@ export function autonomousReadyCount(at=new Date()){
 }
 export function approachQueueStatus(){
  const b=currentBatch();
- const clock=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
+ const clock=one('SELECT last_attempt_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
  const waiting=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='QUEUED'")?.n||0;
  const unknown=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='UNKNOWN'")?.n||0;
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
  return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
-  intervalSeconds:90,nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),clock+APPROACH_INTERVAL_MS)).toISOString():null,
+  intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),clock.last_attempt_ms+clock.interval_ms)).toISOString():null,
   status:b?.status||'IDLE',repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
 export function enqueueApprovedApproaches(input={}){
@@ -104,8 +109,8 @@ export function enqueueApprovedApproaches(input={}){
    run('INSERT INTO prospecting_batch_items(id,batch_id,lead_id,phone,status,created_at) VALUES(?,?,?,?,?,?)',itemId,batchId,l.id,l.phone,'QUEUED',at);
    if(input.operatorApproved===true)recordOperatorSelection({itemId,batchId,leadId:l.id,offerType:input.offerType||'portfolio'});
   }
-  audit('PROSPECTING_BATCH_APPROVED',null,{batchId,selected:ids.length,queued:approved.length,excluded:ids.length-approved.length,intervalSeconds:90});
-  return {status:202,body:{ok:true,batchId,queued:approved.length,excluded:ids.length-approved.length,intervalSeconds:90,started:false}};
+  audit('PROSPECTING_BATCH_APPROVED',null,{batchId,selected:ids.length,queued:approved.length,excluded:ids.length-approved.length,cadence:APPROACH_CADENCE});
+  return {status:202,body:{ok:true,batchId,queued:approved.length,excluded:ids.length-approved.length,intervalSeconds:approachQueueStatus().intervalSeconds,cadence:APPROACH_CADENCE,started:false}};
  });
  return result;
 }
@@ -167,7 +172,7 @@ function createAutonomousBatch(selected){
    queued++;
   }
   if(!queued){run('DELETE FROM prospecting_batches WHERE id=?',batchId);return {status:'NO_ELIGIBLE_LEADS'};}
-  audit('AUTONOMOUS_APPROACH_BATCH',null,{batchId,queued,window:'08:00-17:30',intervalSeconds:90,threeCalendarMonths:true});
+  audit('AUTONOMOUS_APPROACH_BATCH',null,{batchId,queued,window:'08:00-17:30',cadence:APPROACH_CADENCE,threeCalendarMonths:true});
   return {status:'QUEUED',batchId,queued};
  });
 }
@@ -203,10 +208,10 @@ export async function tickApproachQueue(deps={}){
   const expired=closeStaleBatch(new Date(time));
   if(expired)return expired;
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
-  const clock=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
+  const clock=one('SELECT last_attempt_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
   if(!next){run("UPDATE prospecting_batches SET status='COMPLETED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);return {status:'COMPLETED'};}
-  if(time-clock<APPROACH_INTERVAL_MS)return {status:'WAITING',remainingMs:APPROACH_INTERVAL_MS-(time-clock)};
+  if(time-clock.last_attempt_ms<clock.interval_ms)return {status:'WAITING',remainingMs:clock.interval_ms-(time-clock.last_attempt_ms)};
   if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS')){
    run("UPDATE prospecting_batch_items SET status='SKIPPED',error='Elegibilidade alterada',attempt_at=? WHERE id=?",now(),next.id);
    return {status:'SKIPPED'};
@@ -217,14 +222,16 @@ export async function tickApproachQueue(deps={}){
   // Timestamp can only move forward. The interval is enforced after restarts.
   const reserved=tx(()=>{
    if(!currentBatch()||currentBatch().id!==batch.id)return false;
-   const latest=one('SELECT last_attempt_ms FROM prospecting_send_clock WHERE id=1')?.last_attempt_ms||0;
+   const latest=one('SELECT last_attempt_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
    const nowMs=currentTime();
-   if(nowMs-latest<APPROACH_INTERVAL_MS||!insideApproachWindow(new Date(nowMs)))return false;
+   if(nowMs-latest.last_attempt_ms<latest.interval_ms||!insideApproachWindow(new Date(nowMs)))return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return false;
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
    if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS'))return false;
-   run('UPDATE prospecting_send_clock SET last_attempt_ms=? WHERE id=1',nowMs);
+   // Reserve both the attempt and its next random interval atomically. Polling,
+   // failures and process restarts never reroll or shorten the chosen wait.
+   run('UPDATE prospecting_send_clock SET last_attempt_ms=?,interval_ms=? WHERE id=1',nowMs,chooseApproachInterval(latest.interval_ms));
    run("UPDATE prospecting_batch_items SET status='SENDING',attempt_at=? WHERE id=? AND status='QUEUED'",new Date(nowMs).toISOString(),next.id);
    // No duplicate recipient attempts even after crashes.
    run('INSERT OR IGNORE INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,?,?,?)',next.lead_id,next.phone,'UNKNOWN',next.id,new Date(nowMs).toISOString());
@@ -243,7 +250,7 @@ export async function tickApproachQueue(deps={}){
    addMessage({threadId:thread.id,providerId:'prospect-queue:'+next.id,direction:'out',body:message,status:'sent'});
    registerGreeting({leadId:lead.id,greetingId:next.id,sessionId:session});
    if(lead.stage==='NO_INTEREST')run("UPDATE leads SET stage='CONTACTED',last_activity_at=? WHERE id=?",now(),lead.id);
-   audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:90});
+   audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE});
    return {status:'SENT',batchId:batch.id};
   }catch(error){
    run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Entrega incerta; verificar manualmente' WHERE id=?",next.id);

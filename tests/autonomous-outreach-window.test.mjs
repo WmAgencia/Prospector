@@ -48,20 +48,22 @@ test('automatic queue excludes recent approaches, duplicates, opt-outs, and queu
  assert.equal(q.approachQueueStatus().origin,'AUTONOMOUS');
  assert.equal(d.one('SELECT COUNT(*) n FROM leads WHERE contact_permission=1').n,0);
 });
-test('one attempt every 90 seconds, even when the queue is checked every second',async()=>{
+test('chosen interval is enforced even when the queue is checked every second',async()=>{
  let time=at.getTime();
  const sent=[];
  const send=async(_path,options)=>{sent.push({time,body:options.data.message.text});return {status:true};};
  const deps={currentTime:()=>time,getWaStatus:async()=>({connected:true,sessionId:'test-session'}),getSession:()=> 'test-session',send};
  assert.equal((await q.tickApproachQueue(deps)).status,'SENT');
  assert.equal(sent.length,1);
- time+=89_999;
+ const interval=q.approachQueueStatus().intervalSeconds*1000;
+ time+=interval-1;
  assert.equal((await q.tickApproachQueue(deps)).status,'WAITING');
  assert.equal(sent.length,1);
  time+=1;
  assert.equal((await q.tickApproachQueue(deps)).status,'SENT');
  assert.equal(sent.length,2);
- assert.equal(sent[1].time-sent[0].time,90_000);
+ assert.equal(sent[1].time-sent[0].time,interval);
+ assert.ok(Math.abs(q.approachQueueStatus().intervalSeconds*1000-interval)>=5000);
  const contacted=d.one("SELECT lead_id FROM prospecting_batch_items WHERE status='SENT' ORDER BY attempt_at LIMIT 1").lead_id;
  assert.equal(operatorSelected(contacted),true);
  const thread=d.getThread(contacted);

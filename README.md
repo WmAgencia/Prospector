@@ -7,7 +7,7 @@ Painel operacional de prospecção com fila determinística, WhatsApp via WA-AKG
 O fluxo autorizado pelo operador permite a primeira saudação comercial sem consentimento prévio quando `PROSPECTOR_COLD_FIRST_APPROACH=true`. Isso não marca o contato como consentido. A resposta da pessoa libera a continuidade daquela conversa; recusas, bloqueios, atendimento humano e clientes existentes permanecem protegidos.
 
 - Pesquisa automática a partir das 07h00 e preparação da fila entre 07h00 e 08h00.
-- Novas abordagens das **08h00 às 17h30**, horário `America/Sao_Paulo`, com pelo menos **90 segundos** entre tentativas.
+- Novas abordagens das **08h00 às 17h30**, horário `America/Sao_Paulo`, com intervalo sorteado de **90 a 110 segundos**, diferente do sorteio anterior por pelo menos **5 segundos**. O sorteio fica salvo no banco e não muda a cada consulta nem após reiniciar. Indisponibilidade ou fim da janela podem adiar a tentativa; não há compensação com disparos em sequência.
 - `PROSPECTOR_APPROACH_START_DATE=AAAA-MM-DD` impede novas abordagens antes da data inicial em São Paulo, sem impedir respostas a mensagens recebidas.
 - Saudação personalizada; após resposta elegível, apresentação em 30 segundos e continuidade pelo Groq. Respostas automáticas de estabelecimentos não liberam a sequência.
 - Respostas do atendimento aguardam de 8 a 35 segundos, com variação e tempo proporcional à leitura e ao tamanho da resposta. O tempo de geração e síntese já conta nessa espera; nova mensagem, bloqueio ou atendimento humano cancela a resposta pendente. `PROSPECTOR_REPLY_PACING_ENABLED=false` desativa a espera adicional.

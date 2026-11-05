@@ -836,7 +836,7 @@ const autonomousQueueTimer=setInterval(()=>{
   const result=cold&&minutes>=7*60&&minutes<8*60
    ?preloadApproachQueue()
    :cold&&insideApproachWindow()?enrollAutonomousApproaches():enrollAutonomousApproaches();
-  if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',intervalSeconds:90,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
+  if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',cadence:approachQueueStatus().cadence,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
  }catch(error){console.warn('[automatic approach]',String(error?.message||error).slice(0,140));}
 },5000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
