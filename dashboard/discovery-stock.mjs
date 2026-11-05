@@ -29,6 +29,7 @@ export function discoveryStockSnapshot(at=new Date(),{target=getSetting('discove
   const key=identityKey(lead);
   if(seenPhones.has(number)||(key&&seenBusinesses.has(key))){duplicates++;continue;}
   seenPhones.add(number);if(key)seenBusinesses.add(key);ready++;
+  if(ready>=Math.max(1,Math.min(DEFAULT_STOCK_TARGET,Number(target)||DEFAULT_STOCK_TARGET)))break;
  }
  return {...replenishmentPlan({target,ready,credits}),duplicates,asOf:at.toISOString(),
   definition:'uncontacted-business-phone-not-suppressed',permissionNotImplied:true};
