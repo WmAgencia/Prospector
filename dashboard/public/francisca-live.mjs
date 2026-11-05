@@ -71,7 +71,7 @@ export function createFranciscaVoiceSession({onTurn,onState=()=>{},onError=()=>{
   const rms=level(),now=Date.now();
   // The noise floor follows ambient input slowly, but never treats room noise
   // as confirmed user speech without a stronger signal.
-  const loud=rms>Math.max(.015,ambient*2.5);
+  const loud=rms>Math.max(.009,ambient*2.35);
   if(!loud)ambient=Math.max(.002,Math.min(.03,ambient*.985+rms*.015));
   if(loud){
    if(!recorder)record();
@@ -79,7 +79,7 @@ export function createFranciscaVoiceSession({onTurn,onState=()=>{},onError=()=>{
   }
   if(recorder&&now-startedAt>=maxTurnMs){finishTurn();return;}
   if(recorder&&!loud&&now-lastSpeechAt>=silenceMs){
-   if(lastSpeechAt-speechStartedAt>=180)finishTurn();
+   if(lastSpeechAt-speechStartedAt>=70)finishTurn();
    else if(now-startedAt>=2500){
     // Ignore a cough or very short noise rather than sending an empty turn.
     const discard=recorder;discard.onstop=null;
