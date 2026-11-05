@@ -11,7 +11,7 @@ export function parseFranciscaSendCommand(text){
  const s=String(text||'').trim();
  const m=/^(?:francisca[,! ]*)?(?:por favor[, ]*)?(?:envie|enviar|manda|mande|envia|responda|responde|responder)\s+(?:uma\s+mensagem\s+)?(?:para\s+|a\s+|ao\s+|à\s+)?(.+)$/i.exec(s);
  if(!m)return null;
- const rest=m[1].trim();
+ const rest=m[1].trim().replace(/^(?:o|a)\\s+(?=[A-Za-zÀ-ÿ])/i,'').replace(/^mensagem\\s+de\\s+/i,'');
  const split=/(?:\s+(?:dizendo|falando|com o texto|com a mensagem|escrevendo|que diga)\s*[:,-]?\s*)/i.exec(rest);
  const recipient=cap(split?rest.slice(0,split.index):rest,110).replace(/[,:. ]+$/,'').trim();
  const message=split?cap(rest.slice(split.index+split[0].length),1100).replace(/^["“]|["”]$/g,''):'';
