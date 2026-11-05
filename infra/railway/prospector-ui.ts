@@ -56,7 +56,7 @@ async function proxy(req:Request){
  const url=new URL(req.url);
  const clientCookie=(req.headers.get("cookie")||"").split(";").map(x=>x.trim()).find(x=>x.startsWith("ps_client="))||"";
  const masterAuthorized=authorized(req);
- const publicClientAccess=new Set(["/","/conheca","/cadastro","/entrar","/landing.css","/landing.js","/product-theme.css","/client/access","/api/platform/login","/api/platform/logout","/api/platform/signup","/api/platform/signin"]).has(url.pathname);
+ const publicClientAccess=new Set(["/","/conheca","/cadastro","/entrar","/landing.css","/landing.js","/product-theme.css","/product-icons.js","/client/access","/api/platform/login","/api/platform/logout","/api/platform/signup","/api/platform/signin"]).has(url.pathname);
  const oauthBrowser=url.pathname==="/oauth/authorize"||url.pathname==="/oauth/approve";
  const publicMcp=new Set(["/mcp","/.well-known/oauth-protected-resource","/.well-known/oauth-protected-resource/mcp","/.well-known/oauth-authorization-server","/oauth/register","/oauth/token"]).has(url.pathname);
  if(!publicMcp&&!masterAuthorized&&!clientCookie&&!publicClientAccess){

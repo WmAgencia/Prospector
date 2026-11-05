@@ -2,6 +2,8 @@
 
 ## Interface e apresentação comercial
 
+O refinamento de tela cheia remove a moldura externa do site e dos painéis, aumenta o contraste com verde-floresta/lima, incorpora SVGs locais e inclui uma demonstração interativa da prospecção. A pesquisa de referências, os tokens, as razões de contraste e os critérios de movimento estão em [docs/design-system-prospector.md](docs/design-system-prospector.md).
+
 A landing e os painéis usam o mesmo tema claro com cartões brancos, menu compacto e destaques verde-lima, inspirado na referência fornecida pelo operador. O arquivo `dashboard/public/product-theme.css` é compartilhado pelos espaços de cliente, master, cadastro e acesso administrativo. A navegação superior mantém os nomes das seções; o menu móvel continua exibindo os rótulos completos.
 
 A apresentação explica a pesquisa automática a partir das 05h, as primeiras abordagens das 08h às 17h30, a continuidade da conversa pela IA e o aviso de interesse no WhatsApp pessoal. A operação depende de configuração, perfil aprovado, números conectados, saldo e contatos elegíveis. O campo **WhatsApp pessoal para avisos de interessados** fica em **Treinamento da IA → Sobre sua empresa**. Esse destino não concede privilégios administrativos e é omitido do contexto enviado ao modelo.
