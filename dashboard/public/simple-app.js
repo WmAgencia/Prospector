@@ -304,7 +304,7 @@ function whatsappAccountsPanel(){
  const count=waAccounts.filter(x=>x.connected).length;
  return '<section class="panel wa-directory"><div class="heading"><div><span class="kicker">CANAIS DE ATENDIMENTO</span><h2>Seus WhatsApps</h2><p>Identifique seus números e gerencie cada conexão com segurança.</p></div><span class="tag green">'+count+' conectado'+(count===1?'':'s')+'</span></div>'+
  '<div class="wa-directory-list">'+(waAccounts.length?waAccounts.map(item=>'<button type="button" class="wa-directory-item" data-action="select-wa" data-session="'+esc(item.session_id)+'"><span class="wa-directory-avatar">'+glyph('conversations')+'</span><span class="wa-directory-details"><strong>'+esc(item.label)+'</strong><small>'+(item.numberSuffix?'•••• '+esc(item.numberSuffix)+' · ':'')+(item.connected?'Número conectado':'Aguardando conexão')+'</small></span><span class="wa-directory-status '+(item.connected?'is-online':'')+'"><span class="pulse '+(item.connected?'ok':'')+'"></span> '+(item.connected?'Conectado':'Conectar')+'</span>'+glyph('arrow')+'</button>').join(''):'<div class="empty"><h3>Seu primeiro WhatsApp</h3><p>Dê um nome para identificar o canal e conecte pelo QR Code.</p></div>')+'</div>'+
- '<form class="wa-add-form" id="wa-add-form"><label>Nome do novo WhatsApp<input id="new-wa-label" name="label" maxlength="70" placeholder="Ex.: Comercial 01 ou Atendimento" required></label><button type="submit" class="primary" '+(busy?'disabled':'')+'>+ Conectar mais um WhatsApp</button></form>'+
+ '<form class="wa-add-form" id="wa-add-form"><label>Nome do novo WhatsApp<input id="new-wa-label" name="label" maxlength="70" placeholder="Ex.: Comercial 01 ou Atendimento" required></label><button type="submit" data-action="add-wa" class="primary" '+(busy?'disabled':'')+'>+ Conectar mais um WhatsApp</button></form>'+
  '<p class="footnote">Cada número tem sua própria sessão. A cadência de novas abordagens é compartilhada entre os canais.</p></section>';
 }
 function connections(){
@@ -525,6 +525,8 @@ document.addEventListener("click",async ev=>{
    finally{handoffPending=false;render();}
    return;
   }
+  if(action==='calendar-prev'||action==='calendar-next'){moveCalendar(action==='calendar-prev'?-1:1);return;}
+  if(action==='calendar-day'){calendarDay=el.dataset.date||'';calendarCategory=el.dataset.kind==='closed'?'closed':'approached';render();return;}
   if(action==="refresh-kanban"){await loadKanban();n('Kanban atualizado.');return;}
   if(action==="menu"){q("#side")?.classList.toggle("mobile-open");q(".scrim")?.classList.toggle("visible");return;}
   if(action==="close-menu"){q("#side")?.classList.remove("mobile-open");q(".scrim")?.classList.remove("visible");return;}
@@ -596,6 +598,12 @@ document.addEventListener("submit",async ev=>{
  ev.preventDefault();
  if(await platformSubmit(ev))return;
 
+ if(ev.target.id==='scope-form'){
+  const payload=Object.fromEntries(new FormData(ev.target));
+  try{scopeInfo=await post('/api/prospecting/preferences',payload);scopeMode=scopeInfo.selection?.mode||'all';n('Pesquisa automática configurada. O sistema respeitará as cotas e os contatos autorizados.');render();}
+  catch(e){n(e.message);}
+  return;
+ }
  if(ev.target.id==="search-form"){
   ev.preventDefault();
   const a=q("#niche")?.value.trim(),b=q("#city")?.value.trim();
@@ -641,6 +649,7 @@ document.addEventListener("change",async e=>{
  if(e.target.name==="training-mode"){trainingMode=e.target.value;trainingAllConfirmed=false;render();return;}
  if(e.target.id==='training-all-confirm'){trainingAllConfirmed=e.target.checked;return;}
  if(e.target.id==='client-status-filter'){clientStatusFilter=e.target.value;render();return;}
+ if(e.target.id==='scope-mode'){scopeMode=e.target.value;render();return;}
  const t=e.target;
  if(t.id==='approach-offer'){offerType=t.value;return;}
  if(t.dataset?.selectLead){
@@ -687,3 +696,4 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWa(
 window.addEventListener("online",()=>refreshWa());
 await reload();
 await refreshWa();
+if(view==='prospects')await Promise.all([loadCalendar(),loadScope()]);
