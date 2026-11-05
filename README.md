@@ -10,6 +10,7 @@ O fluxo autorizado pelo operador permite a primeira saudação comercial sem con
 - Novas abordagens das **08h00 às 17h30**, horário `America/Sao_Paulo`, com pelo menos **90 segundos** entre tentativas.
 - `PROSPECTOR_APPROACH_START_DATE=AAAA-MM-DD` impede novas abordagens antes da data inicial em São Paulo, sem impedir respostas a mensagens recebidas.
 - Saudação personalizada; após resposta elegível, apresentação em 30 segundos e continuidade pelo Groq. Respostas automáticas de estabelecimentos não liberam a sequência.
+- Respostas do atendimento aguardam de 8 a 35 segundos, com variação e tempo proporcional à leitura e ao tamanho da resposta. O tempo de geração e síntese já conta nessa espera; nova mensagem, bloqueio ou atendimento humano cancela a resposta pendente. `PROSPECTOR_REPLY_PACING_ENABLED=false` desativa a espera adicional.
 - Interesse confirmado, pedido de humano e negociações fora da oferta aprovada seguem os controles de encaminhamento ao operador.
 - Entrega incerta pausa a abordagem autônoma e nunca é repetida automaticamente. Recontato respeita três meses de calendário.
 
