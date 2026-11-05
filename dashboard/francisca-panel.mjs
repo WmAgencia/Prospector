@@ -5,7 +5,7 @@ import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {availableApproachCredits} from './tenant-credits.mjs';
 
 let inFlight=false;
-let lastStarted=0;
+// One active request at a time per tenant worker; no artificial 1.4s delay between turns.
 // The worker process belongs to ONE tenant. Audio and text share a bounded,
 // ephemeral conversational context; never persistent and never shared across workers.
 const voiceContexts=new Map();
@@ -67,8 +67,7 @@ export async function handleFranciscaPanel(req,res,url,{json,respond},{masterAut
   return true;
  }
  if(inFlight){respond(res,429,{error:'A Francisca já está preparando uma resposta'});return true;}
- if(Date.now()-lastStarted<1400){respond(res,429,{error:'Aguarde antes de enviar outra mensagem'});return true;}
- inFlight=true;lastStarted=Date.now();
+ inFlight=true;
  try{
   const isAudio=String(req.headers['content-type']||'').startsWith('audio/');
   const data=isAudio?null:await json(req);
