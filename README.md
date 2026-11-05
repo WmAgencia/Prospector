@@ -1,6 +1,21 @@
 # Prospector — Consecom
 
-Painel operacional de prospecção com **motor determinístico (sem LLM no runtime)**, WhatsApp via Baileys, biblioteca de mídias e editor de workflows.
+Painel operacional de prospecção com fila determinística, WhatsApp via WA-AKG ou Baileys, atendimento com Groq, biblioteca de mídias e editor de workflows.
+
+## Fluxo automático de produção
+
+O fluxo autorizado pelo operador permite a primeira saudação comercial sem consentimento prévio quando `PROSPECTOR_COLD_FIRST_APPROACH=true`. Isso não marca o contato como consentido. A resposta da pessoa libera a continuidade daquela conversa; recusas, bloqueios, atendimento humano e clientes existentes permanecem protegidos.
+
+- Pesquisa automática a partir das 07h00 e preparação da fila entre 07h00 e 08h00.
+- Novas abordagens das **08h00 às 17h30**, horário `America/Sao_Paulo`, com pelo menos **90 segundos** entre tentativas.
+- `PROSPECTOR_APPROACH_START_DATE=AAAA-MM-DD` impede novas abordagens antes da data inicial em São Paulo, sem impedir respostas a mensagens recebidas.
+- Saudação personalizada; após resposta elegível, apresentação em 30 segundos e continuidade pelo Groq. Respostas automáticas de estabelecimentos não liberam a sequência.
+- Interesse confirmado, pedido de humano e negociações fora da oferta aprovada seguem os controles de encaminhamento ao operador.
+- Entrega incerta pausa a abordagem autônoma e nunca é repetida automaticamente. Recontato respeita três meses de calendário.
+
+Para ativar uma instalação: configurar `PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN=true`, `PROSPECTOR_COLD_FIRST_APPROACH=true`, `WHATSAPP_TRANSPORT=waakg`, credenciais dos provedores e `PROSPECTOR_INBOUND_AUTOREPLY_ENABLED=true`; verificar sessão conectada e configurações persistidas `autonomous_outreach_enabled=true`, `paused=false`, `discovery_auto_enabled=true`, `discovery_start_hour=7`. A opção de ativação inicial é aplicada uma vez; uma pausa posterior deve ser removida explicitamente pelo operador. `auto_initial=false` mantém o trabalhador legado de campanhas desativado.
+
+Sem `PROSPECTOR_COLD_FIRST_APPROACH=true`, a fila de produção continua exigindo autorização documentada. Diagnóstico: `/api/prospecting/queue`, `/api/sales/status` e `/api/queue-health`, com autenticação do painel.
 
 ## Como iniciar no Windows
 
@@ -41,7 +56,7 @@ O servidor escuta **somente localhost**, não é uma aplicação exposta à inte
 - **Nunca execute simultaneamente** `bot.mjs` e `dashboard/server.mjs` usando a mesma sessão WhatsApp.
 - O script `start-bot.ps1` agora direciona para o painel. O bot legado permanece para análise, mas não é o entrypoint recomendado.
 - Os arquivos `data/`, `audio/`, `logs/`, `wa-session/`, `.env*`, tokens e contatos não são versionados.
-- **O envio de novas abordagens é pausado por padrão** e requer que o contato esteja marcado como autorizado.
+- **Instalações novas começam pausadas**, salvo ativação explícita do fluxo automático descrito acima. A primeira abordagem nesse modo não depende da marcação de consentimento do contato.
 - A interface de descoberta por API usa pesquisa pública e não coleta automaticamente números de telefone de perfis protegidos.
 - Se a rede falhar durante o envio, o job fica `UNKNOWN`; nunca é repetido automaticamente.
 - O mecanismo de bloqueio de primeira abordagem impede novos disparos, mesmo em caso de reinicialização.
@@ -53,7 +68,7 @@ O servidor escuta **somente localhost**, não é uma aplicação exposta à inte
 - **FFmpeg** com `ffprobe` disponível no PATH é necessário para upload de vídeo.
 - Para pesquisa automática configure no terminal: `$env:BRAVE_SEARCH_API_KEY='sua-chave'` antes de executar `npm start`. A chave não deve ir para o GitHub.
 - A Biblioteca de Anúncios do Meta e buscas internas irrestritas do Instagram **não são implementadas**, pois exigem acesso permitido e validação de API.
-- O painel não oferece integração de calendário nem reconhecimento de voz; novas respostas de áudio ficam para atendimento humano.
+- Transcrição e respostas em áudio dependem das configurações e dos provedores de voz habilitados.
 - A pasta `engine/` legada e os dados locais não foram anexados à conversa e não estão aqui; o painel usa seu próprio classificador.
 - **Não há garantia de entrega ou de segurança de contas** com bibliotecas não oficiais do WhatsApp.
 

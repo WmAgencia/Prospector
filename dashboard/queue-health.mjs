@@ -4,6 +4,7 @@ import {all,one,run,audit,now,getSetting} from './db.mjs';
 import {initialBudget,hourSP,radarSnapshot} from './radar.mjs';
 import {automaticCandidateSql,outreachQueueSnapshot} from './outreach-queue.mjs';
 import {insideApproachWindow} from './outreach-window.mjs';
+import {coldFirstApproachEnabled,autonomousReadyCount,approachQueueStatus} from './prospecting-queue.mjs';
 
 export const INITIAL_PENDING_MAX_AGE_MINUTES=8;
 export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={}){
@@ -15,7 +16,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={
  const pending=initial.filter(x=>x.status==='PENDING'||x.status==='SENDING');
  const firstPending=pending[0]||null;
  const pendingAge=firstPending?Math.max(0,Math.floor((at.getTime()-(Date.parse(firstPending.created_at)||at.getTime()))/60000)):null;
- const eligible=one(automaticCandidateSql());
+ let eligible=one(automaticCandidateSql());
  const inventory=one(`SELECT COUNT(*) AS total,
  COALESCE(SUM(CASE WHEN l.stage='DISCOVERED' THEN 1 ELSE 0 END),0) AS discovered,
  COALESCE(SUM(CASE WHEN l.stage='DISCOVERED' AND l.phone IS NOT NULL THEN 1 ELSE 0 END),0) AS discoveredWithPhone,
@@ -26,8 +27,14 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false}={
  COALESCE(SUM(CASE WHEN l.stage='REPLIED' THEN 1 ELSE 0 END),0) AS replied,
  COALESCE(SUM(CASE WHEN l.stage='INTERESTED' THEN 1 ELSE 0 END),0) AS interested
  FROM leads l`);
- const invitationQueue=outreachQueueSnapshot(),discovery=radarSnapshot(at);
+ let invitationQueue=outreachQueueSnapshot();
+ const discovery=radarSnapshot(at);
  const autonomous=getSetting('autonomous_outreach_enabled',false)===true;
+ if(autonomous&&coldFirstApproachEnabled()){
+  const queue=approachQueueStatus(),ready=autonomousReadyCount(at)+queue.waiting;
+  invitationQueue={total:ready,ready,awaitingConsent:0,missingWhatsapp:0,suppressed:inventory.suppressed};
+  eligible=ready>0;
+ }
  const unknownErrors=all("SELECT error FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status='UNKNOWN' ORDER BY updated_at DESC LIMIT 30");
  const uncertainReasons={timeout:0,processInterrupted:0,providerError:0,other:0};
  for(const record of unknownErrors){
