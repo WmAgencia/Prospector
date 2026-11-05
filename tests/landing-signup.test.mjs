@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {openPlatformStore} from '../dashboard/platform-store.mjs';
+test('self-service signup stores a password hash and supports email or Brazilian phone without granting unlimited access',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-signup-')),s=openPlatformStore(dir);
+ const input={name:'Agência fictícia',email:'SIGNUP@example.test',phone:'11999990001',password:'synthetic-password-only',privacyAcknowledged:true,is_internal:1,unlimited:true};
+ const c=s.signup(input);assert.equal(c.is_internal,0);assert.equal(s.publicClient(c).unlimited,false);assert.equal(s.balance(c.id),0);
+ const auth=s.db.prepare('SELECT * FROM client_passwords WHERE client_id=?').get(c.id);assert.notEqual(auth.password_hash,input.password);assert.ok(auth.salt);assert.equal(auth.privacy_version,'2026-11-05');
+ assert.equal(s.signin({identifier:'signup@example.test',password:input.password}).id,c.id);
+ assert.equal(s.signin({identifier:'(11) 99999-0001',password:input.password}).id,c.id);
+ assert.equal(s.signin({identifier:'+55 11 99999-0001',password:input.password}).id,c.id);
+ assert.equal(s.signin({identifier:'signup@example.test',password:'wrong'}),null);
+ assert.throws(()=>s.signup({...input,email:'other@example.test',privacyAcknowledged:false}));
+ assert.throws(()=>s.signup({...input,email:'signup@example.test'}));
+ assert.equal(s.list().length,1);
+ s.status(c.id,'suspended');assert.equal(s.signin({identifier:input.email,password:input.password}),null);
+ const owner=s.configurePrimary({name:'Operação interna',email:'owner@example.test',phone:'11999990002',password:'owner-test-password'});
+ assert.equal(owner.unlimited,true);assert.equal(s.signin({identifier:'11999990002',password:'owner-test-password'}).is_internal,1);
+ assert.throws(()=>s.configurePrimary({name:'Outra',email:'another-owner@example.test',phone:'11999990003',password:'owner-test-password'}));
+ assert.equal(s.list().filter(x=>x.unlimited).length,1);s.db.close();fs.rmSync(dir,{recursive:true,force:true});
+});

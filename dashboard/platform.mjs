@@ -14,6 +14,8 @@ const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform');
 let store;
 const registry=()=>store||=openPlatformStore(root);
 const workers=new Map(),starting=new Map(),limiter=createAccessLimiter();
+const signupLimiter=createAccessLimiter({limit:5}),passwordLimiter=createAccessLimiter({limit:10});
+const accountPasswordLimiter=createAccessLimiter({limit:10});
 const cookieName='ps_client';
 const secret=process.env.ADMIN_SESSION_SECRET||'local-development-secret';
 const sign=s=>crypto.createHmac('sha256',secret).update(s).digest('base64url');
@@ -26,6 +28,7 @@ export function clientFromRequest(req){
  const [p,s,...rest]=raw.split('.');if(!p||!s||rest.length||s.length!==sign(p).length||!crypto.timingSafeEqual(Buffer.from(s),Buffer.from(sign(p))))return null;
  try{const claim=JSON.parse(Buffer.from(p,'base64url'));const c=registry().get(claim.id);return c?.status==='active'&&claim.exp>Date.now()&&claim.v===c.token_hash?c:null;}catch{return null;}
 }
+export function isPrimaryClient(req){return !isWorker&&clientFromRequest(req)?.is_internal===1;}
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const port=s.address().port;await new Promise(r=>s.close(r));return port;}
 export function workerEnvironment(client,port){
  const allowed=['PATH','Path','SystemRoot','TEMP','TMP','HOME','NODE_ENV','GROQ_API_KEY','GROQ_MODEL','WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD','FRANCISCA_PYTHON','EDGE_TTS_PYTHON','PUBLIC_BASE_URL'];
@@ -73,6 +76,26 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   return false;
  }
  const p=url.pathname;
+ if(req.method==='GET'&&(p==='/conheca'||p==='/cadastro'||p==='/entrar'||p==='/'&&!authorized(req)&&!clientFromRequest(req))){
+  res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
+  fs.createReadStream(fileURLToPath(new URL('./public/landing.html',import.meta.url))).pipe(res);return true;
+ }
+ if(req.method==='GET'&&['/landing.css','/landing.js'].includes(p)){
+  res.writeHead(200,{'Content-Type':p.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','Cache-Control':'no-cache'});fs.createReadStream(fileURLToPath(new URL('./public'+p,import.meta.url))).pipe(res);return true;
+ }
+ if((p==='/api/platform/signup'||p==='/api/platform/signin')&&req.method==='POST'){
+  const signingUp=p.endsWith('/signup'),guard=signingUp?signupLimiter:passwordLimiter,ip=accessClientKey(req);
+  if(guard.blocked(ip)){respond(res,429,{error:'Muitas tentativas. Aguarde alguns minutos e tente novamente.'});return true;}
+  guard.failed(ip);const input=await json(req),accountKey=crypto.createHash('sha256').update(String(input.identifier||input.email||'').trim().toLowerCase().slice(0,200)).digest('hex');
+  if(!signingUp&&accountPasswordLimiter.blocked(accountKey)){respond(res,429,{error:'Muitas tentativas. Aguarde alguns minutos.'});return true;}
+  if(!signingUp)accountPasswordLimiter.failed(accountKey);
+  try{
+   const c=signingUp?registry().signup(input):registry().signin(input);
+   if(!c){respond(res,401,{error:'E-mail ou senha inválidos, ou conta indisponível.'});return true;}
+   if(!signingUp){guard.clear(ip);accountPasswordLimiter.clear(accountKey);}
+   res.setHeader('Set-Cookie',clientCookie(c));respond(res,signingUp?201:200,{ok:true,next:signingUp?'/#/training':'/#/overview'});
+  }catch(e){respond(res,422,{error:String(e.message).slice(0,200)});}return true;
+ }
  if(p==='/client/access'&&req.method==='GET'){
   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
   res.end('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Acesso Prospector</title><style>body{font:16px system-ui;background:#f4f7f6;display:grid;place-items:center;min-height:90vh}main{background:white;padding:40px;border-radius:20px;max-width:400px}a{color:#207c59}</style><main><h1>Seu espaço no Prospector</h1><p id="message">Validando seu acesso…</p><a href="/access">Acesso administrativo</a></main><script>(async()=>{const token=location.hash.slice(1);history.replaceState(null,"","/client/access");const m=document.getElementById("message");if(!token){m.textContent="Use o link privado recebido da sua agência.";return;}try{const r=await fetch("/api/platform/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})});if(!r.ok)throw Error();location.replace("/");}catch{m.textContent="Acesso inválido ou suspenso. Solicite um novo link."}})()</script></html>');return true;
@@ -95,6 +118,7 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  if(p==='/api/platform/credits'&&client){respond(res,200,{...registry().publicClient(client),items:registry().events(client.id),package:{credits:250,priceBrl:9.9}});return true;}
  if(p.startsWith('/api/platform/')){
   if(client||!authorized(req)){respond(res,403,{error:'Acesso exclusivo do painel master'});return true;}
+  if(p==='/api/platform/primary-client'&&req.method==='POST'){respond(res,200,registry().configurePrimary(await json(req)));return true;}
   if(p==='/api/platform/clients'&&req.method==='GET'){respond(res,200,{items:registry().list()});return true;}
   if(p==='/api/platform/clients'&&req.method==='POST'){const r=registry().create(await json(req));respond(res,201,{...r,accessPath:'/client/access#'+r.token});return true;}
   const m=p.match(/^\/api\/platform\/clients\/([a-f0-9-]{36})\/(credits|status|access|open|release-reservations)$/);
@@ -116,10 +140,12 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  }
  if(client){
   if(p==='/access'||p==='/api/auth/exchange'||p.startsWith('/mcp')){respond(res,403,{error:'Acesso exclusivo do administrador'});return true;}
+  if(client.is_internal===1)return false;
   await proxy(req,res,client);return true;
  }
  // A stale client cookie must never fall through to an administrator session.
  if(String(req.headers.cookie||'').includes(cookieName+'=')&&!['/access','/api/auth/exchange'].includes(p)){respond(res,401,{error:'Acesso do cliente expirou ou foi suspenso'});return true;}
+ if(authorized(req)&&p.startsWith('/api/')&&!['/api/auth/exchange'].includes(p)){respond(res,403,{error:'Abra o painel de um cliente para acessar a operação.'});return true;}
  return false;
 }
 if(!isWorker)for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{for(const w of workers.values())w.child.kill(signal);});

@@ -1,6 +1,6 @@
 import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
-import {handlePlatform} from './platform.mjs';
+import {handlePlatform,isPrimaryClient} from './platform.mjs';
 import {handleTraining} from './training.mjs';
 import {accessClientKey,createAccessLimiter} from './access-rate-limit.mjs';
 import crypto from 'node:crypto';
@@ -315,7 +315,7 @@ async function exchangeAccess(req,res){
  return respond(res,200,{ok:true});
 }
 function protectedAccess(req,res,pathname){
- if(authorized(req))return true;
+ if(authorized(req)||isPrimaryClient(req))return true;
  if(req.method==='GET'&&(pathname==='/'||pathname==='/index.html')){
   res.writeHead(302,{Location:'/access','Cache-Control':'no-store'});res.end();return false;
  }
@@ -332,7 +332,7 @@ function sameOriginWrite(req,res){
  if(!['POST','PUT','PATCH','DELETE'].includes(req.method))return true;
  const origin=String(req.headers.origin||'');if(!origin)return true;
  const host=String(req.headers['x-forwarded-host']||req.headers.host||'');
- const protocol=String(req.headers['x-forwarded-proto']||'https').split(',')[0].trim();
+ const protocol=String(req.headers['x-forwarded-proto']||(envIsProd?'https':'http')).split(',')[0].trim();
  if(origin===protocol+'://'+host)return true;
  res.writeHead(403,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({error:'Origem não autorizada'}));return false;
 }
