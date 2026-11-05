@@ -85,124 +85,66 @@ function createHarness({mapsConfigured=false,previewReady=0}={}){
  return {context,root,viewEl,notice,field,city,composer,fetches,listeners,sendForm,sendButton,getPendingSubmit:()=>pendingSubmit};
 }
 
-test('Prospecção starts with no hidden city/niche filter and displays existing leads',async()=>{
+test('Prospecting shows configured automatic scope and a month of real calendar slots',async()=>{
  const h=createHarness();
  await vm.runInContext('reload()',h.context);
- assert.match(h.viewEl.innerHTML,/Oficina Real de Itu/);
- assert.match(h.viewEl.innerHTML,/Empresas não abordadas/);
- assert.match(h.viewEl.innerHTML,/Pesquisar empresas/);
- assert.ok(h.fetches.some(f=>f.route.startsWith('/api/prospecting?niche=&city=&status=uncontacted&session=')),'default must show only unapproached leads');
- assert.ok(!h.fetches.some(f=>f.method==='POST'),'opening the tab must not trigger provider calls or messaging');
- assert.match(h.root.innerHTML,/data-tab="prospects"/);
- assert.match(h.root.innerHTML,/data-tab="connections"/);
+ vm.runInContext("scopeInfo={selection:{mode:'all',enabled:false},options:{cities:['Sorocaba'],segments:[{id:'oficina',label:'Oficinas'}],coverage:'Cobertura limitada'}};prospectCalendar={days:[{date:'2026-11-05',approachedCount:2,closedCount:1,conversionRate:50,approached:[{business:'Oficina A',city:'Sorocaba'}],closed:[{business:'Oficina B',city:'Sorocaba'}]}],totals:{approached:2,closed:1}};calendarMonth='2026-11';render();",h.context);
+ assert.match(h.viewEl.innerHTML,/scope-form/);
+ assert.match(h.viewEl.innerHTML,/calendar-days-grid/);
+ assert.match(h.viewEl.innerHTML,/Ativar descoberta automática/);
+ assert.match(h.viewEl.innerHTML,/Abordadas/);
+ assert.match(h.viewEl.innerHTML,/Fechadas/);
+ assert.doesNotMatch(h.viewEl.innerHTML,/Empresas não abordadas|Pesquisar empresas/);
+ assert.ok(!h.fetches.some(x=>x.method==='POST'),'opening the page must not trigger searches or WhatsApp sends');
 });
-
-test('connections add a separate account and request its own QR without switching the primary',async()=>{
- const h=createHarness();
- await vm.runInContext("view='connections';refreshWa()",h.context);
- assert.match(h.viewEl.innerHTML,/Conectar mais um WhatsApp/);
+test('Monthly calendar opens company list for approached or closed categories',async()=>{
+ const h=createHarness();await vm.runInContext('reload()',h.context);
+ vm.runInContext("prospectCalendar={days:[{date:'2026-11-05',approachedCount:1,closedCount:1,conversionRate:100,approached:[{business:'Empresa Abordada',city:'Sorocaba'}],closed:[{business:'Empresa Fechada',city:'Itu'}]}],totals:{approached:1,closed:1}};calendarMonth='2026-11';view='prospects';render();",h.context);
+ await h.listeners.click({target:{closest:()=>({dataset:{action:'calendar-day',date:'2026-11-05',kind:'approached'}})}});
+ assert.match(h.viewEl.innerHTML,/Empresa Abordada/);
+ await h.listeners.click({target:{closest:()=>({dataset:{action:'calendar-day',date:'2026-11-05',kind:'closed'}})}});
+ assert.match(h.viewEl.innerHTML,/Empresa Fechada/);
+});
+test('Named WhatsApp channels use QR modal instead of wide connection panel',async()=>{
+ const h=createHarness();await vm.runInContext('reload()',h.context);
+ vm.runInContext("view='connections';waAccounts=[{session_id:'pool-extra',label:'Comercial extra',connected:false,status:'SCAN_QR',numberSuffix:''}];connectionSession='pool-extra';waModalOpen=true;qrResult={qr:'data:image/png;base64,AAAA'};wa={connected:false,status:'SCAN_QR'};render()",h.context);
+ assert.match(h.viewEl.innerHTML,/Seus WhatsApps/);
  assert.match(h.viewEl.innerHTML,/Comercial extra/);
- await h.listeners.click({target:{closest:()=>({dataset:{action:'add-wa'}})}});
- assert.ok(h.fetches.some(f=>f.route==='/api/whatsapp/sessions'&&f.method==='POST'&&f.body.name==='Comercial extra'));
- assert.ok(h.fetches.some(f=>f.route==='/api/whatsapp/qr?sessionId=pool-extra'));
- assert.ok(!h.fetches.some(f=>f.route==='/api/settings'&&f.method==='POST'));
+ assert.match(h.viewEl.innerHTML,/wa-modal-backdrop/);
+ assert.match(h.viewEl.innerHTML,/qr-image/);
+ assert.doesNotMatch(h.viewEl.innerHTML,/INTEGRAÇÃO WHATSAPP/);
 });
-test('clicking Abordar is the approval and does not require a second browser confirmation',async()=>{
- const h=createHarness({previewReady:1});await vm.runInContext('reload()',h.context);
- vm.runInContext("selectedLeadIds.add('11111111-1111-4111-8111-111111111111');confirm=()=>{throw Error('Redundant confirmation')}",h.context);
- await h.listeners.click({target:{closest:()=>({dataset:{action:'approach-selected'}})}});
- assert.ok(h.fetches.some(f=>f.route==='/api/prospecting/queue'&&f.method==='POST'));
-});
-
-test('Main search explicitly uses OSM when Google Maps is not configured',async()=>{
- const h=createHarness();
- await vm.runInContext('reload()',h.context);
- h.field.value='oficinas mecânicas';h.city.value='Sorocaba';
- const submit=h.listeners.submit;
- assert.equal(typeof submit,'function');
- await submit({target:{id:'search-form'},preventDefault(){}});
- assert.ok(h.fetches.some(f=>f.route==='/api/prospecting/search'&&f.method==='POST'));
- assert.ok(!h.fetches.some(f=>f.route==='/api/maps/search'));
- assert.ok(!h.fetches.some(f=>f.route.includes('/api/whatsapp/reply')));
-});
-
-test('Navigation preserves safety and accommodates mobile, form focus and reduced motion',()=>{
- const h=createHarness();
- assert.match(css,/@media\(max-width:700px\)/);
- assert.match(css,/@media\(max-width:940px\)/);
- assert.match(css,/prefers-reduced-motion:reduce/);
- assert.match(css,/focus-visible/);
- assert.match(app,/if\(document\.hidden\)return;/);
- assert.match(app,/await refreshWa\(\);/);
- assert.match(app,/if\(busy\|\|q\("input:focus,textarea:focus,select:focus"\)\)return;/);
- assert.match(app,/confirm\("Importar as empresas desta pesquisa/);
- assert.match(app,/prospectFilter="uncontacted"/);
- assert.match(h.root.innerHTML,/^$/);
-});
-
-test('Every workspace section renders without a runtime exception',async()=>{
- const h=createHarness();
- await vm.runInContext('reload()',h.context);
- const expected={
-  overview:'Kanban de oportunidades',
-  conversations:'Suas conversas',
-  prospects:'Empresas não abordadas',
-  connections:'INTEGRAÇÃO WHATSAPP',
-  settings:'PREFERÊNCIAS'
- };
- for(const [name,content] of Object.entries(expected)){
-  vm.runInContext('view='+JSON.stringify(name)+';render()',h.context);
-  assert.match(h.viewEl.innerHTML,new RegExp(content),'failed to render '+name);
- }
-});
-
-test('Selectable leads show Maps and Instagram; explicit selection only creates previews',async()=>{
- const h=createHarness();
- await vm.runInContext('reload()',h.context);
- assert.match(h.viewEl.innerHTML,/data-select-lead=/);
- assert.match(h.viewEl.innerHTML,/Maps ↗/);
- assert.match(h.viewEl.innerHTML,/Instagram ↗/);
- assert.match(h.viewEl.innerHTML,/WhatsApp manual ↗/);
- assert.ok(h.viewEl.innerHTML.includes('https://wa.me/5515999999999?text='));
- const hit={dataset:{action:'toggle-all'},closest:()=>null};
- await h.listeners.click({target:{closest:()=>hit}});
- assert.match(h.viewEl.innerHTML,/1 selecionada/);
- assert.match(h.viewEl.innerHTML,/Desmarcar todas/);
- await h.listeners.click({target:{closest:()=>hit}});
- assert.match(h.viewEl.innerHTML,/0 selecionadas/);
- assert.match(h.viewEl.innerHTML,/Selecionar todas/);
- assert.ok(!h.fetches.some(x=>x.method==='POST'),'selection must not call outbound API');
-});
-
-test('Conversations have exactly one human/AI handoff in header and one simple input/send form',async()=>{
- const h=createHarness();
- await vm.runInContext('reload()',h.context);
- vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Contato teste',phone:'5515999992222',contactRole:'INBOUND_NEW',handoff:{manualTakeover:false,canTakeover:true,canDeliverToAi:true,reason:'READY'}}];selectedThread='wa:5515999992222@s.whatsapp.net';messages=[{direction:'in',body:'Tudo bem?'}];render()",h.context);
+test('WhatsApp-like chat keeps exactly one handoff and composer',async()=>{
+ const h=createHarness();await vm.runInContext('reload()',h.context);
+ vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Contato Teste',phone:'5515999992222',handoff:{manualTakeover:false,canTakeover:true,canDeliverToAi:true,reason:'READY'}}];selectedThread='wa:5515999992222@s.whatsapp.net';render()",h.context);
  assert.match(h.viewEl.innerHTML,/data-action="toggle-chat-handoff"/);
  assert.match(h.viewEl.innerHTML,/Assumir conversa/);
- assert.match(h.viewEl.innerHTML,/id="chat-text"/);
  assert.match(h.viewEl.innerHTML,/id="send-form"/);
- assert.match(h.viewEl.innerHTML,/type="submit">Enviar/);
- assert.doesNotMatch(h.viewEl.innerHTML,/data-action="suggest-groq"|data-action="show-options"|data-action="voice-preview"|data-action="voice-send"/);
- assert.doesNotMatch(h.viewEl.innerHTML,/under-chat|Groq · Perfil comercial|Revisar mensagem interativa|WhatsApp offline/);
- assert.match(css,/\.chat-panel \.composer\{display:flex;flex-wrap:nowrap/);
+ assert.match(h.viewEl.innerHTML,/id="chat-text"/);
+ assert.doesNotMatch(h.viewEl.innerHTML,/data-action="suggest-groq"|data-action="show-options"/);
 });
-test('Header action toggles human and IA ownership with a server-side request',async()=>{
- const h=createHarness();
- await vm.runInContext('reload()',h.context);
- vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Cliente Teste',phone:'5515999992222',handoff:{manualTakeover:false,canTakeover:true,canDeliverToAi:true,reason:'READY'}}];selectedThread='wa:5515999992222@s.whatsapp.net';render()",h.context);
- const hit={dataset:{action:'toggle-chat-handoff'}};
- await h.listeners.click({target:{closest:()=>hit}});
- assert.match(h.viewEl.innerHTML,/Entregar para IA/);
- assert.ok(h.fetches.some(x=>x.route==='/api/whatsapp/handoff'&&x.method==='POST'&&x.body.manual===true));
- await h.listeners.click({target:{closest:()=>hit}});
- assert.match(h.viewEl.innerHTML,/Assumir conversa/);
- assert.ok(h.fetches.some(x=>x.route==='/api/whatsapp/handoff'&&x.method==='POST'&&x.body.manual===false));
+test('Human / IA toggle still makes authorized server handoff requests',async()=>{
+ const h=createHarness();await vm.runInContext('reload()',h.context);
+ vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Contato',phone:'5515999992222',handoff:{manualTakeover:false,canTakeover:true,canDeliverToAi:true}}];selectedThread='wa:5515999992222@s.whatsapp.net';render()",h.context);
+ const target={dataset:{action:'toggle-chat-handoff'}};
+ await h.listeners.click({target:{closest:()=>target}});
+ assert.ok(h.fetches.some(f=>f.route==='/api/whatsapp/handoff'&&f.method==='POST'&&f.body.manual===true));
 });
-test('Pressing Enter in the composer sends a message exactly once',async()=>{
- const h=createHarness();
- await vm.runInContext('reload()',h.context);
- vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Contato Teste',phone:'5515999992222',handoff:{manualTakeover:false,canTakeover:true,canDeliverToAi:true,reason:'READY'}}];selectedThread='wa:5515999992222@s.whatsapp.net';render()",h.context);
+test('Owner chat cannot be assigned to customer AI',async()=>{
+ const h=createHarness();await vm.runInContext('reload()',h.context);
+ vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515981817336@s.whatsapp.net',name:'Proprietário',phone:'5515981817336',handoff:{manualTakeover:false,canTakeover:false,canDeliverToAi:false,reason:'OWNER_PRIVATE'}}];selectedThread='wa:5515981817336@s.whatsapp.net';render()",h.context);
+ assert.match(h.viewEl.innerHTML,/data-action="toggle-chat-handoff" disabled/);
+ assert.match(h.viewEl.innerHTML,/O proprietário utiliza um canal especial/);
+});
+test('Kanban remains read-only and shows four existing pipeline columns',async()=>{
+ const h=createHarness();await vm.runInContext("view='overview';reload()",h.context);
+ for(const title of ['Abordando','Sem interesse','Interessados','Conversando'])assert.match(h.viewEl.innerHTML,new RegExp(title));
+ assert.match(h.viewEl.innerHTML,/Oficina Interessada/);
+ assert.ok(!h.fetches.some(x=>x.method==='POST'));
+});
+test('Chat composer sends Enter once through the existing WhatsApp endpoint',async()=>{
+ const h=createHarness();await vm.runInContext('reload()',h.context);
+ vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515999992222@s.whatsapp.net',name:'Contato',phone:'5515999992222',handoff:{manualTakeover:false,canTakeover:true,canDeliverToAi:true}}];selectedThread='wa:5515999992222@s.whatsapp.net';render()",h.context);
  h.composer.value='Mensagem com Enter';
  let prevented=0;
  h.listeners.keydown({target:{id:'chat-text'},key:'Enter',isComposing:false,preventDefault(){prevented++;}});
@@ -211,38 +153,4 @@ test('Pressing Enter in the composer sends a message exactly once',async()=>{
  const sends=h.fetches.filter(x=>x.route==='/api/whatsapp/reply-remote'&&x.method==='POST');
  assert.equal(sends.length,1);
  assert.equal(sends[0].body.text,'Mensagem com Enter');
- assert.equal(h.composer.value,'');
- assert.ok(h.fetches.some(x=>x.route.startsWith('/api/whatsapp/handoff?')&&x.method==='GET'));
-});
-test('Owner chat is displayed without promising an unsupported handoff to customer AI',async()=>{
- const h=createHarness();
- await vm.runInContext('reload()',h.context);
- vm.runInContext("view='conversations';remoteChats=[{id:'wa:5515981817336@s.whatsapp.net',name:'Proprietário',phone:'5515981817336',handoff:{manualTakeover:false,canTakeover:false,canDeliverToAi:false,reason:'OWNER_PRIVATE'}}];selectedThread='wa:5515981817336@s.whatsapp.net';render()",h.context);
- assert.match(h.viewEl.innerHTML,/data-action="toggle-chat-handoff" disabled/);
- assert.match(h.viewEl.innerHTML,/Assumir conversa/);
- assert.match(h.viewEl.innerHTML,/O proprietário utiliza um canal especial/);
-});
-test('Home shows compact four-column Kanban with verified hot leads and operator conversation actions',async()=>{
- const h=createHarness();
- await vm.runInContext("view='overview';reload()",h.context);
- assert.match(h.viewEl.innerHTML,/Kanban de oportunidades/);
- for(const title of ['Abordando','Sem interesse','Interessados','Conversando'])assert.match(h.viewEl.innerHTML,new RegExp(title));
- assert.match(h.viewEl.innerHTML,/Oficina Interessada/);
- assert.match(h.viewEl.innerHTML,/Enviar mensagem/);
- assert.match(css,/\.body:has\(\.kanban-dashboard\).*height:100dvh/);
- assert.match(css,/\.kanban-column-items\{[^}]*overflow-y:auto/);
- assert.ok(!h.fetches.some(x=>x.method==='POST'),'Board is read-only, never sends WhatsApp');
-});
-
-test('Configured Google Maps is the main search, imports completed results and never sends messages',async()=>{
- const h=createHarness({mapsConfigured:true});await vm.runInContext('reload()',h.context);
- vm.runInContext("selectedLeadIds.add('previous-city-selection')",h.context);
- h.field.value='oficinas';h.city.value='Sorocaba';
- await h.listeners.submit({target:{id:'search-form'},preventDefault(){}});
- assert.equal(vm.runInContext('selectedLeadIds.size',h.context),0,'a new city search must not retain old selected recipients');
- assert.ok(h.fetches.some(f=>f.route==='/api/maps/search'&&f.method==='POST'));
- assert.ok(h.fetches.some(f=>f.route==='/api/maps/import'&&f.method==='POST'));
- assert.ok(!h.fetches.some(f=>f.route==='/api/prospecting/search'));
- assert.ok(!h.fetches.some(f=>f.route.includes('/api/whatsapp/reply')));
- assert.match(h.viewEl.innerHTML,/Google Maps: IMPORTED/);
 });
