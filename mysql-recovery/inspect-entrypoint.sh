@@ -37,12 +37,22 @@ archive_old_binlog() {
   fi
 }
 if [ "${MYSQL_RECOVERY_ARCHIVE_OLD_BINLOGS:-0}" = '1' ]; then
+  # This recovery targets one known three-log snapshot. Refuse any other index:
+  # rewriting it to .000003 would hide newer logs needed for recovery.
+  expected_index="$(printf './binlog.000001\n./binlog.000002\n./binlog.000003\n')"
+  actual_index="$(cat "$MYSQL_RECOVERY_DATA_DIR/binlog.index" 2>/dev/null || true)"
+  if [ "$actual_index" = "$expected_index" ] &&
+     [ -f "$MYSQL_RECOVERY_DATA_DIR/binlog.000003" ] &&
+     [ -z "$(find "$MYSQL_RECOVERY_DATA_DIR" -maxdepth 1 -type f -name 'binlog.[0-9]*' ! -name 'binlog.000001' ! -name 'binlog.000002' ! -name 'binlog.000003' ! -name '*.gz' -print)" ]; then
   archive_old_binlog "$MYSQL_RECOVERY_DATA_DIR/binlog.000001"
   archive_old_binlog "$MYSQL_RECOVERY_DATA_DIR/binlog.000002"
   if [ ! -e "$MYSQL_RECOVERY_DATA_DIR/binlog.000001" ] && [ ! -e "$MYSQL_RECOVERY_DATA_DIR/binlog.000002" ] && [ -f "$MYSQL_RECOVERY_DATA_DIR/binlog.000003" ]; then
     printf './binlog.000003\n' > "$MYSQL_RECOVERY_DATA_DIR/binlog.index"
     chown mysql:mysql "$MYSQL_RECOVERY_DATA_DIR/binlog.index" 2>/dev/null || true
     echo '[mysql recovery] binlog index now points only to retained latest log'
+  fi
+  else
+    echo '[mysql recovery] snapshot differs from expected three-log recovery; leaving logs and index intact'
   fi
   df -h "$MYSQL_RECOVERY_DATA_DIR" || true
 fi
