@@ -1,6 +1,6 @@
 // Read-only inventory of unapproached business contacts for one isolated workspace.
 // A contact here is a candidate, NOT proof of WhatsApp marketing consent.
-import {all,getSetting} from './db.mjs';
+import {all,one,getSetting,setSetting} from './db.mjs';
 import {recontactDecision} from './prospecting-recontact.mjs';
 import {availableApproachCredits} from './tenant-credits.mjs';
 
@@ -32,4 +32,30 @@ export function discoveryStockSnapshot(at=new Date(),{target=getSetting('discove
  }
  return {...replenishmentPlan({target,ready,credits}),duplicates,asOf:at.toISOString(),
   definition:'uncontacted-business-phone-not-suppressed',permissionNotImplied:true};
+}
+
+
+// A durable morning checkpoint prevents the worker from continuously refilling
+// contacts sent during the day. The day is always based on Sao Paulo time.
+export function localStockDay(input=new Date()){
+ const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{
+  timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'
+ }).formatToParts(input).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));
+ return parts.year+'-'+parts.month+'-'+parts.day;
+}
+
+export function dailyRefillBudget(at=new Date(),options={}){
+ const stock=discoveryStockSnapshot(at,options);
+ const day=localStockDay(at);
+ let checkpoint=getSetting('discovery_stock_checkpoint',null);
+ if(checkpoint?.day!==day){
+  checkpoint={day,startedAt:at.toISOString(),carryover:Math.min(stock.target,stock.ready)};
+  setSetting('discovery_stock_checkpoint',checkpoint);
+ }
+ // Already discovered business numbers count against today's budget even after
+ // they are approached; their removal from "ready" must NOT trigger more search.
+ const added=one("SELECT COUNT(*) AS n FROM leads WHERE created_at>=? AND phone IS NOT NULL",checkpoint.startedAt)?.n||0;
+ const need=Math.max(0,stock.fundedTarget-checkpoint.carryover-added);
+ return {...stock,day,carryover:checkpoint.carryover,foundSinceCheckpoint:added,
+  missing:need,full:need===0,checkpointAt:checkpoint.startedAt};
 }
