@@ -144,11 +144,11 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   const input=await json(req),mode=String(input.mode||'');
   if(!['master','production'].includes(mode)){respond(res,422,{error:'Modo inválido'});return true;}
   res.setHeader('Set-Cookie',primaryModeCookie(client,mode));
-  respond(res,200,{ok:true,role:mode==='master'?'master':'client',next:mode==='master'?'#/clients':'#/overview'});
+  respond(res,200,{ok:true,role:mode==='master'?'master':'client',next:mode==='master'?'#/dashboard':'#/overview'});
   return true;
  }
  if(p==='/api/platform/context'){
-  if(ownerMaster)respond(res,200,{role:'master',name:'Consecom Brasil',canSwitchWorkspace:true,internalAccount:true,package:{credits:250,priceBrl:9.9}});
+  if(ownerMaster)respond(res,200,{role:'master',name:client.name,email:client.email,canSwitchWorkspace:true,internalAccount:true,package:{credits:250,priceBrl:9.9}});
   else if(client)respond(res,200,{role:'client',...registry().publicClient(client),canSwitchWorkspace:primary,internalAccount:primary,canReturnToMaster:false,package:{credits:250,priceBrl:9.9}});
   else if(authorized(req))respond(res,200,{role:'master',name:'Consecom Brasil',canSwitchWorkspace:false,package:{credits:250,priceBrl:9.9}});
   else respond(res,401,{error:'Acesso necessário'});return true;
