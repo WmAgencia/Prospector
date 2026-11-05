@@ -46,6 +46,7 @@ import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox
 import {recordInboundTranscript} from './waakg-bridge.mjs';
 import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inbound.mjs';
 import {voiceStatus,makeFranciscaVoice,makeFranciscaCallPcm} from './francisca-tts.mjs';
+import {handlePanelAssistant} from './francisca-panel-assistant.mjs';
 import {wavFromPcm16} from './francisca-call-lab.mjs';
 import {voicePreview,sendApprovedVoice} from './waakg-audio-outbound.mjs';
 import {authorizeCallBridge,processCallBridge,callBridgeStatus} from './francisca-call-bridge.mjs';
@@ -547,6 +548,7 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/groq/owner')return respond(res,200,ownerStatus());
   if(req.method==='GET'&&pathname==='/api/groq/capabilities')return respond(res,200,{count:agentTools.length,tools:agentTools.map(t=>({name:t.function.name,description:t.function.description})),owner:ownerStatus()});
   if(req.method==='GET'&&pathname==='/api/groq/healthcheck'){const status=await runAgentTool('system_status');const settings=await runAgentTool('safe_settings');return respond(res,200,{ok:true,toolCount:agentTools.length,status:{leads:status.leads,threads:status.threads,paused:status.settings.paused,whatsappConnected:status.whatsapp.connected},settingsReadable:typeof settings.settings.paused==='boolean'});}
+  if(await handlePanelAssistant(req,res,url,{json,respond}))return;
   if(req.method==='GET'&&pathname==='/api/ai/status')return respond(res,200,aiStatus());
   if(req.method==='POST'&&pathname==='/api/ai/test'){
    const result=await aiDraft({text:"Responda somente OK."});
