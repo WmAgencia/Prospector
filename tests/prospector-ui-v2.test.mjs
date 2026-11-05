@@ -40,7 +40,8 @@ function createHarness({mapsConfigured=false,previewReady=0}={}){
  const fetch=async (url,opts={})=>{
   const route=String(url);fetches.push({route,method:opts.method||'GET',body:opts.body?JSON.parse(opts.body):null});
   let data={};
-  if(route==='/api/state')data=state;
+  if(route==='/api/platform/context')data={role:'client',name:'Cliente Fictício',canSwitchWorkspace:false};
+  else if(route==='/api/state')data=state;
   else if(route==='/api/kanban')data={counts:{approaching:1,no_interest:1,interested:1,conversing:1},columns:{
     approaching:[{id:'test1',business:'Oficina Em Abordagem',phone:'5515999888877',city:'Sorocaba',noResponse:true}],
     no_interest:[{id:'test2',business:'Oficina Sem Interesse',phone:'5515999888876',city:'Sorocaba',blocked:false,nextEligibleAt:'2027-02-01T00:00:00Z'}],
@@ -76,7 +77,7 @@ function createHarness({mapsConfigured=false,previewReady=0}={}){
  const context=vm.createContext({
   document,window:{addEventListener(){}},location:{hash:'#/prospects'},
   fetch,URL,URLSearchParams,console,confirm:()=>false,
-  setInterval:()=>1,clearInterval(){},Date,crypto:{randomUUID:()=> 'mock'},
+  setInterval:()=>1,clearInterval(){},setTimeout:()=>1,clearTimeout(){},Date,crypto:{randomUUID:()=> 'mock'},
  });
  // Runtime starts after the top-level await only in the actual browser.
  const source=app.slice(0,app.lastIndexOf('\nawait reload();'));

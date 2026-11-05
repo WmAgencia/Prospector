@@ -31,7 +31,9 @@ let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
 let outreachHours={start:'08:00',end:'17:30'};
-let trainingRecordTimeout=null,franciscaOpen=false,franciscaVoiceOn=true,franciscaHistory=[],franciscaBusy=false,franciscaRecorder=null,franciscaAudio=null,franciscaRecordTimeout=null,franciscaConversationId=crypto.randomUUID();
+let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
+let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
+let noticeTimer=null,noticeToken=0;
 let calendarMonth=(()=>{const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).formatToParts(new Date()).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return parts.year+'-'+parts.month;})();
 async function loadCalendar(){
  try{prospectCalendar=await api('/api/prospecting/calendar?month='+encodeURIComponent(calendarMonth));if(view==='prospects')render();}catch(e){n('Calendário indisponível: '+e.message);}
@@ -47,7 +49,19 @@ function moveCalendar(delta){
 const waSessionQuery=()=>connectionSession?'?sessionId='+encodeURIComponent(connectionSession):'';
 let waRefreshing=null,qrOpening=false;
 function whatsappNotice(){return '';}
-function n(msg){notice=String(msg||"");const el=q("#notice");if(el){el.textContent=notice;el.classList.toggle("hidden",!notice);el.setAttribute("role",notice?"status":"none")}}
+function n(msg){
+ // Alerts are ephemeral: newer messages replace and restart the timeout.
+ notice=String(msg||'');const id=++noticeToken;
+ if(noticeTimer){clearTimeout(noticeTimer);noticeTimer=null;}
+ const el=q('#notice');
+ if(el){el.textContent=notice;el.classList.toggle('hidden',!notice);el.setAttribute('role',notice?'status':'none');}
+ if(notice)noticeTimer=setTimeout(()=>{
+  if(noticeToken!==id)return;
+  notice='';noticeTimer=null;
+  const current=q('#notice');
+  if(current){current.textContent='';current.classList.add('hidden');current.setAttribute('role','none');}
+ },4300);
+}
 async function api(path,opts={}){
  const r=await fetch(path,{credentials:"same-origin",cache:"no-store",...opts,headers:{"Accept":"application/json",...(opts.body?{"Content-Type":"application/json"}:{}),...(opts.headers||{})}});
  let data=await r.json().catch(()=>({}));
@@ -71,7 +85,7 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
  });
 }
 
-function nav(viewName){if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();}
+function nav(viewName){n('');if(platformContext.role==="master"&&!["overview","clients","credits","settings"].includes(viewName))viewName="overview";if(viewName==="clients"&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName="overview";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients"||view==="overview")loadClients();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();}
 
 function glyph(key){
  if(globalThis.ProspectorIcons)return globalThis.ProspectorIcons.svg(key);
@@ -162,7 +176,7 @@ async function toggleTrainingRecording(){
 }
 function franciscaWidget(){
  return '<div class="francisca-widget"><button type="button" class="francisca-orb" data-action="francisca-toggle" aria-label="'+(franciscaOpen?'Fechar Francisca':'Conversar com Francisca por voz')+'" aria-expanded="'+String(franciscaOpen)+'"><span>F</span><small>Francisca</small></button>'+
- (franciscaOpen?'<section class="francisca-window" role="dialog" aria-label="Assistente Francisca"><div class="francisca-header"><span class="francisca-avatar">F</span><div><strong>Francisca</strong><small>Assistente do seu painel · voz e texto</small></div><button type="button" data-action="francisca-close" aria-label="Fechar Francisca">×</button></div><div class="francisca-log" role="log" aria-live="polite">'+(franciscaHistory.length?franciscaHistory.map(m=>'<div class="francisca-message '+(m.role==='user'?'sent':'received')+'">'+esc(m.text)+'</div>').join(''):'<div class="francisca-intro"><strong>Oi! Sou a Francisca.</strong><p>Posso explicar seus indicadores, créditos, conexões e orientações de atendimento. Minha atuação aqui é consultiva: nenhuma ação é executada sem você.</p></div>')+(franciscaBusy?'<div class="francisca-message received">Preparando sua resposta…</div>':'')+'</div><form id="francisca-form" class="francisca-compose"><input id="francisca-input" maxlength="700" placeholder="Pergunte ou fale com a Francisca…" autocomplete="off" aria-label="Sua pergunta para Francisca"><button type="submit" class="francisca-send" '+(franciscaBusy?'disabled':'')+' aria-label="Enviar pergunta">➤</button></form><div class="francisca-controls"><button type="button" class="francisca-mic '+(franciscaRecorder?.state==='recording'?'recording':'')+'" data-action="francisca-record-toggle">'+(franciscaRecorder?.state==='recording'?'■ Parar gravação':'🎙 Conversar por voz')+'</button><button type="button" class="francisca-sound" data-action="francisca-sound">'+(franciscaVoiceOn?'🔊 Voz ligada':'🔇 Voz desligada')+'</button></div><p class="francisca-privacy">Microfone usado somente quando ativado. A conversa é processada pelo servidor da sua conta e seus fornecedores de IA; áudio não é salvo pelo painel.</p></section>':'')+'</div>';
+ (franciscaOpen?'<section class="francisca-window" role="dialog" aria-label="Assistente Francisca"><div class="francisca-header"><span class="francisca-avatar">F</span><div><strong>Francisca</strong><small>Assistente do seu painel · voz e texto</small></div><button type="button" data-action="francisca-close" aria-label="Fechar Francisca">×</button></div><div class="francisca-log" role="log" aria-live="polite">'+(franciscaHistory.length?franciscaHistory.map(m=>'<div class="francisca-message '+(m.role==='user'?'sent':'received')+'">'+esc(m.text)+'</div>').join(''):'<div class="francisca-intro"><strong>Oi! Sou a Francisca.</strong><p>Posso explicar seus indicadores, créditos, conexões e orientações de atendimento. Minha atuação aqui é consultiva: nenhuma ação é executada sem você.</p></div>')+(franciscaBusy?'<div class="francisca-message received">Preparando sua resposta…</div>':'')+'</div><form id="francisca-form" class="francisca-compose"><input id="francisca-input" maxlength="700" placeholder="Pergunte ou fale com a Francisca…" autocomplete="off" aria-label="Sua pergunta para Francisca"><button type="submit" class="francisca-send" '+(franciscaBusy?'disabled':'')+' aria-label="Enviar pergunta">➤</button></form><div class="francisca-controls"><button type="button" class="francisca-mic '+(franciscaVoiceActive?'recording':'')+'" data-action="francisca-record-toggle" aria-pressed="'+String(franciscaVoiceActive)+'">'+(franciscaVoiceActive?'■ Encerrar conversa por voz':'🎙 Conversar por voz')+'</button></div><p class="francisca-voice-status" role="status" aria-live="polite">'+esc(({'off':'Por texto, a Francisca responde somente por texto.','connecting':'Aguardando permissão do microfone…','listening':'● Estou ouvindo. Pode falar naturalmente.','hearing':'● Estou ouvindo sua frase…','processing':'Preparando a resposta da Francisca…','speaking':'A Francisca está falando. Logo depois volta a escutar.'})[franciscaVoiceState]||'Pronto para conversar.')+'</p><p class="francisca-privacy">A conversa por voz começa ao tocar no microfone e termina ao tocar em Encerrar. Áudios são processados somente para responder, sem gravação persistente no painel.</p></section>':'')+'</div>';
 }
 function renderFrancisca(){
  const old=q('.francisca-widget');
@@ -171,20 +185,54 @@ function renderFrancisca(){
  const next=wrap.firstElementChild;if(old&&next)old.replaceWith(next);
  q('.francisca-log')?.scrollTo({top:q('.francisca-log').scrollHeight,behavior:'smooth'});
 }
+function franciscaInlineError(message){
+ franciscaHistory.push({role:'assistant',text:String(message||'Não consegui concluir agora.').slice(0,380)});
+ franciscaHistory=franciscaHistory.slice(-20);renderFrancisca();
+}
 function stopFranciscaSound(){
- if(franciscaAudio){try{franciscaAudio.pause();franciscaAudio.src='';}catch{}franciscaAudio=null;}
+ const audio=franciscaAudio;franciscaAudio=null;
+ if(audio){try{audio.pause();audio.removeAttribute('src');audio.load();}catch{}}
+ if(franciscaAudioObjectURL){
+  try{URL.revokeObjectURL(franciscaAudioObjectURL);}catch{}
+  franciscaAudioObjectURL=null;
+ }
+ const resolve=franciscaAudioResolve;franciscaAudioResolve=null;
+ if(resolve)resolve();
+}
+function stopFranciscaVoice(){
+ franciscaVoiceActive=false;franciscaVoiceState='off';
+ if(franciscaVoiceSession){franciscaVoiceSession.stop();franciscaVoiceSession=null;}
+ stopFranciscaSound();
+ renderFrancisca();
 }
 async function speakFrancisca(text){
- if(!franciscaVoiceOn)return;
+ if(!franciscaVoiceActive)return;
  try{
-  const resp=await fetch('/api/ai/francisca-speak',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
-  if(!resp.ok)throw Error('Áudio indisponível');
-  const audioBlob=await resp.blob(),url=URL.createObjectURL(audioBlob);
-  stopFranciscaSound();const audio=new Audio(url);franciscaAudio=audio;
-  audio.onended=()=>{URL.revokeObjectURL(url);if(franciscaAudio===audio)franciscaAudio=null;};
-  audio.onerror=()=>{URL.revokeObjectURL(url);if(franciscaAudio===audio)franciscaAudio=null;};
-  await audio.play();
- }catch{n('Francisca respondeu por texto; a reprodução da voz não está disponível.');}
+  const response=await fetch('/api/ai/francisca-speak',{
+   method:'POST',credentials:'same-origin',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({text})
+  });
+  if(!response.ok)throw Error('Não foi possível gerar a voz agora.');
+  const blob=await response.blob();
+  if(!franciscaVoiceActive)return;
+  if(!blob.size)throw Error('O áudio da resposta veio vazio.');
+  stopFranciscaSound();
+  const url=URL.createObjectURL(blob),audio=new Audio(url);
+  franciscaAudio=audio;franciscaAudioObjectURL=url;
+  franciscaVoiceState='speaking';renderFrancisca();
+  await new Promise((resolve,reject)=>{
+   let settled=false;
+   franciscaAudioResolve=()=>{
+    if(settled)return;settled=true;resolve();
+   };
+   audio.onended=()=>{stopFranciscaSound();};
+   audio.onerror=()=>{stopFranciscaSound();reject(Error('A reprodução da voz falhou.'));};
+   Promise.resolve(audio.play()).catch(error=>{stopFranciscaSound();reject(error);});
+  });
+ }catch(error){
+  stopFranciscaSound();
+  if(franciscaVoiceActive)franciscaInlineError('A resposta em texto está disponível, mas a voz falhou. '+String(error.message||'').slice(0,80));
+ }
 }
 async function franciscaReply(input,isAudio=false){
  if(franciscaBusy)return;
@@ -192,38 +240,57 @@ async function franciscaReply(input,isAudio=false){
  try{
   let result;
   if(isAudio){
-   const resp=await fetch('/api/ai/francisca-turn',{method:'POST',credentials:'same-origin',headers:{'Content-Type':input.type,'X-Francisca-Conversation':franciscaConversationId},body:input});
-   result=await resp.json().catch(()=>({}));if(!resp.ok)throw Error(result.error||'Falha ao conversar');
+   const resp=await fetch('/api/ai/francisca-turn',{
+    method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':input.type||'audio/webm','X-Francisca-Conversation':franciscaConversationId},
+    body:input
+   });
+   result=await resp.json().catch(()=>({}));
+   if(!resp.ok)throw Error(result.error||'Não foi possível transcrever a sua fala.');
   }else{
-   result=await post('/api/ai/francisca-turn',{text:input,history:franciscaHistory.slice(-10),conversationId:franciscaConversationId});
+   result=await post('/api/ai/francisca-turn',{
+    text:input,history:franciscaHistory.slice(-10),
+    conversationId:franciscaConversationId
+   });
   }
-  franciscaHistory.push({role:'user',text:result.transcript||String(input).slice(0,700)},{role:'assistant',text:result.answer});
-  franciscaHistory=franciscaHistory.slice(-20);
-  renderFrancisca();
-  if(franciscaVoiceOn)void speakFrancisca(result.answer);
- }catch(e){franciscaHistory.push({role:'assistant',text:'Não consegui responder agora. '+String(e.message||'Tente novamente.').slice(0,120)});franciscaHistory=franciscaHistory.slice(-20);renderFrancisca();}
- finally{franciscaBusy=false;renderFrancisca();}
+  franciscaHistory.push({role:'user',text:result.transcript||String(input).slice(0,700)});
+  franciscaHistory.push({role:'assistant',text:result.answer});
+  franciscaHistory=franciscaHistory.slice(-20);renderFrancisca();
+  // Written messages are ALWAYS text-only. Voice is strictly opt-in.
+  if(isAudio&&franciscaVoiceActive)await speakFrancisca(result.answer);
+ }catch(error){
+  franciscaInlineError('Não consegui responder agora. '+String(error.message||'Tente novamente.').slice(0,150));
+ }finally{
+  franciscaBusy=false;renderFrancisca();
+ }
 }
 async function toggleFranciscaRecording(){
- if(franciscaRecorder?.state==='recording'){franciscaRecorder.stop();return;}
- if(franciscaBusy)return;
- stopFranciscaSound();if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){n('O navegador não permite áudio. Escreva para a Francisca.');return;}
- let stream;
+ // This is a real conversation control, not a push-to-talk recorder.
+ if(franciscaVoiceActive){stopFranciscaVoice();return;}
+ if(franciscaBusy){franciscaInlineError('Termine a resposta atual antes de iniciar a conversa por voz.');return;}
+ franciscaVoiceActive=true;franciscaVoiceState='connecting';renderFrancisca();
  try{
-  const mime=voiceMime();if(!mime)throw Error('Formato de áudio indisponível');
-  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
-  const rec=new MediaRecorder(stream,{mimeType:mime}),chunks=[];franciscaRecorder=rec;
-  rec.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
-  rec.onstop=async()=>{
-   if(franciscaRecordTimeout)clearTimeout(franciscaRecordTimeout);franciscaRecordTimeout=null;
-   stream.getTracks().forEach(t=>t.stop());franciscaRecorder=null;renderFrancisca();
-   const blob=new Blob(chunks,{type:mime});
-   if(blob.size>0&&blob.size<=5*1024*1024)await franciscaReply(blob,true);
-   else n('Áudio vazio ou grande demais para transcrever.');
-  };
-  rec.start();renderFrancisca();
-  franciscaRecordTimeout=setTimeout(()=>{if(rec.state==='recording')rec.stop();},45000);
- }catch(e){stream?.getTracks().forEach(t=>t.stop());franciscaRecorder=null;n('Não foi possível acessar o microfone: '+e.message);}
+  // Greet once, with the real Francisca voice, before opening microphone VAD.
+  // This avoids the assistant's own greeting being transcribed as user speech.
+  const [voiceModule]=await Promise.all([
+   import('./francisca-live.mjs'),
+   speakFrancisca('Oi! Sou a Francisca. Pode falar, estou te ouvindo.')
+  ]);
+  if(!franciscaVoiceActive)return;
+  const {createFranciscaVoiceSession}=voiceModule;
+  franciscaVoiceSession=createFranciscaVoiceSession({
+   onState:status=>{
+    if(status==='off'&&franciscaVoiceActive){franciscaVoiceActive=false;franciscaVoiceSession=null;}
+    franciscaVoiceState=status;renderFrancisca();
+   },
+   onError:message=>{if(franciscaVoiceActive)franciscaInlineError(message);},
+   onTurn:async blob=>{if(franciscaVoiceActive)await franciscaReply(blob,true);}
+  });
+  await franciscaVoiceSession.start();
+ }catch(error){
+  stopFranciscaVoice();
+  franciscaInlineError('Não foi possível iniciar a conversa por voz. Confira a permissão do microfone: '+String(error.message||'Erro').slice(0,160));
+ }
 }
 function trainingConversation(t){
  return '<section class="panel training-manual"><div class="heading"><div><span class="kicker">DO SEU JEITO</span><h3>O que seu atendimento precisa saber?</h3><p>Explique com suas próprias palavras. A IA transformará suas orientações em um perfil para sua revisão.</p></div></div>'+
@@ -623,7 +690,16 @@ async function loadMessages(id){
 }
 async function loadKanban(){try{kanban=await api('/api/kanban');salesResults=await api('/api/sales/outcomes').catch(()=>null);if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
 async function reload(){
- if(!workspaceInitialized){workspaceInitialized=true;try{platformContext=await api("/api/platform/context");}catch{}if(platformContext.role!=="master"&&view==="clients")view="overview";if(platformContext.role==="master"&&(!location.hash||!["overview","clients","credits","settings"].includes(view)))view="overview";}
+ if(!workspaceInitialized){
+  workspaceInitialized=true;
+  try{platformContext=await api('/api/platform/context');}
+  catch(e){root.innerHTML='<main class="load-error"><h2>Não foi possível acessar o painel</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';return;}
+  if(platformContext.role!=='master'&&view==='clients')view='overview';
+  if(platformContext.role==='master'&&(!location.hash||!['overview','clients','credits','settings'].includes(view)))view='overview';
+  // Show a working dashboard immediately; large API snapshots and WhatsApp
+  // sync are loaded after first paint instead of delaying the whole layout.
+  render();
+ }
  try{
   if(platformContext.role==="master"){await loadClients();lastRefresh=Date.now();render();return;}
   state=await api("/api/state");lastRefresh=Date.now();
@@ -669,7 +745,9 @@ document.addEventListener("click",async ev=>{
   if(action==='switch-workspace'){
     const mode=platformContext.role==='master'?'production':'master';
     const response=await post('/api/platform/workspace',{mode});
-    location.assign('/'+response.next);return;
+    // A hash-only navigation does not recreate the authenticated app context.
+    // Change the query string as well, forcing a full, credentialed page load.
+    location.replace('/?workspace='+encodeURIComponent(mode)+(response.next||'#/overview'));return;
    }
    if(action==='scope-toggle-niche'||action==='scope-toggle-city'){
     scopeNicheInput=q('#scope-niche')?.value||scopeNicheInput;
@@ -686,8 +764,7 @@ document.addEventListener("click",async ev=>{
     if(notice.includes('Abra o espaço de um cliente para conversar com a Francisca'))n('');
     renderFrancisca();return;
    }
-  if(action==='francisca-close'){franciscaOpen=false;stopFranciscaSound();renderFrancisca();return;}
-  if(action==='francisca-sound'){franciscaVoiceOn=!franciscaVoiceOn;if(!franciscaVoiceOn)stopFranciscaSound();renderFrancisca();return;}
+  if(action==='francisca-close'){franciscaOpen=false;stopFranciscaVoice();renderFrancisca();return;}
   if(action==='francisca-record-toggle'){await toggleFranciscaRecording();return;}
   if(action==='calendar-prev'||action==='calendar-next'){moveCalendar(action==='calendar-prev'?-1:1);return;}
   if(action==='calendar-day'){calendarDay=el.dataset.date||'';calendarCategory=el.dataset.kind==='closed'?'closed':'approached';render();return;}
@@ -774,7 +851,9 @@ document.addEventListener("submit",async ev=>{
  if(ev.target.id==='francisca-form'){
   const text=q('#francisca-input')?.value.trim();if(!text)return;
   const input=q('#francisca-input');if(input)input.value='';
-  await franciscaReply(text);return;
+  // Typing always returns a typed answer, even after a voice conversation.
+  if(franciscaVoiceActive)stopFranciscaVoice();
+  await franciscaReply(text,false);return;
  }
  if(ev.target.id==='scope-form'){
   scopeNicheInput=q('#scope-niche')?.value.trim()||'';

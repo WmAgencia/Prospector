@@ -26,7 +26,7 @@ test('calendar uses compact side-by-side approached and closed actions and conve
 });
 test('Francisca appears both in production and Master and errors stay within its popover',()=>{
  assert.ok(!app.includes("if(platformContext.role==='master')return ''"));
- assert.ok(app.includes("franciscaHistory.push({role:'assistant',text:'Não consegui responder agora."));
+ assert.ok(app.includes('franciscaInlineError('));
  assert.ok(app.includes('data-action="francisca-toggle"'));
 });
 test('owner workspace switch is displayed only with server-provided permission',()=>{
