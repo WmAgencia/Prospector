@@ -610,3 +610,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  .master-form-row{grid-template-columns:1fr}
  .master-donut-area{grid-template-columns:120px 1fr}
 }
+
+/* Francisca: explicit visual actions stay outside voice/TTS narration. */
+.francisca-message .francisca-quick-action{display:block;width:100%;margin-top:10px;padding:9px 13px;border:1px solid #6e47ce;border-radius:9px;background:#6d44d0;color:#fff;font:700 12px/1.3 inherit;cursor:pointer;transition:background .16s ease,transform .16s ease}
+.francisca-message .francisca-quick-action:hover{background:#5930bf;transform:translateY(-1px)}
+.francisca-message .francisca-quick-action:focus-visible{outline:3px solid #b595ff;outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.francisca-message .francisca-quick-action{transition:none}.francisca-message .francisca-quick-action:hover{transform:none}}
