@@ -7,7 +7,7 @@ import {ownerReceived} from "./groq-owner.mjs";
 import {classifyContact} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
-import {detectAutomaticReply} from './portfolio-offer-550.mjs';
+import {classifyInboundAutomation} from './inbound-automation.mjs';
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
 import {routeIntroductionReply} from "./prospecting-introduction.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
@@ -90,20 +90,27 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  const thread=getThread(lead.id,jid);
  const firstInbound=!one("SELECT id FROM messages WHERE thread_id=? AND direction=\'in\' LIMIT 1",thread.id);
  addMessage({threadId:thread.id,providerId:unique,direction:"in",body:content,status:"received"});
- let state=identity.role==='PROSPECT_APPROACHED'&&detectAutomaticReply(content)?'AUTO_REPLY':'REVIEW';
+ const automation=classifyInboundAutomation(content);
+ let state=automation.blocked?'AUTO_REPLY':'REVIEW';
  const ending=identity.role==='PROSPECT_APPROACHED'&&state!=='AUTO_REPLY'?salesEnding(content):null;
- if(state!=='AUTO_REPLY'&&(isExplicitOptOut(content)||ending==='OPT_OUT')){
+ if(isExplicitOptOut(content)||ending==='OPT_OUT'){
   stopLead(lead.id,"INBOUND_OPTOUT");state="OPT_OUT";
  }else if(state!=='AUTO_REPLY'&&(/^(?:não tenho interesse|nao tenho interesse|agora não|agora nao|não é o momento|nao e o momento)(?:[.!\s]|$)/i.test(content)||ending==='NO_INTEREST')){
   stage(lead.id,'NO_INTEREST','INBOUND_SOFT_DECLINE');state='NO_INTEREST';
  }else if(state!=='AUTO_REPLY'&&(/\b(humano|atendente|pessoa de verdade|falar com algu[eé]m)\b/i.test(content)||ending==='HUMAN_REVIEW')){
   run("UPDATE threads SET manual_takeover=1 WHERE id=?",thread.id);state="HUMAN";
  }
+ if(state==='AUTO_REPLY'){
+  audit('INBOUND_AUTOMATION_HELD',lead.id,{reason:automation.reason,action:automation.action});
+  if(automation.action==='HUMAN_REVIEW'){
+   run('UPDATE threads SET manual_takeover=1 WHERE id=?',thread.id);state='HUMAN';
+  }
+ }
  if(identity.role==='PROSPECT_APPROACHED'){
   if(state==='REVIEW'&&lead.stage!=='CONVERSING')stage(lead.id,'CONVERSING','PROSPECT_REPLIED');
   const outcome=state==='OPT_OUT'?'OPT_OUT':state==='HUMAN'?'HUMAN_REVIEW':state==='NO_INTEREST'?'NO_INTEREST':null;
   if(outcome)recordSalesOutcome({leadId:lead.id,status:outcome,providerId:unique,evidence:content});
-  if(!outcome&&process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true')grantAutonomousFirstReply(lead.id,content);
+  if(state==='REVIEW'&&process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true')grantAutonomousFirstReply(lead.id,content);
  }
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
@@ -131,7 +138,7 @@ function grantAutonomousFirstReply(leadId,text){
 export async function draftInbox(input){
  const row=one("SELECT * FROM waakg_inbox WHERE id=?",String(input.id||""));
  if(!row) return {status:404,body:{error:"Mensagem não encontrada"}};
- if(["OPT_OUT","HUMAN","SENT"].includes(row.state))return {status:409,body:{error:"Revisão humana obrigatória"}};
+ if(["OPT_OUT","HUMAN","SENT","AUTO_REPLY"].includes(row.state))return {status:409,body:{error:"Revisão humana obrigatória"}};
  const lead=one("SELECT * FROM leads WHERE id=?",row.lead_id);
  const thread=one("SELECT id,manual_takeover FROM threads WHERE lead_id=?",row.lead_id);
  if(thread?.manual_takeover)return {status:409,body:{error:"Conversa em atendimento humano"}};

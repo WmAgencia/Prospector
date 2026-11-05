@@ -6,7 +6,7 @@ import {getSetting} from './db.mjs';
 import {conversationAuthorized,operatorOffer} from './operator-outreach.mjs';
 import {requestPriceApproval,approvedPriceForLead} from './owner-price-approvals.mjs';
 import {prospectSalesContext,priceQuestion,salesEnding} from './sales-policy.mjs';
-import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup,safeGeneralReply} from './portfolio-offer-550.mjs';
+import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,proposalRequestWhileBusy,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup,safeGeneralReply} from './portfolio-offer-550.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
@@ -20,6 +20,7 @@ import {sendVoiceMedia} from './waakg-media.mjs';
 import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,acceptPart,partsFor} from './groq-reply-channels.mjs';
 import {waControlStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
 import {replyPacingEnabled,waitForReplyPacing} from './reply-pacing.mjs';
+import {INBOUND_AUTOMATION_VERSION} from './inbound-automation.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS groq_auto_events(provider_id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,at TEXT NOT NULL,error TEXT)");
 run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify before retry' WHERE state IN ('PROCESSING','SENDING')");
 const digits=s=>String(s||'').replace(/\D/g,'');
@@ -33,7 +34,7 @@ export function interestNotice(lead,evidence){
  for(const row of all("SELECT identity FROM lead_origins WHERE lead_id=? AND source='maps_extension'",lead.lead_id))if(/^https:\/\/(?:www\.google\.[a-z.]+\/maps\/|maps\.google\.[a-z.]+\/|maps\.app\.goo\.gl\/)/i.test(row.identity))links.push('Maps: '+row.identity);
  return ['⭐ Interesse real no Prospector','Empresa: '+business.business,'Contato: '+(business.name||'não informado'),'Telefone: '+business.phone,...links,'Assumir conversa: https://wa.me/'+business.phone,'Interesse: '+String(evidence||lead.body||'Intenção confirmada').slice(0,180),'Próximo passo: assumir atendimento e confirmar escopo.'].join('\n');
 }
-export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',approvedProspectFollowup:getSetting('sales_followup_enabled',true)===true,alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true,replyPacing:{enabled:replyPacingEnabled(),minSeconds:8,maxSeconds:35}};}
+export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',approvedProspectFollowup:getSetting('sales_followup_enabled',true)===true,alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true,inboundAutomationVersion:INBOUND_AUTOMATION_VERSION,replyPacing:{enabled:replyPacingEnabled(),minSeconds:8,maxSeconds:35}};}
 function approvedProspectFollowup(identity,jid){
  if(getSetting('sales_followup_enabled',true)!==true||identity.role!=='PROSPECT_APPROACHED')return false;
  const number=String(jid||'').split('@')[0];
@@ -148,6 +149,7 @@ export async function handleSalesTurn(providerId,deps={}){
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});
   return finish('REVIEW','GROQ_UNAVAILABLE');
  }
+ if(fixedOffer&&proposalRequestWhileBusy(r.body))draft.draft=fixedOfferPitch({business:r.business,segment:r.segment},new Date(),{busy:true});
  let replyText=refineChatReply(draft.draft,{state:dialogue,incoming:r.body});
  if(!replyText){
   audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});

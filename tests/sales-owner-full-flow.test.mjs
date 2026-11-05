@@ -69,4 +69,24 @@ test('a price question in the first reply respects Wesley introduction and then 
  assert.match(delivered.at(-1).message.text,/R\$ 550/);
  assert.ok(!d.one('SELECT id FROM owner_price_approvals WHERE lead_id=?',lead.id),'Fixed offer must not ask owner a second time');
 });
+test('short proposal questions and busy humans receive approved details without repeated permission requests',async()=>{
+ for(const [i,text] of ['Que seria isso?','Estou atendendo agora, manda os detalhes da proposta que vejo depois.'].entries()){
+  q.cancelApproachQueue();
+  const lead=d.addLead({business:'Empresa fictícia de atendimento '+i,phone:'55119000022'+String(i).padStart(2,'0')}).lead;
+  assert.equal(q.enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true}).status,202);
+  time+=90000;
+  assert.equal((await q.tickApproachQueue({currentTime:()=>time,getWaStatus:status,getSession:()=> 'synthetic',send})).status,'SENT');
+  incoming(lead,'Pode falar');
+  const due=Date.parse(intro.introductionStatus(lead.id).due_at);
+  assert.equal((await intro.tickIntroductions({currentTime:()=>due,session:()=> 'synthetic',status,send})).state,'SENT');
+  const providerId=incoming(lead,text);
+  const result=await a.handleSalesTurn(providerId,{...deps,draft:async()=>{throw Error('Approved proposal should not depend on model');}});
+  assert.equal(result.state,'SENT');
+  const response=delivered.at(-1).message.text;
+  assert.match(response,/R\$ 550/);
+  assert.doesNotMatch(response,/posso explicar|pode explicar|duas vagas|segunda.feira/i);
+  if(i===1){assert.match(response,/olhar com calma/);assert.doesNotMatch(response,/\?/);}
+ }
+});
+
 test.after(()=>{d.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});

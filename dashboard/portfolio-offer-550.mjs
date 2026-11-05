@@ -1,5 +1,6 @@
 // Canonical, operator-authorized base offer for approved site portfolio conversations.
 // Pure logic: no database, WhatsApp, owner notifications, or network calls.
+import {classifyInboundAutomation} from './inbound-automation.mjs';
 export const PORTFOLIO_OFFER_VERSION="consecom-portfolio-550-2026-11";
 export const PORTFOLIO_PRICE_BRL=550;
 export const PORTFOLIO_DOMAIN_MONTHS=12;
@@ -7,11 +8,11 @@ export const WESLEY_PRESENTATION="Meu nome é Wesley, sou dono da agência Conse
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
 const clean=s=>String(s||"").replace(/[\r\n\t<>]/g," ").replace(/\s+/g," ").trim();
 export function detectAutomaticReply(text=""){
- const n=norm(text);
- return /(?:mensagem|resposta|atendimento)\s+automatic[ao]|(?:assistente|robo|bot|menu)\s+(?:virtual|automatic[ao])|(?:digite|escolha|selecione|pressione)\s+(?:[0-9#*]|uma opcao)|(?:para (?:agendar|orcamento|atendimento|suporte|continuar).{0,45}(?:informe|digite|selecione))|(?:informe (?:seu )?nome.{0,80}(?:modelo|ano|data|motor|servico|defeito))|(?:nosso horario de atendimento.{0,80}(?:digite|opcao))/.test(n);
+ return classifyInboundAutomation(text).blocked;
 }
 export function portfolioQuestion(text=""){
  const n=norm(text);
+ if(proposalRequestWhileBusy(text)||/\b(?:(?:o )?que (?:seria|e) isso|que proposta (?:e essa|seria)|qual seria essa proposta)\b/.test(n))return true;
  return /(?:sobre o que(?: seria| e| se trata)?)|(?:do que (?:se trata|seria))|(?:qual (?:e |seria )?(?:a |essa |sua )?(?:proposta|oferta|ideia))|(?:me explica|explica|pode explicar|pode me falar|queria entender|pode falar|do que se trata)|(?:quanto (?:custa|fica|sai))|(?:qual (?:e )?o (?:preco|valor))|(?:valor do site|preco do site|a proposta)|(?:e o valor|e o preco)/.test(n);
 }
 export function isBaseOfferQuestion(text=""){
@@ -57,11 +58,16 @@ export function brDeliveryDate(at=new Date()){
  const target=new Date(Date.UTC(parts.year,parts.month-1,parts.day+3,12));
  return new Intl.DateTimeFormat("pt-BR",{timeZone:"UTC",day:"numeric",month:"long",year:"numeric"}).format(target);
 }
-export function fixedOfferPitch(lead={},at=new Date()){
+export function proposalRequestWhileBusy(text=''){
+ const n=norm(text);
+ return /(?:estou|to) (?:com.{0,30}clientes?|atendendo)|\b(?:ocupad[oa]|desocupando|quando (?:eu )?puder|vejo depois)\b/.test(n)&&
+  /(?:deix[ae]|mand[ae]|envi[ae]|pode deixar).{0,45}(?:proposta|detalhes|informacoes)/.test(n);
+}
+export function fixedOfferPitch(lead={},at=new Date(),{busy=false}={}){
  const what=siteFocus(lead.segment,lead.business);
  // The dates of a separate portfolio presentation are NOT asserted unless independently verified.
- const first="A proposta é criar um site profissional para vocês, apresentando "+what+". Também incluímos uma estrutura de Master SEO, que ajuda o site a ser encontrado nas buscas orgânicas do Google, sem garantia de posição.";
- const second="Estamos ampliando nosso portfólio nesse segmento e oferecemos esse site por R$ 550, já com o domínio pago por um ano. A previsão é de até 3 dias após recebermos o conteúdo e confirmarmos o escopo. Se tudo for combinado hoje, a referência é "+brDeliveryDate(at)+". Faz sentido para vocês?";
+ const first="Vou te explicar melhor: a ideia é fazer um site profissional pra vocês, com "+what+". A gente inclui Master SEO pra ajudar nas buscas do Google, sem garantir posição.";
+ const second="Estamos ampliando nosso portfólio nesse segmento. O site fica em R$ 550, com domínio pago por um ano e previsão de até 3 dias depois de receber o material e confirmar o escopo. Com tudo alinhado hoje, a referência é "+brDeliveryDate(at)+(busy?'. Quando tiver um tempinho, pode olhar com calma.':'. Faz sentido pra vocês?');
  return first+"\n\n"+second;
 }
 export function fixedOfferPriceReply(at=new Date()){
