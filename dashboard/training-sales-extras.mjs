@@ -55,7 +55,7 @@ const modes=['handoff','complete'];
 const methods=['pix','card','transfer','invoice'];
 export function salesClosingStatus(){
  const raw=getSetting(closeKey,null);
- const current=raw||((process.env.PROSPECTOR_TENANT_INTERNAL==='true'||!process.env.PROSPECTOR_TENANT_ID)?{mode:'complete',methods:['pix'],depositPercent:50,pixKey:'',pixName:'',notifyOn:'receipt',configured:false}:null);
+ const current=configuredClosing()||((process.env.PROSPECTOR_TENANT_INTERNAL==='true'||!process.env.PROSPECTOR_TENANT_ID)?{mode:'complete',methods:['pix'],depositPercent:50,pixKey:'',pixName:'',notifyOn:'receipt',configured:false}:null);
  return current?{mode:current.mode,methods:current.methods||[],depositPercent:current.depositPercent,
   pixConfigured:!!current.pixKey,pixMasked:current.pixKey?'••••'+current.pixKey.slice(-4):'',
   pixName:current.pixName||'',notifyOn:current.notifyOn||'interest',
@@ -65,7 +65,14 @@ export function salesClosingStatus(){
 export function configuredClosing(){
  const raw=getSetting(closeKey,null);
  if(!raw||!modes.includes(raw.mode))return null;
- return {...raw}; // trusted backend only, never returned directly in APIs
+ // Server-side Railway variables allow sensitive PIX details without committing
+ // the CPF to GitHub or putting the full key into a client-facing API.
+ // This fallback is ONLY for the trusted Consecom internal/root workspace.
+ const isConsecom=process.env.PROSPECTOR_TENANT_INTERNAL==='true'||!process.env.PROSPECTOR_TENANT_ID;
+ const allowManagedPix=isConsecom&&raw.mode==='complete'&&raw.methods?.includes('pix');
+ const pixKey=allowManagedPix&&!raw.pixKey?String(process.env.CONSECOM_PIX_KEY||'').trim():raw.pixKey;
+ const pixName=allowManagedPix&&!raw.pixName?String(process.env.CONSECOM_PIX_HOLDER||'').trim():raw.pixName;
+ return {...raw,pixKey,pixName}; // backend only; public status exposes masked key
 }
 export function saveSalesClosingConfig(input={},base=null){
  const prev=base||getSetting(closeKey,{});
@@ -90,7 +97,7 @@ export function customerPaymentGuidance(){
  if(c.mode==='handoff')return 'Modo de atendimento: qualifique e encaminhe ao responsável quando houver interesse. Não solicite pagamento.';
  return 'Modo de atendimento: pode conduzir até proposta e solicitar pagamento apenas com termos e valores aprovados; '+
   'formas aceitas: '+c.methods.join(', ')+'. Entrada: '+c.depositPercent+'%, saldo na entrega: '+(100-c.depositPercent)+'%. '+
-  (c.methods.includes('pix')?(c.pixKey?'PIX configurado e disponível SOMENTE por resposta determinística do servidor após aceite explícito.':'PIX ainda não configurado: não forneça chave nem solicite pagamento.'):'')+
+  (c.methods.includes('pix')?(c.pixKey?'PIX configurado e disponível SOMENTE por resposta determinística do servidor após aceite explícito. '+(c.pixName?'Quando o cliente perguntar o titular do PIX, informe apenas o nome: '+c.pixName+'. ':''):'PIX ainda não configurado: não forneça chave nem solicite pagamento.'):'')+
   ' Registre o fechamento comercial quando o comprovante chegar e avise o dono para visualizar, sem exigir conferência bancária como etapa da negociação. Não declare que houve liquidação bancária.';
 }
 export function pixProposal({amountCents,service='serviço'}={}){
