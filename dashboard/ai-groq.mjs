@@ -5,6 +5,7 @@ import {conversationGuide} from "./francisca-chat-coach.mjs";
 import {groqChat} from './groq-models.mjs';
 import {trainingPrompt,readActiveTrainingMarkdown} from './training.mjs';
 import {getSetting} from './db.mjs';
+import {CONSECOM_SALES_POLICY} from './francisca-consecom-policy.mjs';
 // Groq Cloud conversation draft adapter. No credentials in this repository.
 // No WhatsApp send occurs here; a human or a separately authorized workflow must approve.
 const API_BASE = "https://api.groq.com/openai/v1";
@@ -51,6 +52,7 @@ export async function aiDraft({text,context="",audience="INBOUND_NEW",dialogueSt
   process.env.PROSPECTOR_TENANT_ID?'Use apenas o cadastro e perfil aprovados desta empresa. Nenhum preço, marca, nome ou oferta de outra empresa pode ser usado.':BUSINESS_GUIDANCE,
   process.env.PROSPECTOR_TENANT_ID?'Adapte o estilo às preferências revisadas do gestor.':salesTonePrompt(),
   trainingPrompt(),
+   (!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')?CONSECOM_SALES_POLICY:'Diretrizes comerciais exclusivas da sua empresa. Não usar preços nem fatos de outros tenants.',
   !process.env.PROSPECTOR_TENANT_ID&&dialogueState&&typeof dialogueState==='object'?conversationGuide(dialogueState):'Responda de forma contextual; não repita saudações ou apresentações no meio de uma conversa.',
   contextForGroq(profile),
   dialogueState?.hasAssistantReply?
