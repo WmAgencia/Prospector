@@ -74,7 +74,7 @@ export async function receiveWebhook(req){
    if(receipt.recorded){
     // One acknowledgement for the receipt event. Delivery is never retried
     // if WhatsApp acceptance is uncertain.
-    const acknowledgement='Recebi seu comprovante! Seu projeto foi registrado e vamos organizar os próximos detalhes para iniciar. Obrigada pela confiança!';
+    const acknowledgement='Recebi seu arquivo e vou encaminhar para conferência. Se for o comprovante de pagamento, o responsável vai verificar e continuar com você por aqui.';
     try{
      const delivered=await waRequest('/api/messages/'+encodeURIComponent(sid)+'/'+encodeURIComponent(jid)+'/send',
       {method:'POST',data:{message:{text:acknowledgement}}});
@@ -84,7 +84,7 @@ export async function receiveWebhook(req){
       audit('RECEIPT_ACKNOWLEDGED',lead.id,{sent:true});
      }else audit('RECEIPT_ACK_UNKNOWN',lead.id,{reason:'TRANSPORT_UNCONFIRMED'});
     }catch(error){audit('RECEIPT_ACK_UNKNOWN',lead.id,{reason:'TRANSPORT_UNCERTAIN'});}
-    return {status:200,body:{accepted:true,receiptReceived:true,commerciallyClosed:true,paymentVerified:false}};
+    return {status:200,body:{accepted:true,mediaPendingReview:true,commerciallyClosed:false,paymentVerified:false}};
    }
   }
  }
