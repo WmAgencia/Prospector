@@ -20,7 +20,7 @@ export function approvedConsecomAnswer(message=''){
   return 'Nesse serviço de portfólio a cobrança é feita pelo CPF do responsável, sem emissão de nota fiscal nessa operação. Se você precisar, podemos fornecer um recibo de pagamento.';
  if(/(?:mensalidade|pagar por mes|cobranca mensal|valor mensal)/.test(s))
   return 'A criação do site tem pagamento único, sem mensalidade. O domínio personalizado está pago por um ano; depois desse período, você pode renovar o domínio.';
- if(/(?:loja virtual|e-?commerce|carrinho|checkout|comprar pelo site|pagamento no site)/.test(s)){
+ if(/(?:loja virtual|e-?commerce|carrinho|checkout|catalogo|comprar pelo site|pagamento no site)/.test(s)){
   if(/(?:checkout|carrinho|pagamento no site|pagar (?:direto )?pelo site|cartao no site)/.test(s))
    return 'Conseguimos fazer uma loja com pagamento no próprio site pela Shopify, a partir de R$ 750, mais a assinatura da plataforma conforme o preço vigente. A gente confirma o escopo antes de fechar.';
   return 'Dá pra montar um catálogo com os produtos e um botão de compra que abre a conversa no WhatsApp, dentro da oferta de R$ 550, conforme o material e o escopo. Se quiser pagamento dentro do site, aí é outra modalidade.';
