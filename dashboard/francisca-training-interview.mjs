@@ -76,20 +76,25 @@ function question(state){
  if(key==='qualify')return 'Que perguntas devo fazer para descobrir se um cliente tem o perfil certo antes de passar para você?';
  if(key==='style')return 'Como você quer que eu converse com os clientes? Mais formal ou descontraída? Respostas curtas ou explicativas?';
  if(key==='objections')return 'Se alguém disser que está caro, pedir desconto ou perguntar pelo portfólio, como você prefere que eu responda?';
+ if(key==='social_proof')return 'Quais provas sociais e portfólios você quer usar? Você pode anexar imagens, PDFs ou links aqui no chat, descrever os trabalhos e, quando terminar, escrever ou dizer "pronto". Se não tiver materiais, responda "não tenho".';
  if(key==='handoff')return 'Em quais situações eu devo parar de responder e avisar você? Por exemplo: pedido de proposta, cliente interessado ou negociação de preço.';
  if(key==='restrictions')return 'Existe alguma promessa, desconto, serviço ou condição que eu nunca devo oferecer sem sua aprovação?';
- if(key==='notification')return 'Para qual WhatsApp você quer receber avisos de interessados? Se preferir configurar depois, responda "depois". Depois vamos escolher sua abordagem inicial.';
+ if(key==='notification')return 'Para qual WhatsApp você quer receber avisos? Se preferir configurar depois, responda "depois". Depois vamos definir até onde posso negociar por você.';
+ if(key==='closing_mode')return 'Quando um cliente tiver interesse, o que você prefere? 1: eu aviso você e transfiro a conversa para você fechar; ou 2: eu continuo, faço a proposta, explico o pagamento aprovado e acompanho o comprovante. Nenhuma opção significa pagamento confirmado automaticamente.';
+ if(key==='payment_methods')return 'Quais formas de pagamento sua empresa aceita? Pode escolher PIX, cartão, transferência, boleto, ou combinar. A chave PIX deve ser cadastrada separadamente no campo protegido do painel, nunca ditada por voz.';
+ if(key==='payment_terms')return 'Que porcentagem do valor deve ser paga de entrada? Por exemplo, 50% de entrada e 50% na entrega. Digite só o número, de 0 a 100, ou diga "cinquenta".';
  if(key==='approach')return 'Agora a última decisão: como você prefere que eu faça a primeira abordagem? Temos cinco opções: 1, pedir permissão primeiro; 2, direta e objetiva; 3, consultiva, com uma pergunta; 4, leve e próxima; ou 5, personalizada, do seu jeito. Você pode selecionar um botão, escrever ou dizer o número da opção.';
  if(key==='approach_custom')return 'Me conte exatamente como você quer a primeira mensagem. Pode ditar ou escrever, com até 420 caracteres. Para personalizar cada envio, use os campos {{nome}}, {{empresa}} e {{servico}}. Vamos salvar no seu Markdown para você revisar antes de ativar.';
  return '';
 }
-const steps=['company','audience','services','service_detail','service_price','region','process','qualify','style','objections','handoff','restrictions','notification','approach','approach_custom'];
-const stepsBase=11;
+const steps=['company','audience','services','service_detail','service_price','region','process','qualify','style','objections','social_proof','handoff','restrictions','notification','closing_mode','payment_methods','payment_terms','approach','approach_custom'];
+const stepsBase=14;
 function progress(state){
  const count=state.data?.services?.length||1;
  const tenant=Boolean(process.env.PROSPECTOR_TENANT_ID);
  const custom=state.data?.approachMode==='custom'?1:0;
- const total=stepsBase+2*count+(tenant?1+custom:0);
+ const payment=state.data?.closingMode==='complete'?2:0;
+ const total=stepsBase+2*count+(tenant?1+custom+payment:0);
  if(state.phase==='review')return 100;
  const k=state.key;
  let done=0;
@@ -98,10 +103,10 @@ function progress(state){
  else if(k==='services')done=2;
  else if(k==='service_detail')done=3+(state.index||0)*2;
  else if(k==='service_price')done=4+(state.index||0)*2;
- else if(['region','process','qualify','style','objections','handoff','restrictions','notification'].includes(k))
-  done=3+2*count+['region','process','qualify','style','objections','handoff','restrictions','notification'].indexOf(k);
- else if(k==='approach')done=11+2*count;
- else if(k==='approach_custom')done=12+2*count;
+ else if(['region','process','qualify','style','objections','social_proof','handoff','restrictions','notification','closing_mode','payment_methods','payment_terms'].includes(k))
+  done=3+2*count+['region','process','qualify','style','objections','social_proof','handoff','restrictions','notification','closing_mode','payment_methods','payment_terms'].indexOf(k);
+ else if(k==='approach')done=14+2*count;
+ else if(k==='approach_custom')done=15+2*count;
  return Math.max(0,Math.min(99,Math.round(done/Math.max(total,1)*100)));
 }
 const publicState=s=>s?{
@@ -148,6 +153,7 @@ export function buildTrainingMarkdown(data){
  '- **Perguntas de qualificação:** '+(data.qualify||'Não informado'),
  '- **Estilo da conversa:** '+(data.style||'Não informado'),
  '- **Respostas a objeções e pedidos de portfólio:** '+(data.objections||'Não informado'),
+ '- **Portfólio e provas sociais:** '+(data.social_proof||'Consulte a biblioteca privada de materiais aprovados.'),
  '',
  ...(data.approach?[
   '## Estratégia de primeira abordagem',
@@ -158,6 +164,14 @@ export function buildTrainingMarkdown(data){
   '- **Uso:** somente contatos elegíveis, autorizados e com consentimento aplicável. Esta escolha não ativa disparos nem altera a política de contato.',
   ''
  ]:[]),
+ '## Política de fechamento e pagamentos',
+ '- **Modo escolhido:** '+(data.closingMode==='complete'?'complete — Francisca pode conduzir o fechamento':'handoff — transferir ao gestor quando houver interesse'),
+ '- **Meios de pagamento:** '+((data.paymentMethods||[]).join(', ')||'Configurar separadamente'),
+ '- **Entrada combinada:** '+(Number.isInteger(data.depositPercent)?data.depositPercent+'%':'Não definida'),
+ '- **Saldo na entrega:** '+(Number.isInteger(data.depositPercent)?(100-data.depositPercent)+'%':'Não definido'),
+ '- **Chave PIX:** Somente no cadastro protegido da empresa; não inserir a chave neste documento e nunca inventar dados bancários.',
+ '- **Comprovantes:** documento recebido não é confirmação bancária; não iniciar serviço nem marcar venda como paga até conciliação confiável.',
+ '',
  '## Quando acionar um responsável',
  '- **Situações de encaminhamento:** '+(data.handoff||'Não informado'),
  '- **WhatsApp para notificações:** '+(data.notification||'A configurar'),
@@ -172,22 +186,38 @@ export function buildTrainingMarkdown(data){
  '- As regras legais e operacionais do Prospector têm prioridade sobre este documento.',
  ''
  ];
- return lines.join('\n').slice(0,9000);
+ const result=lines.join('\n');
+ if(result.length>9000)throw Error('Treinamento muito extenso. Resuma algumas respostas antes de aprovar.');
+ return result;
 }
 
 export function advanceTrainingInterview(text){
  const state=getSetting(KEY,null);
  if(!state||state.phase!=='active')throw Error('Inicie o treinamento selecionando texto ou voz.');
- const user=safeValue(text,850);if(user.length<2&&!(state.key==='approach'&&/^[1-5]$/.test(user)))throw Error('Conte um pouco mais para eu continuar.');
+ const user=safeValue(text,850);if(user.length<2&&!(['approach','closing_mode','payment_methods'].includes(state.key)&&/^[1-5]$/.test(user)))throw Error('Conte um pouco mais para eu continuar.');
  if((state.messages||[]).length>=80)throw Error('Limite de treinamento atingido. Revise o perfil atual.');
  const key=state.key,data=state.data,index=state.index||0;
- if(key==='company')data.company=user;
- else if(key==='audience')data.audience=user;
+ if(key==='company')data.company=user.slice(0,120);
+ else if(key==='audience')data.audience=user.slice(0,300);
  else if(key==='services'){
   const services=splitServices(user);if(!services.length)throw Error('Informe pelo menos um serviço que você oferece.');
   data.services=services;
- }else if(key==='service_detail')data.services[index].detail=user;
- else if(key==='service_price')data.services[index].price=user;
+ }else if(key==='service_detail')data.services[index].detail=user.slice(0,250);
+ else if(key==='service_price')data.services[index].price=user.slice(0,180);
+ else if(key==='closing_mode'){
+  const raw=normalized(user);
+  if(/^(?:2|dois|segunda|segundo|complete|fechar|completo)$/.test(raw)||/ate o pagamento|fechamento inteiro|fazer tudo/.test(raw))data.closingMode='complete';
+  else if(/^(?:1|um|primeira|primeiro|handoff|transferir|avisar)$/.test(raw)||/encaminhar|avisar.*responsavel|passar.*dono/.test(raw))data.closingMode='handoff';
+  else throw Error('Escolha 1 (avisar e transferir) ou 2 (conduzir fechamento).');
+ }else if(key==='payment_methods'){
+  const raw=normalized(user);
+  data.paymentMethods=[...new Set([/pix/.test(raw)?'pix':null,/cartao|credito|debito/.test(raw)?'card':null,/transferencia|ted/.test(raw)?'transfer':null,/boleto/.test(raw)?'invoice':null].filter(Boolean))];
+  if(!data.paymentMethods.length)throw Error('Informe PIX, cartão, transferência ou boleto.');
+ }else if(key==='payment_terms'){
+  const value=/^(?:cinquenta|meio a meio|metade)$/.test(normalized(user))?50:Number(user.replace('%','').trim());
+  if(!Number.isInteger(value)||value<0||value>100)throw Error('Informe uma porcentagem inteira de 0 a 100.');
+  data.depositPercent=value;
+ }
  else if(key==='approach'){
   const option=approachOption(user);
   // A free-form explanation means the user wants to write a custom opening.
@@ -199,7 +229,7 @@ export function advanceTrainingInterview(text){
   const template=user;
   if(template.length<12)throw Error('Descreva a primeira mensagem com pelo menos 12 caracteres.');
   data.approach={mode:'custom',label:'Minha abordagem personalizada',template};
- }else data[key]=user;
+ }else data[key]=user.slice(0,300);
  state.messages.push({role:'user',body:user,at:now()});
  if(key==='company')state.key='audience';
  else if(key==='audience')state.key='services';
@@ -208,11 +238,14 @@ export function advanceTrainingInterview(text){
  else if(key==='service_price'){
   if(index+1<data.services.length){state.key='service_detail';state.index=index+1;}
   else state.key='region';
- }else if(key==='notification')state.key=process.env.PROSPECTOR_TENANT_ID?'approach':'done';
+  }else if(key==='notification')state.key='closing_mode';
+ else if(key==='closing_mode')state.key=data.closingMode==='complete'?'payment_methods':(process.env.PROSPECTOR_TENANT_ID?'approach':'done');
+ else if(key==='payment_methods')state.key='payment_terms';
+ else if(key==='payment_terms')state.key=process.env.PROSPECTOR_TENANT_ID?'approach':'done';
  else if(key==='approach')state.key=data.approachMode==='custom'?'approach_custom':'done';
  else if(key==='approach_custom')state.key='done';
  else{
-  const following={region:'process',process:'qualify',qualify:'style',style:'objections',objections:'handoff',handoff:'restrictions',restrictions:'notification'};
+  const following={region:'process',process:'qualify',qualify:'style',style:'objections',objections:'social_proof',social_proof:'handoff',handoff:'restrictions',restrictions:'notification'};
   state.key=following[key]||'done';
  }
  if(state.key==='done'){
@@ -220,7 +253,7 @@ export function advanceTrainingInterview(text){
   const artifact=storeTrainingMarkdown('draft',profileText);
   state.phase='review';
   state.messages.push({role:'assistant',body:'Perfeito! Preparei seu perfil de atendimento. Leia os serviços, os preços e as regras antes de clicar em Aprovar e ativar. Nada foi ativado automaticamente.',at:now()});
-  setSetting('training_draft',{id:crypto.randomUUID(),source:'interview',filename:artifact.filename,interviewData:{company:data.company,audience:data.audience},at:now()});
+  setSetting('training_draft',{id:crypto.randomUUID(),source:'interview',filename:artifact.filename,interviewData:{company:data.company,audience:data.audience,closingMode:data.closingMode,paymentMethods:data.paymentMethods||[],depositPercent:data.depositPercent},at:now()});
  }else{
   state.messages.push({role:'assistant',body:question(state),at:now()});
  }

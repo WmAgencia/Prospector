@@ -2,6 +2,7 @@ import {prospectorLeadEligible} from './whatsapp-roles.mjs';
 import {one,all,getSetting} from './db.mjs';
 import {groqChat} from './groq-models.mjs';
 import {readActiveTrainingMarkdown} from './training.mjs';
+import {customerPaymentGuidance,approvedProofText} from './training-sales-extras.mjs';
 import {globalSalesVoiceGuide} from './francisca-vendas-global.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
@@ -77,7 +78,7 @@ export function franciscaPanelContext({masterAuthorized=false}={}){
  const day=daySP(),calendar=monthlyProspectingCalendar(day.slice(0,7));
  const current=calendar.days?.find(x=>x.date===day)||{};
  const approachedToday=Number(current.approachedCount||0),closedToday=Number(current.closedCount||0);
- return {business:{name:cap(business?.name||process.env.PROSPECTOR_TENANT_NAME||'Sua empresa',100),description:cap(business?.description,900)},trainingApproved:!!profileText,approvedTrainingMarkdown:cap(profileText,8000),
+ return {business:{name:cap(business?.name||process.env.PROSPECTOR_TENANT_NAME||'Sua empresa',100),description:cap(business?.description,900)},trainingApproved:!!profileText,approvedTrainingMarkdown:cap(profileText,8000),closingPolicy:cap(customerPaymentGuidance(),600),approvedProofs:cap(approvedProofText(),2500),
   paused:getSetting('paused',true),outreachWindow:getSetting('client_outreach_hours',{start:'08:00',end:'17:30'}),
   discoveryEnabled:getSetting('discovery_auto_enabled',false),creditBalance:credit===null?'ilimitado':Math.max(0,Number(credit)||0),
   leads,stages,chats,totalSent,approachedToday,closedToday,day,

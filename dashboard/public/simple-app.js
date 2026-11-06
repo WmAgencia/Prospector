@@ -410,7 +410,7 @@ async function interviewSpeak(message){
 async function interviewSend(text){
  if(interviewSending)return;
  text=String(text||'').trim();
- if(text.length<2&&!(trainingState?.interview?.step==='approach'&&/^[1-5]$/.test(text))){n('Responda à pergunta antes de continuar.');return;}
+ if(text.length<2&&!(['approach','closing_mode','payment_methods'].includes(trainingState?.interview?.step)&&/^[1-5]$/.test(text))){n('Responda à pergunta antes de continuar.');return;}
  interviewSending=true;interviewInput='';render();
  try{
   trainingState=await post('/api/training/interview/turn',{text});
@@ -457,6 +457,17 @@ async function interviewStart(mode){
  finally{interviewSending=false;render();}
  if(mode==='voice')await interviewStartVoice();
 }
+function trainingSalesExtras(){
+ const t=trainingState||{},e=t.salesEvidence||{items:[]},closing=t.closing||{},mode=closing.mode||'handoff',methods=new Set(closing.methods||[]);
+ const library='<section class="panel training-addons-card"><div class="heading"><div><span class="kicker">PORTFÓLIO E PROVAS SOCIAIS</span><h3>Materiais que a Francisca pode apresentar</h3><p>Imagens, PDFs, cases, depoimentos autorizados e links.</p></div><span class="tag">'+(e.approved?.length||0)+' aprovados</span></div>'+
+ '<form id="training-proof-form" class="training-addons-form"><div class="training-addons-pair"><label>Tipo<select name="kind"><option value="portfolio">Portfólio</option><option value="case">Case</option><option value="testimonial">Depoimento</option><option value="other">Outro</option></select></label><label>Título<input name="title" maxlength="120" required placeholder="Ex.: Site de oficina"></label></div><label>Descrição comprovável<input name="description" maxlength="350" placeholder="Explique o que realmente foi entregue"></label><label>Link HTTPS (opcional)<input name="url" type="url" maxlength="700" placeholder="https://..."></label><label>Ou envie imagem ou PDF de até 8 MB<input name="file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></label><label class="training-consent-check"><input type="checkbox" name="authorized" required> Tenho autorização para usar este material comercialmente.</label><button class="primary" type="submit">Adicionar material</button></form>'+
+ ((e.items||[]).length?'<div class="training-proof-list">'+e.items.map(x=>'<article class="training-proof-item"><div><strong>'+esc(x.title)+'</strong><small>'+esc(x.kind)+' · '+(x.approved?'Aprovado':'Aguardando aprovação')+'</small><p>'+esc(x.description||'')+'</p>'+(x.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(x.url)+'">Ver link ↗</a>':'')+(x.mediaId?'<a target="_blank" rel="noopener noreferrer" href="/api/media/'+esc(x.mediaId)+'">Ver arquivo ↗</a>':'')+'</div><div class="training-proof-controls">'+(!x.approved?'<button type="button" class="secondary compact" data-action="training-proof-approve" data-id="'+esc(x.id)+'">Aprovar</button>':'')+'<button type="button" class="secondary compact" data-action="training-proof-remove" data-id="'+esc(x.id)+'">Excluir</button></div></article>').join('')+'</div>':'<p class="training-muted">Nenhum material cadastrado. Você pode continuar e acrescentar depois.</p>')+'</section>';
+ const options=[['pix','PIX'],['card','Cartão'],['transfer','Transferência'],['invoice','Boleto']];
+ const closingPanel='<section class="panel training-addons-card"><div class="heading"><div><span class="kicker">FECHAMENTO E COBRANÇAS</span><h3>Escolha a autonomia da Francisca</h3><p>A IA pode encaminhar interessados ou conduzir até o pedido de pagamento aprovado.</p></div></div><form id="training-closing-form" class="training-addons-form"><label>Quando houver interesse<select name="mode"><option value="handoff" '+(mode==='handoff'?'selected':'')+'>Avisar e transferir para mim</option><option value="complete" '+(mode==='complete'?'selected':'')+'>Francisca negocia e solicita pagamento</option></select></label><fieldset><legend>Formas de pagamento</legend>'+options.map(([key,label])=>'<label><input type="checkbox" name="methods" value="'+key+'" '+(methods.has(key)?'checked':'')+'>'+label+'</label>').join('')+'</fieldset><div class="training-addons-pair"><label>Entrada (%)<input name="depositPercent" type="number" min="0" max="100" step="1" value="'+esc(closing.depositPercent??50)+'"></label><label>Nome do titular PIX<input name="pixName" maxlength="100" value="'+esc(closing.pixName||'')+'"></label></div><label>Chave PIX '+(closing.pixConfigured?'(cadastrada · '+esc(closing.pixMasked)+')':'(não cadastrada)')+'<input name="pixKey" type="password" maxlength="140" autocomplete="off" placeholder="'+(closing.pixConfigured?'Em branco mantém a chave atual':'Digite a chave PIX da empresa')+'"></label><p class="training-muted">A chave fica no espaço da empresa, não no método global. Só um provedor financeiro ou conferência bancária pode confirmar que o PIX entrou.</p><button type="submit" class="primary">Salvar política de fechamento</button></form>'+
+ ((t.paymentQueue||[]).length?'<div class="training-payment-queue"><h4>Comprovantes recebidos</h4>'+t.paymentQueue.map(x=>'<div class="training-payment-row"><div><strong>'+esc(x.business||'Cliente')+'</strong><small>'+esc(x.status)+' · entrada '+moneyFromCents(x.entry_cents)+'</small></div>'+(x.status==='RECEIPT_RECEIVED'?'<button type="button" class="secondary compact" data-action="training-payment-verify" data-lead="'+esc(x.lead_id)+'">Conferir no banco</button>':'')+'</div>').join('')+'</div>':'')+'</section>';
+ return '<div class="training-addons-grid">'+library+closingPanel+'</div>';
+}
+
 function interviewView(){
  const t=trainingState||{},i=t.interview;
  const top='<div class="workspace-head"><div><span class="kicker">TREINAMENTO DA IA</span><h2>Converse com a Francisca.</h2><p>Ela faz perguntas objetivas e adapta o treinamento à sua empresa e aos seus serviços.</p></div><span class="tag '+(t.profile?'green':'')+'">'+(t.profile?'Perfil aprovado':'Aguardando treinamento')+'</span></div>';
@@ -468,7 +479,7 @@ function interviewView(){
  }else{
   const messages=(i.messages||[]).map(m=>'<div class="interview-line '+(m.role==='user'?'user':'assistant')+'">'+(m.role==='assistant'?'<span class="interview-small-avatar">F</span>':'')+'<div class="interview-bubble"><small>'+(m.role==='assistant'?'Francisca':'Você')+'</small><p>'+esc(m.body)+'</p></div></div>').join('');
   body='<section class="panel interview-chat"><header><div><span class="interview-small-avatar">F</span><div><strong>Francisca</strong><small>'+(i.mode==='voice'?'Treinamento por voz e chat':'Treinamento por chat')+'</small></div></div><div><span class="tag">'+esc(i.progress)+'%</span><button type="button" class="secondary compact" data-action="interview-reset">Recomeçar</button></div></header><div class="interview-progress" role="progressbar" aria-label="Progresso do treinamento" aria-valuenow="'+esc(i.progress)+'" aria-valuemin="0" aria-valuemax="100"><span style="width:'+esc(i.progress)+'%"></span></div><div class="training-interview-feed" role="log" aria-live="polite">'+messages+'</div>'+
-  (i.step==='approach'&&Array.isArray(i.choices)&&i.choices.length?'<div class="interview-approach-options" role="group" aria-label="Escolha sua abordagem inicial">'+i.choices.map((opt,index)=>'<button type="button" data-action="interview-approach-choice" data-choice="'+esc(opt.id)+'" '+(interviewSending?'disabled':'')+'><span class="approach-number">'+(index+1)+'</span><strong>'+esc(opt.label)+'</strong><small>'+esc(opt.description)+'</small></button>').join('')+'</div>':'')+
+  (['approach','closing_mode','payment_methods'].includes(i.step)&&Array.isArray(i.choices)&&i.choices.length?'<div class="interview-approach-options" role="group" aria-label="Escolha sua abordagem inicial">'+i.choices.map((opt,index)=>'<button type="button" data-action="interview-choice" data-choice="'+esc(opt.id)+'" '+(interviewSending?'disabled':'')+'><span class="approach-number">'+(index+1)+'</span><strong>'+esc(opt.label)+'</strong><small>'+esc(opt.description)+'</small></button>').join('')+'</div>':'')+
   (i.completed?'<p class="interview-completed">✓ Entrevista concluída. Revise o perfil abaixo antes de ativar.</p>':
   '<form id="interview-compose"><label class="sr-only" for="interview-answer">Sua resposta</label><textarea id="interview-answer" name="text" maxlength="850" rows="2" placeholder="'+(i.step==='approach_custom'?'Escreva a mensagem exata, com {{nome}}, {{empresa}} e {{servico}}…':'Responda escrevendo ou por voz…')+'" '+(interviewSending?'disabled':'')+'>'+esc(interviewInput)+'</textarea><div class="interview-compose-actions"><button type="button" class="secondary '+(interviewVoice?'recording':'')+'" data-action="interview-voice-toggle">'+(interviewVoice?'Desligar voz':'Conversar por voz')+'</button><button type="submit" class="primary" '+(interviewSending?'disabled':'')+'>'+(interviewSending?'Registrando…':'Enviar ↗')+'</button></div><p id="interview-voice-status" role="status">'+esc(interviewVoiceLabel())+'</p></form>')+
   '<p class="interview-hint">Você pode falar e escrever. Áudios são transcritos, não salvos como gravação. Nada é ativado sem sua aprovação.</p></section>';
@@ -477,7 +488,7 @@ function interviewView(){
  const profile=((t.internalAccount&&t.profile)||i?.completed||(!i&&(t.profile||t.draft)))?'<div class="interview-profile">'+trainingProfile(shownTraining)+'</div>':'';
  const advanced='<div class="interview-advanced"><button type="button" class="secondary compact" data-action="interview-analysis">'+(interviewShowAnalysis?'Ocultar análise':'Analisar conversas comerciais também')+'</button></div>'+(interviewShowAnalysis?trainingAnalysis(t):'');
  const shared='<div class="training-markdown-info"><span><strong>Método global de vendas</strong> · compartilhado e somente leitura. O seu perfil de serviços, preços e tom é privado.</span><a href="/api/training/global.md" download="francisca-vendas-global.md" class="secondary compact">Baixar base global .md ↗</a></div>';
- return top+shared+'<div class="interview-layout">'+body+profile+'</div>'+advanced;
+ return top+shared+'<div class="interview-layout">'+body+profile+'</div>'+trainingSalesExtras()+advanced;
 }
 function trainingView(){return interviewView();}
 
@@ -548,10 +559,10 @@ async function platformAction(action,el){
   if(!answer)return true;await post('/api/platform/clients/'+el.dataset.client+'/status',{status:el.dataset.status});await loadClients();n('Acesso atualizado.');return true;
  }
  if(action==='interview-start'){await interviewStart(el.dataset.mode==='voice'?'voice':'text');return true;}
- if(action==='interview-approach-choice'){
-  if(!trainingState?.interview||trainingState.interview.step!=='approach'||interviewSending)return true;
+ if(action==='interview-choice'){
+  if(!trainingState?.interview||!['approach','closing_mode','payment_methods'].includes(trainingState.interview.step)||interviewSending)return true;
   const choice=String(el.dataset.choice||'');
-  if(['permission','direct','consultative','friendly','custom'].includes(choice))await interviewSend(choice);
+  if(['permission','direct','consultative','friendly','custom','handoff','complete','pix','card','transfer','invoice'].includes(choice))await interviewSend(choice);
   return true;
  }
  if(action==='interview-voice-toggle'){if(interviewVoice){interviewStopVoice();render();}else await interviewStartVoice();return true;}
@@ -565,6 +576,17 @@ async function platformAction(action,el){
  if(action==='training-prev'){trainingWizardReopen=true;trainingStep=Math.max(0,trainingStep-1);render();return true;}
  if(action==='training-record-toggle'){await toggleTrainingRecording();return true;}
  if(action==='training-chats'){const r=await api('/api/training/chats');trainingChats=r.items||[];render();if(r.failures?.length)n('Não foi possível ler '+r.failures.length+' canal(is). Os demais estão disponíveis.');return true;}
+ if(action==='training-proof-approve'||action==='training-proof-remove'){
+  const id=String(el.dataset.id||'');
+  if(action==='training-proof-remove'){const ok=await confirmInApp({title:'Excluir material?',description:'Ele não será mais utilizado como prova social.',danger:true,confirmLabel:'Excluir'});if(!ok)return true;}
+  await post('/api/training/evidence/'+(action==='training-proof-approve'?'approve':'remove'),{id});
+  await loadTraining();n('Biblioteca atualizada.');return true;
+ }
+ if(action==='training-payment-verify'){
+  const check=await confirmInApp({title:'Verificação de entrada PIX',description:'Confira o valor no extrato bancário. Comprovante não é confirmação de pagamento.',confirmLabel:'Registrei a conferência',fields:'<label><input type="checkbox" name="paymentVerified" required> Verifiquei o recebimento no banco</label><label>Referência bancária<input name="reference" minlength="4" maxlength="120" required></label>'});
+  if(!check)return true;
+  await post('/api/training/payment/verify',{leadId:el.dataset.lead,paymentVerified:check.paymentVerified==='on',reference:check.reference});await loadTraining();n('Pagamento verificado no banco.');return true;
+ }
  if(action==='training-edit-profile'){trainingState=await post('/api/training/edit',{});render();return true;}
  if(action==='training-analyze'){
   if(trainingBusy)return true;
@@ -575,6 +597,32 @@ async function platformAction(action,el){
  return false;
 }
 async function platformSubmit(ev){
+ if(ev.target.id==='training-proof-form'){
+  ev.preventDefault();const fd=new FormData(ev.target),file=fd.get('file');
+  try{
+   if(fd.get('authorized')!=='on')throw Error('Confirme que você pode utilizar o material.');
+   if(!file?.size&&!String(fd.get('url')||'').trim())throw Error('Escolha arquivo ou link.');
+   let mediaId=null;
+   if(file?.size){
+    if(file.size>8*1024*1024)throw Error('Arquivo maior que 8 MB.');
+    const mime=String(file.type||'');
+    if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(mime))throw Error('Envie JPG, PNG, WebP ou PDF.');
+    const response=await fetch('/api/media?kind='+(mime==='application/pdf'?'document':'image')+'&name='+encodeURIComponent(String(fd.get('title')||'Portfólio')),{method:'POST',credentials:'same-origin',headers:{'Content-Type':mime},body:file});
+    const uploaded=await response.json();if(!response.ok)throw Error(uploaded.error||'Upload indisponível.');
+    mediaId=uploaded.id;
+   }
+   await post('/api/training/evidence/add',{kind:fd.get('kind'),title:fd.get('title'),description:fd.get('description'),url:fd.get('url'),mediaId});
+   await loadTraining();n('Material salvo. Aprove o item para usá-lo no atendimento.');
+  }catch(err){n(err.message);}return true;
+ }
+ if(ev.target.id==='training-closing-form'){
+  ev.preventDefault();const fd=new FormData(ev.target);
+  const input={mode:fd.get('mode'),methods:fd.getAll('methods'),depositPercent:Number(fd.get('depositPercent')),pixName:fd.get('pixName')};
+  if(fd.get('pixKey'))input.pixKey=fd.get('pixKey');
+  try{await post('/api/training/closing',input);await loadTraining();n('Regras de fechamento salvas.');}catch(err){n(err.message);}
+  return true;
+ }
+
  const id=ev.target.id;if(id==='interview-compose'){ev.preventDefault();await interviewSend(new FormData(ev.target).get('text'));return true;}if(!['client-create','training-business','training-chat','training-approve'].includes(id))return false;
  ev.preventDefault();if(trainingBusy||busy)return true;
  const input=Object.fromEntries(new FormData(ev.target));trainingBusy=true;busy=id==='client-create';

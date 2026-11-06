@@ -11,6 +11,8 @@ import {recordSalesOutcome} from "./sales-outcomes.mjs";
 import {routeIntroductionReply} from "./prospecting-introduction.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
+import {configuredClosing} from "./training-sales-extras.mjs";
+import {recordReceiptMedia} from "./sales-payment-flow.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 import {isManagedSession,boundLeadSession,leadSession,bindLeadSession} from './waakg-session-registry.mjs';
 
@@ -64,6 +66,14 @@ export async function receiveWebhook(req){
  const unique=sid+":"+providerId;
  if(one("SELECT id FROM waakg_inbox WHERE provider_id=?",unique))return {status:200,body:{accepted:true,duplicate:true}};
  if(!prospectorChatEligible({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
+ const mediaType=String(data.type||'').toUpperCase();
+ if(['IMAGE','DOCUMENT','PDF'].includes(mediaType)){
+  const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
+  if(lead){
+   const receipt=recordReceiptMedia({leadId:lead.id,jid,sessionId:sid,providerId:unique,mimeType:mediaType});
+   if(receipt.recorded)return {status:200,body:{accepted:true,receiptReceived:true,paymentVerified:false}};
+  }
+ }
  const isAudio=String(data.type||'').toUpperCase()==='AUDIO';
  if(isAudio){
   if(process.env.AUDIO_TRANSCRIPTION_ENABLED!=='true')return {status:200,body:{accepted:true,audioPendingSetup:true}};
@@ -119,7 +129,7 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
  // The owner has already been routed above, including the sandbox exception.
- if(firstInbound&&state!=='AUTO_REPLY')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
+ if(firstInbound&&state!=='AUTO_REPLY'&&configuredClosing()?.mode!=='complete')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
  const introRoute=identity.role==='PROSPECT_APPROACHED'?
   routeIntroductionReply({leadId:lead.id,providerId:unique,body:content,inboxState:state,receivedAt:at}):{managed:false,queueAi:true};
  if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid,sessionId:sid});

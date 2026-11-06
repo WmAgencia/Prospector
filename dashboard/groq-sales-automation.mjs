@@ -17,6 +17,8 @@ import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-ch
 import {classifyContact,prospectorChatEligible} from './whatsapp-roles.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {readActiveTrainingMarkdown} from './training.mjs';
+import {configuredClosing} from './training-sales-extras.mjs';
+import {paymentProposalForIncoming,reservePaymentProposal,paymentProposalSent,paymentDeliveryUnknown,paymentIntentStatus} from './sales-payment-flow.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
 import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,acceptPart,partsFor} from './groq-reply-channels.mjs';
 import {waControlStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
@@ -65,7 +67,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
  const allowTest=false; // Personal, owner and sandbox messages never join automated sales replies.
  const salesFollowup=approvedProspectFollowup(identity,r.jid);
- const portfolioAllowed=!process.env.PROSPECTOR_TENANT_ID&&salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
+ const portfolioAllowed=(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
  const intro=introductionStatus(r.lead_id);
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))return finish('SKIPPED','INTRO_NOT_COMPLETE');
  if(!prospectorChatEligible({jid:r.jid,sessionId:r.session_id}))return finish('SKIPPED','NOT_PROSPECTOR_APPROACHED');
@@ -75,6 +77,25 @@ export async function handleSalesTurn(providerId,deps={}){
  if(!allowTest&&(r.phone===ownerTarget()||r.phone===digits(process.env.GROQ_OWNER_WHATSAPP)||r.phone===personalPhone()))return finish('SKIPPED','OWNER');
  if(optedOut(r.body)||['OPT_OUT','NO_INTEREST'].includes(salesEnding(r.body))||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT_OR_REFUSAL');
  if(detectAutomaticReply(r.body))return finish('SKIPPED','AUTOMATIC_RESPONSE');
+ const closer=configuredClosing();
+ if(closer?.mode==='complete'){
+  if(['AWAITING_RECEIPT','RECEIPT_RECEIVED','PAYMENT_VERIFIED'].includes(paymentIntentStatus(r.lead_id)?.status))
+   return finish('SKIPPED','PAYMENT_ALREADY_IN_PROGRESS');
+  const plan=paymentProposalForIncoming({leadId:r.lead_id,jid:r.jid,sessionId:r.session_id,providerId,text:r.body});
+  if(plan.eligible){
+   if(r.manual_takeover||r.inbox_state!=='REVIEW'||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('HANDOFF','NO_PERMISSION');
+   const live=deps.status?await deps.status(r.session_id):await waControlStatus(r.session_id);
+   if(!live.connected)return finish('REVIEW','WA_OFFLINE');
+   if(!reservePaymentProposal(plan))return finish('SKIPPED','PAYMENT_DUPLICATE');
+   try{
+    const ack=await (deps.send||waRequest)('/api/messages/'+encodeURIComponent(r.session_id)+'/'+encodeURIComponent(r.jid)+'/send',{method:'POST',data:{message:{text:plan.offer.text}}});
+    if(ack?.status!==true){paymentDeliveryUnknown(plan);return finish('UNKNOWN','PIX_SEND_NOT_CONFIRMED');}
+    paymentProposalSent(plan,r.thread_id);
+    return finish('SENT');
+   }catch(error){paymentDeliveryUnknown(plan);return finish('UNKNOWN','PIX_SEND_UNCERTAIN');}
+  }
+ }
+
  if(identity.role!=='EXISTING_CLIENT'&&['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(r.stage))return finish('SKIPPED','ALREADY_HANDOFF');
  const stale=()=>{
   const current=one('SELECT l.stage,l.phone,t.manual_takeover,i.state inbox_state,i.body FROM leads l JOIN threads t ON t.lead_id=l.id JOIN waakg_inbox i ON i.provider_id=? WHERE l.id=?',providerId,r.lead_id);
@@ -107,7 +128,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const interest=financial||['EXISTING_CLIENT','OWNER'].includes(identity.role)?
   {confirmed:false,reason:'NOT_A_SALES_PROSPECT'}:await qualify({text:r.body,history});
  if(stale())return finish(stale());
- if(interest.confirmed){
+ if(interest.confirmed&&closer?.mode!=='complete'){
   tx(()=>{
    if(one('SELECT manual_takeover FROM threads WHERE id=?',r.thread_id)?.manual_takeover!==1){
     stage(r.lead_id,'INTERESTED','GROQ_REAL_INTEREST');
@@ -121,7 +142,7 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('HOT');
  }
  // An apparent commitment which the model cannot verify is left for review.
- if(!financial&&identity.role!=='EXISTING_CLIENT'&&identity.role!=='OWNER'&&explicitInterest(r.body)){
+ if(closer?.mode!=='complete'&&!financial&&identity.role!=='EXISTING_CLIENT'&&identity.role!=='OWNER'&&explicitInterest(r.body)){
   if(salesFollowup){
    run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
    recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'Intenção comercial precisa de confirmação: '+r.body});
@@ -258,13 +279,13 @@ export async function tickSalesAgent(deps={}){
 }
 let notifying=false;
 export async function flushInterestAlerts(deps={}){
- const target=ownerTarget();if(!target||notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT') AND status='PENDING' LIMIT 1"))return 0;
+ const target=ownerTarget();if(!target||notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' LIMIT 1"))return 0;
  notifying=true;
  try{
   const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
   if(!wa.connected||!session)return 0;
   let delivered=0;
-  for(const entry of all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT') AND status='PENDING' ORDER BY created_at LIMIT 5")){
+  for(const entry of all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' ORDER BY created_at LIMIT 5")){
    if(!run("UPDATE owner_notices SET status='SENDING',updated_at=? WHERE id=? AND status='PENDING'",now(),entry.id).changes)continue;
    try{
     const send=deps.send||waRequest;

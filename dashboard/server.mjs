@@ -371,16 +371,18 @@ function snapshot(){
 }
 async function upload(req,url,res){
  const kind=url.searchParams.get('kind'),name=String(url.searchParams.get('name')||'mídia').slice(0,100);
- const kinds={video:['video/mp4'],audio:['audio/ogg','audio/mpeg','audio/mp4','audio/x-m4a','audio/opus'],image:['image/png','image/jpeg','image/webp']};
+ const kinds={video:['video/mp4'],audio:['audio/ogg','audio/mpeg','audio/mp4','audio/x-m4a','audio/opus'],image:['image/png','image/jpeg','image/webp'],document:['application/pdf']};
  const mime=String(req.headers['content-type']||'').split(';')[0];
  if(!kinds[kind]?.includes(mime))throw Error('Formato de arquivo não permitido');
  const buf=await body(req,kind==='video'?65*1024*1024:25*1024*1024);
  if(buf.length===0)throw Error('Arquivo vazio');
+ if(kind==='document'&&(buf.length>8*1024*1024||buf.toString('ascii',0,5)!=='%PDF-'))throw Error('PDF inválido ou maior que 8 MB');
+ if(kind==='image'&&buf.length>8*1024*1024)throw Error('Imagem maior que 8 MB');
  if(kind==='video'&&buf.toString('ascii',4,8)!=='ftyp')throw Error('MP4 inválido');
  if(kind==='audio'&&mime==='audio/ogg'&&buf.toString('ascii',0,4)!=='OggS')throw Error('OGG inválido');
  if(kind==='image'&&mime==='image/png'&&buf.toString('hex',0,8)!=='89504e470d0a1a0a')throw Error('PNG inválido');
  if(kind==='image'&&mime==='image/jpeg'&&buf.toString('hex',0,3)!=='ffd8ff')throw Error('JPEG inválido');
- const extByMime={'video/mp4':'.mp4','audio/ogg':'.ogg','audio/mpeg':'.mp3','audio/mp4':'.m4a','audio/x-m4a':'.m4a','audio/opus':'.opus','image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp'};
+ const extByMime={'video/mp4':'.mp4','audio/ogg':'.ogg','audio/mpeg':'.mp3','audio/mp4':'.m4a','audio/x-m4a':'.m4a','audio/opus':'.opus','image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp','application/pdf':'.pdf'};
  const itemId=id(),fileName=itemId+extByMime[mime],target=path.join(mediaDir,fileName);
  fs.writeFileSync(target,buf,{flag:'wx'});
  let duration=null;
@@ -774,7 +776,7 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname.startsWith('/api/media/')){
    const media=one('SELECT * FROM media WHERE id=?',pathname.split('/')[3]);if(!media)return respond(res,404,{error:'Arquivo não encontrado'});
    if(path.basename(media.filename)!==media.filename||!fs.existsSync(path.join(mediaDir,media.filename)))return respond(res,404,{error:'Arquivo não encontrado'});
-   const f=path.join(mediaDir,media.filename);res.writeHead(200,{'Content-Type':media.mime,'Content-Length':media.bytes,'Cache-Control':'private, max-age=120'});fs.createReadStream(f).pipe(res);return;
+   const f=path.join(mediaDir,media.filename);res.writeHead(200,{'Content-Type':media.mime,'Content-Length':media.bytes,'Cache-Control':'private, max-age=120','X-Content-Type-Options':'nosniff',...(media.mime==='application/pdf'?{'Content-Disposition':'attachment; filename="portfolio.pdf"'}:{})});fs.createReadStream(f).pipe(res);return;
   }
   if(req.method==='GET'&&/^\/studio\/(?:projects\.json|sites\/[a-z0-9-]{2,80}\.html)$/.test(pathname)){
    const studioRoot=path.resolve(here,'..','studio');

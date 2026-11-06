@@ -716,3 +716,33 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .interview-owner-ready-points span{color:#51416d;font-size:11px;font-weight:650}
 .interview-owner-ready .interview-hint{padding:0;margin:2px 0 0!important}
 @media(max-width:650px){.interview-owner-ready{padding:22px 18px!important}.interview-owner-ready-points{grid-template-columns:1fr;gap:9px}}
+
+/* Sales training add-ons: authenticated tenant media, evidence and closing. */
+.training-addons-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:20px 0 25px;align-items:start}
+.training-addons-card{padding:23px!important;min-width:0;border-radius:18px!important}
+.training-addons-card .heading h3{font-size:20px;line-height:1.28;letter-spacing:-.025em}
+.training-addons-card .heading p{font-size:12px;line-height:1.55;max-width:460px}
+.training-addons-form{display:grid;gap:13px;margin-top:17px}
+.training-addons-form label{font-size:11px;font-weight:750;color:#594d70;display:grid;gap:6px}
+.training-addons-form input:not([type=checkbox]),.training-addons-form select{width:100%;min-height:40px;border:1px solid #ded4f1;border-radius:10px;padding:9px 11px;font:inherit;font-size:12px;background:white;color:#352752}
+.training-addons-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.training-addons-form fieldset{display:flex;flex-wrap:wrap;gap:13px 16px;padding:12px;border:1px solid #e7def6;border-radius:11px}
+.training-addons-form legend{font-size:11px;font-weight:800;color:#503782}
+.training-addons-form fieldset label,.training-addons-form .training-consent-check{display:flex;align-items:center;gap:8px;line-height:1.5;font-size:11px}
+.training-addons-form button.primary{justify-self:start;min-height:42px}
+.training-muted{font-size:11px;line-height:1.65;color:#827692;margin:3px 0}
+.training-proof-list{display:grid;gap:9px;margin-top:18px;max-height:310px;overflow-y:auto}
+.training-proof-item{display:flex;justify-content:space-between;gap:10px;padding:13px;border:1px solid #e9e2f4;border-radius:12px;background:#fcfbff}
+.training-proof-item>div:first-child{min-width:0}
+.training-proof-item strong{display:block;font-size:12px}
+.training-proof-item small{display:block;font-size:10px;color:#8a7e99;margin:4px 0}
+.training-proof-item p{font-size:11px;color:#786b86;margin:5px 0;overflow-wrap:anywhere}
+.training-proof-item a{font-size:11px;color:#653cd3;text-decoration:underline;margin-right:10px}
+.training-proof-controls{display:flex;flex-direction:column;gap:7px}
+.training-payment-queue{margin-top:23px;border-top:1px solid #e9e2f4;padding-top:14px}
+.training-payment-queue h4{font-size:13px;margin:0 0 9px}
+.training-payment-row{display:flex;justify-content:space-between;align-items:center;gap:10px;border-radius:10px;background:#faf8ff;padding:12px;margin-bottom:7px}
+.training-payment-row strong{display:block;font-size:12px}
+.training-payment-row small{font-size:10px;color:#706487}
+@media(max-width:1100px){.training-addons-grid{grid-template-columns:1fr}}
+@media(max-width:630px){.training-addons-pair{grid-template-columns:1fr}.training-addons-card{padding:16px!important}.training-proof-item{flex-direction:column}.training-proof-controls{flex-direction:row}}
