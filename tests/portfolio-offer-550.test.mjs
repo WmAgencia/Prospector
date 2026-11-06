@@ -13,7 +13,7 @@ test('fixed offer is accurate and remains inside the WhatsApp message length gua
  assert.match(text,/domínio pago por um ano/);
  assert.match(text,/Master SEO/);
  assert.match(text,/3 dias/);
- assert.match(text,/7 de novembro de 2026/);
+ assert.match(text,/9 de novembro de 2026/);
  assert.doesNotMatch(text,/90\s*%|primeira posição|posição garantida/i);
  assert.ok(text.length<=650,'The fixed pitch must fit the existing guard');
  const price=fixedOfferPriceReply(at);
