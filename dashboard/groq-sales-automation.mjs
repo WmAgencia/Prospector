@@ -318,7 +318,7 @@ export async function flushInterestAlerts(deps={}){
   const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
   if(!wa.connected||!session)return 0;
   let delivered=0;
-  for(const entry of all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' ORDER BY created_at LIMIT 5")){
+  for(const entry of all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT','SALES_REQUEST') AND status='PENDING' ORDER BY created_at LIMIT 5")){
    if(!run("UPDATE owner_notices SET status='SENDING',updated_at=? WHERE id=? AND status='PENDING'",now(),entry.id).changes)continue;
    try{
     const send=deps.send||waRequest;
