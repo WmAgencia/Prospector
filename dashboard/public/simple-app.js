@@ -472,7 +472,8 @@ function interviewView(){
  }
  const profile=(i?.completed||(!i&&(t.profile||t.draft)))?'<div class="interview-profile">'+trainingProfile(t)+'</div>':'';
  const advanced='<div class="interview-advanced"><button type="button" class="secondary compact" data-action="interview-analysis">'+(interviewShowAnalysis?'Ocultar análise':'Analisar conversas comerciais também')+'</button></div>'+(interviewShowAnalysis?trainingAnalysis(t):'');
- return top+'<div class="interview-layout">'+body+profile+'</div>'+advanced;
+ const shared='<div class="training-markdown-info"><span><strong>Método global de vendas</strong> · compartilhado e somente leitura. O seu perfil de serviços, preços e tom é privado.</span><a href="/api/training/global.md" download="francisca-vendas-global.md" class="secondary compact">Baixar base global .md ↗</a></div>';
+ return top+shared+'<div class="interview-layout">'+body+profile+'</div>'+advanced;
 }
 function trainingView(){return interviewView();}
 
