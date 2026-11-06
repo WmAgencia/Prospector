@@ -100,17 +100,17 @@ export function customerPaymentGuidance(){
   (c.methods.includes('pix')?(c.pixKey?'PIX configurado e disponível SOMENTE por resposta determinística do servidor após aceite explícito. '+(c.pixName?'Quando o cliente perguntar o titular do PIX, informe apenas o nome: '+c.pixName+'. ':''):'PIX ainda não configurado: não forneça chave nem solicite pagamento.'):'')+
   ' Registre o fechamento comercial quando o comprovante chegar e avise o dono para visualizar, sem exigir conferência bancária como etapa da negociação. Não declare que houve liquidação bancária.';
 }
-export function pixProposal({amountCents,service='serviço'}={}){
+export function pixProposal({amountCents,service='serviço',fullPayment=false}={}){
  const cfg=configuredClosing();
  if(!cfg||cfg.mode!=='complete'||!cfg.methods.includes('pix')||!cfg.pixKey)return null;
  if(!Number.isSafeInteger(amountCents)||amountCents<100||amountCents>500000000)return null;
- const entry=Math.round(amountCents*cfg.depositPercent/100),remaining=amountCents-entry;
+ const percent=fullPayment?100:cfg.depositPercent;
+ const entry=Math.round(amountCents*percent/100),remaining=amountCents-entry;
  if(entry<=0)return null;
  const money=n=>(n/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
- const text='Para iniciar '+clean(service,100)+', a condição aprovada é entrada de '+cfg.depositPercent+'% ('+money(entry)+
-  ') e os '+(100-cfg.depositPercent)+'% restantes ('+money(remaining)+') na entrega. Valor total: '+money(amountCents)+
+ const text='Para iniciar '+clean(service,100)+', '+(fullPayment?'o pagamento integral aprovado é de '+money(amountCents):'a condição aprovada é entrada de '+percent+'% ('+money(entry)+') e os '+(100-percent)+'% restantes ('+money(remaining)+') na entrega')+'. Valor total: '+money(amountCents)+
   '.\nPIX: '+cfg.pixKey+(cfg.pixName?'\nTitular: '+cfg.pixName:'')+
-  '\nSe estiver de acordo, você pode pagar a entrada e enviar o comprovante por aqui. '+
+  '\nSe estiver de acordo, você pode realizar o pagamento combinado e enviar o comprovante por aqui. '+
   'Ao receber o comprovante, vou registrar o projeto e encaminhar as próximas orientações para começarmos.';
  return {text,entryCents:entry,remainingCents:remaining,amountCents};
 }
