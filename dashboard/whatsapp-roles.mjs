@@ -39,20 +39,28 @@ export function classifyContact({jid,sessionId}={}){
 }
 // Strict inbound boundary: only an acknowledged prospecting-first message qualifies.
 // Discovery, imported numbers, manual chats, opt-in and AI feature flags do NOT qualify.
-export function prospectorChatEligible({jid,sessionId}={}){
- const identity=classifyContact({jid,sessionId});
- if(identity.role!=='PROSPECT_APPROACHED')return false;
- const normalized=fullPhone(String(jid||'').split('@')[0]);
+// Trusted record of a sent Prospector first approach; never count discovery or a personal message.
+export function prospectorLeadEligible(leadId){
+ const lead=one('SELECT id,phone FROM leads WHERE id=?',String(leadId||''));
+ if(!lead?.phone||lead.phone===verifiedOwnerPhone())return false;
+ if(one("SELECT 1 FROM initial_contacts WHERE lead_id=? AND phone=? AND status='SENT'",lead.id,lead.phone))return true;
+ if(one("SELECT 1 FROM jobs WHERE lead_id=? AND status='SENT' AND step_index=0 AND execution_id IS NOT NULL LIMIT 1",lead.id))return true;
+ if(one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'")&&
+   one("SELECT 1 FROM prospecting_batch_items WHERE lead_id=? AND phone=? AND status='SENT' LIMIT 1",lead.id,lead.phone))return true;
+ return !!one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND t.jid=? AND m.direction='out' AND m.provider_id LIKE 'prospect-queue:%' AND m.status IN ('sent','accepted') LIMIT 1",lead.id,lead.phone+'@s.whatsapp.net');
+}
+// Old successful prospecting threads remain visible after conversion into a customer.
+export function prospectorChatVisible({jid,sessionId}={}){
+ if(!/^\d{10,15}@s\.whatsapp\.net$/.test(String(jid||''))||!isManagedSession(sessionId))return false;
+ const normalized=fullPhone(String(jid).split('@')[0]);
  const lead=normalized?one('SELECT id FROM leads WHERE phone=?',normalized):null;
- if(!lead)return false;
+ if(!lead||!prospectorLeadEligible(lead.id))return false;
  const bound=boundLeadSession(lead.id);
  return !bound||bound===sessionId;
 }
-export function prospectorLeadEligible(leadId){
- const lead=one('SELECT id,phone FROM leads WHERE id=?',String(leadId||''));
- if(!lead?.phone)return false;
- const bound=boundLeadSession(lead.id),session=bound||selectedWaSession();
- return prospectorChatEligible({jid:lead.phone+'@s.whatsapp.net',sessionId:session});
+// Autoreply is stricter than visibility. Converted customers and opted-out contacts are not auto-replied.
+export function prospectorChatEligible({jid,sessionId}={}){
+ return prospectorChatVisible({jid,sessionId})&&classifyContact({jid,sessionId}).role==='PROSPECT_APPROACHED';
 }
 export function hasExistingClientRelationship(number){
  const p=fullPhone(number);

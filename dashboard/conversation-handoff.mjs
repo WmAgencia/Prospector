@@ -4,7 +4,7 @@ import {one,run,now,audit,phone,addLead,getThread} from './db.mjs';
 import {getSetting} from './db.mjs';
 import {conversationAuthorized} from './operator-outreach.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
-import {classifyContact,prospectorChatEligible} from './whatsapp-roles.mjs';
+import {classifyContact,prospectorChatVisible} from './whatsapp-roles.mjs';
 import {selectedWaSession,waControlStatus} from './waakg-control.mjs';
 import {leadSession} from './waakg-session-registry.mjs';
 import {remoteChats} from './waakg-conversations.mjs';
@@ -32,16 +32,16 @@ export function conversationHandoffStatus(chatId){
  const row=resolve(chatId);
  if(!row)return {chatId:String(chatId||''),manualTakeover:false,canTakeover:false,canDeliverToAi:false,reason:'CONVERSATION_NOT_SUPPORTED'};
  const valid=validJid(row.jid);
- if(!valid||!prospectorChatEligible({jid:row.jid,sessionId:row.lead?leadSession(row.lead.id):selectedWaSession()}))return {chatId:row.chatId,manualTakeover:false,canTakeover:false,canDeliverToAi:false,reason:'NOT_PROSPECTOR_APPROACHED'};
+ if(!valid||!prospectorChatVisible({jid:row.jid,sessionId:row.lead?leadSession(row.lead.id):selectedWaSession()}))return {chatId:row.chatId,manualTakeover:false,canTakeover:false,canDeliverToAi:false,reason:'NOT_PROSPECTOR_APPROACHED'};
  const role=valid?classifyContact({jid:row.jid,sessionId:row.lead?leadSession(row.lead.id):selectedWaSession()}):{role:'UNVERIFIED'};
  const suppressed=!!row.lead?.phone&&!!one('SELECT 1 FROM suppressions WHERE phone=?',row.lead.phone);
  const eligibleStage=!['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(row.lead?.stage);
- const genericAi=process.env.AI_CONVERSATION_AUTOSEND==='true'||process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true';
+ // Generic AI flags may not expand the contact list beyond a documented Prospector approach.
  const intro=row.lead?introductionStatus(row.lead.id):null;
  const approved=role.role==='PROSPECT_APPROACHED'&&row.lead&&conversationAuthorized(row.lead.id,{ignoreTakeover:true})&&
   getSetting('sales_followup_enabled',true)===true&&(!intro||intro.stage==='CONVERSING');
  const canTakeover=valid&&role.role!=='OWNER'&&role.role!=='UNVERIFIED'&&!suppressed;
- const canDeliverToAi=!!(canTakeover&&eligibleStage&&(approved||genericAi)&&process.env.GROQ_API_KEY);
+ const canDeliverToAi=!!(canTakeover&&eligibleStage&&approved&&process.env.GROQ_API_KEY);
  const reason=!valid?'UNSUPPORTED_CHAT':role.role==='OWNER'?'OWNER_PRIVATE':role.role==='UNVERIFIED'?'UNVERIFIED':
   suppressed?'OPT_OUT':!eligibleStage?'HUMAN_FOLLOWUP_REQUIRED':!canDeliverToAi?'AI_NOT_ENABLED':'READY';
  return {chatId:row.chatId,manualTakeover:row.thread?.manual_takeover===1,canTakeover,canDeliverToAi,

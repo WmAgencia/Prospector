@@ -2,7 +2,7 @@
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 import {db,one,all,run,now,phone,addLead,getThread,addMessage,audit,stage} from "./db.mjs";
 import {leadSession} from './waakg-session-registry.mjs';
-import {prospectorChatEligible} from './whatsapp-roles.mjs';
+import {prospectorChatVisible} from './whatsapp-roles.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS waakg_remote_outbox(id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL)");
 const jidAllowed=j=>/^\d{10,15}@s\.whatsapp\.net$/.test(j);
 function currentId(jid){const lead=jid?one('SELECT id FROM leads WHERE phone=?',phone(jid.split('@')[0])):null;const s=lead?leadSession(lead.id):selectedWaSession();if(!s)throw Error("Conecte seu WhatsApp em Conexões");return encodeURIComponent(s);}
@@ -13,7 +13,7 @@ export async function remoteChats(){
  const items=(Array.isArray(result.data)?result.data:[]).map(x=>({
   id:"wa:"+String(x.jid||""),jid:String(x.jid||""),name:String(x.name||x.notify||x.jid||"Contato").slice(0,80),business:String(x.name||x.notify||x.jid||"Contato").slice(0,80),
   phone:String(x.jid||"").split("@")[0],last_message_at:x.lastMessage?.timestamp||null,preview:String(x.lastMessage?.content||"").slice(0,180)
- })).filter(x=>prospectorChatEligible({jid:x.jid,sessionId:s.sessionId})).slice(0,80);
+ })).filter(x=>prospectorChatVisible({jid:x.jid,sessionId:s.sessionId})).slice(0,80);
  return {connected:true,items};
 }
 export function mergeAudioTranscripts(remote,transcriptions){
@@ -27,7 +27,7 @@ export function mergeAudioTranscripts(remote,transcriptions){
 }
 export async function remoteMessages(jid){
  const sessionId=decodeURIComponent(currentId(jid));
- if(!prospectorChatEligible({jid,sessionId}))throw Error('Conversa fora da prospecção autorizada');
+ if(!prospectorChatVisible({jid,sessionId}))throw Error('Conversa fora da prospecção autorizada');
  const s=await waControlStatus(sessionId);if(!s.connected)throw Error("WhatsApp não conectado");
  if(!/^[0-9]{10,15}@(s\.whatsapp\.net|lid|g\.us)$/.test(jid))throw Error("Conversa inválida");
  const result=await waRequest("/api/chat/"+currentId(jid)+"/"+encodeURIComponent(jid));
