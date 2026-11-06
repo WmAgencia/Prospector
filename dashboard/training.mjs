@@ -5,12 +5,13 @@ import {waRequest} from './waakg-control.mjs';
 import {groqChat} from './groq-models.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import crypto from 'node:crypto';
+import {trainingInterviewStatus,startTrainingInterview,advanceTrainingInterview,resetTrainingInterview} from './francisca-training-interview.mjs';
 db.exec(`CREATE TABLE IF NOT EXISTS training_chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,body TEXT NOT NULL,at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS training_runs(id TEXT PRIMARY KEY,status TEXT NOT NULL,report TEXT,details TEXT NOT NULL,created_at TEXT NOT NULL);`);
 run("UPDATE training_runs SET status='FAILED',details=? WHERE status='RUNNING'",JSON.stringify({error:'Análise interrompida pelo reinício. Inicie novamente quando desejar.'}));
 const jidOK=x=>/^\d{10,15}@s\.whatsapp\.net$/.test(x);
 export const redactTrainingText=x=>String(x||'').replace(/https?:\/\/\S+/gi,'[link]').replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi,'[e-mail]').replace(/\+?\d[\d\s().-]{8,}\d/g,'[número]').slice(0,1200);
-export function trainingStatus(){return {profile:getSetting('training_active',null),draft:getSetting('training_draft',null),business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),chat:all('SELECT role,body,at FROM training_chat ORDER BY rowid DESC LIMIT 40').reverse(),runs:all('SELECT id,status,report,details,created_at FROM training_runs ORDER BY rowid DESC LIMIT 10').map(r=>({...r,details:JSON.parse(r.details)}))};}
+export function trainingStatus(){return {profile:getSetting('training_active',null),draft:getSetting('training_draft',null),business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),chat:all('SELECT role,body,at FROM training_chat ORDER BY rowid DESC LIMIT 40').reverse(),interview:trainingInterviewStatus(),runs:all('SELECT id,status,report,details,created_at FROM training_runs ORDER BY rowid DESC LIMIT 10').map(r=>({...r,details:JSON.parse(r.details)}))};}
 export function trainingPrompt(){
  const p=getSetting('training_active',null),business=getSetting('training_business',null);
  return ['IDENTIDADE DA EMPRESA (dados aprovados): '+JSON.stringify(business?{name:business.name,description:business.description}:{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil'}),
@@ -66,6 +67,21 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
  const p=url.pathname;if(!p.startsWith('/api/training'))return false;
  const model=deps.model||groqChat;
  if(req.method==='GET'&&p==='/api/training'){respond(res,200,trainingStatus());return true;}
+
+ if(p==='/api/training/interview/start'&&req.method==='POST'){
+  try{const input=await json(req);startTrainingInterview(input?.mode);respond(res,200,trainingStatus());}
+  catch(e){respond(res,422,{error:String(e.message).slice(0,180)});}
+  return true;
+ }
+ if(p==='/api/training/interview/turn'&&req.method==='POST'){
+  try{const input=await json(req);advanceTrainingInterview(input?.text);respond(res,200,trainingStatus());}
+  catch(e){respond(res,422,{error:String(e.message).slice(0,180)});}
+  return true;
+ }
+ if(p==='/api/training/interview/reset'&&req.method==='POST'){
+  resetTrainingInterview();respond(res,200,trainingStatus());return true;
+ }
+
  if(req.method==='GET'&&p==='/api/training/chats'){respond(res,200,await listTrainingChats());return true;}
  if(req.method==='POST'&&p==='/api/training/analyze'){
   if(activeRun){respond(res,409,{error:'Já existe uma análise em andamento'});return true;}
@@ -104,7 +120,18 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
   const input=await json(req),draft=getSetting('training_draft',null),text=String(input.text||'').trim();
   if(!draft||input.id!==draft.id){respond(res,409,{error:'O perfil mudou. Atualize e revise a versão mais recente.'});return true;}
   if(!text||text.length>9000){respond(res,422,{error:'Revise o perfil (até 9.000 caracteres)'});return true;}
-  setSetting('training_active',{id:draft.id,text,at:now()});setSetting('training_draft',null);respond(res,200,trainingStatus());return true;
+  setSetting('training_active',{id:draft.id,text,at:now()});
+  // Only after explicit review/approval do interview business data become active.
+  if(draft.source==='interview'&&draft.interviewData?.company){
+   const oldBusiness=getSetting('training_business',{});
+   const notification=String(getSetting('francisca_training_interview_v1',{})?.data?.notification||'').replace(/\D/g,'');
+   const full=notification.length===11?'55'+notification:notification;
+   if(/^55\d{10,11}$/.test(full))setSetting('sales_notification_phone',full);
+   setSetting('training_business',{...oldBusiness,name:String(draft.interviewData.company).slice(0,100),
+    description:'Público-alvo: '+String(draft.interviewData.audience||'').slice(0,600),
+    notificationPhone:getSetting('sales_notification_phone','')});
+  }
+  setSetting('training_draft',null);respond(res,200,trainingStatus());return true;
  }
  if(req.method==='POST'&&p==='/api/training/edit'){
   const profile=getSetting('training_active',null);if(!profile){respond(res,422,{error:'Ainda não há perfil aprovado'});return true;}

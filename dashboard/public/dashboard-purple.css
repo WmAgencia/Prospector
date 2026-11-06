@@ -616,3 +616,73 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .francisca-message .francisca-quick-action:hover{background:#5930bf;transform:translateY(-1px)}
 .francisca-message .francisca-quick-action:focus-visible{outline:3px solid #b595ff;outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.francisca-message .francisca-quick-action{transition:none}.francisca-message .francisca-quick-action:hover{transform:none}}
+
+
+/* Francisca adaptive onboarding — one conversational canvas, written or spoken. */
+.interview-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:17px;margin-top:20px}
+.interview-layout:has(.interview-profile){grid-template-columns:minmax(0,1.2fr) minmax(330px,.8fr)}
+.interview-layout>.panel,.interview-layout .panel{min-width:0}
+.interview-welcome{text-align:center;padding:42px 32px!important;border-radius:23px!important;background:linear-gradient(155deg,#fff 50%,#f6f1ff)}
+.interview-avatar{width:65px;height:65px;display:grid;place-items:center;background:linear-gradient(130deg,#7b47f8,#5321c7);color:#fff;border-radius:22px;box-shadow:0 12px 28px #6b3de633;font-size:28px;font-weight:900;margin:0 auto 19px}
+.interview-welcome .kicker{display:block;color:#6440bb;margin-bottom:12px}
+.interview-welcome h3{font-size:clamp(24px,3vw,34px);line-height:1.18;max-width:580px;margin:0 auto 11px;letter-spacing:-.045em}
+.interview-welcome>p{font-size:13px;line-height:1.75;max-width:520px;margin:0 auto 22px;color:#766b86}
+.interview-modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;max-width:700px;margin:0 auto}
+.interview-modes>button{appearance:none;background:#fff;text-align:left;border:1px solid #dfd6f5;border-radius:18px;padding:24px;display:flex;align-items:flex-start;flex-direction:column;gap:9px;min-height:220px;cursor:pointer;box-shadow:0 8px 25px #4d2ea70e;transition:transform .18s,border-color .18s,box-shadow .18s}
+.interview-modes>button:hover{transform:translateY(-3px);border-color:#8958e7;box-shadow:0 14px 27px #4d2ea71c}
+.interview-modes>button:focus-visible{outline:3px solid #ad8efb;outline-offset:3px}
+.interview-modes span{font-size:22px;color:#7142db;background:#f0eaff;border-radius:13px;width:44px;height:44px;display:grid;place-items:center}
+.interview-modes strong{font-size:20px;color:#33274b}
+.interview-modes small{color:#7e758c;font-size:12px;line-height:1.6;min-height:58px}
+.interview-modes b{font-size:12px;color:#6237c0;margin-top:auto}
+.interview-chat{padding:0!important;overflow:hidden;border:1px solid #e6e0f2;border-radius:20px!important}
+.interview-chat>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 23px;border-bottom:1px solid #e9e3f2;background:linear-gradient(90deg,#fff,#faf8ff)}
+.interview-chat>header>div{display:flex;align-items:center;gap:11px}
+.interview-chat>header>div:last-child{gap:8px}
+.interview-chat header strong{font-size:15px;display:block}
+.interview-chat header small{display:block;color:#857b94;font-size:10px}
+.interview-small-avatar{flex:none;display:grid;place-items:center;width:35px;height:35px;border-radius:12px;background:#713cdf;color:#fff;font-weight:900;font-size:15px}
+.interview-progress{height:5px;background:#f1ebfa}
+.interview-progress span{display:block;background:linear-gradient(90deg,#8358ef,#5b28d2);height:100%;transition:width .25s ease}
+.training-interview-feed{min-height:320px;max-height:min(52vh,520px);overflow-y:auto;padding:25px 23px;display:flex;flex-direction:column;gap:17px;scrollbar-width:thin}
+.interview-line{display:flex;align-items:flex-end;gap:9px;max-width:91%}
+.interview-line.user{margin-left:auto;justify-content:flex-end}
+.interview-bubble{padding:13px 16px;background:#f5f1ff;border:1px solid #eee6fe;border-radius:16px 16px 16px 4px;color:#3b3153;max-width:600px}
+.interview-line.user .interview-bubble{background:#6840d7;border-color:#6840d7;color:#fff;border-radius:16px 16px 4px 16px}
+.interview-bubble small{display:block;font-size:10px;font-weight:850;color:#7656ae;margin-bottom:4px}
+.interview-line.user .interview-bubble small{color:#e6d9ff}
+.interview-bubble p{font-size:13px;color:inherit;line-height:1.68;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.interview-line .interview-small-avatar{width:28px;height:28px;border-radius:50%;font-size:12px}
+#interview-compose{padding:15px 23px 18px;border-top:1px solid #e9e3f2;background:#fff}
+#interview-answer{width:100%;min-height:73px;resize:vertical;max-height:180px;font:inherit;font-size:13px;line-height:1.55;color:#302344;padding:13px 14px;border:1px solid #e5ddef;border-radius:13px;outline-offset:2px}
+#interview-answer:focus{border-color:#8a61dc}
+.interview-compose-actions{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-top:11px}
+.interview-compose-actions button{min-height:40px}
+.interview-compose-actions .recording{background:#efe6ff;border-color:#b998ff;color:#673acb}
+#interview-voice-status{font-size:11px;color:#796b91;margin:10px 0 0;min-height:16px}
+.interview-hint{font-size:10px!important;color:#897e9a!important;padding:12px 23px 17px;margin:0!important;line-height:1.7}
+.interview-welcome .interview-hint{padding:0;margin-top:21px!important}
+.interview-completed{margin:0 24px 20px;padding:15px;background:#f1f9f0;border-radius:12px;color:#245b32;font-size:12px;font-weight:750}
+.interview-profile .profile-review{margin:0;height:100%;position:static}
+.interview-profile .profile-review textarea{min-height:270px;max-height:600px}
+.interview-advanced{margin:18px 0 7px}
+.interview-advanced .secondary{border-color:#e7ddf4}
+@media(max-width:1050px){.interview-layout:has(.interview-profile){grid-template-columns:1fr}.interview-profile .profile-review{height:auto}}
+@media(max-width:650px){
+ .interview-welcome{padding:28px 18px!important}
+ .interview-welcome h3{font-size:26px}
+ .interview-modes{grid-template-columns:1fr;gap:11px}
+ .interview-modes>button{min-height:0;padding:17px 19px}
+ .interview-modes small{min-height:0}
+ .training-interview-feed{padding:18px 12px;min-height:270px;max-height:52vh}
+ .interview-chat>header{padding:13px 11px}
+ .interview-chat header strong{font-size:13px}
+ .interview-line{max-width:96%}
+ .interview-bubble{padding:12px 13px}
+ .interview-bubble p{font-size:12px}
+ #interview-compose{padding:12px}
+ .interview-hint{padding:10px 12px 13px}
+ .interview-chat .secondary.compact{font-size:10px;padding:8px}
+ .interview-compose-actions .secondary,.interview-compose-actions .primary{font-size:11px;padding:10px}
+}
+@media(prefers-reduced-motion:reduce){.interview-modes>button,.interview-progress span{transition:none}.interview-modes>button:hover{transform:none}}

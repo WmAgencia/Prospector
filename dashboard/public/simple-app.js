@@ -85,7 +85,7 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
  });
 }
 
-function nav(viewName){n('');if(platformContext.role==="master"&&!["dashboard","clients","credits","settings"].includes(viewName))viewName="overview";if((viewName==="clients"||viewName==="dashboard")&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName=platformContext.role==="master"?"dashboard":"overview";if(viewName==="overview"&&platformContext.role==="master")viewName="dashboard";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients")loadClients();if(view==="dashboard")loadMasterMetrics();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();}
+function nav(viewName){if(view==='training'&&viewName!=='training')interviewStopVoice();n('');if(platformContext.role==="master"&&!["dashboard","clients","credits","settings"].includes(viewName))viewName="overview";if((viewName==="clients"||viewName==="dashboard")&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName=platformContext.role==="master"?"dashboard":"overview";if(viewName==="overview"&&platformContext.role==="master")viewName="dashboard";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients")loadClients();if(view==="dashboard")loadMasterMetrics();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();}
 
 function glyph(key){
  if(globalThis.ProspectorIcons)return globalThis.ProspectorIcons.svg(key);
@@ -368,24 +368,114 @@ function trainingAnalysis(t){
  '<p class="footnote">A análise não envia mensagens aos contatos e só examina amostras dos textos enviados pela empresa. O perfil gerado precisa ser revisado antes de entrar em uso.</p>'+
  (t.runs?.length?'<div class="training-history"><h4>Últimas análises</h4>'+t.runs.slice(0,3).map(x=>'<p><strong>'+esc(({RUNNING:'Analisando',REVIEW:'Pronta para revisão',FAILED:'Não concluída'})[x.status]||x.status)+'</strong> · '+stamp(x.created_at)+(x.details?.error?'<br>'+esc(x.details.error):'')+'</p>').join('')+'</div>':'')+'</section>';
 }
-function trainingView(){
- const t=trainingState||{},ready=!!t.profile&&!trainingWizardReopen,step=Math.max(0,Math.min(3,trainingStep));
- const title='<div class="workspace-head"><div><span class="kicker">TREINAMENTO DA IA</span><h2>'+(ready?'Contexto configurado':'Configure seu atendimento por etapas')+'</h2><p>'+(ready?'Continue treinando do seu jeito ou revise o perfil aprovado.':'Ensine à IA como sua empresa funciona sem precisar de termos técnicos.')+'</p></div><span class="tag '+(t.profile?'green':'')+'">'+(t.profile?'Perfil aprovado':'Configuração em andamento')+'</span></div>';
- if(ready)return title+'<div class="training-configured-head"><span class="tag green">✓ Contexto configurado</span><button type="button" class="secondary compact" data-action="training-reopen">Reconfigurar etapas</button><button type="button" class="secondary compact" data-action="training-open-analysis">Analisar mais conversas</button></div><div class="training-ready-grid">'+trainingConversation(t)+trainingProfile(t)+'</div>'+(trainingStep===2?trainingAnalysis(t):'');
- const steps=['Sobre a empresa','Explique do seu jeito','Analisar conversas','Revisar e ativar'];
- const trail='<div class="training-wizard-steps">'+steps.map((name,i)=>'<button type="button" data-action="training-goto" data-step="'+i+'" class="'+(i===step?'active':i<step?'completed':'')+'"><span>'+(i<step?'✓':i+1)+'</span><small>'+name+'</small></button>').join('')+'</div>';
- let body='';
- if(step===0){
-  body='<section class="panel training-wizard-card"><span class="kicker">ETAPA 01 / 04</span><h3>Conte sobre sua empresa</h3><p>Preencha só o essencial. Essas informações ajudam a IA a atender sem inventar serviços ou condições.</p><form id="training-business" class="stack-form"><label>Nome da empresa<input name="name" required maxlength="100" value="'+esc(t.business?.name||'')+'" placeholder="Nome da sua empresa"></label><label>WhatsApp pessoal para avisar interessados<input name="notificationPhone" type="tel" value="'+esc(t.business?.notificationPhone||'')+'" placeholder="(15) 99999-9999"></label><label>Serviços, público e informações aprovadas<textarea name="description" rows="5" maxlength="4000" placeholder="Quais são os principais serviços? Quem são os clientes? Quais orientações já estão aprovadas?">'+esc(t.business?.description||'')+'</textarea></label><button class="primary" type="submit">Salvar e continuar →</button></form></section>';
- }else if(step===1){
-  body='<div class="training-wizard-head"><span class="kicker">ETAPA 02 / 04</span><h3>Explique falando ou escrevendo</h3><p>Fale normalmente: você não precisa preparar um texto técnico.</p></div>'+trainingConversation(t)+'<div class="training-wizard-actions"><button type="button" class="secondary" data-action="training-prev">Voltar</button><button type="button" class="primary" data-action="training-next">Próxima etapa →</button></div>';
- }else if(step===2){
-  body='<div class="training-wizard-head"><span class="kicker">ETAPA 03 / 04</span><h3>Aprenda com suas conversas</h3><p>Conecte os números e escolha quais históricos comerciais você autoriza analisar.</p></div>'+trainingAnalysis(t)+'<div class="training-wizard-actions"><button type="button" class="secondary" data-action="training-prev">Voltar</button><button type="button" class="primary" data-action="training-next">Revisar perfil →</button></div>';
- }else{
-  body='<div class="training-wizard-head"><span class="kicker">ETAPA 04 / 04</span><h3>Revise antes de ativar</h3><p>Somente o que você aprovar será usado no atendimento.</p></div>'+trainingProfile(t)+'<div class="training-wizard-actions"><button type="button" class="secondary" data-action="training-prev">Voltar</button>'+(t.profile?'<button type="button" class="primary" data-action="training-finish">Concluir configuração</button>':'')+'</div>';
- }
- return title+trail+'<div class="training-wizard-content">'+body+'</div>';
+
+let interviewVoice=false,interviewVoiceSession=null,interviewAudio=null,interviewAudioUrl=null,interviewAudioDone=null,interviewVoiceState='off',interviewSending=false,interviewInput='',interviewShowAnalysis=false;
+function interviewStopSpeech(){
+ if(interviewAudio){try{interviewAudio.pause();interviewAudio.src='';}catch{}interviewAudio=null;}
+ if(interviewAudioUrl){URL.revokeObjectURL(interviewAudioUrl);interviewAudioUrl=null;}
+ const done=interviewAudioDone;interviewAudioDone=null;if(done)done();
 }
+function interviewStopVoice(){
+ interviewVoice=false;interviewVoiceState='off';
+ if(interviewVoiceSession){interviewVoiceSession.stop();interviewVoiceSession=null;}
+ interviewStopSpeech();
+}
+function interviewVoiceLabel(){
+ if(!interviewVoice)return 'Voz desligada. Você pode responder escrevendo.';
+ return ({connecting:'Conectando microfone...',speaking:'Francisca está falando · você pode interromper',listening:'Microfone ligado · pode falar',hearing:'Estou ouvindo...',processing:'Transcrevendo sua resposta...'})[interviewVoiceState]||'Microfone ativo';
+}
+function interviewVoiceIndicator(){
+ const s=q('#interview-voice-status');if(s)s.textContent=interviewVoiceLabel();
+ const button=q('[data-action="interview-voice-toggle"]');
+ if(button){button.textContent=interviewVoice?'Desligar voz':'Conversar por voz';button.classList.toggle('recording',interviewVoice);}
+}
+async function interviewSpeak(message){
+ if(!interviewVoice||!message)return;
+ try{
+  interviewVoiceState='speaking';interviewVoiceIndicator();
+  const response=await fetch('/api/ai/francisca-speak',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({text:String(message).slice(0,650)})});
+  if(!response.ok)throw Error('Voz temporariamente indisponível');
+  if(!interviewVoice)return;
+  const url=URL.createObjectURL(await response.blob()),audio=new Audio(url);
+  interviewStopSpeech();interviewAudioUrl=url;interviewAudio=audio;
+  await new Promise((resolve,reject)=>{
+   interviewAudioDone=resolve;
+   audio.onended=()=>interviewStopSpeech();
+   audio.onerror=()=>{interviewStopSpeech();reject(Error('Reprodução falhou'));};
+   Promise.resolve(audio.play()).catch(e=>{interviewStopSpeech();reject(e);});
+  });
+ }catch(error){if(interviewVoice)n('A pergunta está escrita no chat; '+String(error.message).slice(0,80));}
+ finally{if(interviewVoice){interviewVoiceState='listening';interviewVoiceIndicator();}}
+}
+async function interviewSend(text){
+ if(interviewSending)return;
+ text=String(text||'').trim();
+ if(text.length<2){n('Responda à pergunta antes de continuar.');return;}
+ interviewSending=true;interviewInput='';render();
+ try{
+  trainingState=await post('/api/training/interview/turn',{text});
+  render();
+  const el=q('.training-interview-feed');if(el)el.scrollTop=el.scrollHeight;
+  const last=trainingState.interview?.messages?.at(-1);
+  if(interviewVoice&&last?.role==='assistant')await interviewSpeak(last.body);
+  if(trainingState.interview?.completed&&interviewVoice)interviewStopVoice();
+ }catch(error){interviewInput=text;n(error.message);}
+ finally{interviewSending=false;render();if(view==='training'&&!interviewVoice)q('#interview-answer')?.focus();}
+}
+async function interviewStartVoice(){
+ if(interviewVoice||!trainingState?.interview||trainingState.interview.completed)return;
+ interviewVoice=true;interviewVoiceState='connecting';interviewVoiceIndicator();
+ try{
+  const {createFranciscaVoiceSession}=await import('./francisca-live.mjs');
+  if(!interviewVoice)return;
+  interviewVoiceSession=createFranciscaVoiceSession({
+   canInterrupt:()=>interviewVoice&&interviewVoiceState==='speaking',
+   onInterrupt:()=>{interviewStopSpeech();interviewVoiceState='hearing';interviewVoiceIndicator();},
+   onState:s=>{if(interviewVoice&&interviewVoiceState!=='speaking'){interviewVoiceState=s;interviewVoiceIndicator();}},
+   onError:msg=>{if(interviewVoice)n(msg);},
+   onTurn:async blob=>{
+    if(!interviewVoice||interviewSending)return;
+    try{
+     interviewVoiceState='processing';interviewVoiceIndicator();
+     const r=await fetch('/api/training/voice-note',{method:'POST',credentials:'same-origin',headers:{'Content-Type':(blob.type||'audio/webm').split(';')[0]},body:blob});
+     const v=await r.json();if(!r.ok)throw Error(v.error||'Não foi possível entender o áudio');
+     if(interviewVoice)await interviewSend(v.text);
+    }catch(error){if(interviewVoice)n(error.message);}
+   }
+  });
+  await interviewVoiceSession.start();
+  if(!interviewVoice)return;
+  interviewVoiceState='listening';interviewVoiceIndicator();
+  await interviewSpeak(trainingState.interview.question);
+ }catch(e){interviewStopVoice();render();n('Microfone indisponível. Você pode digitar: '+String(e.message||'').slice(0,100));}
+}
+async function interviewStart(mode){
+ if(interviewSending)return;
+ interviewStopVoice();interviewSending=true;
+ try{trainingState=await post('/api/training/interview/start',{mode});interviewShowAnalysis=false;}
+ catch(e){n(e.message);return;}
+ finally{interviewSending=false;render();}
+ if(mode==='voice')await interviewStartVoice();
+}
+function interviewView(){
+ const t=trainingState||{},i=t.interview;
+ const top='<div class="workspace-head"><div><span class="kicker">TREINAMENTO DA IA</span><h2>Converse com a Francisca.</h2><p>Ela faz perguntas objetivas e adapta o treinamento à sua empresa e aos seus serviços.</p></div><span class="tag '+(t.profile?'green':'')+'">'+(t.profile?'Perfil aprovado':'Aguardando treinamento')+'</span></div>';
+ let body='';
+ if(!i){
+  body='<section class="panel interview-welcome"><span class="interview-avatar">F</span><span class="kicker">OI! SOU A FRANCISCA</span><h3>Você quer fazer meu treinamento escrito ou por voz?</h3><p>Eu vou aprender o que você vende, para quem vende, valores, condições e quando devo avisar você.</p><div class="interview-modes"><button type="button" data-action="interview-start" data-mode="voice"><span>◉</span><strong>Por voz</strong><small>Eu pergunto em voz alta, escuto suas respostas e também mostro tudo por escrito.</small><b>Começar por voz ↗</b></button><button type="button" data-action="interview-start" data-mode="text"><span>✎</span><strong>Por escrito</strong><small>Uma conversa natural no chat. Responda com calma e revise no final.</small><b>Começar por chat ↗</b></button></div><p class="interview-hint">Seu perfil só será usado após sua aprovação.</p></section>';
+ }else{
+  const messages=(i.messages||[]).map(m=>'<div class="interview-line '+(m.role==='user'?'user':'assistant')+'">'+(m.role==='assistant'?'<span class="interview-small-avatar">F</span>':'')+'<div class="interview-bubble"><small>'+(m.role==='assistant'?'Francisca':'Você')+'</small><p>'+esc(m.body)+'</p></div></div>').join('');
+  body='<section class="panel interview-chat"><header><div><span class="interview-small-avatar">F</span><div><strong>Francisca</strong><small>'+(i.mode==='voice'?'Treinamento por voz e chat':'Treinamento por chat')+'</small></div></div><div><span class="tag">'+esc(i.progress)+'%</span><button type="button" class="secondary compact" data-action="interview-reset">Recomeçar</button></div></header><div class="interview-progress" role="progressbar" aria-label="Progresso do treinamento" aria-valuenow="'+esc(i.progress)+'" aria-valuemin="0" aria-valuemax="100"><span style="width:'+esc(i.progress)+'%"></span></div><div class="training-interview-feed" role="log" aria-live="polite">'+messages+'</div>'+
+  (i.completed?'<p class="interview-completed">✓ Entrevista concluída. Revise o perfil abaixo antes de ativar.</p>':
+  '<form id="interview-compose"><label class="sr-only" for="interview-answer">Sua resposta</label><textarea id="interview-answer" name="text" maxlength="850" rows="2" placeholder="Responda escrevendo ou por voz…" '+(interviewSending?'disabled':'')+'>'+esc(interviewInput)+'</textarea><div class="interview-compose-actions"><button type="button" class="secondary '+(interviewVoice?'recording':'')+'" data-action="interview-voice-toggle">'+(interviewVoice?'Desligar voz':'Conversar por voz')+'</button><button type="submit" class="primary" '+(interviewSending?'disabled':'')+'>'+(interviewSending?'Registrando…':'Enviar ↗')+'</button></div><p id="interview-voice-status" role="status">'+esc(interviewVoiceLabel())+'</p></form>')+
+  '<p class="interview-hint">Você pode falar e escrever. Áudios são transcritos, não salvos como gravação. Nada é ativado sem sua aprovação.</p></section>';
+ }
+ const profile=(i?.completed||(!i&&(t.profile||t.draft)))?'<div class="interview-profile">'+trainingProfile(t)+'</div>':'';
+ const advanced='<div class="interview-advanced"><button type="button" class="secondary compact" data-action="interview-analysis">'+(interviewShowAnalysis?'Ocultar análise':'Analisar conversas comerciais também')+'</button></div>'+(interviewShowAnalysis?trainingAnalysis(t):'');
+ return top+'<div class="interview-layout">'+body+profile+'</div>'+advanced;
+}
+function trainingView(){return interviewView();}
+
 async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/analytics');if(platformContext.role==='master'&&view==='dashboard')render();}catch(e){n('Indicadores indisponíveis: '+e.message);}}
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
 async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');if(view==='credits')render();}catch(e){n(e.message);}}
@@ -452,6 +542,10 @@ async function platformAction(action,el){
   const answer=await confirmInApp({title:suspend?'Suspender acesso?':'Reativar acesso?',description:suspend?'O gestor '+(client?.name||'selecionado')+' deixará de acessar o painel e seu processo de atendimento será interrompido.':'O cliente voltará a acessar seu ambiente privado.',danger:suspend,confirmLabel:suspend?'Suspender conta':'Reativar conta'});
   if(!answer)return true;await post('/api/platform/clients/'+el.dataset.client+'/status',{status:el.dataset.status});await loadClients();n('Acesso atualizado.');return true;
  }
+ if(action==='interview-start'){await interviewStart(el.dataset.mode==='voice'?'voice':'text');return true;}
+ if(action==='interview-voice-toggle'){if(interviewVoice){interviewStopVoice();render();}else await interviewStartVoice();return true;}
+ if(action==='interview-reset'){const approved=await confirmInApp({title:'Recomeçar entrevista?',description:'As respostas desta entrevista serão reiniciadas. O perfil já aprovado não será alterado.',confirmLabel:'Recomeçar'});if(approved){interviewStopVoice();trainingState=await post('/api/training/interview/reset',{});interviewInput='';render();}return true;}
+ if(action==='interview-analysis'){interviewShowAnalysis=!interviewShowAnalysis;render();return true;}
  if(action==='training-reopen'){trainingWizardReopen=true;trainingStep=0;render();return true;}
  if(action==='training-open-analysis'){trainingStep=2;render();return true;}
  if(action==='training-finish'){trainingWizardReopen=false;trainingStep=0;render();return true;}
@@ -470,7 +564,7 @@ async function platformAction(action,el){
  return false;
 }
 async function platformSubmit(ev){
- const id=ev.target.id;if(!['client-create','training-business','training-chat','training-approve'].includes(id))return false;
+ const id=ev.target.id;if(id==='interview-compose'){ev.preventDefault();await interviewSend(new FormData(ev.target).get('text'));return true;}if(!['client-create','training-business','training-chat','training-approve'].includes(id))return false;
  ev.preventDefault();if(trainingBusy||busy)return true;
  const input=Object.fromEntries(new FormData(ev.target));trainingBusy=true;busy=id==='client-create';
  const button=ev.target.querySelector('button');if(button)button.disabled=true;
@@ -1023,7 +1117,8 @@ document.addEventListener("input",e=>{
  if(e.target.id==='scope-niche'){scopeNicheInput=e.target.value;return;}
  if(e.target.id==='scope-city'){scopeCityInput=e.target.value;return;}
 
- if(e.target.id==='training-input'){trainingRecordedText=e.target.value;return;}
+ if(e.target.id==='interview-answer'){interviewInput=e.target.value;return;}
+  if(e.target.id==='training-input'){trainingRecordedText=e.target.value;return;}
  if(e.target.id==='client-search'){
   clientSearch=e.target.value;const cursor=e.target.selectionStart;render();
   const input=q('#client-search');if(input){input.focus();input.setSelectionRange(cursor,cursor);}return;
