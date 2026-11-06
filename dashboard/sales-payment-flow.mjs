@@ -16,10 +16,17 @@ export function paymentIntentStatus(leadId){const r=one('SELECT lead_id,amount_c
 export function salesPaymentQueue(){
  return all("SELECT p.lead_id,p.amount_cents,p.entry_cents,p.remaining_cents,p.status,p.receipt_at,p.verified_at,l.business,l.phone FROM sales_payment_intents p JOIN leads l ON l.id=p.lead_id WHERE p.status IN ('RECEIPT_RECEIVED','PAYMENT_VERIFIED','DELIVERY_UNKNOWN') ORDER BY p.updated_at DESC LIMIT 50");
 }
+// Negotiating or saying "quero fechar" must NOT send PIX automatically.
+// A payment method choice or explicit PIX request is required.
 const acceptance=text=>{
  const s=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
  if(/\b(nao|nunca|talvez|depois|duvida|ainda nao)\b/.test(s))return false;
- return /(?:quero fechar|vamos fechar|quero contratar|pode iniciar|aceito (?:a proposta|o orcamento|o valor)|(?:manda|pode mandar|passa|pode enviar|me envia|me passa).{0,30}(?:pix|chave)|(?:qual|como).{0,20}(?:pix|forma de pagar))/.test(s);
+ if(/\b(?:no cartao|por cartao|boleto)\b/.test(s)&&!/\b(?:pix|entrada)\b/.test(s))return false;
+ return /(?:manda|pode mandar|passa|pode enviar|me envia|me passa).{0,35}(?:pix|chave)|(?:qual|como).{0,25}(?:pix|faco o pix)|(?:vou|quero|prefiro).{0,30}(?:pagar|fazer).{0,30}(?:pix|entrada|a vista)|(?:vai ser|sera|prefiro|quero).{0,18}(?:a vista|50% de entrada|cinquenta por cento de entrada)/.test(s);
+};
+const fullPaymentSelected=text=>{
+ const s=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+ return /(?:tudo|integral|100%|cem por cento).{0,25}(?:agora|pix|a vista)|(?:a vista|pagar tudo agora|pagamento integral)/.test(s)&&!/(?:restante|saldo|50%|cinquenta por cento)/.test(s);
 };
 function singleApprovedPrice(markdown=''){
  const s=String(markdown).split('## Serviços, entregas e preços aprovados')[1]?.split('## Fluxo comercial')[0]||'';
@@ -48,7 +55,15 @@ export function paymentProposalForIncoming({leadId,jid,sessionId,providerId,text
   return {eligible:false,reason:'NOT_ELIGIBLE'};
  const price=priceForLead(leadId);
  if(!price)return {eligible:false,reason:'PRICE_NOT_VERIFIED'};
- const offer=pixProposal({amountCents:price,service:'o projeto combinado'});
+ // If an alternative offer was discussed, no implicit return to the R$550
+ // base price. Require explicit lead-specific owner price approval.
+ const approvedForLead=approvedPriceForLead(leadId);
+ if(!approvedForLead){
+  const offerHistory=all("SELECT m.body FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' ORDER BY m.rowid DESC LIMIT 60",leadId);
+  if(offerHistory.some(m=>/R\$\s*(?:450|750|2[.]?800)(?:[,.\s]|$)/i.test(String(m.body||''))))
+   return {eligible:false,reason:'ALTERNATIVE_OFFER_NEEDS_PRICE_APPROVAL'};
+ }
+ const offer=pixProposal({amountCents:price,service:'o projeto combinado',fullPayment:fullPaymentSelected(text)});
  if(!offer)return {eligible:false,reason:'PAYMENT_METHOD_NOT_READY'};
  const previous=one('SELECT status FROM sales_payment_intents WHERE lead_id=?',leadId);
  if(previous)return {eligible:false,reason:'PAYMENT_ALREADY_STARTED',status:previous.status};
