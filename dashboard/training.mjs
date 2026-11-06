@@ -9,6 +9,7 @@ import {trainingInterviewStatus,startTrainingInterview,advanceTrainingInterview,
 import {storeTrainingMarkdown,readTrainingMarkdown,removeTrainingMarkdown,trainingMarkdownName} from './training-markdown.mjs';
 import {globalSalesMarkdown,GLOBAL_SALES_FILENAME,GLOBAL_SALES_VERSION} from './francisca-vendas-global.mjs';
 import fs from 'node:fs';
+import path from 'node:path';
 db.exec(`CREATE TABLE IF NOT EXISTS training_chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,body TEXT NOT NULL,at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS training_runs(id TEXT PRIMARY KEY,status TEXT NOT NULL,report TEXT,details TEXT NOT NULL,created_at TEXT NOT NULL);`);
 run("UPDATE training_runs SET status='FAILED',details=? WHERE status='RUNNING'",JSON.stringify({error:'Análise interrompida pelo reinício. Inicie novamente quando desejar.'}));
@@ -40,23 +41,52 @@ export function readActiveTrainingMarkdown(){
 // The Consecom Production account runs as a tenant worker. It must inherit
 // its already-approved business behavior, NEVER new-client onboarding.
 const isConsecomInternal=()=>process.env.PROSPECTOR_TENANT_INTERNAL==='true';
+function priorConsecomApprovedMarkdown(){
+ // Before SaaS workspaces, Consecom had one root data directory.
+ // Only the trusted internal worker may read its old active Markdown.
+ const platformDir=process.env.PROSPECTOR_PLATFORM_DIR;
+ if(!platformDir)return null;
+ const file=path.join(path.dirname(platformDir),'training','francisca.md');
+ try{
+  const stat=fs.lstatSync(file);
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size<20||stat.size>18000)return null;
+  const content=fs.readFileSync(file,'utf8');
+  return content.length>=20&&content.length<=18000?content:null;
+ }catch(error){
+  if(error?.code!=='ENOENT')console.warn('[legacy owner markdown]',String(error?.code||error?.message).slice(0,60));
+  return null;
+ }
+}
 export function ensureConsecomOriginalTraining(){
  if(!isConsecomInternal())return {status:'NOT_INTERNAL'};
- const old=getSetting('training_active',null);
- if(old)return {status:'PRESERVED_EXISTING'};
- let existing=readTrainingMarkdown('active'),file;
- if(existing)file={filename:trainingMarkdownName('active'),sha256:crypto.createHash('sha256').update(existing).digest('hex')};
- else {
+ const prior=getSetting('training_active',null);
+ // A genuine previously approved profile must never be rewritten.
+ if(prior&&prior.source!=='consecom-original-configuration')
+  return {status:'PRESERVED_EXISTING'};
+ const legacy=priorConsecomApprovedMarkdown();
+ if(prior?.source==='consecom-original-configuration'){
+  // Upgrade only our own automatic placeholder and only if untouched.
+  if(!legacy)return {status:'PRESERVED_AUTOCONFIG'};
   const original=fs.readFileSync(new URL('./francisca-consecom-original.md',import.meta.url),'utf8');
-  file=storeTrainingMarkdown('active',original);
+  if(readTrainingMarkdown('active')?.trim()!==original.trim())
+   return {status:'PRESERVED_EXISTING'};
  }
- setSetting('training_active',{id:'consecom-original-playbook-2026-11',
-  source:existing?'recovered-existing-md':'consecom-original-configuration',
+ const existing=!prior?readTrainingMarkdown('active'):null;
+ let file,source;
+ if(existing){
+  file={filename:trainingMarkdownName('active'),sha256:crypto.createHash('sha256').update(existing).digest('hex')};
+  source='recovered-existing-md';
+ }else{
+  const chosen=legacy||fs.readFileSync(new URL('./francisca-consecom-original.md',import.meta.url),'utf8');
+  file=storeTrainingMarkdown('active',chosen);
+  source=legacy?'recovered-legacy-owner-md':'consecom-original-configuration';
+ }
+ setSetting('training_active',{id:'consecom-original-playbook-2026-11',source,
   filename:file.filename,sha256:file.sha256,format:'markdown',at:now()});
  if(!getSetting('training_business',null))
   setSetting('training_business',{name:'Consecom Brasil',
    description:'Agência de publicidade, marketing e tecnologia; sites profissionais, sistemas, tráfego e automações.'});
- return {status:existing?'RECOVERED':'CONFIGURED'};
+ return {status:source==='recovered-legacy-owner-md'?'MIGRATED_LEGACY':source==='recovered-existing-md'?'RECOVERED':'CONFIGURED'};
 }
 if(isConsecomInternal()){
  try{ensureConsecomOriginalTraining();}
