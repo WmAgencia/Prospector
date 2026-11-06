@@ -21,9 +21,9 @@ test('fixed offer is accurate and remains inside the WhatsApp message length gua
  assert.ok(price.length<=650);
 });
 
-test('dates add exactly three local calendar days, including leap and year boundaries',()=>{
- assert.equal(brDeliveryDate(at),'7 de novembro de 2026');
- assert.equal(brDeliveryDate(new Date('2026-12-30T15:00:00Z')),'2 de janeiro de 2027');
+test('dates add exactly three Sao Paulo weekdays, including leap and year boundaries',()=>{
+ assert.equal(brDeliveryDate(at),'9 de novembro de 2026');
+ assert.equal(brDeliveryDate(new Date('2026-12-30T15:00:00Z')),'4 de janeiro de 2027');
  assert.equal(brDeliveryDate(new Date('2028-02-28T15:00:00Z')),'2 de março de 2028');
 });
 
