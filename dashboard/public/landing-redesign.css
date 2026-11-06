@@ -255,3 +255,7 @@ body.p3-site{background:#f7f7ff;color:var(--deep);font:400 14px/1.55 'DM Sans',s
 }
 @media(max-width:370px){.p3-price-features{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.p3-price-card:hover{transform:none}}
+
+.p3-price-card h3 small{font-size:11px;font-weight:650;color:#827596;letter-spacing:0}
+.p3-price-savings{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.p3-price-savings b{font-size:10px;letter-spacing:0;border-radius:99px;background:#ebe5ff;color:#542fc2;padding:4px 9px}

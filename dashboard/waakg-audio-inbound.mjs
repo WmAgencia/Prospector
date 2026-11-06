@@ -2,10 +2,11 @@
 // The transcript is handled by the same inbox and Groq intent path as text.
 import {db,one,run,now,audit} from './db.mjs';
 import {safeMediaPath,fetchPrivateAudio,MAX_MEDIA_BYTES} from './waakg-media.mjs';
+import {prospectorChatEligible} from './whatsapp-roles.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS inbound_audio_jobs(provider_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,media_path TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT)");
 run("UPDATE inbound_audio_jobs SET state='REVIEW',error='Interrupted job; please review' WHERE state='PROCESSING'");
 export function queueInboundAudio({providerId,sessionId,jid,fileUrl}={}){
- if(!/^[a-zA-Z0-9_-]{3,70}$/.test(sessionId||'')||
+ if(!prospectorChatEligible({jid,sessionId})||!/^[a-zA-Z0-9_-]{3,70}$/.test(sessionId||'')||
   !/^\d{10,15}@s\.whatsapp\.net$/.test(jid||'')||
   !/^[a-zA-Z0-9_-]{3,70}:[\w-]{5,150}$/.test(providerId||'')||
   !safeMediaPath(fileUrl))return {queued:false,reason:'INVALID_MEDIA_REFERENCE'};

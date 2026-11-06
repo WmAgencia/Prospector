@@ -66,7 +66,7 @@ export function franciscaPanelContext({masterAuthorized=false}={}){
  const stages=all('SELECT stage,COUNT(*) AS n FROM leads GROUP BY stage').map(x=>({stage:x.stage,count:x.n}));
  const chats=all('SELECT lead_id FROM threads').filter(x=>prospectorLeadEligible(x.lead_id)).length;
  const totalSent=one("SELECT COUNT(*) n FROM initial_contacts WHERE status='SENT'")?.n||0;
- const last=all('SELECT business,city,stage FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 12').map(x=>({name:cap(x.business,70),city:cap(x.city,40),stage:x.stage}));
+ const last=all('SELECT id,business,city,stage,source FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 60').filter(x=>x.source!=='WHATSAPP_INBOUND'||prospectorLeadEligible(x.id)).slice(0,12).map(x=>({name:cap(x.business,70),city:cap(x.city,40),stage:x.stage}));
  const outcomes=salesOutcomes({limit:100});
  const todayOutcomes=outcomes.items.filter(x=>String(x.updated_at||'').slice(0,10)===daySP());
  const latestOutcomes=outcomes.items.slice(0,35).map(x=>({name:cap(x.business,70),phone:cap(x.phone,30),status:x.status,summary:cap(x.summary,170),updatedAt:x.updated_at}));
