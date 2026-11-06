@@ -1,0 +1,47 @@
+name: Francisca 2.0 focused checks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'dashboard/francisca-*.mjs'
+      - 'dashboard/groq-sales-automation.mjs'
+      - 'dashboard/portfolio-offer-550.mjs'
+      - 'dashboard/sales-payment-flow.mjs'
+      - 'dashboard/training-sales-extras.mjs'
+      - 'dashboard/ai-groq.mjs'
+      - 'dashboard/tests/francisca-*.test.mjs'
+      - 'tests/francisca-2-100-scenarios.test.mjs'
+      - '.github/workflows/francisca-focused.yml'
+  workflow_dispatch:
+jobs:
+  francisca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check changed modules syntax
+        run: |
+          node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/francisca-conversation-state.mjs
+          node --check dashboard/francisca-conversation-memory.mjs
+          node --check dashboard/francisca-approved-replies.mjs
+          node --check dashboard/francisca-payment-intent.mjs
+          node --check dashboard/francisca-consecom-policy.mjs
+          node --check dashboard/sales-payment-flow.mjs
+          node --check dashboard/training-sales-extras.mjs
+          node --check dashboard/ai-groq.mjs
+          node --check dashboard/portfolio-offer-550.mjs
+      - name: Focused deterministic and 100-scenario tests (no live WhatsApp)
+        run: |
+          node --test \
+            dashboard/tests/francisca-approved-replies.test.mjs \
+            dashboard/tests/francisca-conversation-state.test.mjs \
+            dashboard/tests/francisca-payment-intent.test.mjs \
+            tests/francisca-2-100-scenarios.test.mjs \
+            tests/francisca-chat-coach.test.mjs \
+            tests/francisca-context-continuity.test.mjs
