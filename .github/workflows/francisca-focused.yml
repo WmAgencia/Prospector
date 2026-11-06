@@ -33,6 +33,8 @@ jobs:
           node --check dashboard/francisca-payment-intent.mjs
           node --check dashboard/francisca-consecom-policy.mjs
           node --check dashboard/sales-payment-flow.mjs
+          node --check dashboard/waakg-bridge.mjs
+          node --check dashboard/training.mjs
           node --check dashboard/training-sales-extras.mjs
           node --check dashboard/ai-groq.mjs
           node --check dashboard/portfolio-offer-550.mjs
@@ -42,6 +44,7 @@ jobs:
             dashboard/tests/francisca-approved-replies.test.mjs \
             dashboard/tests/francisca-conversation-state.test.mjs \
             dashboard/tests/francisca-payment-intent.test.mjs \
+            dashboard/tests/francisca-payment-review.test.mjs \
             tests/francisca-2-100-scenarios.test.mjs \
             tests/francisca-chat-coach.test.mjs \
             tests/francisca-context-continuity.test.mjs

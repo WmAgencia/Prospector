@@ -7,6 +7,8 @@ test('respostas comerciais aprovadas sem repetir a proposta',()=>{
  ['não quero o feito por Consecom no rodapé',/R\$ 2\.800/],
  ['achei caro, faz mais barato?',/R\$ 450/],
  ['posso pagar tudo depois?',/entrada de 50%/],
+ ['quais são as formas de pagamento?',/até três vezes sem juros/],
+ ['posso pagar 50% na entrada e 50% no final?',/50% de entrada/],
  ['quanto tempo pra ficar pronto?',/três dias úteis/],
  ['não tenho fotos',/IA/],
  ['vou querer loja virtual com checkout',/R\$ 750/],
