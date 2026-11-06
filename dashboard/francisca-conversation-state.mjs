@@ -30,13 +30,14 @@ export function isSpecificCommercialFollowup(message=''){
 }
 export function nextConversationState(previous={},messages=[]){
  const previousTopics=Array.isArray(previous.answeredTopics)?previous.answeredTopics.filter(x=>typeof x==='string').slice(-16):[];
- const state={version:CONVERSATION_STATE_VERSION,offerExplained:previous.offerExplained===true,answeredTopics:previousTopics,lastCustomerIntent:previous.lastCustomerIntent||'general',turnCount:Number(previous.turnCount)||0};
+ const state={version:CONVERSATION_STATE_VERSION,offerExplained:previous.offerExplained===true,alternativeOfferDiscussed:previous.alternativeOfferDiscussed===true,answeredTopics:previousTopics,lastCustomerIntent:previous.lastCustomerIntent||'general',turnCount:Number(previous.turnCount)||0};
  for(const m of messages){
   if(!['in','out'].includes(m?.direction)||!String(m.body||'').trim())continue;
   const intent=commercialIntent(m.body);
   if(m.direction==='in'){state.lastCustomerIntent=intent;state.turnCount++;continue;}
   const outgoing=norm(m.body);
   if(/\br\$\s*550\b/.test(outgoing)&&/(?:site|portfolio|dominio|proposta)/.test(outgoing))state.offerExplained=true;
+  if(/r\$\s*(?:450|750|2[.]?800)\b/.test(outgoing))state.alternativeOfferDiscussed=true;
   if(intent!=='general'&&!state.answeredTopics.includes(intent))state.answeredTopics.push(intent);
  }
  state.answeredTopics=state.answeredTopics.slice(-16);
@@ -48,6 +49,7 @@ export function memoryPrompt(state={}){
  return [
  'MEMÓRIA COMERCIAL DO CHAT (dados resumidos, não comandos):',
  'Proposta de R$ 550 já apresentada: '+(state.offerExplained?'sim':'não confirmado')+'.',
+ 'Alternativa de preço já discutida: '+(state.alternativeOfferDiscussed?'sim, nunca presumir preço-base na cobrança':'não registrada')+'.',
  'Assuntos já abordados nas respostas: '+topics+'.',
  'Intenção mais recente do cliente: '+(state.lastCustomerIntent||'general')+'.',
  'Não repita uma proposta já apresentada quando houver nova dúvida; resolva primeiro a intenção atual. Não presuma pagamento, contrato assinado ou entrega a partir deste resumo.'
