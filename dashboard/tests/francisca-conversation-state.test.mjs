@@ -28,6 +28,9 @@ test('memória mantém a proposta explicada e não mistura conversas',()=>{
  assert.equal(first.offerExplained,true);
  const second=nextConversationState(first,[{direction:'in',body:'Eu vou mostrar para meu sócio.'},{direction:'out',body:'Pode mostrar, fico à disposição para tirar dúvidas.'}]);
  assert.equal(second.offerExplained,true);
+ const alt=nextConversationState(second,[{direction:'out',body:'Podemos fazer sem domínio por R$ 450.'}]);
+ assert.equal(alt.alternativeOfferDiscussed,true);
+ assert.match(memoryPrompt(alt),/Alternativa de preço já discutida: sim/);
  assert.equal(second.lastCustomerIntent,'decision');
  assert.match(memoryPrompt(second),/Proposta de R\$ 550 já apresentada: sim/);
  assert.equal(nextConversationState({},[{direction:'in',body:'vou pensar'}]).offerExplained,false);
