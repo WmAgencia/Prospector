@@ -64,6 +64,7 @@ import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-autom
 import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospectorLeadEligible} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
+import {ownerProspectionPaused} from './prospection-pause.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
@@ -271,6 +272,21 @@ if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('auto
  setSetting('discovery_auto_enabled',true);
  setSetting('autonomous_outreach_nov04_rollout_v1',true);
  audit('AUTONOMOUS_OUTREACH_ENABLED',null,{window:'08:00-17:30 America/Sao_Paulo',minSeconds:90,threeCalendarMonths:true,autoResearch:true,coldFirstApproach:process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true'});
+}
+
+// Explicit owner's stop. Persist it and NEVER reopen via a scheduled startup.
+// It applies only to Consecom; third-party tenants keep their own policies.
+if(ownerProspectionPaused()){
+ setSetting('paused',true);
+ setSetting('autonomous_outreach_enabled',false);
+ setSetting('auto_initial',false);
+ setSetting('automation_enabled',false);
+ setSetting('discovery_auto_enabled',false);
+ setSetting('sales_followup_enabled',false);
+ run("UPDATE groq_auto_events SET state='PAUSED_BY_OWNER',error='Owner paused prospecting' WHERE state='PENDING'");
+ run("UPDATE prospecting_introductions SET stage='CANCELLED',reason='Owner paused campaign',updated_at=? WHERE stage IN ('GREETING_SENT','WAITING')",now());
+ audit('OWNER_FORCE_PAUSED_PROSPECTION',null,{outboundCampaigns:false,followups:false,discovery:false,requiresExplicitResume:true});
+ console.warn('[owner pause] Consecom prospecting PAUSED until owner explicitly resumes');
 }
 
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
@@ -859,11 +875,13 @@ const audioTranscriptionTimer=setInterval(()=>{
  }).catch(e=>console.warn('[audio transcription] unexpected',String(e?.message||e).slice(0,80)));
 },4000);
 const customerAiTimer=setInterval(()=>{
+  if(ownerProspectionPaused())return;
  if(process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_PERSONAL_NOTICES_ENABLED!=='true'&&process.env.PROSPECTOR_LIVE_TEST_ENABLED!=='true'&&getSetting('sales_followup_enabled',true)!==true&&getSetting('sales_daily_report_enabled',true)!==true)return;
  try{scheduleReport();}catch(e){console.warn('[daily sales report]',String(e?.message||e).slice(0,70));}
  tickSalesAgent().then(async()=>{const prices=await flushPriceApprovals();return Number(prices.sent||0)+await flushInterestAlerts()+await flushPersonalNotices();}).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
 },6000);
 const autonomousQueueTimer=setInterval(()=>{
+  if(ownerProspectionPaused())return;
  try{
   // Cold first approach: monta a fila das 07:00 à primeira abordagem das 08:00.
   const cold=process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
@@ -874,14 +892,14 @@ const autonomousQueueTimer=setInterval(()=>{
   if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',cadence:approachQueueStatus().cadence,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
  }catch(error){console.warn('[automatic approach]',String(error?.message||error).slice(0,140));}
 },5000);
-const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
+const prospectQueueTimer=setInterval(()=>{if(ownerProspectionPaused())return;tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
-}).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160))),1000);
-const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=>{
+}).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160)));},1000);
+const prospectIntroductionTimer=setInterval(()=>{if(ownerProspectionPaused())return;tickIntroductions().then(result=>{
  if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
-}).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160))),1000);
+}).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160)));},1000);
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
 setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
 setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
@@ -889,6 +907,7 @@ const interruptedSearches=reconcileInterruptedSearches();
 if(interruptedSearches.recovered)console.info('[osm discovery] Recuperadas '+interruptedSearches.recovered+' consultas interrompidas; mantidas na cota diária');
 let lastOSMStatus='',lastOSMLogAt=0;
 function checkOSMDiscovery(){
+ if(ownerProspectionPaused())return Promise.resolve({status:'PAUSED_BY_OWNER'});
  const scheduled=processProspectingSchedule();
  if(scheduled.applied){console.info('[scheduled research] Activated approved scope at 05:00 São Paulo');notify();}
  return dailyLocalDiscovery().then(x=>{

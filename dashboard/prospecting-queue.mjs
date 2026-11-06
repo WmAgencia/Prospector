@@ -1,3 +1,4 @@
+import {ownerProspectionPaused} from './prospection-pause.mjs';
 // One explicitly approved list, persisted in the Prospector volume.
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
@@ -143,6 +144,7 @@ function unsafeSister(sibling,at){
  return !!due&&Date.parse(due)>at;
 }
 export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
+ if(ownerProspectionPaused())return {status:'PAUSED_BY_OWNER'};
  if(getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
  if(getSetting('paused',true))return {status:'PAUSED'};
  closeStaleBatch(at);
@@ -202,6 +204,7 @@ export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
 
 let locked=false;
 export async function tickApproachQueue(deps={}){
+ if(ownerProspectionPaused())return {status:'PAUSED_BY_OWNER'};
  if(locked)return {status:'BUSY'};
  const {currentTime=()=>Date.now(),getWaStatus=waControlStatus,getSession=selectedWaSession,send=waRequest}=deps;
  locked=true;

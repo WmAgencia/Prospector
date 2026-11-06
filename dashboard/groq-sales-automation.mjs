@@ -1,3 +1,4 @@
+import {ownerProspectionPaused} from './prospection-pause.mjs';
 // Groq assistant for inbound 1:1 conversations only. Hot leads silently
 // transfer to the operator; never sends an extra response on handoff.
 import {db,one,all,run,id,tx,now,stage,addMessage,audit} from './db.mjs';
@@ -46,6 +47,7 @@ function approvedProspectFollowup(identity,jid){
  return !!lead&&conversationAuthorized(lead.id);
 }
 export function queueInboundTurn({providerId,jid,sessionId}={}){
+ if(ownerProspectionPaused())return false;
  if(!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
  const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
  const boundSession=sessionId||(lead?leadSession(lead.id):selectedWaSession());
@@ -59,6 +61,7 @@ export function queueInboundTurn({providerId,jid,sessionId}={}){
 }
 const active=new Set();
 export async function handleSalesTurn(providerId,deps={}){
+ if(ownerProspectionPaused())return {state:'PAUSED_BY_OWNER'};
  if(process.env.PROSPECTOR_TENANT_ID&&!readActiveTrainingMarkdown())return {state:'TRAINING_REVIEW_REQUIRED'};
  const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.segment,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
  if(!r)return {state:'SKIP'};

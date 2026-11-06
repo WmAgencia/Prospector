@@ -1,3 +1,4 @@
+import {ownerProspectionPaused} from './prospection-pause.mjs';
 // Two-step introduction on an APPROVED WA-AKG prospect campaign.
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
 // After the introduction, every incoming reply can continue the sales conversation.
@@ -81,6 +82,7 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
 }
 let busy=false;
 export async function tickIntroductions(deps={}){
+ if(ownerProspectionPaused())return {state:'PAUSED_BY_OWNER'};
  if(busy)return {state:'BUSY'};
  const {currentTime=()=>Date.now(),status=waControlStatus,session=selectedWaSession,send=waRequest}=deps;
  busy=true;
