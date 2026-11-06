@@ -9,6 +9,8 @@ import {operatorOffer} from './operator-outreach.mjs';
 import {prospectorChatEligible} from './whatsapp-roles.mjs';
 import {leadSession,isManagedSession} from './waakg-session-registry.mjs';
 import {queueNotice} from './notifications.mjs';
+import {paymentMethodChosen,fullPaymentChosen} from './francisca-payment-intent.mjs';
+import {recallConversationMemory} from './francisca-conversation-memory.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS sales_payment_intents(lead_id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,session_id TEXT NOT NULL,amount_cents INTEGER NOT NULL,entry_cents INTEGER NOT NULL,remaining_cents INTEGER NOT NULL,method TEXT NOT NULL,status TEXT NOT NULL,receipt_provider_id TEXT UNIQUE,requested_at TEXT NOT NULL,receipt_at TEXT,verified_at TEXT,updated_at TEXT NOT NULL)");
 run("UPDATE sales_payment_intents SET status='DELIVERY_UNKNOWN',updated_at=? WHERE status='SENDING'",now());
@@ -16,11 +18,8 @@ export function paymentIntentStatus(leadId){const r=one('SELECT lead_id,amount_c
 export function salesPaymentQueue(){
  return all("SELECT p.lead_id,p.amount_cents,p.entry_cents,p.remaining_cents,p.status,p.receipt_at,p.verified_at,l.business,l.phone FROM sales_payment_intents p JOIN leads l ON l.id=p.lead_id WHERE p.status IN ('RECEIPT_RECEIVED','PAYMENT_VERIFIED','DELIVERY_UNKNOWN') ORDER BY p.updated_at DESC LIMIT 50");
 }
-const acceptance=text=>{
- const s=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
- if(/\b(nao|nunca|talvez|depois|duvida|ainda nao)\b/.test(s))return false;
- return /(?:quero fechar|vamos fechar|quero contratar|pode iniciar|aceito (?:a proposta|o orcamento|o valor)|(?:manda|pode mandar|passa|pode enviar|me envia|me passa).{0,30}(?:pix|chave)|(?:qual|como).{0,20}(?:pix|forma de pagar))/.test(s);
-};
+// Negotiating or saying "quero fechar" must NOT send PIX automatically.
+// A payment method choice or explicit PIX request is required.
 function singleApprovedPrice(markdown=''){
  const s=String(markdown).split('## Serviços, entregas e preços aprovados')[1]?.split('## Fluxo comercial')[0]||'';
  if((s.match(/^### [0-9]+\./gm)||[]).length!==1)return null;
@@ -43,12 +42,23 @@ function priceForLead(leadId){
 }
 export function paymentProposalForIncoming({leadId,jid,sessionId,providerId,text}={}){
  const config=configuredClosing();
- if(!config||config.mode!=='complete'||!acceptance(text))return {eligible:false,reason:'NOT_CLOSING_INTENT'};
+ if(!config||config.mode!=='complete'||!paymentMethodChosen(text))return {eligible:false,reason:'NOT_CLOSING_INTENT'};
  if(!prospectorChatEligible({jid,sessionId})||!isManagedSession(sessionId)||leadSession(leadId)!==sessionId)
   return {eligible:false,reason:'NOT_ELIGIBLE'};
  const price=priceForLead(leadId);
  if(!price)return {eligible:false,reason:'PRICE_NOT_VERIFIED'};
- const offer=pixProposal({amountCents:price,service:'o projeto combinado'});
+ // If an alternative offer was discussed, no implicit return to the R$550
+ // base price. Require explicit lead-specific owner price approval.
+ const approvedForLead=approvedPriceForLead(leadId);
+ if(!approvedForLead){
+  const threadId=one('SELECT id FROM threads WHERE lead_id=? LIMIT 1',leadId)?.id;
+  if(threadId&&recallConversationMemory(threadId).alternativeOfferDiscussed===true)
+   return {eligible:false,reason:'ALTERNATIVE_OFFER_NEEDS_PRICE_APPROVAL'};
+  const offerHistory=all("SELECT m.body FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' ORDER BY m.rowid DESC LIMIT 60",leadId);
+  if(offerHistory.some(m=>/R\$\s*(?:450|750|2[.]?800)(?:[,.\s]|$)/i.test(String(m.body||''))))
+   return {eligible:false,reason:'ALTERNATIVE_OFFER_NEEDS_PRICE_APPROVAL'};
+ }
+ const offer=pixProposal({amountCents:price,service:'o projeto combinado',fullPayment:fullPaymentChosen(text)});
  if(!offer)return {eligible:false,reason:'PAYMENT_METHOD_NOT_READY'};
  const previous=one('SELECT status FROM sales_payment_intents WHERE lead_id=?',leadId);
  if(previous)return {eligible:false,reason:'PAYMENT_ALREADY_STARTED',status:previous.status};

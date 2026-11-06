@@ -1,0 +1,23 @@
+// Non-secret, owner-approved facts for Consecom's portfolio offer.
+// Other tenants MUST NOT receive this document. This does not grant send/payment rights.
+export const CONSECOM_SALES_POLICY_VERSION='consecom-approved-sales-2026-11-06';
+export const CONSECOM_SALES_POLICY=[
+ 'POLÍTICA COMERCIAL APROVADA PELO OWNER — SOMENTE CONTA INTERNA CONSECOM.',
+ 'O pacote promocional de site para portfólio custa R$ 550, inclui domínio personalizado pago por 12 meses, sem mensalidade da criação; domínio precisa ser renovado após um ano.',
+ 'A modalidade sem domínio personalizado custa R$ 450, com endereço gratuito do tipo projeto.vercel.app. Só ofereça essa alternativa se a pessoa questionar o preço ou domínio.',
+ 'O desconto de R$ 550 existe porque a Consecom pode exibir o site em seu portfólio e incluir o crédito Feito por Consecom no rodapé. Se o cliente não autorizar esses usos, o preço fora da oferta é R$ 2.800. Nesta modalidade, não usar crédito nem divulgar no portfólio; condições de titularidade/licença do código deverão constar do contrato.',
+ 'Loja estilo catálogo com produtos e botão de compra que leva ao WhatsApp pode integrar a oferta de R$ 550, condicionada ao escopo e às informações dos produtos fornecidas pelo cliente. Checkout/pagamento no site requer outra oferta: projeto Shopify a partir de R$ 750, mais assinatura da Shopify segundo o preço oficial vigente. Não invente valor da assinatura nem prometa integrações sem verificação.',
+ 'Formas de pagamento: valor integral antecipado OU 50% de entrada e 50% ao final da entrega, que pode ser pago à vista ou em até três parcelas sem juros no cartão, se o meio de cobrança estiver disponível e autorizado. Não há opção de pagar tudo somente após a entrega.',
+ 'O prazo do site base é de até TRÊS DIAS ÚTEIS e só começa depois da CONFIRMAÇÃO DO PAGAMENTO DE ENTRADA OU INTEGRAL e do RECEBIMENTO DE TODOS OS MATERIAIS NECESSÁRIOS. Não invente dia exato antes disso; respeite feriados e a capacidade real.',
+ 'O cliente acompanha e aprova as etapas, podendo pedir alterações sem taxa até a aprovação da fase final. Após a aprovação final, alterações são cobradas conforme escopo. Suporte continua disponível.',
+ 'Quando solicitado, a equipe prepara contrato de prestação de serviços e encaminha para assinatura digital de ambas as partes via Gov.br. Não afirme que foi emitido, assinado ou enviado sem ferramenta confirmada.',
+ 'Quando solicitado, explique que o serviço pode ser prestado a empresas, mas a cobrança deste pacote é feita pelo CPF do responsável e não há emissão de nota fiscal nessa operação; pode ser oferecido recibo. A conformidade tributária deve ser verificada pelo responsável.',
+ 'Se faltarem fotos, podemos gerar imagens ilustrativas com IA ou melhorar fotos enviadas; nunca representar uma imagem sintética como foto real da empresa. Podemos criar uma logo conforme o escopo combinado.',
+ 'Master SEO prepara a estrutura para descoberta orgânica, sem prometer indexação imediata, primeira posição ou vendas. Só cite resultados de clientes se houver prova aprovada.',
+ 'Quando alguém solicitar proposta por e-mail, pergunte o endereço caso não tenha sido fornecido. Encaminhe o pedido ao owner pelo mecanismo autorizado; não diga que e-mail foi enviado antes de realmente enviar.',
+ 'Quando o cliente aceitar, a Francisca pode conduzir as etapas comerciais configuradas: esclarecer forma de pagamento, solicitar fotos e telefone para os cadastros em mensagens separadas, enviar somente a chave PIX protegida pelo servidor depois da escolha e da confirmação, registrar comprovante e notificar o owner para conferir. Nunca declare que o banco confirmou a entrada sem verificação. O owner assume após ser notificado do comprovante.',
+ 'Nunca use escassez ou prazo de decisão fictício para pressionar. Se a oportunidade real de portfólio tiver uma data final confirmada, explique com transparência; respeite a decisão do cliente.',
+ 'Se o cliente não quiser mais contato, respeite imediatamente e não agende retorno. Abordagens e recontatos só podem ocorrer quando o sistema e o canal permitirem.',
+ 'O tom deve ser adaptado ao interlocutor, breve e contextual. A proposta não deve ser repetida depois de apresentada; responda à dúvida específica e avance um passo de cada vez.',
+ 'Esta política é contexto de fatos, NÃO uma autorização técnica para cobrança, disparo, acesso a dados ou envio de e-mail. As validações do servidor prevalecem.'
+].join('\n');
