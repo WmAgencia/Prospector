@@ -56,6 +56,11 @@ export async function processAudioJobs({download=fetchPrivateAudio,transcribe=tr
   const entries=[...Array(3)].map(()=>one("SELECT * FROM inbound_audio_jobs WHERE state='PENDING' ORDER BY created_at LIMIT 1")).filter(Boolean);
   // Process only the oldest, so a long transcription cannot duplicate another job.
   const job=entries[0];if(!job)return {status:'IDLE'};
+  // Legacy queued personal audio must never be sent to transcription.
+  if(!prospectorChatEligible({jid:job.jid,sessionId:job.session_id})){
+   run("UPDATE inbound_audio_jobs SET state='SKIPPED',error='NOT_PROSPECTOR_APPROACHED',updated_at=? WHERE provider_id=?",now(),job.provider_id);
+   return {status:'SKIPPED',reason:'NOT_PROSPECTOR_APPROACHED'};
+  }
   run("UPDATE inbound_audio_jobs SET state='PROCESSING',updated_at=? WHERE provider_id=? AND state='PENDING'",now(),job.provider_id);
   try{
    const media=await download(job.media_path,{session:job.session_id});
