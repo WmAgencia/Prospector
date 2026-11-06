@@ -11,7 +11,7 @@ const normalizeServiceName=value=>clean(value,90).replace(/^(?:eu )?(?:trabalho 
 const splitServices=value=>{
  const raw=clean(value,700).replace(/\b(?:al[eé]m disso|tamb[eé]m trabalhamos com|tamb[eé]m ofere[cç]o)\b/gi,', ');
  const segments=raw.split(/\s*(?:,|;|\s+e\s+|\s+mais\s+|\s+ou\s+)\s*/i)
-  .map(normalizeServiceName).filter(x=>x.length>=3);
+  .map(normalizeServiceName).filter(x=>x.length>=3&&!/^(?:tudo bem|oi|ol[aá]|bom dia|boa tarde|boa noite|irm[aã]o)(?:[\s!?.]|$)/i.test(x));
  const unique=[];for(const name of segments){if(!unique.some(s=>normalized(s.name)===normalized(name)))unique.push({name,detail:'',price:''});}
  return unique.slice(0,8);
 };
@@ -74,7 +74,7 @@ export function startTrainingInterview(mode='text'){
  setSetting(KEY,q);
  return publicState(q);
 }
-export function resetTrainingInterview(){setSetting(KEY,null);return null;}
+export function resetTrainingInterview(){setSetting(KEY,null);const draft=getSetting('training_draft',null);if(draft?.source==='interview')setSetting('training_draft',null);return null;}
 const safeValue=(v,limit=800)=>clean(v,limit);
 function buildProfile(data){
  const lines=[
