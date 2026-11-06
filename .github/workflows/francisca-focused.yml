@@ -5,6 +5,9 @@ on:
     paths:
       - 'dashboard/francisca-*.mjs'
       - 'dashboard/groq-sales-automation.mjs'
+      - 'dashboard/server.mjs'
+      - 'dashboard/prospection-resume.mjs'
+      - 'dashboard/tests/prospection-resume.test.mjs'
       - 'dashboard/portfolio-offer-550.mjs'
       - 'dashboard/sales-payment-flow.mjs'
       - 'dashboard/training-sales-extras.mjs'
@@ -27,6 +30,8 @@ jobs:
       - name: Check changed modules syntax
         run: |
           node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/prospection-resume.mjs
+          node --check dashboard/server.mjs
           node --check dashboard/francisca-conversation-state.mjs
           node --check dashboard/francisca-conversation-memory.mjs
           node --check dashboard/francisca-approved-replies.mjs
@@ -45,6 +50,7 @@ jobs:
             dashboard/tests/francisca-conversation-state.test.mjs \
             dashboard/tests/francisca-payment-intent.test.mjs \
             dashboard/tests/francisca-payment-review.test.mjs \
+            dashboard/tests/prospection-resume.test.mjs \
             tests/francisca-2-100-scenarios.test.mjs \
             tests/francisca-chat-coach.test.mjs \
             tests/francisca-context-continuity.test.mjs
