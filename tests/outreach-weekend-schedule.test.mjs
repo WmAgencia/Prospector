@@ -66,6 +66,9 @@ test('Sunday does not preload, enroll or send a queued first contact',async()=>{
  db.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Opt-in de cenário fictício'});
  const queue=enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'});
  assert.equal(queue.status,202);
+ // Model a queue created on Sunday to isolate the day gate; old batches can
+ // independently expire before the window check, also without sending.
+ db.run('UPDATE prospecting_batches SET created_at=?,updated_at=? WHERE id=?',sunday.toISOString(),sunday.toISOString(),queue.body.batchId);
  let called=0;
  const result=await tickApproachQueue({
   currentTime:()=>sunday.getTime(),getWaStatus:async()=>({connected:true,sessionId:'test'}),
