@@ -10,6 +10,7 @@ import {prospectorChatEligible} from './whatsapp-roles.mjs';
 import {leadSession,isManagedSession} from './waakg-session-registry.mjs';
 import {queueNotice} from './notifications.mjs';
 import {paymentMethodChosen,fullPaymentChosen} from './francisca-payment-intent.mjs';
+import {recallConversationMemory} from './francisca-conversation-memory.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS sales_payment_intents(lead_id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,session_id TEXT NOT NULL,amount_cents INTEGER NOT NULL,entry_cents INTEGER NOT NULL,remaining_cents INTEGER NOT NULL,method TEXT NOT NULL,status TEXT NOT NULL,receipt_provider_id TEXT UNIQUE,requested_at TEXT NOT NULL,receipt_at TEXT,verified_at TEXT,updated_at TEXT NOT NULL)");
 run("UPDATE sales_payment_intents SET status='DELIVERY_UNKNOWN',updated_at=? WHERE status='SENDING'",now());
@@ -50,6 +51,9 @@ export function paymentProposalForIncoming({leadId,jid,sessionId,providerId,text
  // base price. Require explicit lead-specific owner price approval.
  const approvedForLead=approvedPriceForLead(leadId);
  if(!approvedForLead){
+  const threadId=one('SELECT id FROM threads WHERE lead_id=? LIMIT 1',leadId)?.id;
+  if(threadId&&recallConversationMemory(threadId).alternativeOfferDiscussed===true)
+   return {eligible:false,reason:'ALTERNATIVE_OFFER_NEEDS_PRICE_APPROVAL'};
   const offerHistory=all("SELECT m.body FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' ORDER BY m.rowid DESC LIMIT 60",leadId);
   if(offerHistory.some(m=>/R\$\s*(?:450|750|2[.]?800)(?:[,.\s]|$)/i.test(String(m.body||''))))
    return {eligible:false,reason:'ALTERNATIVE_OFFER_NEEDS_PRICE_APPROVAL'};
