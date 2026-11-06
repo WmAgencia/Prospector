@@ -7,7 +7,7 @@ import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import crypto from 'node:crypto';
 import {trainingInterviewStatus,startTrainingInterview,advanceTrainingInterview,resetTrainingInterview} from './francisca-training-interview.mjs';
 import {storeTrainingMarkdown,readTrainingMarkdown,removeTrainingMarkdown,trainingMarkdownName} from './training-markdown.mjs';
-import {globalSalesMarkdown,GLOBAL_SALES_FILENAME,GLOBAL_SALES_VERSION} from './francisca-vendas-global.mjs';
+import {globalSalesMarkdown,globalSalesVoiceGuide,GLOBAL_SALES_FILENAME,GLOBAL_SALES_VERSION} from './francisca-vendas-global.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {evidenceStatus,addSalesEvidence,approveSalesEvidence,approveAllSalesEvidence,removeSalesEvidence,approvedProofText,salesClosingStatus,saveSalesClosingConfig,customerPaymentGuidance} from './training-sales-extras.mjs';
@@ -108,7 +108,7 @@ export function trainingStatus(){
 export function trainingPrompt(){
  const tenantMarkdown=readActiveTrainingMarkdown(),business=getSetting('training_business',null);
  return [
-  'BASE GLOBAL DE VENDAS (SOMENTE MÉTODO, SEM DADOS DE EMPRESAS):\n'+globalSalesMarkdown(),
+  'BASE GLOBAL DE VENDAS (SOMENTE MÉTODO, SEM DADOS DE EMPRESAS):\n'+globalSalesVoiceGuide(),
   'IDENTIDADE DA EMPRESA DESTA SESSÃO (aprovada pelo gestor): '+JSON.stringify(
    business?{name:business.name,description:business.description}:{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil'}),
   'PORTFÓLIO E PROVAS SOCIAIS APROVADOS DESTA EMPRESA:\n'+(readSalesContextMarkdown('proofs')||approvedProofText()||'Nenhum material aprovado.'),

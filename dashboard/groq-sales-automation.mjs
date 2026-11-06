@@ -171,6 +171,10 @@ export async function handleSalesTurn(providerId,deps={}){
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+
      (!process.env.PROSPECTOR_TENANT_ID&&salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(portfolioAllowed?'Existe uma oferta BASE aprovada para portfólio: R$ 550 com domínio por um ano e prazo de até 3 dias após materiais/escopo. Não invente extras nem desconto de 90%; consulte o operador para parcelamento ou outra modalidade.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
  if(stale())return finish(stale());
+ if(!draft.ok&&draft.code==='RATE_LIMITED'){
+  run("UPDATE groq_auto_events SET state='PENDING',at=?,error='GROQ_RATE_LIMITED' WHERE provider_id=? AND state='PROCESSING'",new Date(Date.now()+90000).toISOString(),providerId);
+  return {state:'DEFERRED',retryAfterSeconds:90};
+ }
  if(!draft.ok||!draft.draft){
   if(salesFollowup)recordSalesOutcome({leadId:r.lead_id,status:'HUMAN_REVIEW',providerId,evidence:'A resposta automática não ficou disponível; conferir conversa.'});
   return finish('REVIEW','GROQ_UNAVAILABLE');
@@ -270,7 +274,7 @@ export async function tickSalesAgent(deps={}){
  if(workerBusy)return {status:'BUSY'};
  workerBusy=true;
  try{
-  const queue=all("SELECT provider_id,jid FROM groq_auto_events WHERE state='PENDING' ORDER BY at LIMIT 12");
+  const queue=all("SELECT provider_id,jid FROM groq_auto_events WHERE state='PENDING' AND at<=? ORDER BY at LIMIT 12",now());
   const candidates=queue.filter(x=>!active.has(x.jid)).slice(0,4);
   for(const row of candidates)active.add(row.jid);
   const outcomes=await Promise.all(candidates.map(x=>handleSalesTurn(x.provider_id,deps).catch(()=>({state:'ERROR'})).finally(()=>active.delete(x.jid))));

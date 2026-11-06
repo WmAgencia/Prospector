@@ -76,6 +76,6 @@ export async function aiDraft({text,context="",audience="INBOUND_NEW",dialogueSt
   if(!draft||typeof draft!=='string')return {ok:false,code:'EMPTY_RESPONSE',provider:'groq',httpStatus:502,model};
   return {ok:true,provider:'groq',model,toneVersion:SALES_TONE_VERSION,profile,draft:draft.trim().slice(0,1600),requiresApproval:true,autoSend:false,recovered:result.recovered||false};
  } catch(error) {
-  return {ok:false,provider:'groq',code:String(error.message||'').startsWith('GROQ_HTTP_401')?'UNAUTHORIZED':'PROVIDER_UNAVAILABLE',httpStatus:502,model};
+  return {ok:false,provider:'groq',code:String(error.message||'').startsWith('GROQ_HTTP_401')?'UNAUTHORIZED':String(error.message||'').includes('GROQ_RATE_LIMITED')?'RATE_LIMITED':'PROVIDER_UNAVAILABLE',httpStatus:502,model};
  }
 }

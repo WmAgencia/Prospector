@@ -4,7 +4,7 @@
 import {getSetting,setSetting} from './db.mjs';
 import {aiDraft} from './ai-groq.mjs';
 import {salesClosingStatus} from './training-sales-extras.mjs';
-const KEY='francisca_sales_smoke_v2_20261106';
+const KEY='francisca_sales_smoke_v3_internal_20261106';
 export const SALES_SCENARIOS=Object.freeze([
  {id:'interested-barber',name:'Barbearia quer site',turns:[
   'Boa noite, vocês fazem site para barbearia? Queria um lugar bonito para mostrar meus serviços.',
@@ -60,13 +60,16 @@ function assess(id,input,output){
 }
 export async function runFranciscaSalesSmoke(){
  if(process.env.RUN_FRANCISCA_SALES_SMOKE!=='true')return {skipped:'FLAG_OFF'};
- if(process.env.PROSPECTOR_TENANT_ID)return {skipped:'TENANT_WORKSPACE'};
+ if(process.env.PROSPECTOR_TENANT_INTERNAL!=='true')return {skipped:'NOT_CONSECOM_TENANT'};
  if(getSetting(KEY,null))return {skipped:'ALREADY_STARTED'};
  setSetting(KEY,{state:'STARTED',at:new Date().toISOString()});
  const results=[],began=Date.now();
- for(const persona of SALES_SCENARIOS){
+ const chosen=new Set(['interested-barber','price-objection','competitor','closing','refusal','pressure']);
+ let completedCalls=0;
+ for(const persona of SALES_SCENARIOS.filter(x=>chosen.has(x.id))){
   const transcript=[],turns=[];
   for(const incoming of persona.turns){
+   if(completedCalls++>0)await new Promise(resolve=>setTimeout(resolve,13500));
    // Model call only: no WhatsApp API or notifications invoked here.
    const context=transcript.slice(-4).map(x=>x.role+': '+x.text).join('\n');
    const started=Date.now();

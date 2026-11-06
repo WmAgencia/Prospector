@@ -12,6 +12,7 @@ const TASKS=Object.freeze({
 });
 const TIMEOUTS={voice:9500,quick:11000,summarization:13000,conversation:16000,actions:16000,complex:21000};
 let cache={ids:new Set(),until:0,lastError:null};
+let orgCooldownUntil=0;
 export function groqConfigured(){return Boolean(process.env.GROQ_API_KEY);}
 export async function availableGroqModels(force=false){
  if(!groqConfigured())return {ids:[],error:'NOT_CONFIGURED'};
@@ -35,6 +36,7 @@ export async function selectGroq(task='conversation'){
 }
 export async function groqChat({task='conversation',messages,tools,maxTokens=700,fetchFn=fetch}={}){
  if(!groqConfigured())throw Error('GROQ_NOT_CONFIGURED');
+ if(Date.now()<orgCooldownUntil)throw Error('GROQ_RATE_LIMITED');
  if(!Array.isArray(messages)||!messages.length)throw Error('GROQ_MESSAGES_REQUIRED');
  const preferred=TASKS[task]||TASKS.conversation;
  const catalog=await availableGroqModels();
@@ -57,7 +59,7 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
     Authorization:'Bearer '+process.env.GROQ_API_KEY,'Content-Type':'application/json'
    },body:JSON.stringify(payload),signal:AbortSignal.timeout(timeLimit)});
    if(!response.ok){
-    attempts.push({model,http:response.status});
+    attempts.push({model,http:response.status,retryAfter:response.status===429?Math.min(120,Math.max(0,Number(response.headers?.get?.('retry-after')||0))):0});
     // Account/key errors and unsafe content rejection must never be masked by failover.
     if([401,403,422].includes(response.status))throw Error('GROQ_HTTP_'+response.status);
     // Fail over on rate limiting, missing/deprecated model, transient server errors
@@ -78,6 +80,11 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
   }
  }
  console.warn('[groq-failover-exhausted]',JSON.stringify({task,attempts:attempts.map(x=>({model:x.model,http:x.http,error:x.error}))}));
+ if(attempts.length&&attempts.every(x=>x.http===429)){
+  const suggested=Math.max(0,...attempts.map(x=>x.retryAfter||0));
+  orgCooldownUntil=Date.now()+Math.max(20000,Math.min(120000,(suggested||75)*1000));
+  throw Error('GROQ_RATE_LIMITED');
+ }
  throw Error('GROQ_ALL_MODELS_UNAVAILABLE');
 }
 export async function groqCatalog(){
