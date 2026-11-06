@@ -10,7 +10,7 @@ const rules=[
  ['license',/\b(?:credito no rodape|feito por consecom|nao (?:quero|pode) (?:usar|colocar|divulgar)|codigo e meu|direitos do site|licenca)\b/],
  ['payment',/\b(?:pix|comprovante|cartao|parcelamento|parcelar|entrada|pagar|a vista|pagamento)\b/],
  ['scope',/\b(?:loja virtual|e-?commerce|checkout|catalogo|produtos|agendamento)\b/],
- ['photos',/\b(?:foto|imagem|logo|material)\b/],
+ ['photos',/\b(?:fotos?|imagens?|logos?|materiais?)\b/],
  ['deadline',/\b(?:prazo|quando (?:entrega|fica pronto)|dias uteis|atraso|entrega)\b/],
  ['changes',/\b(?:alteracao|alterar|mudar|editar|suporte|corrigir|revisao)\b/],
  ['seo',/\b(?:seo|google|buscas|primeira posicao)\b/],
