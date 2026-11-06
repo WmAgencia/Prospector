@@ -14,7 +14,7 @@ import {queueNotice} from './notifications.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
-import {classifyContact} from './whatsapp-roles.mjs';
+import {classifyContact,prospectorChatEligible} from './whatsapp-roles.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
 import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,acceptPart,partsFor} from './groq-reply-channels.mjs';
@@ -45,7 +45,9 @@ function approvedProspectFollowup(identity,jid){
 export function queueInboundTurn({providerId,jid,sessionId}={}){
  if(!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
  const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
- const identity=classifyContact({jid,sessionId:sessionId||(lead?leadSession(lead.id):selectedWaSession())});
+ const boundSession=sessionId||(lead?leadSession(lead.id):selectedWaSession());
+ if(!prospectorChatEligible({jid,sessionId:boundSession}))return false;
+ const identity=classifyContact({jid,sessionId:boundSession});
  const intro=lead?introductionStatus(lead.id):null;
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(lead.id))return false;
  const allowed=approvedProspectFollowup(identity,jid);
@@ -60,12 +62,12 @@ export async function handleSalesTurn(providerId,deps={}){
  const replyStartedAt=(deps.replyNow||Date.now)();
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
  const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
- const allowTest=identity.role==='OWNER'&&identity.testSandbox===true;
+ const allowTest=false; // Personal, owner and sandbox messages never join automated sales replies.
  const salesFollowup=approvedProspectFollowup(identity,r.jid);
  const portfolioAllowed=!process.env.PROSPECTOR_TENANT_ID&&salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
  const intro=introductionStatus(r.lead_id);
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))return finish('SKIPPED','INTRO_NOT_COMPLETE');
- if(identity.role==='UNVERIFIED')return finish('SKIPPED','UNVERIFIED_SENDER');
+ if(!prospectorChatEligible({jid:r.jid,sessionId:r.session_id}))return finish('SKIPPED','NOT_PROSPECTOR_APPROACHED');
  if(identity.role==='OWNER'&&!allowTest)return finish('HANDOFF','OWNER_PRIVILEGED_CHANNEL');
  if(!salesFollowup&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
  if(!isManagedSession(r.session_id)||leadSession(r.lead_id)!==r.session_id)return finish('SKIPPED','SESSION');
@@ -76,7 +78,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const stale=()=>{
   const current=one('SELECT l.stage,l.phone,t.manual_takeover,i.state inbox_state,i.body FROM leads l JOIN threads t ON t.lead_id=l.id JOIN waakg_inbox i ON i.provider_id=? WHERE l.id=?',providerId,r.lead_id);
   if(!current||current.manual_takeover||current.inbox_state!=='REVIEW'||current.stage!==r.stage||current.phone!==r.phone||current.body!==r.body||leadSession(r.lead_id)!==r.session_id||!isManagedSession(r.session_id)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return 'HANDOFF';
-  if(classifyContact({jid:r.jid,sessionId:r.session_id}).role!==identity.role)return 'HANDOFF';
+  if(!prospectorChatEligible({jid:r.jid,sessionId:r.session_id}))return 'HANDOFF';
   const currentIntro=introductionStatus(r.lead_id);
   if((currentIntro&&currentIntro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))||(salesFollowup&&!approvedProspectFollowup(identity,r.jid)))return 'HANDOFF';
   if(one('SELECT provider_id FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1',r.jid)?.provider_id!==providerId)return 'SUPERSEDED';

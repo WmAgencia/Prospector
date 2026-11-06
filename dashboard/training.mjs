@@ -1,5 +1,6 @@
 import {db,one,all,run,getSetting,setSetting,now} from './db.mjs';
 import {managedSessions,isManagedSession} from './waakg-session-registry.mjs';
+import {prospectorChatEligible} from './whatsapp-roles.mjs';
 import {waRequest} from './waakg-control.mjs';
 import {groqChat} from './groq-models.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
@@ -20,9 +21,9 @@ export async function listTrainingChats(){
  const items=[],failures=[];
  for(const s of managedSessions()){
   try{const r=await waRequest('/api/chat/'+encodeURIComponent(s.session_id));
-   for(const c of Array.isArray(r.data)?r.data:[]){if(!jidOK(c.jid))continue;items.push({key:Buffer.from(JSON.stringify([s.session_id,c.jid])).toString('base64url'),name:String(c.name||c.notify||'Contato').slice(0,100),channel:s.label});}
+   for(const c of Array.isArray(r.data)?r.data:[]){if(!jidOK(c.jid)||!prospectorChatEligible({jid:c.jid,sessionId:s.session_id}))continue;items.push({key:Buffer.from(JSON.stringify([s.session_id,c.jid])).toString('base64url'),name:String(c.name||c.notify||'Contato').slice(0,100),channel:s.label});}
   }catch{failures.push(s.label);}
- }return {items,failures,scope:'Histórico disponível na integração. Grupos, mídias e mensagens recebidas não são usados como exemplos de escrita.'};
+ }return {items,failures,scope:'Somente chats comerciais abordados pelo Prospector, com envio confirmado; grupos e conversas particulares permanecem fora do treinamento.'};
 }
 let activeRun=false;
 async function analyzeRun(id,selection,chat,model){
@@ -30,7 +31,7 @@ async function analyzeRun(id,selection,chat,model){
  try{
   for(const c of selection){
    const [sid,jid]=JSON.parse(Buffer.from(c.key,'base64url'));
-   if(!isManagedSession(sid)||!jidOK(jid))throw Error('Conversa não autorizada');
+   if(!isManagedSession(sid)||!jidOK(jid)||!prospectorChatEligible({jid,sessionId:sid}))throw Error('Conversa não autorizada');
    try{const r=await waRequest('/api/chat/'+encodeURIComponent(sid)+'/'+encodeURIComponent(jid));
     const texts=(Array.isArray(r.data)?r.data:[]).filter(m=>m.fromMe===true&&typeof m.content==='string').map(m=>redactTrainingText(m.content)).filter(x=>x.length>8);
     // Bounded sample spread over each available conversation, not only its last turn.

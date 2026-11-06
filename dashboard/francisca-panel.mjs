@@ -1,3 +1,4 @@
+import {prospectorLeadEligible} from './whatsapp-roles.mjs';
 import {one,all,getSetting} from './db.mjs';
 import {groqChat} from './groq-models.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
@@ -63,13 +64,13 @@ export function franciscaPanelContext({masterAuthorized=false}={}){
  const profile=getSetting('training_active',null);
  const leads=one('SELECT COUNT(*) AS n FROM leads')?.n||0;
  const stages=all('SELECT stage,COUNT(*) AS n FROM leads GROUP BY stage').map(x=>({stage:x.stage,count:x.n}));
- const chats=one('SELECT COUNT(*) n FROM threads')?.n||0;
+ const chats=all('SELECT lead_id FROM threads').filter(x=>prospectorLeadEligible(x.lead_id)).length;
  const totalSent=one("SELECT COUNT(*) n FROM initial_contacts WHERE status='SENT'")?.n||0;
  const last=all('SELECT business,city,stage FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 12').map(x=>({name:cap(x.business,70),city:cap(x.city,40),stage:x.stage}));
  const outcomes=salesOutcomes({limit:100});
  const todayOutcomes=outcomes.items.filter(x=>String(x.updated_at||'').slice(0,10)===daySP());
  const latestOutcomes=outcomes.items.slice(0,35).map(x=>({name:cap(x.business,70),phone:cap(x.phone,30),status:x.status,summary:cap(x.summary,170),updatedAt:x.updated_at}));
- const recentInbound=all("SELECT l.business,l.phone,m.body,m.at FROM messages m JOIN threads t ON t.id=m.thread_id JOIN leads l ON l.id=t.lead_id WHERE m.direction='in' AND length(trim(COALESCE(m.body,'')))>0 ORDER BY m.at DESC LIMIT 35").map(x=>({name:cap(x.business,70),phone:cap(x.phone,25),text:cap(x.body,260),at:x.at}));
+ const recentInbound=all("SELECT l.id AS lead_id,l.business,l.phone,m.body,m.at FROM messages m JOIN threads t ON t.id=m.thread_id JOIN leads l ON l.id=t.lead_id WHERE m.direction='in' AND length(trim(COALESCE(m.body,'')))>0 ORDER BY m.at DESC LIMIT 150").filter(x=>prospectorLeadEligible(x.lead_id)).slice(0,35).map(x=>({name:cap(x.business,70),phone:cap(x.phone,25),text:cap(x.body,260),at:x.at}));
  const credit=availableApproachCredits();
  const day=daySP(),calendar=monthlyProspectingCalendar(day.slice(0,7));
  const current=calendar.days?.find(x=>x.date===day)||{};
@@ -121,7 +122,7 @@ export async function handleFranciscaPanel(req,res,url,{json,respond},{masterAut
    const matched=all('SELECT id,business,phone FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 600')
     .filter(lead=>normName(lead.business).length>=4&&question.includes(normName(lead.business)))
     .sort((a,b)=>b.business.length-a.business.length)[0];
-   if(matched){
+   if(matched&&prospectorLeadEligible(matched.id)){
     const lines=all("SELECT m.direction,m.body,m.at FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? ORDER BY m.at DESC LIMIT 30",matched.id);
     details.specificConversation={company:cap(matched.business,85),phone:cap(matched.phone,28),
      messages:lines.reverse().map(x=>({direction:x.direction,text:cap(x.body,350),at:x.at}))};

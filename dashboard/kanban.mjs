@@ -1,6 +1,7 @@
 // Compact sales Kanban, derived only from persisted WhatsApp and CRM facts.
 import {all,one} from './db.mjs';
 import {threeMonthsAfter,latestOutreachAt} from './prospecting-recontact.mjs';
+import {prospectorLeadEligible} from './whatsapp-roles.mjs';
 
 export const KANBAN_STAGES=['approaching','no_interest','interested','conversing'];
 
@@ -34,6 +35,7 @@ export function kanbanSnapshot({limit=120,at=Date.now()}={}){
  const columns=Object.fromEntries(KANBAN_STAGES.map(k=>[k,[]]));
  const counts=Object.fromEntries(KANBAN_STAGES.map(k=>[k,0]));
  for(const row of rows){
+  if(!prospectorLeadEligible(row.id))continue;
   const type=cardStatus(row);if(!type)continue;
   counts[type]++;
   if(columns[type].length>=Math.max(1,Math.min(250,Number(limit)||120)))continue;

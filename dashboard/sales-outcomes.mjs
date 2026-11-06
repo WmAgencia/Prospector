@@ -1,3 +1,4 @@
+import {prospectorLeadEligible} from './whatsapp-roles.mjs';
 // Persisted, idempotent commercial results for the WA-AKG prospect queue.
 import {db,one,all,run,now,audit} from './db.mjs';
 import {queueNotice} from './notifications.mjs';
@@ -9,8 +10,8 @@ const plain=s=>String(s||'').replace(/[\r\n\t<>]/g,' ').replace(/\s+/g,' ').trim
 export function salesOutcomes({limit=80}={}){
  const count=Math.max(1,Math.min(150,Number(limit)||80));
  return {priceReferenceBrl:SITE_AVERAGE_PRICE_BRL,items:all(
- "SELECT s.lead_id,s.status,s.source,s.summary,s.updated_at,l.business,l.city,l.segment,l.phone FROM sales_outcomes s JOIN leads l ON l.id=s.lead_id ORDER BY s.updated_at DESC LIMIT ?",count),
- counts:Object.fromEntries(all("SELECT status,COUNT(*) n FROM sales_outcomes GROUP BY status").map(x=>[x.status,x.n]))};
+ "SELECT s.lead_id,s.status,s.source,s.summary,s.updated_at,l.business,l.city,l.segment,l.phone FROM sales_outcomes s JOIN leads l ON l.id=s.lead_id ORDER BY s.updated_at DESC LIMIT ?",Math.max(count,150)).filter(x=>prospectorLeadEligible(x.lead_id)).slice(0,count),
+ counts:Object.fromEntries(all("SELECT lead_id,status FROM sales_outcomes").filter(x=>prospectorLeadEligible(x.lead_id)).reduce((m,x)=>(m.set(x.status,(m.get(x.status)||0)+1),m),new Map()))};
 }
 export function recordSalesOutcome({leadId,status,providerId='',evidence='',source='WA_AKG',notify=true}={}){
  if(!allowed.has(status))throw Error('INVALID_SALES_OUTCOME');

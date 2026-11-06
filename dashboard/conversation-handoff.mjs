@@ -4,7 +4,7 @@ import {one,run,now,audit,phone,addLead,getThread} from './db.mjs';
 import {getSetting} from './db.mjs';
 import {conversationAuthorized} from './operator-outreach.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
-import {classifyContact} from './whatsapp-roles.mjs';
+import {classifyContact,prospectorChatEligible} from './whatsapp-roles.mjs';
 import {selectedWaSession,waControlStatus} from './waakg-control.mjs';
 import {leadSession} from './waakg-session-registry.mjs';
 import {remoteChats} from './waakg-conversations.mjs';
@@ -32,6 +32,7 @@ export function conversationHandoffStatus(chatId){
  const row=resolve(chatId);
  if(!row)return {chatId:String(chatId||''),manualTakeover:false,canTakeover:false,canDeliverToAi:false,reason:'CONVERSATION_NOT_SUPPORTED'};
  const valid=validJid(row.jid);
+ if(!valid||!prospectorChatEligible({jid:row.jid,sessionId:row.lead?leadSession(row.lead.id):selectedWaSession()}))return {chatId:row.chatId,manualTakeover:false,canTakeover:false,canDeliverToAi:false,reason:'NOT_PROSPECTOR_APPROACHED'};
  const role=valid?classifyContact({jid:row.jid,sessionId:row.lead?leadSession(row.lead.id):selectedWaSession()}):{role:'UNVERIFIED'};
  const suppressed=!!row.lead?.phone&&!!one('SELECT 1 FROM suppressions WHERE phone=?',row.lead.phone);
  const eligibleStage=!['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(row.lead?.stage);

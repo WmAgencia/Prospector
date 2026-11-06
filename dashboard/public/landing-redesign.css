@@ -204,3 +204,54 @@ body.p3-site{background:#f7f7ff;color:var(--deep);font:400 14px/1.55 'DM Sans',s
  @keyframes prospectorSoftReveal{from{opacity:.55;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
  .p3-site .motion-ready.is-visible{animation:prospectorSoftReveal .48s ease-out both;animation-delay:var(--p3-reveal-delay,0ms)}
 }
+
+
+/* Six period plans: three columns on desktop, compact and legible on mobile. */
+.p3-pricing{grid-template-columns:minmax(0,1fr);gap:29px;padding-top:92px;padding-bottom:58px}
+.p3-pricing-intro{max-width:1040px;display:grid;grid-template-columns:minmax(0,1.4fr) minmax(250px,.85fr);align-items:start;column-gap:36px}
+.p3-pricing-intro>.p3-overline,.p3-pricing-intro>h2,.p3-pricing-intro>p{grid-column:1}
+.p3-pricing-intro>h2{max-width:740px;font-size:clamp(29px,3.45vw,48px);letter-spacing:-.045em}
+.p3-pricing-intro>p{max-width:740px;font-size:13px;line-height:1.75;margin-bottom:0}
+.p3-pricing-intro>ul{grid-column:2;grid-row:2 / span 2;border:1px solid #e4ddf5;border-radius:16px;background:#faf9ff;padding:20px;gap:13px}
+.p3-pricing-intro li{font-size:12px}
+.p3-price-cards{grid-template-columns:repeat(3,minmax(0,1fr));gap:17px;align-items:stretch}
+.p3-price-card{border-radius:20px;padding:28px 24px 21px;min-height:465px}
+.p3-price-card h3{font-size:20px;letter-spacing:-.03em}
+.p3-price-card>p{font-size:12px;line-height:1.55;min-height:55px;margin:8px 0 13px}
+.p3-price-quantity{margin-top:4px;gap:6px;font-size:12px}
+.p3-price-quantity strong{font-size:36px;letter-spacing:-.055em}
+.p3-price-meta{font-size:11px;color:#7d7394;margin-top:0}
+.p3-price-value{margin:19px 0 12px;display:flex;flex-direction:column;gap:1px;min-height:66px;line-height:1.12}
+.p3-price-value>span{font-size:32px}
+.p3-price-value del{font-size:12px;font-weight:600;letter-spacing:0;color:#938aa4;text-decoration-thickness:1px}
+.p3-price-value small{font-size:17px}
+.p3-price-features{list-style:none;padding:15px 0 0;margin:0 0 13px;border-top:1px solid #eee8f8;display:grid;gap:10px}
+.p3-price-features li{font-size:11px;line-height:1.45;color:#544d66;padding-left:21px;position:relative}
+.p3-price-features li:before{content:'✓';position:absolute;left:0;color:#653ae1;font-size:13px;font-weight:900}
+.p3-price-cap{font-size:11px;font-weight:800;color:#5a3eb7;background:#f1ecff;border-radius:9px;padding:10px 12px;margin-top:auto;margin-bottom:16px;text-align:center}
+.p3-price-card .p3-price-button{margin-top:0;min-height:47px;font-size:12px}
+.p3-price-featured{background:linear-gradient(156deg,#fff,#faf7ff)}
+.p3-price-disclaimer{grid-column:1;max-width:1040px;font-size:11px;line-height:1.75;margin:0}
+.p3-price-disclaimer strong{color:#423369}
+@media(max-width:1020px){
+ .p3-pricing-intro{grid-template-columns:1fr;gap:16px}
+ .p3-pricing-intro>ul{grid-column:1;grid-row:auto;width:100%;max-width:660px}
+ .p3-price-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+ .p3-price-card{min-height:450px;padding:24px 20px 20px}
+}
+@media(max-width:630px){
+ .p3-pricing{gap:25px;padding-top:68px}
+ .p3-pricing-intro>h2{font-size:34px}
+ .p3-pricing-intro>p{font-size:12px}
+ .p3-price-cards{grid-template-columns:minmax(0,1fr);gap:17px}
+ .p3-price-card{min-height:auto;padding:26px 23px 20px}
+ .p3-price-card>p{min-height:0;margin-bottom:14px}
+ .p3-price-quantity strong{font-size:35px}
+ .p3-price-value>span{font-size:31px}
+ .p3-price-features{grid-template-columns:1fr 1fr;gap:10px 12px}
+ .p3-price-features li{font-size:10px}
+ .p3-price-cap{margin-top:9px}
+ .p3-price-ribbon{top:-12px}
+}
+@media(max-width:370px){.p3-price-features{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.p3-price-card:hover{transform:none}}

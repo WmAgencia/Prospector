@@ -3,7 +3,7 @@
 import {db,one,run,now,audit,phone} from './db.mjs';
 import {testModeAllowed} from './groq-live-test-guard.mjs';
 import {selectedWaSession} from './waakg-control.mjs';
-import {isManagedSession} from './waakg-session-registry.mjs';
+import {isManagedSession,boundLeadSession} from './waakg-session-registry.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS contact_relationships(phone TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('EXISTING_CLIENT')),evidence TEXT NOT NULL,source TEXT NOT NULL,updated_at TEXT NOT NULL)");
 const fullPhone=x=>{
  const p=phone(x);
@@ -36,6 +36,23 @@ export function classifyContact({jid,sessionId}={}){
   one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id LIKE 'prospect-queue:%' AND m.status IN ('sent','accepted') LIMIT 1",lead.id));
  if(contacted)return {role:'PROSPECT_APPROACHED',authorized:false,ownerTools:false,reason:'VERIFIED_INITIAL_OUTREACH'};
  return {role:'INBOUND_NEW',authorized:false,ownerTools:false,reason:lead?'NO_VERIFIED_OUTREACH':'FIRST_CONTACT'};
+}
+// Strict inbound boundary: only an acknowledged prospecting-first message qualifies.
+// Discovery, imported numbers, manual chats, opt-in and AI feature flags do NOT qualify.
+export function prospectorChatEligible({jid,sessionId}={}){
+ const identity=classifyContact({jid,sessionId});
+ if(identity.role!=='PROSPECT_APPROACHED')return false;
+ const normalized=fullPhone(String(jid||'').split('@')[0]);
+ const lead=normalized?one('SELECT id FROM leads WHERE phone=?',normalized):null;
+ if(!lead)return false;
+ const bound=boundLeadSession(lead.id);
+ return !bound||bound===sessionId;
+}
+export function prospectorLeadEligible(leadId){
+ const lead=one('SELECT id,phone FROM leads WHERE id=?',String(leadId||''));
+ if(!lead?.phone)return false;
+ const bound=boundLeadSession(lead.id),session=bound||selectedWaSession();
+ return prospectorChatEligible({jid:lead.phone+'@s.whatsapp.net',sessionId:session});
 }
 export function hasExistingClientRelationship(number){
  const p=fullPhone(number);

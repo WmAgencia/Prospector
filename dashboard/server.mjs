@@ -61,7 +61,7 @@ import {prepareApproaches} from './prospecting-approach.mjs';
 import {kanbanSnapshot} from './kanban.mjs';
 import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
-import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone} from './whatsapp-roles.mjs';
+import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospectorLeadEligible} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
@@ -361,8 +361,8 @@ function snapshot(){
  for(const row of all("SELECT lead_id,detail FROM audit WHERE action='WEBSITE_EVIDENCE_RECORDED' ORDER BY at DESC LIMIT 3000")){
   if(!lastSiteReview.has(row.lead_id)){try{lastSiteReview.set(row.lead_id,JSON.parse(row.detail));}catch{}}
  }
- const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000').map(l=>{const origins=originsByLead.get(l.id)||[];return {...l,origins:[...new Set(origins.map(o=>o.source))],siteEvidence:lastSiteReview.get(l.id)||null,...scoreLead(l,origins)};});
- const threads=all('SELECT t.*,l.business,l.name,l.phone,l.stage FROM threads t JOIN leads l ON l.id=t.lead_id ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1000');
+ const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000').filter(l=>l.source!=='WHATSAPP_INBOUND'||prospectorLeadEligible(l.id)).map(l=>{const origins=originsByLead.get(l.id)||[];return {...l,origins:[...new Set(origins.map(o=>o.source))],siteEvidence:lastSiteReview.get(l.id)||null,...scoreLead(l,origins)};});
+ const threads=all('SELECT t.*,l.business,l.name,l.phone,l.stage FROM threads t JOIN leads l ON l.id=t.lead_id ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1000').filter(t=>prospectorLeadEligible(t.lead_id));
  const workflows=all('SELECT * FROM workflows ORDER BY is_default DESC,updated_at DESC').map(w=>({...w,enabled:!!w.enabled,segments:JSON.parse(w.segments_json||'[]'),steps:JSON.parse(w.steps)}));
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
@@ -610,9 +610,9 @@ async function handler(req,res){
    data.connection={decryption:data.connection.decryption,status:waStatus,error:live?.message||data.connection.error,closeCode:data.connection.closeCode,lastEventAt:data.connection.lastEventAt,hasQr:Boolean(data.connection.qr),transport:live?'waakg':'legacy'};
    return respond(res,200,data);
   }
-  if(req.method==='POST'&&pathname.startsWith('/api/threads/ensure/')){const leadId=pathname.split('/')[4];if(!one('SELECT id FROM leads WHERE id=?',leadId))throw Error('Lead não existe');const t=getThread(leadId);notify();return respond(res,200,t);}
+  if(req.method==='POST'&&pathname.startsWith('/api/threads/ensure/')){const leadId=pathname.split('/')[4];if(!prospectorLeadEligible(leadId))return respond(res,403,{error:'Conversa fora da prospecção'});const t=getThread(leadId);notify();return respond(res,200,t);}
   if(req.method==='GET'&&/^\/api\/threads\/[^/]+\/messages$/.test(pathname)){
-   const threadId=pathname.split('/')[3];return respond(res,200,all('SELECT * FROM messages WHERE thread_id=? ORDER BY at DESC LIMIT 300',threadId).reverse());
+   const threadId=pathname.split('/')[3];const thread=one('SELECT lead_id FROM threads WHERE id=?',threadId);if(!thread||!prospectorLeadEligible(thread.lead_id))return respond(res,403,{error:'Conversa fora da prospecção'});return respond(res,200,all('SELECT * FROM messages WHERE thread_id=? ORDER BY at DESC LIMIT 300',threadId).reverse());
   }
   if(req.method==='POST'&&pathname==='/api/connect'){if(process.env.WHATSAPP_TRANSPORT==='waakg')return respond(res,409,{error:'WhatsApp agora é conectado pelo painel WA-AKG; não inicie outra sessão Baileys.'});const args=await json(req);return respond(res,200,await connectWhatsApp({fresh:args.fresh===true}));}
   if(req.method==='POST'&&pathname==='/api/disconnect'){if(process.env.WHATSAPP_TRANSPORT==='waakg')return respond(res,409,{error:'Desconecte pelo WA-AKG para não gerar duas sessões'});return respond(res,200,await disconnectWhatsApp());}

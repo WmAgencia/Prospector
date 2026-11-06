@@ -3,8 +3,7 @@
 import crypto from "node:crypto";
 import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
-import {ownerReceived} from "./groq-owner.mjs";
-import {classifyContact} from "./whatsapp-roles.mjs";
+import {classifyContact,prospectorChatEligible,prospectorLeadEligible} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {classifyInboundAutomation} from './inbound-automation.mjs';
@@ -40,7 +39,7 @@ export async function gatewayRemoteStatus(){
 }
 
 export function gatewayInbox(){
- const rows=all("SELECT i.id,i.session_id,i.jid,i.lead_id,i.body,i.state,i.draft,i.received_at FROM waakg_inbox i ORDER BY i.received_at DESC LIMIT 80");
+ const rows=all("SELECT i.id,i.session_id,i.jid,i.lead_id,i.body,i.state,i.draft,i.received_at FROM waakg_inbox i ORDER BY i.received_at DESC LIMIT 200").filter(x=>prospectorChatEligible({jid:x.jid,sessionId:x.session_id})).slice(0,80);
  return {total:rows.length,items:rows,sendEnabled:process.env.WA_AKG_MANUAL_SEND==="true"};
 }
 export async function receiveWebhook(req){
@@ -58,10 +57,13 @@ export async function receiveWebhook(req){
  if(!isManagedSession(sid))return {status:200,body:{accepted:true,ignored:true}};
  const jid=String(key.remoteJid||data.from||"");
  if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid))return {status:200,body:{accepted:true,ignored:true}};
+ // Only the confirmed Prospector outbound list is eligible for this customer inbox.
+ if(!prospectorChatEligible({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
  const providerId=String(key.id||data.id||"");
  if(!/^[\w\-]{5,150}$/.test(providerId))return {status:200,body:{accepted:true,ignored:true}};
  const unique=sid+":"+providerId;
  if(one("SELECT id FROM waakg_inbox WHERE provider_id=?",unique))return {status:200,body:{accepted:true,duplicate:true}};
+ if(!prospectorChatEligible({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
  const isAudio=String(data.type||'').toUpperCase()==='AUDIO';
  if(isAudio){
   if(process.env.AUDIO_TRANSCRIPTION_ENABLED!=='true')return {status:200,body:{accepted:true,audioPendingSetup:true}};
@@ -81,12 +83,6 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  if(!number)return {status:200,body:{accepted:true,ignored:true}};
  const identity=classifyContact({jid,sessionId:sid});
  if(identity.role==='UNVERIFIED')return {status:200,body:{accepted:true,ignored:true}};
- if(identity.role==='OWNER'&&!identity.testSandbox){
-  // Owner messages are NEVER persisted as customer leads or sales prospects.
-  const accepted=ownerReceived({jid,sessionId:sid,text:content,providerId:unique});
-  return {status:200,body:{accepted:true,processed:accepted,owner:true,
-    ownerToolsAuthorized:identity.ownerTools}};
- }
  const existingLead=one('SELECT id FROM leads WHERE phone=?',number);
  const existingRoute=existingLead?boundLeadSession(existingLead.id):'';
  if(existingRoute&&existingRoute!==sid)return {status:200,body:{accepted:true,ignored:true,reason:'CONVERSATION_SESSION_MISMATCH'}};
@@ -145,6 +141,7 @@ function grantAutonomousFirstReply(leadId,text){
 export async function draftInbox(input){
  const row=one("SELECT * FROM waakg_inbox WHERE id=?",String(input.id||""));
  if(!row) return {status:404,body:{error:"Mensagem não encontrada"}};
+ if(!prospectorChatEligible({jid:row.jid,sessionId:row.session_id}))return {status:403,body:{error:"Conversa fora da prospecção"}};
  if(["OPT_OUT","HUMAN","SENT","AUTO_REPLY"].includes(row.state))return {status:409,body:{error:"Revisão humana obrigatória"}};
  const lead=one("SELECT * FROM leads WHERE id=?",row.lead_id);
  const thread=one("SELECT id,manual_takeover FROM threads WHERE lead_id=?",row.lead_id);
@@ -166,6 +163,7 @@ export async function sendApproved(input){
  const inboxId=String(input.id||"");
  const item=one("SELECT * FROM waakg_inbox WHERE id=?",inboxId);
  if(!item)return {status:404,body:{error:"Mensagem não encontrada"}};
+ if(!prospectorChatEligible({jid:item.jid,sessionId:item.session_id}))return {status:403,body:{error:"Conversa fora da prospecção"}};
  if(item.state!=="DRAFTED")return {status:409,body:{error:"Rascunho não está disponível para aprovação"}};
  const lead=one("SELECT * FROM leads WHERE id=?",item.lead_id);
  const text=String(input.text||"").trim();
@@ -200,6 +198,7 @@ export async function sendChatMessage(input={}){
  if(!/^[a-f0-9-]{36}$/i.test(requestId)||text.length<1||text.length>1500)return {status:400,body:{error:"Mensagem ou identificador inválido"}};
  const thread=one("SELECT t.*,l.phone,l.business FROM threads t JOIN leads l ON l.id=t.lead_id WHERE t.id=?",threadId);
  if(!thread||!thread.jid||!/^\d{10,15}@s\.whatsapp\.net$/.test(thread.jid))return {status:404,body:{error:"Conversa WhatsApp não encontrada"}};
+ if(!prospectorLeadEligible(thread.lead_id))return {status:403,body:{error:'Conversa fora da prospecção'}};
  if(one("SELECT id FROM waakg_operator_outbox WHERE id=?",requestId))return {status:409,body:{error:"Essa mensagem já foi processada ou enviada. Confira a conversa antes de repetir."}};
  if(one("SELECT phone FROM suppressions WHERE phone=?",thread.phone))return {status:403,body:{error:"Contato optou por não receber mensagens"}};
  if(!one("SELECT id FROM messages WHERE thread_id=? AND direction='in' LIMIT 1",threadId))return {status:403,body:{error:"O envio pelo painel está limitado a conversas iniciadas pelo cliente"}};
