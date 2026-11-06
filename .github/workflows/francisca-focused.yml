@@ -6,6 +6,10 @@ on:
       - 'dashboard/francisca-*.mjs'
       - 'dashboard/groq-sales-automation.mjs'
       - 'dashboard/server.mjs'
+      - 'dashboard/outreach-window.mjs'
+      - 'dashboard/radar.mjs'
+      - 'dashboard/prospecting-queue.mjs'
+      - 'tests/outreach-weekend-schedule.test.mjs'
       - 'dashboard/prospection-resume.mjs'
       - 'dashboard/tests/prospection-resume.test.mjs'
       - 'dashboard/portfolio-offer-550.mjs'
@@ -32,6 +36,9 @@ jobs:
           node --check dashboard/groq-sales-automation.mjs
           node --check dashboard/prospection-resume.mjs
           node --check dashboard/server.mjs
+          node --check dashboard/outreach-window.mjs
+          node --check dashboard/radar.mjs
+          node --check dashboard/prospecting-queue.mjs
           node --check dashboard/francisca-conversation-state.mjs
           node --check dashboard/francisca-conversation-memory.mjs
           node --check dashboard/francisca-approved-replies.mjs
@@ -51,6 +58,7 @@ jobs:
             dashboard/tests/francisca-payment-intent.test.mjs \
             dashboard/tests/francisca-payment-review.test.mjs \
             dashboard/tests/prospection-resume.test.mjs \
+            tests/outreach-weekend-schedule.test.mjs \
             tests/francisca-2-100-scenarios.test.mjs \
             tests/francisca-chat-coach.test.mjs \
             tests/francisca-context-continuity.test.mjs
