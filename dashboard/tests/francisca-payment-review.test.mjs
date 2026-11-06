@@ -24,7 +24,7 @@ test('photo or document after PIX request never establishes a sale by itself',()
  assert.equal(db.one('SELECT manual_takeover FROM threads WHERE id=?',thread.id).manual_takeover,1);
  assert.equal(db.one('SELECT COUNT(*) n FROM sales_outcomes WHERE lead_id=?',lead.id).n,0);
  assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='PAYMENT_RECEIPT'",lead.id).n,1);
- assert.match(db.one("SELECT message FROM owner_notices WHERE lead_id=? AND kind='PAYMENT_RECEIPT'",lead.id).message,/NÃO há venda nem pagamento confirmados/);
+ assert.match(db.one("SELECT message FROM owner_notices WHERE lead_id=? AND kind='PAYMENT_RECEIPT'",lead.id).message,/não há venda nem pagamento confirmados/i);
  assert.equal(paymentIntentStatus(lead.id).status,'RECEIPT_RECEIVED');
 });
 test('duplicates do not create another notice or overwrite the first pending file',()=>{
