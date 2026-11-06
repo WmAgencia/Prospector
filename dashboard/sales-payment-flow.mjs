@@ -9,6 +9,7 @@ import {operatorOffer} from './operator-outreach.mjs';
 import {prospectorChatEligible} from './whatsapp-roles.mjs';
 import {leadSession,isManagedSession} from './waakg-session-registry.mjs';
 import {queueNotice} from './notifications.mjs';
+import {paymentMethodChosen,fullPaymentChosen} from './francisca-payment-intent.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS sales_payment_intents(lead_id TEXT PRIMARY KEY,provider_id TEXT UNIQUE NOT NULL,session_id TEXT NOT NULL,amount_cents INTEGER NOT NULL,entry_cents INTEGER NOT NULL,remaining_cents INTEGER NOT NULL,method TEXT NOT NULL,status TEXT NOT NULL,receipt_provider_id TEXT UNIQUE,requested_at TEXT NOT NULL,receipt_at TEXT,verified_at TEXT,updated_at TEXT NOT NULL)");
 run("UPDATE sales_payment_intents SET status='DELIVERY_UNKNOWN',updated_at=? WHERE status='SENDING'",now());
@@ -18,16 +19,6 @@ export function salesPaymentQueue(){
 }
 // Negotiating or saying "quero fechar" must NOT send PIX automatically.
 // A payment method choice or explicit PIX request is required.
-const acceptance=text=>{
- const s=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
- if(/\b(nao|nunca|talvez|depois|duvida|ainda nao)\b/.test(s))return false;
- if(/\b(?:no cartao|por cartao|boleto)\b/.test(s)&&!/\b(?:pix|entrada)\b/.test(s))return false;
- return /(?:manda|pode mandar|passa|pode enviar|me envia|me passa).{0,35}(?:pix|chave)|(?:qual|como).{0,25}(?:pix|faco o pix)|(?:vou|quero|prefiro).{0,30}(?:pagar|fazer).{0,30}(?:pix|entrada|a vista)|(?:vai ser|sera|prefiro|quero).{0,18}(?:a vista|50% de entrada|cinquenta por cento de entrada)/.test(s);
-};
-const fullPaymentSelected=text=>{
- const s=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
- return /(?:tudo|integral|100%|cem por cento).{0,25}(?:agora|pix|a vista)|(?:a vista|pagar tudo agora|pagamento integral)/.test(s)&&!/(?:restante|saldo|50%|cinquenta por cento)/.test(s);
-};
 function singleApprovedPrice(markdown=''){
  const s=String(markdown).split('## Serviços, entregas e preços aprovados')[1]?.split('## Fluxo comercial')[0]||'';
  if((s.match(/^### [0-9]+\./gm)||[]).length!==1)return null;
@@ -50,7 +41,7 @@ function priceForLead(leadId){
 }
 export function paymentProposalForIncoming({leadId,jid,sessionId,providerId,text}={}){
  const config=configuredClosing();
- if(!config||config.mode!=='complete'||!acceptance(text))return {eligible:false,reason:'NOT_CLOSING_INTENT'};
+ if(!config||config.mode!=='complete'||!paymentMethodChosen(text))return {eligible:false,reason:'NOT_CLOSING_INTENT'};
  if(!prospectorChatEligible({jid,sessionId})||!isManagedSession(sessionId)||leadSession(leadId)!==sessionId)
   return {eligible:false,reason:'NOT_ELIGIBLE'};
  const price=priceForLead(leadId);
@@ -63,7 +54,7 @@ export function paymentProposalForIncoming({leadId,jid,sessionId,providerId,text
   if(offerHistory.some(m=>/R\$\s*(?:450|750|2[.]?800)(?:[,.\s]|$)/i.test(String(m.body||''))))
    return {eligible:false,reason:'ALTERNATIVE_OFFER_NEEDS_PRICE_APPROVAL'};
  }
- const offer=pixProposal({amountCents:price,service:'o projeto combinado',fullPayment:fullPaymentSelected(text)});
+ const offer=pixProposal({amountCents:price,service:'o projeto combinado',fullPayment:fullPaymentChosen(text)});
  if(!offer)return {eligible:false,reason:'PAYMENT_METHOD_NOT_READY'};
  const previous=one('SELECT status FROM sales_payment_intents WHERE lead_id=?',leadId);
  if(previous)return {eligible:false,reason:'PAYMENT_ALREADY_STARTED',status:previous.status};
