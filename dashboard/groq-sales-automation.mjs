@@ -16,6 +16,9 @@ import {queueNotice} from './notifications.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
+import {commercialIntent,isSpecificCommercialFollowup,memoryPrompt} from './francisca-conversation-state.mjs';
+import {recallConversationMemory} from './francisca-conversation-memory.mjs';
+import {approvedConsecomAnswer,extractProposalEmail} from './francisca-approved-replies.mjs';
 import {classifyContact,prospectorChatEligible} from './whatsapp-roles.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {readActiveTrainingMarkdown} from './training.mjs';
@@ -113,7 +116,8 @@ export async function handleSalesTurn(providerId,deps={}){
  if(stale())return finish(stale());
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
  const recentTurns=all("SELECT direction,body,at FROM messages WHERE thread_id=? ORDER BY at DESC,rowid DESC LIMIT 22",r.thread_id).reverse();
- const offerAlreadyExplained=recentTurns.some(m=>m.direction==='out'&&/R\$\s*550/i.test(String(m.body||'')));
+ const commercialMemory=recallConversationMemory(r.thread_id);
+ const offerAlreadyExplained=commercialMemory.offerExplained||recentTurns.some(m=>m.direction==='out'&&/R\$\s*550/i.test(String(m.body||'')));
  const history=recentTurns.slice(-8).map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
  // A chat is a continuous exchange. Read the real server-side thread rather
  // than asking the model to infer whether it has greeted the contact before.
@@ -122,9 +126,12 @@ export async function handleSalesTurn(providerId,deps={}){
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
  const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
- const fixedOffer=portfolioAllowed&&!buyerCommitment&&(isBaseOfferQuestion(r.body)||isPortfolioFAQ(r.body));
-
- const financial=priceQuestion(r.body)&&!fixedOffer&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
+ const intent=commercialIntent(r.body);
+ const approvedReply=portfolioAllowed?approvedConsecomAnswer(r.body):null;
+ const special=isSpecificCommercialFollowup(r.body);
+ const fixedOffer=portfolioAllowed&&!buyerCommitment&&((!special&&isBaseOfferQuestion(r.body))||(isPortfolioFAQ(r.body)&&(!special||['deadline','seo'].includes(intent))));
+ const strictApprovedReply=approvedReply&&['email','contract','license','price_objection','closing'].includes(intent)?approvedReply:null;
+ const financial=priceQuestion(r.body)&&!fixedOffer&&!approvedReply&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
  const approval=financial?(deps.requestPriceApproval||requestPriceApproval)({leadId:r.lead_id,providerId,question:r.body,sessionId:r.session_id}):null;
  if(financial&&!approval?.ok)return finish('REVIEW','PRICE_APPROVAL_UNAVAILABLE');
  const qualify=deps.qualify||qualifyWithGroq;
@@ -180,12 +187,12 @@ export async function handleSalesTurn(providerId,deps={}){
   }
 
  // A one-word hello never requires an external model call.
- const draft=fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+ const draft=fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:strictApprovedReply?{ok:true,draft:strictApprovedReply,model:'APPROVED_CONSECOM_FOLLOWUP'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
-     'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+
-     (!process.env.PROSPECTOR_TENANT_ID&&salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(portfolioAllowed?'Existe uma oferta BASE aprovada para portfólio: R$ 550 com domínio por um ano e prazo de até 3 dias após materiais/escopo. Não invente extras nem desconto de 90%; consulte o operador para parcelamento ou outra modalidade.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
+     'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+memoryPrompt(commercialMemory)+'\n'+
+     (!process.env.PROSPECTOR_TENANT_ID&&salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(portfolioAllowed?'Para a oferta interna, use EXATAMENTE a política aprovada: R$ 550, domínio por um ano e até 3 dias ÚTEIS após pagamento confirmado e todos os materiais; alternativas e condições só as explicitamente autorizadas. Não invente descontos, resultados ou pagamento confirmado.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
  if(stale())return finish(stale());
  if(!draft.ok&&draft.code==='RATE_LIMITED'){
   run("UPDATE groq_auto_events SET state='PENDING',at=?,error='GROQ_RATE_LIMITED' WHERE provider_id=? AND state='PROCESSING'",new Date(Date.now()+90000).toISOString(),providerId);
@@ -202,12 +209,12 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('REVIEW','REPEATED_OR_EMPTY_REPLY');
  }
  // Only a server-authored fixed portfolio template bypasses the generic price filter.
- let review=fixedOffer?{ok:true,code:'OPERATOR_APPROVED_FIXED_OFFER'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
+ let review=(fixedOffer||strictApprovedReply)?{ok:true,code:'SERVER_APPROVED_CONSECOM_TEXT'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
  // If the model invented commercial terms or claimed an unperformed action,
  // replace it with deterministic, operator-safe information rather than falling silent.
  if(!review.ok&&portfolioAllowed&&['UNVERIFIED_PRICE','UNAPPROVED_TERMS','UNVERIFIED_ACTION'].includes(review.code)){
-  const fallback=safeGeneralReply(r.body,{business:r.business,segment:r.segment});
-  const verified=reviewGroqReply({inbound:r.body,draft:fallback,allowAveragePrice:false});
+  const fallback=approvedReply||safeGeneralReply(r.body,{business:r.business,segment:r.segment});
+  const verified=approvedReply?{ok:true,code:'SERVER_APPROVED_CONSECOM_FALLBACK'}:reviewGroqReply({inbound:r.body,draft:fallback,allowAveragePrice:false});
   if(verified.ok){audit('FRANCISCA_SAFE_FALLBACK',r.lead_id,{rejected:review.code});replyText=fallback;review=verified;}
  }
  if(!review.ok){
@@ -271,6 +278,12 @@ export async function handleSalesTurn(providerId,deps={}){
   const prefix=routing.mode==='VOICE'?'[Áudio Francisca] ':
     routing.mode==='BOTH'?'[Texto + áudio Francisca] ':'';
   run('UPDATE messages SET body=? WHERE provider_id=?',prefix+replyText,'groq:'+providerId);
+  recallConversationMemory(r.thread_id);
+  if(portfolioAllowed&&accepted.length){
+   const email=intent==='email'?extractProposalEmail(r.body):null;
+   if(email)queueNotice('proposal-email:'+providerId,'SALES_REQUEST','📧 Solicitação de proposta por e-mail\nEmpresa: '+r.business+'\nContato: '+r.phone+'\nE-mail indicado: '+email+'\nA Francisca não enviou e-mail; providenciar envio.',r.lead_id);
+   if(intent==='contract')queueNotice('proposal-contract:'+providerId,'SALES_REQUEST','📝 Pedido de contrato digital\nEmpresa: '+r.business+'\nContato: '+r.phone+'\nPreparar contrato e assinatura Gov.br de ambas as partes.',r.lead_id);
+  }
   audit('GROQ_AUTOMATED_INBOUND_REPLY',r.lead_id,{inbound:true,testOnly:allowTest,
     replyLength:replyText.length,deliveryMode:routing.mode,channelReason:routing.reason,contactRole:identity.role,parts:accepted});
   return finish('SENT');
@@ -299,7 +312,7 @@ export async function tickSalesAgent(deps={}){
 }
 let notifying=false;
 export async function flushInterestAlerts(deps={}){
- const target=ownerTarget();if(!target||notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' LIMIT 1"))return 0;
+ const target=ownerTarget();if(!target||notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT','SALES_REQUEST') AND status='PENDING' LIMIT 1"))return 0;
  notifying=true;
  try{
   const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
