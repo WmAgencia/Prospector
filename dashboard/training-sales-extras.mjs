@@ -7,7 +7,7 @@ import {saveSalesContextMarkdown} from './sales-training-documents.mjs';
 const evidenceKey='training_social_evidence_v1';
 const closeKey='training_sales_closing_v1';
 // Consecom chose full closing with 50% entry. Never request a PIX without a configured key.
-if(process.env.PROSPECTOR_TENANT_INTERNAL==='true'&&!getSetting(closeKey,null))setSetting(closeKey,{mode:'complete',methods:['pix'],depositPercent:50,pixKey:'',pixName:'',notifyOn:'receipt',at:now()});
+if((process.env.PROSPECTOR_TENANT_INTERNAL==='true'||!process.env.PROSPECTOR_TENANT_ID)&&!getSetting(closeKey,null))setSetting(closeKey,{mode:'complete',methods:['pix'],depositPercent:50,pixKey:'',pixName:'',notifyOn:'receipt',at:now()});
 const validKinds=new Set(['portfolio','testimonial','case','other']);
 const clean=(value,max=500)=>String(value||'').replace(/[\u0000-\u001f\u007f<>]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
 const linkAllowed=value=>{try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&u.hostname.indexOf('.')>0&&value.length<=700?u.href:null;}catch{return null;}};
@@ -55,7 +55,7 @@ const modes=['handoff','complete'];
 const methods=['pix','card','transfer','invoice'];
 export function salesClosingStatus(){
  const raw=getSetting(closeKey,null);
- const current=raw||(process.env.PROSPECTOR_TENANT_INTERNAL==='true'?{mode:'complete',methods:['pix'],depositPercent:50,pixKey:'',pixName:'',notifyOn:'receipt',configured:false}:null);
+ const current=raw||((process.env.PROSPECTOR_TENANT_INTERNAL==='true'||!process.env.PROSPECTOR_TENANT_ID)?{mode:'complete',methods:['pix'],depositPercent:50,pixKey:'',pixName:'',notifyOn:'receipt',configured:false}:null);
  return current?{mode:current.mode,methods:current.methods||[],depositPercent:current.depositPercent,
   pixConfigured:!!current.pixKey,pixMasked:current.pixKey?'••••'+current.pixKey.slice(-4):'',
   pixName:current.pixName||'',notifyOn:current.notifyOn||'interest',

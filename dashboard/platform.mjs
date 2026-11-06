@@ -56,7 +56,7 @@ export function workerEnvironment(client,port){
  const allowed=['PATH','Path','SystemRoot','TEMP','TMP','HOME','NODE_ENV','GROQ_API_KEY','GROQ_MODEL','WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD','FRANCISCA_PYTHON','EDGE_TTS_PYTHON','FRANCISCA_TTS_ENABLED','PUBLIC_BASE_URL'];
  const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]));
  return {...env,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
-  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',...(client.is_internal===1&&process.env.RUN_FRANCISCA_SALES_SMOKE==='true'?{RUN_FRANCISCA_SALES_SMOKE:'true'}:{}),PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
+  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
   PROSPECTOR_SESSION_DIR:path.join(root,'clients',client.id,'wa-session'),
   ADMIN_ACCESS_TOKEN:client.secret,ADMIN_SESSION_SECRET:client.secret,WA_AKG_WEBHOOK_SECRET:client.secret,
   WHATSAPP_TRANSPORT:'waakg',PROSPECTOR_INBOUND_AUTOREPLY_ENABLED:'true',AI_CONVERSATION_AUTOSEND:'true',
@@ -68,21 +68,7 @@ async function worker(client){
  if(starting.has(client.id))return starting.get(client.id);
  const pending=(async()=>{
   const port=await freePort();fs.mkdirSync(path.join(root,'clients',client.id),{recursive:true});
-  const captureSalesSmoke=client.is_internal===1&&process.env.RUN_FRANCISCA_SALES_SMOKE==='true';
-  const child=spawn(process.execPath,[fileURLToPath(new URL('./server.mjs',import.meta.url))],{
-   env:workerEnvironment(client,port),stdio:captureSalesSmoke?['ignore','pipe','ignore']:['ignore','ignore','ignore'],windowsHide:true});
-  if(captureSalesSmoke&&child.stdout){
-   let pending='';
-   child.stdout.on('data',buf=>{
-    pending+=String(buf);
-    let pos;
-    while((pos=pending.indexOf('\n'))>=0){
-     const line=pending.slice(0,pos).trim();pending=pending.slice(pos+1);
-     if(line.startsWith('[francisca-sales-smoke'))console.info('[consecom-tenant] '+line.slice(0,2100));
-    }
-    if(pending.length>4096)pending='';
-   });
-  }
+  const child=spawn(process.execPath,[fileURLToPath(new URL('./server.mjs',import.meta.url))],{env:workerEnvironment(client,port),stdio:['ignore','ignore','ignore'],windowsHide:true});
   const entry={port,child};workers.set(client.id,entry);child.on('exit',()=>{if(workers.get(client.id)===entry)workers.delete(client.id);});child.on('error',()=>workers.delete(client.id));
   for(let i=0;i<100;i++){
    if(child.exitCode!==null)throw Error('Não foi possível iniciar este espaço de trabalho');

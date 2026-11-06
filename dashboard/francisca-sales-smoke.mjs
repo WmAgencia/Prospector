@@ -4,7 +4,7 @@
 import {getSetting,setSetting} from './db.mjs';
 import {aiDraft} from './ai-groq.mjs';
 import {salesClosingStatus} from './training-sales-extras.mjs';
-const KEY='francisca_sales_smoke_v3_internal_20261106';
+const KEY='francisca_sales_smoke_v4_consecom_root_20261106';
 export const SALES_SCENARIOS=Object.freeze([
  {id:'interested-barber',name:'Barbearia quer site',turns:[
   'Boa noite, vocês fazem site para barbearia? Queria um lugar bonito para mostrar meus serviços.',
@@ -60,7 +60,7 @@ function assess(id,input,output){
 }
 export async function runFranciscaSalesSmoke(){
  if(process.env.RUN_FRANCISCA_SALES_SMOKE!=='true')return {skipped:'FLAG_OFF'};
- if(process.env.PROSPECTOR_TENANT_INTERNAL!=='true')return {skipped:'NOT_CONSECOM_TENANT'};
+ if(process.env.PROSPECTOR_TENANT_ID)return {skipped:'NOT_CONSECOM_ROOT'};
  if(getSetting(KEY,null))return {skipped:'ALREADY_STARTED'};
  setSetting(KEY,{state:'STARTED',at:new Date().toISOString()});
  const results=[],began=Date.now();

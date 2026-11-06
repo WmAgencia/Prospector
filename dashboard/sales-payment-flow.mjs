@@ -37,7 +37,7 @@ function priceForLead(leadId){
  const price=approvedPriceForLead(leadId);
  if(Number.isSafeInteger(price)&&price>=1&&price<=5000000)return price*100;
  // The internal Consecom offer is the one fixed offer approved at R$550.
- if(process.env.PROSPECTOR_TENANT_INTERNAL==='true'&&operatorOffer(leadId)==='portfolio'&&
+ if((process.env.PROSPECTOR_TENANT_INTERNAL==='true'||!process.env.PROSPECTOR_TENANT_ID)&&operatorOffer(leadId)==='portfolio'&&
     readActiveTrainingMarkdown()?.includes('R$ 550'))return 55000;
  return singleApprovedPrice(readActiveTrainingMarkdown()||'');
 }

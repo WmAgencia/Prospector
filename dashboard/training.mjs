@@ -43,7 +43,7 @@ export function readActiveTrainingMarkdown(){
 }
 // The Consecom Production account runs as a tenant worker. It must inherit
 // its already-approved business behavior, NEVER new-client onboarding.
-const isConsecomInternal=()=>process.env.PROSPECTOR_TENANT_INTERNAL==='true';
+const isConsecomInternal=()=>process.env.PROSPECTOR_TENANT_INTERNAL==='true'||!process.env.PROSPECTOR_TENANT_ID;
 function priorConsecomApprovedMarkdown(){
  // Before SaaS workspaces, Consecom had one root data directory.
  // Only the trusted internal worker may read its old active Markdown.
