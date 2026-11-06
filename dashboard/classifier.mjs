@@ -1,3 +1,4 @@
+import {leadFirstName} from './lead-salutation.mjs';
 // Classificador determinístico conservador e auditável.
 export const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}\s?!]/gu,' ').replace(/\s+/g,' ').trim();
 const rules=[
@@ -25,13 +26,12 @@ export function personalName(value,business=''){
  return clean.length>=2?clean:null;
 }
 export function renderTemplate(template,lead){
- const rawName=personalName(lead.name)||'';
- const person=rawName.replace(/^(?:dr\.?|dra\.?|sr\.?|sra\.?|prof\.?|professor(?:a)?\.?)\s+/i,'').trim();
- const firstCandidate=person.split(/\s+/)[0]||'';
- const firstName=/^(?:contato|responsavel|atendimento|cliente|administrador|profissional)$/i.test(firstCandidate)?'':firstCandidate;
+ // Template and autonomous greetings must use the same safe person resolver.
+ const firstName=leadFirstName(lead);
+ const rawName=firstName?(personalName(lead.name,lead.business)||''):'';
  const label=String(lead.business||'').replace(/\s+/g,' ').trim();
  const business=lead.source==='OPERATOR_TEST'||!label||label.length>120||/^\+?[\d\s()-]+$/.test(label)?'':label;
- const greeting=firstName?'Olá, '+firstName+', como vai?':business?'Olá, equipe da '+business+', como vai?':'Olá, como vai?';
+ const greeting=firstName?'Olá, '+firstName+', como vai?':'Olá, como vai?';
  const values={greeting,first_name:firstName,person_name:rawName,business_name:safeName(lead.business)||'',city:lead.city||'',segment:lead.segment||'',instagram_username:lead.instagram||''};
  return String(template||'').replace(/\{\{(\w+)\}\}/g,(_,k)=>values[k]||'').replace(/\s+([,.!?])/g,'$1').replace(/\s{2,}/g,' ').trim();
 }

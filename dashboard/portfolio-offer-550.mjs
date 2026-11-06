@@ -1,6 +1,7 @@
 // Canonical, operator-authorized base offer for approved site portfolio conversations.
 // Pure logic: no database, WhatsApp, owner notifications, or network calls.
 import {classifyInboundAutomation} from './inbound-automation.mjs';
+import {leadFirstName} from './lead-salutation.mjs';
 export const PORTFOLIO_OFFER_VERSION="consecom-portfolio-550-2026-11";
 export const PORTFOLIO_PRICE_BRL=550;
 export const PORTFOLIO_DOMAIN_MONTHS=12;
@@ -30,15 +31,11 @@ export function verifiedPersonName(lead={}){
 }
 // Fallback aprovado pelo operador: sem nome pessoal, usa o primeiro nome da
 // empresa; sem nada utilizável, só a saudação. Nunca inventa nome.
+// Only a personal name explicitly present in a person field or associated
+// with a professional title is safe to use. NEVER fall back to the first word
+// of the establishment: "Clínica", "Oficina", "Loja", etc.
 export function greetingName(lead={}){
- const person=verifiedPersonName(lead);
- if(person)return person;
- const business=String(lead.business||'').replace(/\b(?:ltda|me|eireli|epp|s\.?a\.?)\b\.?/gi,' ').trim();
- const first=business.split(/[\s\-–—|•,./]+/).filter(Boolean)[0]||'';
- if(!/^[\p{L}][\p{L}'’.-]{1,29}$/u.test(first))return '';
- if(/^(?:a|o|os|as|de|da|do|das|dos|e|em|para|com|a|à|ao)$/i.test(first))return '';
- if(/^(?:whatsapp|tudo|aqui|empresa|comercio|servicos|servico|loja|clinica|oficina|bar|restaurante)$/i.test(first))return '';
- return first.charAt(0).toUpperCase()+first.slice(1);
+ return leadFirstName(lead);
 }
 export function friendlyGreeting(lead={},at=new Date()){
  const h=Number(new Intl.DateTimeFormat("en-GB",{hour:"2-digit",hourCycle:"h23",timeZone:"America/Sao_Paulo"}).format(at));
