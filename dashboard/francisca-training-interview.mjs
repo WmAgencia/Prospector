@@ -3,6 +3,7 @@
 // grants permissions, invents prices or activates the profile automatically.
 import crypto from 'node:crypto';
 import {getSetting,setSetting,now} from './db.mjs';
+import {storeTrainingMarkdown,removeTrainingMarkdown} from './training-markdown.mjs';
 
 const KEY='francisca_training_interview_v1';
 const clean=(value,max=750)=>String(value||'').replace(/[\u0000-\u001f\u007f<>]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
@@ -68,40 +69,58 @@ const publicState=s=>s?{
 }:null;
 export const trainingInterviewStatus=()=>publicState(getSetting(KEY,null));
 export function startTrainingInterview(mode='text'){
+ const prior=getSetting('training_draft',null);
+ if(prior?.source==='interview'){setSetting('training_draft',null);removeTrainingMarkdown('draft');}
  if(!['text','voice'].includes(mode))throw Error('Escolha treinamento escrito ou por voz.');
  const q={version:1,mode,phase:'active',key:'company',index:0,data:{services:[]},messages:[],startedAt:now()};
  q.messages.push({role:'assistant',body:question(q),at:now()});
  setSetting(KEY,q);
  return publicState(q);
 }
-export function resetTrainingInterview(){setSetting(KEY,null);const draft=getSetting('training_draft',null);if(draft?.source==='interview')setSetting('training_draft',null);return null;}
+export function resetTrainingInterview(){setSetting(KEY,null);const draft=getSetting('training_draft',null);if(draft?.source==='interview'){setSetting('training_draft',null);removeTrainingMarkdown('draft');}return null;}
 const safeValue=(v,limit=800)=>clean(v,limit);
-function buildProfile(data){
+// Built from the interview's structured answers, never from another tenant.
+export function buildTrainingMarkdown(data){
  const lines=[
- 'PERFIL DE ATENDIMENTO — FRANCISCA',
- 'Empresa: '+(data.company||'Não informado'),
- 'Público-alvo: '+(data.audience||'Não informado'),
+ '# Manual de atendimento — Francisca',
  '',
- 'SERVIÇOS, ENTREGAS E VALORES',
- ...((data.services||[]).flatMap((s,i)=>[
-  (i+1)+'. '+s.name,
-  '   Escopo, tipos e prazos: '+(s.detail||'Não informado'),
-  '   Valor aprovado para mencionar: '+(s.price||'Somente sob consulta')
+ '> Documento de treinamento preparado para revisão. Só utilizar após aprovação explícita.',
+ '',
+ '## Identidade da empresa',
+ '- **Nome:** '+(data.company||'Não informado'),
+ '- **Público-alvo:** '+(data.audience||'Não informado'),
+ '- **Regiões atendidas:** '+(data.region||'Não informado'),
+ '',
+ '## Serviços, entregas e preços aprovados',
+ ...((data.services||[]).flatMap((service,index)=>[
+  '### '+(index+1)+'. '+service.name,
+  '- **O que inclui, modalidades e prazos:** '+(service.detail||'Não informado'),
+  '- **Valor permitido na conversa:** '+(service.price||'Não autorizado informar; encaminhar para orçamento'),
+  ''
  ])),
+ '## Fluxo comercial',
+ '- **Como contratar:** '+(data.process||'Não informado'),
+ '- **Perguntas de qualificação:** '+(data.qualify||'Não informado'),
+ '- **Estilo da conversa:** '+(data.style||'Não informado'),
+ '- **Respostas a objeções e pedidos de portfólio:** '+(data.objections||'Não informado'),
  '',
- 'REGIÃO DE ATENDIMENTO: '+(data.region||'Não informado'),
- 'PROCESSO DE CONTRATAÇÃO: '+(data.process||'Não informado'),
- 'PERGUNTAS PARA QUALIFICAÇÃO: '+(data.qualify||'Não informado'),
- 'ESTILO E TOM: '+(data.style||'Não informado'),
- 'OBJEÇÕES E PORTFÓLIO: '+(data.objections||'Não informado'),
- 'QUANDO ENCAMINHAR AO RESPONSÁVEL: '+(data.handoff||'Não informado'),
- 'LIMITES E CONDIÇÕES PROIBIDAS: '+(data.restrictions||'Não informado'),
- 'WHATSAPP PARA ALERTAS: '+(data.notification||'A configurar'),
+ '## Quando acionar um responsável',
+ '- **Situações de encaminhamento:** '+(data.handoff||'Não informado'),
+ '- **WhatsApp para notificações:** '+(data.notification||'A configurar'),
  '',
- 'REGRAS OBRIGATÓRIAS: Não inventar preços, resultados, escopo, garantias nem prazos. Se o cliente pedir condição fora do que foi informado, encaminhar ao responsável. Respeitar pedidos de parar e não responder conversas não abordadas pelo Prospector. O treinamento não autoriza contatos nem envios por si só.'
+ '## Limites e segurança',
+ '- **Condições que exigem autorização:** '+(data.restrictions||'Não informado'),
+ '- Não inventar preços, garantias, resultados, prazos, entregáveis ou descontos.',
+ '- Quando um serviço ou condição não estiver explicitamente descrito, consultar o responsável.',
+ '- Respeitar recusas, pedidos de remoção e solicitações de atendimento humano.',
+ '- **Só responder automaticamente contatos que receberam uma abordagem confirmada do Prospector neste mesmo espaço.**',
+ '- O treinamento não autoriza envios, mudança de campanha nem acesso a outros clientes.',
+ '- As regras legais e operacionais do Prospector têm prioridade sobre este documento.',
+ ''
  ];
  return lines.join('\n').slice(0,9000);
 }
+
 export function advanceTrainingInterview(text){
  const state=getSetting(KEY,null);
  if(!state||state.phase!=='active')throw Error('Inicie o treinamento selecionando texto ou voz.');
@@ -129,10 +148,11 @@ export function advanceTrainingInterview(text){
   state.key=following[key]||'done';
  }
  if(state.key==='done'){
-  const profileText=buildProfile(data);
+  const profileText=buildTrainingMarkdown(data);
+  const artifact=storeTrainingMarkdown('draft',profileText);
   state.phase='review';
   state.messages.push({role:'assistant',body:'Perfeito! Preparei seu perfil de atendimento. Leia os serviços, os preços e as regras antes de clicar em Aprovar e ativar. Nada foi ativado automaticamente.',at:now()});
-  setSetting('training_draft',{id:crypto.randomUUID(),source:'interview',text:profileText,interviewData:{company:data.company,audience:data.audience},at:now()});
+  setSetting('training_draft',{id:crypto.randomUUID(),source:'interview',filename:artifact.filename,interviewData:{company:data.company,audience:data.audience},at:now()});
  }else{
   state.messages.push({role:'assistant',body:question(state),at:now()});
  }

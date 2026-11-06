@@ -686,3 +686,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  .interview-compose-actions .secondary,.interview-compose-actions .primary{font-size:11px;padding:10px}
 }
 @media(prefers-reduced-motion:reduce){.interview-modes>button,.interview-progress span{transition:none}.interview-modes>button:hover{transform:none}}
+
+/* The Markdown trained profile is a tenant-private downloadable artifact. */
+.training-markdown-info{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;margin:13px 0 17px;border:1px solid #e4daf9;border-radius:12px;background:#f8f5ff;color:#554976;font-size:11px}
+.training-markdown-info strong{color:#5a30b1}
+.training-markdown-info>a{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;min-height:36px;font-size:11px;white-space:nowrap}
+.training-markdown-info>a:focus-visible{outline:3px solid #a887e8;outline-offset:3px}
+@media(max-width:520px){.training-markdown-info{align-items:stretch;flex-direction:column}.training-markdown-info>a{width:100%}}

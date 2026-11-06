@@ -3,7 +3,7 @@ import {SALES_TONE_VERSION,SALES_FEW_SHOTS,salesTonePrompt} from "./sales-tone-p
 import {analyzeSalesConversation,contextForGroq} from "./sales-intelligence.mjs";
 import {conversationGuide} from "./francisca-chat-coach.mjs";
 import {availableGroqModels} from './groq-models.mjs';
-import {trainingPrompt} from './training.mjs';
+import {trainingPrompt,readActiveTrainingMarkdown} from './training.mjs';
 import {getSetting} from './db.mjs';
 // Groq Cloud conversation draft adapter. No credentials in this repository.
 // No WhatsApp send occurs here; a human or a separately authorized workflow must approve.
@@ -29,7 +29,7 @@ function sanitized(input,max){
  return value;
 }
 export async function aiDraft({text,context="",audience="INBOUND_NEW",dialogueState=null}={}){
- if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('training_active',null))return {ok:false,code:'TRAINING_REVIEW_REQUIRED',httpStatus:409};
+ if(process.env.PROSPECTOR_TENANT_ID&&!readActiveTrainingMarkdown())return {ok:false,code:'TRAINING_REVIEW_REQUIRED',httpStatus:409};
  const prompt=sanitized(text,1500);
  const extra=typeof context==="string"?context.trim().slice(0,5000):"";
  const profile=analyzeSalesConversation({text:prompt,context:extra});

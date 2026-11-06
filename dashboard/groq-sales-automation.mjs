@@ -16,6 +16,7 @@ import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.
 import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
 import {classifyContact,prospectorChatEligible} from './whatsapp-roles.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
+import {readActiveTrainingMarkdown} from './training.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
 import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,acceptPart,partsFor} from './groq-reply-channels.mjs';
 import {waControlStatus,waRequest,selectedWaSession} from './waakg-control.mjs';
@@ -56,7 +57,7 @@ export function queueInboundTurn({providerId,jid,sessionId}={}){
 }
 const active=new Set();
 export async function handleSalesTurn(providerId,deps={}){
- if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('training_active',null))return {state:'TRAINING_REVIEW_REQUIRED'};
+ if(process.env.PROSPECTOR_TENANT_ID&&!readActiveTrainingMarkdown())return {state:'TRAINING_REVIEW_REQUIRED'};
  const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.segment,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
  if(!r)return {state:'SKIP'};
  const replyStartedAt=(deps.replyNow||Date.now)();
