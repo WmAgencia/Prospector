@@ -14,6 +14,8 @@ export function approvedConsecomAnswer(message=''){
   return 'Não tem problema! Podemos melhorar suas fotos com IA ou criar imagens ilustrativas que combinem com os serviços. Só não vamos apresentar imagens geradas como se fossem fotos reais da sua empresa.';
  if(/(?:mudanc|alterac|alterar|editar|revisao|revisar|personalizar)/.test(s)&&/(?:depois|aprova|fase final|entrega|pronto|suporte)/.test(s))
   return 'Durante a criação você acompanha cada etapa e pode pedir mudanças até aprovar a fase final. Depois da aprovação, seguimos dando suporte, mas novas alterações têm orçamento conforme o que for necessário.';
+ if(/(?:formas? de pagamento|como posso pagar|parcelar|parcelamento|50%|cinquenta por cento|entrada e (?:o )?restante|a vista)/.test(s)&&!/(?:pix|comprovante|chave|ja paguei|paguei)/.test(s))
+  return 'Você pode pagar o valor integral ou fazer 50% de entrada e quitar o restante na entrega, à vista ou em até três vezes sem juros no cartão, quando essa opção estiver disponível. O que funciona melhor pra você?';
  if(/(?:pagar (?:tudo )?(?:depois|no final)|sem entrada|so (?:quando|depois) entregar)/.test(s))
   return 'Pra começar precisamos de uma entrada de 50%, porque já iniciamos a produção e os custos do projeto. O restante fica pra entrega e pode ser pago à vista ou em até três vezes sem juros no cartão, quando disponível.';
  if(/(?:nota fiscal|emitir nota|emite nota|recibo)/.test(s))
