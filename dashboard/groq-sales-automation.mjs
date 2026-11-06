@@ -130,7 +130,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const approvedReply=portfolioAllowed?approvedConsecomAnswer(r.body):null;
  const special=isSpecificCommercialFollowup(r.body);
  const fixedOffer=portfolioAllowed&&!buyerCommitment&&((!special&&isBaseOfferQuestion(r.body))||(isPortfolioFAQ(r.body)&&(!special||['deadline','seo'].includes(intent))));
- const strictApprovedReply=approvedReply&&['email','contract','license','price_objection','closing'].includes(intent)?approvedReply:null;
+ const strictApprovedReply=approvedReply||null; // All answers here are server-authored and Consecom-only; never use for other tenants.
  const financial=priceQuestion(r.body)&&!fixedOffer&&!approvedReply&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
  const approval=financial?(deps.requestPriceApproval||requestPriceApproval)({leadId:r.lead_id,providerId,question:r.body,sessionId:r.session_id}):null;
  if(financial&&!approval?.ok)return finish('REVIEW','PRICE_APPROVAL_UNAVAILABLE');
