@@ -28,13 +28,13 @@ export function asksAboutProposal(value=''){
 }
 export function greetingForProspect(lead={},at=new Date()){
  // The original master/Consecom two-step approach stays EXACTLY as configured.
- if(!process.env.PROSPECTOR_TENANT_ID)return friendlyGreeting(lead,at);
+ if(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')return friendlyGreeting(lead,at);
  // A client may use only its approved tenant-specific first-message template.
  return tenantApproachGreeting(lead)||friendlyGreeting(lead,at);
 }
 export function introductionStatus(leadId){return one('SELECT * FROM prospecting_introductions WHERE lead_id=?',String(leadId||''))||null;}
 export function registerGreeting({leadId,greetingId,sessionId}={}){
- if(process.env.PROSPECTOR_TENANT_ID)return false; // client replies use its reviewed profile, never Wesley's introduction
+ if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')return false; // other tenants never use Wesley's introduction
  const lead=one('SELECT id,phone,contact_permission FROM leads WHERE id=?',leadId);
  if(!lead||!lead.phone||(!documentedOptIn(lead.id)&&!operatorSelected(lead.id)))return false;
  if(!sessionId||!greetingId)return false;

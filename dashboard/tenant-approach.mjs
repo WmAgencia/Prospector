@@ -17,7 +17,7 @@ const findField=(markdown,label)=>{
  return '';
 };
 export function tenantApprovedApproach(){
- if(!process.env.PROSPECTOR_TENANT_ID)return null;
+ if(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')return null;
  const profile=getSetting('training_active',null);
  if(!profile)return null;
  const text=readTrainingMarkdown('active');

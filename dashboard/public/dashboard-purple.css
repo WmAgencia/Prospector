@@ -706,3 +706,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .interview-approach-options button:last-child{grid-column:1 / -1}
 @media(max-width:670px){.interview-approach-options{grid-template-columns:1fr;padding:12px}.interview-approach-options button:last-child{grid-column:1}.interview-approach-options button{padding:12px}}
 @media(prefers-reduced-motion:reduce){.interview-approach-options button{transition:none}}
+
+/* Existing Consecom operation: replace the first-time onboarding question. */
+.interview-owner-ready{display:flex;align-items:flex-start;flex-direction:column;gap:12px;padding:29px 30px!important;border:1px solid #e6dafa;border-radius:21px!important;background:linear-gradient(145deg,#fff 40%,#f8f4ff)}
+.interview-owner-ready-icon{display:grid;place-items:center;width:45px;height:45px;color:#fff;background:#6141cb;border-radius:14px;font-size:25px;font-weight:850}
+.interview-owner-ready h3{font-size:clamp(22px,2.5vw,29px);line-height:1.22;letter-spacing:-.04em;margin:0}
+.interview-owner-ready>p{font-size:12px;line-height:1.7;color:#756a85;margin:0;max-width:590px}
+.interview-owner-ready-points{display:grid;grid-template-columns:1fr 1fr;gap:11px 19px;width:100%;margin:12px 0 14px}
+.interview-owner-ready-points span{color:#51416d;font-size:11px;font-weight:650}
+.interview-owner-ready .interview-hint{padding:0;margin:2px 0 0!important}
+@media(max-width:650px){.interview-owner-ready{padding:22px 18px!important}.interview-owner-ready-points{grid-template-columns:1fr;gap:9px}}

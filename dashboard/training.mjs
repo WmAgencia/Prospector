@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import {trainingInterviewStatus,startTrainingInterview,advanceTrainingInterview,resetTrainingInterview} from './francisca-training-interview.mjs';
 import {storeTrainingMarkdown,readTrainingMarkdown,removeTrainingMarkdown,trainingMarkdownName} from './training-markdown.mjs';
 import {globalSalesMarkdown,GLOBAL_SALES_FILENAME,GLOBAL_SALES_VERSION} from './francisca-vendas-global.mjs';
+import fs from 'node:fs';
 db.exec(`CREATE TABLE IF NOT EXISTS training_chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,body TEXT NOT NULL,at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS training_runs(id TEXT PRIMARY KEY,status TEXT NOT NULL,report TEXT,details TEXT NOT NULL,created_at TEXT NOT NULL);`);
 run("UPDATE training_runs SET status='FAILED',details=? WHERE status='RUNNING'",JSON.stringify({error:'Análise interrompida pelo reinício. Inicie novamente quando desejar.'}));
@@ -36,12 +37,38 @@ export function readActiveTrainingMarkdown(){
  }
  return markdown;
 }
+// The Consecom Production account runs as a tenant worker. It must inherit
+// its already-approved business behavior, NEVER new-client onboarding.
+const isConsecomInternal=()=>process.env.PROSPECTOR_TENANT_INTERNAL==='true';
+export function ensureConsecomOriginalTraining(){
+ if(!isConsecomInternal())return {status:'NOT_INTERNAL'};
+ const old=getSetting('training_active',null);
+ if(old)return {status:'PRESERVED_EXISTING'};
+ let existing=readTrainingMarkdown('active'),file;
+ if(existing)file={filename:trainingMarkdownName('active'),sha256:crypto.createHash('sha256').update(existing).digest('hex')};
+ else {
+  const original=fs.readFileSync(new URL('./francisca-consecom-original.md',import.meta.url),'utf8');
+  file=storeTrainingMarkdown('active',original);
+ }
+ setSetting('training_active',{id:'consecom-original-playbook-2026-11',
+  source:existing?'recovered-existing-md':'consecom-original-configuration',
+  filename:file.filename,sha256:file.sha256,format:'markdown',at:now()});
+ if(!getSetting('training_business',null))
+  setSetting('training_business',{name:'Consecom Brasil',
+   description:'Agência de publicidade, marketing e tecnologia; sites profissionais, sistemas, tráfego e automações.'});
+ return {status:existing?'RECOVERED':'CONFIGURED'};
+}
+if(isConsecomInternal()){
+ try{ensureConsecomOriginalTraining();}
+ catch(error){console.warn('[internal training]',String(error?.message||error).slice(0,100));}
+}
+
 export function trainingStatus(){
  const meta=getSetting('training_active',null),active=readActiveTrainingMarkdown();
  const profile=meta&&active?{...getSetting('training_active',meta),text:active,filename:trainingMarkdownName('active'),format:'markdown'}:null;
  const rawDraft=getSetting('training_draft',null);
  const draft=rawDraft?.source==='interview'?{...rawDraft,text:readTrainingMarkdown('draft')||''}:rawDraft;
- return {profile,draft,globalKnowledge:{filename:GLOBAL_SALES_FILENAME,version:GLOBAL_SALES_VERSION,readOnly:true,scope:'shared'},business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),
+ return {profile,draft,internalAccount:isConsecomInternal(),globalKnowledge:{filename:GLOBAL_SALES_FILENAME,version:GLOBAL_SALES_VERSION,readOnly:true,scope:'shared'},business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),
   chat:all('SELECT role,body,at FROM training_chat ORDER BY rowid DESC LIMIT 40').reverse(),interview:trainingInterviewStatus(),
   runs:all('SELECT id,status,report,details,created_at FROM training_runs ORDER BY rowid DESC LIMIT 10').map(r=>({...r,details:JSON.parse(r.details)}))};
 }
@@ -135,6 +162,7 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
 
 
  if(p==='/api/training/interview/start'&&req.method==='POST'){
+  if(isConsecomInternal()&&readActiveTrainingMarkdown()){respond(res,409,{error:'A Francisca da Consecom já está treinada. Para mudar, use Editar manual.'});return true;}
   try{const input=await json(req);startTrainingInterview(input?.mode);respond(res,200,trainingStatus());}
   catch(e){respond(res,422,{error:String(e.message).slice(0,180)});}
   return true;
