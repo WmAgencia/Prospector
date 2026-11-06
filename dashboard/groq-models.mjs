@@ -1,5 +1,4 @@
 // Dynamic Groq model selection: only models returned active by this account.
-import {opencodeChat,opencodeStatus} from './opencode-models.mjs';
 const BASE='https://api.groq.com/openai/v1';
 const tasks={
  conversation:['openai/gpt-oss-120b','llama-3.3-70b-versatile','openai/gpt-oss-20b'],
@@ -92,16 +91,6 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
     }catch(e){console.warn('[groq-voice-recovery]',JSON.stringify({stage:'fallback',error:e?.name||'ERROR'}));}
    }
   }
-  // Optional secondary API is disabled by default. Only selected, ordinary
-  // text tasks can use an explicitly approved paid OpenCode model.
-  if([429,500,502,503,504].includes(response.status)&&
-     ['conversation','quick','summarization'].includes(task)&&
-     (!Array.isArray(tools)||!tools.length)){
-   const alternative=await opencodeChat({task,messages,maxTokens});
-   if(alternative.ok)return {model:alternative.model,provider:'opencode',
-    choice:alternative.choice,usage:alternative.usage||null,recovered:true};
-   if(alternative.code!=='OPENCODE_DISABLED')console.warn('[opencode-fallback]',JSON.stringify({code:alternative.code,task}));
-  }
   throw Error('GROQ_HTTP_'+response.status);
  }
  const json=await response.json();
@@ -109,5 +98,5 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
 }
 export async function groqCatalog(){
  const result=await availableGroqModels();
- return {provider:'GroqCloud',configured:groqConfigured(),models:result.ids,selection:Object.fromEntries(Object.keys(tasks).map(k=>[k,tasks[k].find(m=>result.ids.includes(m))||null])),lastError:result.error,automaticFallback:true,alternative:opencodeStatus()};
+ return {provider:'GroqCloud',configured:groqConfigured(),models:result.ids,selection:Object.fromEntries(Object.keys(tasks).map(k=>[k,tasks[k].find(m=>result.ids.includes(m))||null])),lastError:result.error,automaticFallback:true};
 }
