@@ -93,25 +93,29 @@ export function recordReceiptMedia({leadId,jid,sessionId,providerId,mimeType='im
  const updated=run("UPDATE sales_payment_intents SET status='RECEIPT_RECEIVED',receipt_provider_id=?,receipt_at=?,updated_at=? WHERE lead_id=? AND status='AWAITING_RECEIPT' AND receipt_provider_id IS NULL",providerId,now(),now(),leadId);
  if(!updated.changes)return {recorded:false,reason:'ALREADY_PROCESSED'};
  const lead=one('SELECT business,phone FROM leads WHERE id=?',leadId)||{};
- // The customer accepted the offer and submitted proof of payment. This closes
- // the COMMERCIAL deal, not the bank settlement.
+ // Any image/document could be a photograph or unrelated file. Treat it as
+ // evidence requiring owner review, never as a paid or closed sale.
  const thread=getThread(leadId,jid);
- addMessage({threadId:thread.id,providerId,direction:'in',type:'document',body:'[Comprovante recebido — transferência não conciliada]',status:'received'});
- stage(leadId,'CLOSED_WON','COMMERCIAL_AGREEMENT_WITH_RECEIPT');
- recordSalesOutcome({leadId,status:'CLOSED_WON',providerId,evidence:'Negócio fechado: comprovante recebido, PIX não conciliado',source:'RECEIPT_SUBMITTED',notify:false});
+ addMessage({threadId:thread.id,providerId,direction:'in',type:'document',body:'[Arquivo recebido durante cobrança — conferência necessária]',status:'received'});
+ run('UPDATE threads SET manual_takeover=1 WHERE id=?',thread.id);
+ audit('PAYMENT_MEDIA_REVIEW_REQUIRED',leadId,{providerId,mimeType});
  queueNotice('payment-receipt:'+leadId+':'+providerId,'PAYMENT_RECEIPT',
- '✅ Negócio fechado — comprovante recebido (não conciliado)\nEmpresa: '+String(lead.business||'').slice(0,100)+
+ '🔎 Arquivo recebido após pedido de PIX — conferir conteúdo e pagamento\nEmpresa: '+String(lead.business||'').slice(0,100)+
  '\nContato: '+String(lead.phone||'').slice(0,18)+
  '\nEntrada combinada: '+(row.entry_cents/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})+
  '\nA Francisca registrou o fechamento comercial. Abra a conversa para visualizar o arquivo recebido; a liquidação bancária não foi verificada.\nWhatsApp: https://wa.me/'+String(lead.phone||''),leadId);
  audit('SALES_RECEIPT_RECEIVED_UNVERIFIED',leadId,{mediaType:mimeType,providerId});
- return {recorded:true,status:'RECEIPT_RECEIVED',commerciallyClosed:true,verified:false};
+ return {recorded:true,status:'RECEIPT_RECEIVED',commerciallyClosed:false,verified:false,reviewRequired:true};
 }
 export function confirmPayment(leadId,{paymentVerified=false,reference=''}={}){
  if(paymentVerified!==true||String(reference).trim().length<4)throw Error('A confirmação precisa de referência verificável do recebimento.');
  const row=one('SELECT * FROM sales_payment_intents WHERE lead_id=?',String(leadId||''));
  if(!row||row.status!=='RECEIPT_RECEIVED')throw Error('Não há comprovante pendente para conferir.');
  const updated=run("UPDATE sales_payment_intents SET status='PAYMENT_VERIFIED',verified_at=?,updated_at=? WHERE lead_id=? AND status='RECEIPT_RECEIVED'",now(),now(),leadId);
- if(updated.changes)audit('SALES_PAYMENT_VERIFIED',leadId,{hasReference:true,entryCents:row.entry_cents});
+ if(updated.changes){
+  stage(leadId,'CLOSED_WON','OWNER_VERIFIED_PAYMENT');
+  recordSalesOutcome({leadId,status:'CLOSED_WON',providerId:row.receipt_provider_id||row.provider_id,evidence:'Pagamento conferido pelo owner',source:'PAYMENT_VERIFIED',notify:false});
+  audit('SALES_PAYMENT_VERIFIED',leadId,{hasReference:true,entryCents:row.entry_cents});
+ }
  return {verified:updated.changes===1};
 }
