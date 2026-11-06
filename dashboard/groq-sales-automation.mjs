@@ -1,4 +1,5 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {offerAbConfig,sendOfferAb} from './consecom-offer-ab.mjs';
 // Groq assistant for inbound 1:1 conversations only. Hot leads silently
 // transfer to the operator; never sends an extra response on handoff.
 import {db,one,all,run,id,tx,now,stage,addMessage,audit} from './db.mjs';
@@ -122,6 +123,7 @@ export async function handleSalesTurn(providerId,deps={}){
  dialogue.isFirstContact=!hasOutbound;
  const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
  const fixedOffer=portfolioAllowed&&!buyerCommitment&&(isBaseOfferQuestion(r.body)||isPortfolioFAQ(r.body));
+
  const financial=priceQuestion(r.body)&&!fixedOffer&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
  const approval=financial?(deps.requestPriceApproval||requestPriceApproval)({leadId:r.lead_id,providerId,question:r.body,sessionId:r.session_id}):null;
  if(financial&&!approval?.ok)return finish('REVIEW','PRICE_APPROVAL_UNAVAILABLE');
@@ -166,6 +168,17 @@ export async function handleSalesTurn(providerId,deps={}){
   }
   return finish('HANDOFF','REQUESTED_HUMAN');
  }
+  // An eligible prospect must explicitly ask to hear the proposal. An
+  // automated receptionist's questions never trigger the offer A/B send.
+  if(portfolioAllowed&&!buyerCommitment&&!offerAlreadyExplained&&portfolioQuestion(r.body)&&offerAbConfig().enabled){
+   if(stale())return finish(stale());
+   const ab=await sendOfferAb({leadId:r.lead_id,jid:r.jid,sessionId:r.session_id,providerId,threadId:r.thread_id,at:new Date(),sendText:deps.send||waRequest,
+    sendAudio:deps.sendRecordedOffer});
+   if(ab.state==='SENT')return finish('SENT');
+   if(ab.state==='UNKNOWN')return finish('UNKNOWN','OFFER_AB_DELIVERY_UNCERTAIN');
+   return finish('REVIEW','OFFER_AB_'+ab.reason);
+  }
+
  // A one-word hello never requires an external model call.
  const draft=fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+

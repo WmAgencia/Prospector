@@ -65,6 +65,7 @@ import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospec
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan} from './consecom-offer-ab.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
@@ -558,6 +559,18 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/outreach/consent-policy'){
    const result=requestOutreachConsentControl(await json(req));
    return respond(res,result.status,result.body);
+  }
+  if(pathname==='/api/prospecting/offer-ab'){
+   if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')return respond(res,403,{error:'Experimento exclusivo da Consecom'});
+   if(req.method==='GET')return respond(res,200,offerAbStatus());
+   if(req.method==='POST'){
+    const v=await json(req);
+    try{
+     if(v.action==='register-audio')return respond(res,200,attachOriginalAbAudio(v.mediaId));
+     if(v.action==='configure')return respond(res,200,setOfferAbPlan({deadlineMonday:v.deadlineMonday,startDate:v.startDate,enabled:v.enabled===true}));
+     return respond(res,422,{error:'Ação não reconhecida'});
+    }catch(err){return respond(res,422,{error:String(err.message).slice(0,190)});}
+   }
   }
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
   if(req.method==='POST'&&pathname==='/api/prospecting/queue'){const r=enqueueApprovedApproaches(await json(req));if(r.status===202)notify();return respond(res,r.status,r.body);}

@@ -49,3 +49,18 @@ export async function sendVoiceMedia({jid,bytes,session=selectedWaSession(),fetc
  if(!res.ok||reply.status!==true)throw Error('VOICE_SEND_UNKNOWN');
  return {accepted:true,verifiedOnPhone:false};
 }
+
+ // Send the approved original recording in OGG/Opus format. Do not revoice it.
+ export async function sendRecordedOfferVoiceMedia({jid,bytes,session=selectedWaSession(),fetchFn=fetch,apiKey}={}){
+  if(!jidAllowed(jid)||!session||!Buffer.isBuffer(bytes)||bytes.length<256||bytes.length>MAX_MEDIA_BYTES||bytes.toString('ascii',0,4)!=='OggS')
+   throw Error('INVALID_RECORDED_OFFER');
+  const form=new FormData();
+  form.append('type','voice');
+  form.append('file',new Blob([bytes],{type:'audio/ogg'}),'consecom-proposta-original.ogg');
+  const key=apiKey||await getGatewayApiKey();
+  const res=await fetchFn(base+'/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(jid)+'/media',{
+   method:'POST',headers:{'X-API-Key':key,Accept:'application/json'},body:form,signal:AbortSignal.timeout(30000)});
+  const reply=await res.json().catch(()=>({}));
+  if(!res.ok||reply?.status!==true)throw Error('OFFER_AUDIO_DELIVERY_UNCONFIRMED');
+  return {accepted:true,verifiedOnPhone:false};
+ }

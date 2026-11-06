@@ -3,7 +3,7 @@ const q=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
 const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
-let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="selected",trainingAllConfirmed=false,trainingBusy=false,clientAccess="";
+let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="selected",trainingAllConfirmed=false,trainingBusy=false,clientAccess="";
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
 let preferredPackage='';
 try{preferredPackage=sessionStorage.getItem('prospector-preferred-package')||'';}catch{}
@@ -465,9 +465,19 @@ function trainingSalesExtras(){
  const options=[['pix','PIX'],['card','Cartão'],['transfer','Transferência'],['invoice','Boleto']];
  const closingPanel='<section class="panel training-addons-card"><div class="heading"><div><span class="kicker">FECHAMENTO E COBRANÇAS</span><h3>Escolha a autonomia da Francisca</h3><p>A IA pode encaminhar interessados ou conduzir até o pedido de pagamento aprovado.</p></div></div><form id="training-closing-form" class="training-addons-form"><label>Quando houver interesse<select name="mode"><option value="handoff" '+(mode==='handoff'?'selected':'')+'>Avisar e transferir para mim</option><option value="complete" '+(mode==='complete'?'selected':'')+'>Francisca negocia e solicita pagamento</option></select></label><fieldset><legend>Formas de pagamento</legend>'+options.map(([key,label])=>'<label><input type="checkbox" name="methods" value="'+key+'" '+(methods.has(key)?'checked':'')+'>'+label+'</label>').join('')+'</fieldset><div class="training-addons-pair"><label>Entrada (%)<input name="depositPercent" type="number" min="0" max="100" step="1" value="'+esc(closing.depositPercent??50)+'"></label><label>Nome do titular PIX<input name="pixName" maxlength="100" value="'+esc(closing.pixName||'')+'"></label></div><label>Chave PIX '+(closing.pixConfigured?'(cadastrada · '+esc(closing.pixMasked)+')':'(não cadastrada)')+'<input name="pixKey" type="password" maxlength="140" autocomplete="off" placeholder="'+(closing.pixConfigured?'Em branco mantém a chave atual':'Digite a chave PIX da empresa')+'"></label><p class="training-muted">A chave fica no espaço da empresa, não no método global. A Francisca registra o fechamento comercial ao receber o comprovante e avisa você para visualizar.</p><button type="submit" class="primary">Salvar política de fechamento</button></form>'+
  ((t.paymentQueue||[]).length?'<div class="training-payment-queue"><h4>Comprovantes recebidos</h4>'+t.paymentQueue.map(x=>'<div class="training-payment-row"><div><strong>'+esc(x.business||'Cliente')+'</strong><small>'+esc(x.status)+' · entrada '+moneyFromCents(x.entry_cents)+'</small></div>'+(x.status==='RECEIPT_RECEIVED'?'<a class="secondary compact" href="https://wa.me/'+esc(x.phone||'')+'" rel="noopener noreferrer" target="_blank">Abrir comprovante no WhatsApp ↗</a>':'')+'</div>').join('')+'</div>':'')+'</section>';
- return '<div class="training-addons-grid">'+library+closingPanel+'</div>';
+ return '<div class="training-addons-grid">'+library+closingPanel+'</div>'+offerAbCard();
 }
 
+function offerAbCard(){
+ const s=offerAbState;
+ if(!trainingState?.internalAccount)return '';
+ const c=s?.config||{},counts=s?.metrics||[];
+ const info='<div class="heading"><div><span class="kicker">TESTE A/B • CONSECOM</span><h3>Oferta por áudio ou texto, alternada entre os dois WhatsApps</h3><p>Primeira semana: WhatsApp 1 = áudio; WhatsApp 2 = texto. Na semana seguinte, inverte. A abordagem inicial e a apresentação do Wesley permanecem iguais.</p></div><span class="tag">'+(c.paused?'Prospecção pausada':c.enabled?'Teste habilitado':'Preparação')+'</span></div>';
+ const summary=counts.length?'<div class="training-addons-pair">'+counts.map(x=>'<div class="training-payment-row"><div><strong>'+esc(x.variant==='AUDIO'?'Áudio original':'Texto equivalente')+'</strong><small>'+x.sent+' propostas • '+x.humanReplies+' respostas humanas • '+x.closed+' fechamentos</small></div></div>').join('')+'</div>':'';
+ const input='<form id="training-offer-ab-form" class="training-addons-form"><label>Áudio original da proposta (OGG / Opus; até 15 MB)<input name="audio" type="file" accept="audio/ogg,.ogg"></label><small class="training-muted">'+(c.assetReady?'Áudio original cadastrado.':'O áudio ainda precisa ser enviado nesta tela.')+'</small><div class="training-addons-pair"><label>Segunda-feira prometida no áudio<input name="deadlineMonday" type="date" required value="'+esc(c.deadlineMonday||'')+'"></label><label>Início previsto do teste<input name="startDate" type="date" required value="'+esc(c.startDate||new Date().toISOString().slice(0,10))+'"></label></div><p class="training-muted">O áudio menciona entrega de portfólio na segunda-feira; confirme a data real antes de reativar. O teste não começa sozinho. Sem consentimento para receber a proposta, não há envio.</p><button type="submit" class="primary">Salvar áudio e planejamento, sem ativar</button></form>';
+ const activation=c.enabled?'<p class="training-muted">Experimento configurado. O envio segue os limites e permissões do Prospector.</p>':!c.paused&&c.assetReady&&c.deadlineReady&&c.availableSessions>=2?'<button type="button" class="secondary" data-action="offer-ab-activate">Ativar teste com os dois números</button>':'<p class="training-muted">A ativação exige prospecção autorizada, dois números conectados, áudio cadastrado e data confirmada.</p>';
+ return '<section class="panel training-addons-card" style="margin-top:18px">'+info+summary+input+activation+'</section>';
+}
 function interviewView(){
  const t=trainingState||{},i=t.interview;
  const top='<div class="workspace-head"><div><span class="kicker">TREINAMENTO DA IA</span><h2>Converse com a Francisca.</h2><p>Ela faz perguntas objetivas e adapta o treinamento à sua empresa e aos seus serviços.</p></div><span class="tag '+(t.profile?'green':'')+'">'+(t.profile?'Perfil aprovado':'Aguardando treinamento')+'</span></div>';
@@ -495,7 +505,7 @@ function trainingView(){return interviewView();}
 async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/analytics');if(platformContext.role==='master'&&view==='dashboard')render();}catch(e){n('Indicadores indisponíveis: '+e.message);}}
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
 async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');if(view==='credits')render();}catch(e){n(e.message);}}
-async function loadTraining(){try{trainingState=await api('/api/training');if(view==='training'&&!q('textarea:focus,input:focus'))render();}catch(e){n(e.message);}}
+async function loadTraining(){try{trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if(view==='training'&&!q('textarea:focus,input:focus'))render();}catch(e){n(e.message);}}
 async function platformAction(action,el){
  if(action==='client-open'){await post('/api/platform/clients/'+el.dataset.client+'/open',{});location.assign('/');return true;}
  if(action==='logout-client'){await post('/api/platform/logout',{});location.assign('/conheca');return true;}
@@ -576,6 +586,11 @@ async function platformAction(action,el){
  if(action==='training-prev'){trainingWizardReopen=true;trainingStep=Math.max(0,trainingStep-1);render();return true;}
  if(action==='training-record-toggle'){await toggleTrainingRecording();return true;}
  if(action==='training-chats'){const r=await api('/api/training/chats');trainingChats=r.items||[];render();if(r.failures?.length)n('Não foi possível ler '+r.failures.length+' canal(is). Os demais estão disponíveis.');return true;}
+ if(action==='offer-ab-activate'){
+  if(!offerAbState?.config||offerAbState.config.paused){n('Prospecção pausada; aguarde autorização explícita para retomar.');return true;}
+  try{offerAbState=await post('/api/prospecting/offer-ab',{action:'configure',deadlineMonday:offerAbState.config.deadlineMonday,startDate:offerAbState.config.startDate,enabled:true});render();n('Teste A/B habilitado para conversas elegíveis.');}catch(e){n(e.message);}
+  return true;
+ }
  if(action==='training-proof-approve'||action==='training-proof-remove'){
   const id=String(el.dataset.id||'');
   if(action==='training-proof-remove'){const ok=await confirmInApp({title:'Excluir material?',description:'Ele não será mais utilizado como prova social.',danger:true,confirmLabel:'Excluir'});if(!ok)return true;}
@@ -597,6 +612,22 @@ async function platformAction(action,el){
  return false;
 }
 async function platformSubmit(ev){
+ if(ev.target.id==='training-offer-ab-form'){
+  ev.preventDefault();const fd=new FormData(ev.target),file=fd.get('audio');
+  try{
+   if(file?.size){
+    if(file.size>15*1024*1024)throw Error('Áudio maior que 15 MB.');
+    const mime='audio/ogg';
+    const r=await fetch('/api/media?kind=audio&name='+encodeURIComponent('Áudio original proposta Consecom'),{
+     method:'POST',credentials:'same-origin',headers:{'Content-Type':mime},body:file});
+    const uploaded=await r.json();if(!r.ok)throw Error(uploaded.error||'Falha no upload');
+    await post('/api/prospecting/offer-ab',{action:'register-audio',mediaId:uploaded.id});
+   }
+   offerAbState=await post('/api/prospecting/offer-ab',{action:'configure',deadlineMonday:fd.get('deadlineMonday'),startDate:fd.get('startDate'),enabled:false});
+   render();n('Áudio e plano A/B registrados. Prospecção permanece pausada.');
+  }catch(e){n(e.message);}return true;
+ }
+
  if(ev.target.id==='training-proof-form'){
   ev.preventDefault();const fd=new FormData(ev.target),file=fd.get('file');
   try{
