@@ -1,6 +1,7 @@
 // Verified-eligibility payment handoff for tenant-approved agreements.
 // A receipt is evidence of a claim, NEVER proof of settled funds.
-import {db,one,all,run,now,audit,addMessage} from './db.mjs';
+import {db,one,all,run,now,audit,addMessage,getThread,stage} from './db.mjs';
+import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {configuredClosing,pixProposal} from './training-sales-extras.mjs';
 import {readActiveTrainingMarkdown} from './training.mjs';
 import {approvedPriceForLead} from './owner-price-approvals.mjs';
@@ -82,13 +83,19 @@ export function recordReceiptMedia({leadId,jid,sessionId,providerId,mimeType='im
  const updated=run("UPDATE sales_payment_intents SET status='RECEIPT_RECEIVED',receipt_provider_id=?,receipt_at=?,updated_at=? WHERE lead_id=? AND status='AWAITING_RECEIPT' AND receipt_provider_id IS NULL",providerId,now(),now(),leadId);
  if(!updated.changes)return {recorded:false,reason:'ALREADY_PROCESSED'};
  const lead=one('SELECT business,phone FROM leads WHERE id=?',leadId)||{};
+ // The customer accepted the offer and submitted proof of payment. This closes
+ // the COMMERCIAL deal, not the bank settlement.
+ const thread=getThread(leadId,jid);
+ addMessage({threadId:thread.id,providerId,direction:'in',type:'document',body:'[Comprovante recebido — transferência não conciliada]',status:'received'});
+ stage(leadId,'CLOSED_WON','COMMERCIAL_AGREEMENT_WITH_RECEIPT');
+ recordSalesOutcome({leadId,status:'CLOSED_WON',providerId,evidence:'Negócio fechado: comprovante recebido, PIX não conciliado',source:'RECEIPT_SUBMITTED',notify:false});
  queueNotice('payment-receipt:'+leadId+':'+providerId,'PAYMENT_RECEIPT',
- '📨 Comprovante recebido pelo Prospector — PAGAMENTO A CONFERIR\nEmpresa: '+String(lead.business||'').slice(0,100)+
+ '✅ Negócio fechado — comprovante recebido (não conciliado)\nEmpresa: '+String(lead.business||'').slice(0,100)+
  '\nContato: '+String(lead.phone||'').slice(0,18)+
- '\nEntrada aguardada: '+(row.entry_cents/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})+
- '\nO arquivo recebido NÃO confirma liquidação. Confira o recebimento antes de iniciar o projeto.\nConversa: https://wa.me/'+String(lead.phone||''),leadId);
+ '\nEntrada combinada: '+(row.entry_cents/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})+
+ '\nA Francisca registrou o fechamento comercial. Abra a conversa para visualizar o arquivo recebido; a liquidação bancária não foi verificada.\nWhatsApp: https://wa.me/'+String(lead.phone||''),leadId);
  audit('SALES_RECEIPT_RECEIVED_UNVERIFIED',leadId,{mediaType:mimeType,providerId});
- return {recorded:true,status:'RECEIPT_RECEIVED'};
+ return {recorded:true,status:'RECEIPT_RECEIVED',commerciallyClosed:true,verified:false};
 }
 export function confirmPayment(leadId,{paymentVerified=false,reference=''}={}){
  if(paymentVerified!==true||String(reference).trim().length<4)throw Error('A confirmação precisa de referência verificável do recebimento.');

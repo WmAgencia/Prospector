@@ -71,7 +71,21 @@ export async function receiveWebhook(req){
   const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
   if(lead){
    const receipt=recordReceiptMedia({leadId:lead.id,jid,sessionId:sid,providerId:unique,mimeType:mediaType});
-   if(receipt.recorded)return {status:200,body:{accepted:true,receiptReceived:true,paymentVerified:false}};
+   if(receipt.recorded){
+    // One acknowledgement for the receipt event. Delivery is never retried
+    // if WhatsApp acceptance is uncertain.
+    const acknowledgement='Recebi seu comprovante! Seu projeto foi registrado e vamos organizar os próximos detalhes para iniciar. Obrigada pela confiança!';
+    try{
+     const delivered=await waRequest('/api/messages/'+encodeURIComponent(sid)+'/'+encodeURIComponent(jid)+'/send',
+      {method:'POST',data:{message:{text:acknowledgement}}});
+     if(delivered?.status===true){
+      const thread=getThread(lead.id,jid);
+      addMessage({threadId:thread.id,providerId:'receipt-ack:'+unique,direction:'out',body:acknowledgement,status:'sent'});
+      audit('RECEIPT_ACKNOWLEDGED',lead.id,{sent:true});
+     }else audit('RECEIPT_ACK_UNKNOWN',lead.id,{reason:'TRANSPORT_UNCONFIRMED'});
+    }catch(error){audit('RECEIPT_ACK_UNKNOWN',lead.id,{reason:'TRANSPORT_UNCERTAIN'});}
+    return {status:200,body:{accepted:true,receiptReceived:true,commerciallyClosed:true,paymentVerified:false}};
+   }
   }
  }
  const isAudio=String(data.type||'').toUpperCase()==='AUDIO';

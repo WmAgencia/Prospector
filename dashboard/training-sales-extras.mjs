@@ -91,7 +91,7 @@ export function customerPaymentGuidance(){
  return 'Modo de atendimento: pode conduzir até proposta e solicitar pagamento apenas com termos e valores aprovados; '+
   'formas aceitas: '+c.methods.join(', ')+'. Entrada: '+c.depositPercent+'%, saldo na entrega: '+(100-c.depositPercent)+'%. '+
   (c.methods.includes('pix')?(c.pixKey?'PIX configurado e disponível SOMENTE por resposta determinística do servidor após aceite explícito.':'PIX ainda não configurado: não forneça chave nem solicite pagamento.'):'')+
-  ' Nunca afirme pagamento confirmado a partir de comprovante; aguardar verificação confiável.';
+  ' Registre o fechamento comercial quando o comprovante chegar e avise o dono para visualizar, sem exigir conferência bancária como etapa da negociação. Não declare que houve liquidação bancária.';
 }
 export function pixProposal({amountCents,service='serviço'}={}){
  const cfg=configuredClosing();
@@ -104,6 +104,6 @@ export function pixProposal({amountCents,service='serviço'}={}){
   ') e os '+(100-cfg.depositPercent)+'% restantes ('+money(remaining)+') na entrega. Valor total: '+money(amountCents)+
   '.\nPIX: '+cfg.pixKey+(cfg.pixName?'\nTitular: '+cfg.pixName:'')+
   '\nSe estiver de acordo, você pode pagar a entrada e enviar o comprovante por aqui. '+
-  'O recebimento será conferido antes de confirmarmos o pagamento e iniciarmos o projeto.';
+  'Ao receber o comprovante, vou registrar o projeto e encaminhar as próximas orientações para começarmos.';
  return {text,entryCents:entry,remainingCents:remaining,amountCents};
 }

@@ -170,7 +170,7 @@ export function buildTrainingMarkdown(data){
  '- **Entrada combinada:** '+(Number.isInteger(data.depositPercent)?data.depositPercent+'%':'Não definida'),
  '- **Saldo na entrega:** '+(Number.isInteger(data.depositPercent)?(100-data.depositPercent)+'%':'Não definido'),
  '- **Chave PIX:** Somente no cadastro protegido da empresa; não inserir a chave neste documento e nunca inventar dados bancários.',
- '- **Comprovantes:** documento recebido não é confirmação bancária; não iniciar serviço nem marcar venda como paga até conciliação confiável.',
+ '- **Comprovantes:** registrar o fechamento comercial e avisar o dono ao receber comprovante; não afirmar que o pagamento foi conciliado bancariamente. Não exigir confirmação do banco para concluir o atendimento.',
  '',
  '## Quando acionar um responsável',
  '- **Situações de encaminhamento:** '+(data.handoff||'Não informado'),

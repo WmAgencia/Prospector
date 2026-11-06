@@ -72,6 +72,7 @@ import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
 import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
+import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
@@ -103,6 +104,12 @@ if(process.env.RUN_OSM_DISCOVERY_RECOVERY_ONCE==='true'){
    console.warn('[osm recovery search]',JSON.stringify({status:'FAILED',reason:String(error?.message||error).slice(0,140)}));
   }
  },5000).unref();
+}
+
+// One-shot in-process Francisca sales benchmark. Only synthetic customers,
+// no WA transport. Operator opt-in is required through the Railway environment.
+if(process.env.RUN_FRANCISCA_SALES_SMOKE==='true'){
+ setTimeout(()=>runFranciscaSalesSmoke().catch(error=>console.warn('[francisca-sales-smoke-error]',String(error?.message||error).slice(0,100))),6500).unref();
 }
 
 // One-shot synthetic functional test when explicitly enabled. Does not touch customer data.
