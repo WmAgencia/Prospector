@@ -103,7 +103,7 @@ export function recordReceiptMedia({leadId,jid,sessionId,providerId,mimeType='im
  '🔎 Arquivo recebido após pedido de PIX — conferir conteúdo e pagamento\nEmpresa: '+String(lead.business||'').slice(0,100)+
  '\nContato: '+String(lead.phone||'').slice(0,18)+
  '\nEntrada combinada: '+(row.entry_cents/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})+
- '\nA Francisca registrou o fechamento comercial. Abra a conversa para visualizar o arquivo recebido; a liquidação bancária não foi verificada.\nWhatsApp: https://wa.me/'+String(lead.phone||''),leadId);
+ '\nNão há venda nem pagamento confirmados. O arquivo pode ser uma foto ou documento; confira o conteúdo e a movimentação bancária antes de confirmar.\nWhatsApp: https://wa.me/'+String(lead.phone||''),leadId);
  audit('SALES_RECEIPT_RECEIVED_UNVERIFIED',leadId,{mediaType:mimeType,providerId});
  return {recorded:true,status:'RECEIPT_RECEIVED',commerciallyClosed:false,verified:false,reviewRequired:true};
 }
