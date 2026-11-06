@@ -10,7 +10,7 @@ import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt} from './approach-
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
-import {insideApproachWindow} from './outreach-window.mjs';
+import {insideApproachWindow,isOutboundBusinessDay,prospectingWindowLabel} from './outreach-window.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
 import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
 import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
@@ -95,7 +95,7 @@ export function approachQueueStatus(){
  const waiting=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='QUEUED'")?.n||0;
  const unknown=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='UNKNOWN'")?.n||0;
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
- return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
+ return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:prospectingWindowLabel(),waiting,sent,unknown,
   intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,senderRotation:{mode:'round_robin',sessions:managedSessions().length,lastSession:rotationCursor()},nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),approachDueAt(clock))).toISOString():null,
   status:b?.status||'IDLE',dailyBudget:dailyApproachBudget(),availableCredits:availableApproachCredits(),repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
@@ -179,7 +179,7 @@ function createAutonomousBatch(selected){
    queued++;
   }
   if(!queued){run('DELETE FROM prospecting_batches WHERE id=?',batchId);return {status:'NO_ELIGIBLE_LEADS'};}
-  audit('AUTONOMOUS_APPROACH_BATCH',null,{batchId,queued,window:'08:00-17:30',cadence:APPROACH_CADENCE,threeCalendarMonths:true});
+  audit('AUTONOMOUS_APPROACH_BATCH',null,{batchId,queued,window:prospectingWindowLabel(),cadence:APPROACH_CADENCE,threeCalendarMonths:true});
   return {status:'QUEUED',batchId,queued};
  });
 }
@@ -187,6 +187,7 @@ function createAutonomousBatch(selected){
 // fila nasce antes da janela e o trabalhador envia a partir das 08:00, 90s cada.
 export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
  if(getSetting('paused',true))return {status:'PAUSED'};
+ if(!isOutboundBusinessDay(at))return {status:'OUTSIDE_WINDOW'};
  closeStaleBatch(at);
  if(currentBatch())return {status:'ACTIVE'};
  const atMs=at.getTime();
