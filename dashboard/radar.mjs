@@ -1,6 +1,7 @@
 // Indicadores reais do radar e orçamento de primeiras abordagens.
 // Fuso America/Sao_Paulo: não usa UTC como substituto do dia local.
 import {all,one,getSetting} from './db.mjs';
+import {insideApproachWindow} from './outreach-window.mjs';
 const ZONE='America/Sao_Paulo';
 export const MAX_APPROACHES=150;
 export const WINDOW_START=8;
@@ -39,7 +40,7 @@ export function initialBudget(input=new Date(),events=null,config=null){
   percent:Math.min(100,100*counted/settings.limit)};
 }
 export function canSendInitial(input=new Date(),events=null,config=null){
- if(getSetting('paused',true))return false;
+ if(getSetting('paused',true)||!insideApproachWindow(input))return false;
  const budget=initialBudget(input,events,config);
  const currentHour=hourSP(input);
  if(currentHour<budget.start||currentHour>=budget.end||budget.start>=budget.end)return false;
