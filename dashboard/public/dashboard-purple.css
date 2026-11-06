@@ -693,3 +693,16 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .training-markdown-info>a{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;min-height:36px;font-size:11px;white-space:nowrap}
 .training-markdown-info>a:focus-visible{outline:3px solid #a887e8;outline-offset:3px}
 @media(max-width:520px){.training-markdown-info{align-items:stretch;flex-direction:column}.training-markdown-info>a{width:100%}}
+
+/* Final interview choice: compact cards, keyboard accessible, works with voice or text. */
+.interview-approach-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:15px 22px;border-top:1px solid #eee7fa;background:#fcfbff}
+.interview-approach-options button{appearance:none;border:1px solid #e4d9f8;border-radius:13px;cursor:pointer;padding:12px 14px;background:#fff;color:#352a52;text-align:left;display:grid;grid-template-columns:27px 1fr;column-gap:9px;row-gap:3px;transition:background .15s,border-color .15s}
+.interview-approach-options button:hover{background:#f5f0ff;border-color:#8454e0}
+.interview-approach-options button:focus-visible{outline:3px solid #a988f5;outline-offset:2px}
+.interview-approach-options button:disabled{opacity:.55;cursor:wait}
+.interview-approach-options .approach-number{background:#efe8ff;border-radius:8px;color:#5d32c8;display:grid;place-items:center;grid-row:1 / span 2;font-size:11px;font-weight:800;width:27px;height:27px}
+.interview-approach-options strong{font-size:12px;line-height:1.3}
+.interview-approach-options small{font-size:10px;color:#7b708f;line-height:1.5}
+.interview-approach-options button:last-child{grid-column:1 / -1}
+@media(max-width:670px){.interview-approach-options{grid-template-columns:1fr;padding:12px}.interview-approach-options button:last-child{grid-column:1}.interview-approach-options button{padding:12px}}
+@media(prefers-reduced-motion:reduce){.interview-approach-options button{transition:none}}

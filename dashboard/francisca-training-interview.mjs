@@ -6,6 +6,39 @@ import {getSetting,setSetting,now} from './db.mjs';
 import {storeTrainingMarkdown,removeTrainingMarkdown} from './training-markdown.mjs';
 
 const KEY='francisca_training_interview_v1';
+
+const APPROACH_OPTIONS=Object.freeze([
+ {id:'permission',label:'Permissão primeiro',description:'Cumprimento curto e pergunta se pode explicar o trabalho.',
+  template:'Olá, {{nome}}, tudo bem? Sou a Francisca, assistente virtual da {{empresa}}. Posso te explicar brevemente o motivo do contato?'},
+ {id:'direct',label:'Direta e objetiva',description:'Apresenta o serviço de forma transparente e verifica se faz sentido.',
+  template:'Olá, {{nome}}! Sou a Francisca, assistente virtual da {{empresa}}. Trabalhamos com {{servico}}. Faz sentido te contar um pouco mais?'},
+ {id:'consultative',label:'Consultiva',description:'Começa com uma pergunta simples para entender a necessidade.',
+  template:'Olá, {{nome}}! Sou a Francisca, assistente virtual da {{empresa}}. Posso te fazer uma pergunta rápida sobre o que você busca melhorar no seu negócio?'},
+ {id:'friendly',label:'Leve e próxima',description:'Uma apresentação cordial, sem forçar uma proposta.',
+  template:'Oi, {{nome}}, tudo bem? Aqui é a Francisca, assistente virtual da {{empresa}}. Posso te contar rapidamente sobre o que fazemos?'},
+ {id:'custom',label:'Minha abordagem personalizada',description:'Escreva ou dite a primeira mensagem do seu jeito, com revisão antes de ativar.'}
+]);
+const approachOption=(input)=>{
+ const value=normalized(input).replace(/[.!,?]+$/g,'');
+ if(!value)return null;
+ const exact=APPROACH_OPTIONS.find(o=>value===normalized(o.id)||value===normalized(o.label));
+ if(exact)return exact;
+ const numbers=/^(?:(?:opcao|opcoes|numero|alternativa|quero a|a)\s*)?([1-5])$/.exec(value);
+ if(numbers)return APPROACH_OPTIONS[Number(numbers[1])-1];
+ const words=['primeira','primeiro','segunda','segundo','terceira','terceiro','quarta','quarto','quinta','quinto'];
+ const ordinal=words.findIndex(w=>new RegExp('\\b'+w+'\\b').test(value));
+ if(ordinal>=0)return APPROACH_OPTIONS[Math.floor(ordinal/2)];
+ const cardinal=['um','dois','tres','quatro','cinco'];
+ const named=cardinal.findIndex(w=>new RegExp('\\b'+w+'\\b').test(value));
+ if(named>=0)return APPROACH_OPTIONS[named];
+ if(/\b(?:personalizada|personalizado|propria|meu jeito|do meu jeito)\b/.test(value))return APPROACH_OPTIONS[4];
+ if(/\b(?:permissao|pedir permissao)\b/.test(value))return APPROACH_OPTIONS[0];
+ if(/\b(?:direta|objetiva)\b/.test(value))return APPROACH_OPTIONS[1];
+ if(/\b(?:consultiva|pergunta)\b/.test(value))return APPROACH_OPTIONS[2];
+ if(/\b(?:leve|proxima|amigavel|descontraida)\b/.test(value))return APPROACH_OPTIONS[3];
+ return null;
+};
+
 const clean=(value,max=750)=>String(value||'').replace(/[\u0000-\u001f\u007f<>]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
 const normalized=value=>clean(value,600).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 const normalizeServiceName=value=>clean(value,90).replace(/^(?:eu )?(?:trabalho (?:com|s[oó])|ofere[cç]o|fa[cç]o|prestamos?|temos|tamb[eé]m fa[cç]o|e tamb[eé]m|sou (?:da [aá]rea de|de)|servi[cç]os? de)\s+/i,'').replace(/\s+(?:apenas|somente|s[oó])\.?$/i,'').trim();
@@ -45,25 +78,37 @@ function question(state){
  if(key==='objections')return 'Se alguém disser que está caro, pedir desconto ou perguntar pelo portfólio, como você prefere que eu responda?';
  if(key==='handoff')return 'Em quais situações eu devo parar de responder e avisar você? Por exemplo: pedido de proposta, cliente interessado ou negociação de preço.';
  if(key==='restrictions')return 'Existe alguma promessa, desconto, serviço ou condição que eu nunca devo oferecer sem sua aprovação?';
- if(key==='notification')return 'Por último: para qual WhatsApp você quer receber os avisos de interessados? Se preferir configurar depois, responda "depois".';
+ if(key==='notification')return 'Para qual WhatsApp você quer receber avisos de interessados? Se preferir configurar depois, responda "depois". Depois vamos escolher sua abordagem inicial.';
+ if(key==='approach')return 'Agora a última decisão: como você prefere que eu faça a primeira abordagem? Temos cinco opções: 1, pedir permissão primeiro; 2, direta e objetiva; 3, consultiva, com uma pergunta; 4, leve e próxima; ou 5, personalizada, do seu jeito. Você pode selecionar um botão, escrever ou dizer o número da opção.';
+ if(key==='approach_custom')return 'Me conte exatamente como você quer a primeira mensagem. Pode ditar ou escrever, com até 420 caracteres. Para personalizar cada envio, use os campos {{nome}}, {{empresa}} e {{servico}}. Vamos salvar no seu Markdown para você revisar antes de ativar.';
  return '';
 }
-const steps=['company','audience','services','service_detail','service_price','region','process','qualify','style','objections','handoff','restrictions','notification'];
+const steps=['company','audience','services','service_detail','service_price','region','process','qualify','style','objections','handoff','restrictions','notification','approach','approach_custom'];
 const stepsBase=11;
 function progress(state){
- const n=steps.indexOf(state.key);
- const services=state.data?.services?.length||1;
- const total=stepsBase+services*2;
- let done=state.phase==='review'?total:Math.max(0,n<=2?n:n-5+services*2);
- if(state.key==='service_detail')done=3+(state.index||0)*2;
- if(state.key==='service_price')done=4+(state.index||0)*2;
- if(['region','process','qualify','style','objections','handoff','restrictions','notification'].includes(state.key)){
-  done=3+services*2+['region','process','qualify','style','objections','handoff','restrictions','notification'].indexOf(state.key);
- }
- return Math.min(100,Math.max(0,Math.round(done/Math.max(1,total)*100)));
+ const count=state.data?.services?.length||1;
+ const tenant=Boolean(process.env.PROSPECTOR_TENANT_ID);
+ const custom=state.data?.approachMode==='custom'?1:0;
+ const total=stepsBase+2*count+(tenant?1+custom:0);
+ if(state.phase==='review')return 100;
+ const k=state.key;
+ let done=0;
+ if(k==='company')done=0;
+ else if(k==='audience')done=1;
+ else if(k==='services')done=2;
+ else if(k==='service_detail')done=3+(state.index||0)*2;
+ else if(k==='service_price')done=4+(state.index||0)*2;
+ else if(['region','process','qualify','style','objections','handoff','restrictions','notification'].includes(k))
+  done=3+2*count+['region','process','qualify','style','objections','handoff','restrictions','notification'].indexOf(k);
+ else if(k==='approach')done=11+2*count;
+ else if(k==='approach_custom')done=12+2*count;
+ return Math.max(0,Math.min(99,Math.round(done/Math.max(total,1)*100)));
 }
 const publicState=s=>s?{
- mode:s.mode,phase:s.phase,question:s.phase==='active'?question(s):'',
+ mode:s.mode,phase:s.phase,step:s.key,
+ question:s.phase==='active'?question(s):'',
+ choices:s.phase==='active'&&s.key==='approach'&&process.env.PROSPECTOR_TENANT_ID?
+   APPROACH_OPTIONS.map(({id,label,description})=>({id,label,description})):[],
  messages:s.messages||[],progress:progress(s),serviceCount:s.data?.services?.length||0,
  completed:s.phase==='review',startedAt:s.startedAt
 }:null;
@@ -104,6 +149,15 @@ export function buildTrainingMarkdown(data){
  '- **Estilo da conversa:** '+(data.style||'Não informado'),
  '- **Respostas a objeções e pedidos de portfólio:** '+(data.objections||'Não informado'),
  '',
+ ...(data.approach?[
+  '## Estratégia de primeira abordagem',
+  '- **Código da estratégia:** '+data.approach.mode,
+  '- **Estilo selecionado:** '+data.approach.label,
+  '- **Mensagem inicial aprovada:** '+data.approach.template,
+  '- **Variáveis permitidas:** {{nome}}, {{empresa}}, {{servico}} (somente dados conferidos desta empresa).',
+  '- **Uso:** somente contatos elegíveis, autorizados e com consentimento aplicável. Esta escolha não ativa disparos nem altera a política de contato.',
+  ''
+ ]:[]),
  '## Quando acionar um responsável',
  '- **Situações de encaminhamento:** '+(data.handoff||'Não informado'),
  '- **WhatsApp para notificações:** '+(data.notification||'A configurar'),
@@ -124,7 +178,7 @@ export function buildTrainingMarkdown(data){
 export function advanceTrainingInterview(text){
  const state=getSetting(KEY,null);
  if(!state||state.phase!=='active')throw Error('Inicie o treinamento selecionando texto ou voz.');
- const user=safeValue(text,850);if(user.length<2)throw Error('Conte um pouco mais para eu continuar.');
+ const user=safeValue(text,850);if(user.length<2&&!(state.key==='approach'&&/^[1-5]$/.test(user)))throw Error('Conte um pouco mais para eu continuar.');
  if((state.messages||[]).length>=80)throw Error('Limite de treinamento atingido. Revise o perfil atual.');
  const key=state.key,data=state.data,index=state.index||0;
  if(key==='company')data.company=user;
@@ -134,7 +188,18 @@ export function advanceTrainingInterview(text){
   data.services=services;
  }else if(key==='service_detail')data.services[index].detail=user;
  else if(key==='service_price')data.services[index].price=user;
- else data[key]=user;
+ else if(key==='approach'){
+  const option=approachOption(user);
+  // A free-form explanation means the user wants to write a custom opening.
+  const mode=option?.id||'custom';
+  data.approachMode=mode;
+  if(mode!=='custom')data.approach={mode,label:option.label,template:option.template};
+ }else if(key==='approach_custom'){
+  if(user.length>420)throw Error('Sua primeira mensagem pode ter no máximo 420 caracteres. Resuma para continuar.');
+  const template=user;
+  if(template.length<12)throw Error('Descreva a primeira mensagem com pelo menos 12 caracteres.');
+  data.approach={mode:'custom',label:'Minha abordagem personalizada',template};
+ }else data[key]=user;
  state.messages.push({role:'user',body:user,at:now()});
  if(key==='company')state.key='audience';
  else if(key==='audience')state.key='services';
@@ -143,8 +208,11 @@ export function advanceTrainingInterview(text){
  else if(key==='service_price'){
   if(index+1<data.services.length){state.key='service_detail';state.index=index+1;}
   else state.key='region';
- }else{
-  const following={region:'process',process:'qualify',qualify:'style',style:'objections',objections:'handoff',handoff:'restrictions',restrictions:'notification',notification:'done'};
+ }else if(key==='notification')state.key=process.env.PROSPECTOR_TENANT_ID?'approach':'done';
+ else if(key==='approach')state.key=data.approachMode==='custom'?'approach_custom':'done';
+ else if(key==='approach_custom')state.key='done';
+ else{
+  const following={region:'process',process:'qualify',qualify:'style',style:'objections',objections:'handoff',handoff:'restrictions',restrictions:'notification'};
   state.key=following[key]||'done';
  }
  if(state.key==='done'){

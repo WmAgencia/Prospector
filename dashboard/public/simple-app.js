@@ -410,7 +410,7 @@ async function interviewSpeak(message){
 async function interviewSend(text){
  if(interviewSending)return;
  text=String(text||'').trim();
- if(text.length<2){n('Responda à pergunta antes de continuar.');return;}
+ if(text.length<2&&!(trainingState?.interview?.step==='approach'&&/^[1-5]$/.test(text))){n('Responda à pergunta antes de continuar.');return;}
  interviewSending=true;interviewInput='';render();
  try{
   trainingState=await post('/api/training/interview/turn',{text});
@@ -466,8 +466,9 @@ function interviewView(){
  }else{
   const messages=(i.messages||[]).map(m=>'<div class="interview-line '+(m.role==='user'?'user':'assistant')+'">'+(m.role==='assistant'?'<span class="interview-small-avatar">F</span>':'')+'<div class="interview-bubble"><small>'+(m.role==='assistant'?'Francisca':'Você')+'</small><p>'+esc(m.body)+'</p></div></div>').join('');
   body='<section class="panel interview-chat"><header><div><span class="interview-small-avatar">F</span><div><strong>Francisca</strong><small>'+(i.mode==='voice'?'Treinamento por voz e chat':'Treinamento por chat')+'</small></div></div><div><span class="tag">'+esc(i.progress)+'%</span><button type="button" class="secondary compact" data-action="interview-reset">Recomeçar</button></div></header><div class="interview-progress" role="progressbar" aria-label="Progresso do treinamento" aria-valuenow="'+esc(i.progress)+'" aria-valuemin="0" aria-valuemax="100"><span style="width:'+esc(i.progress)+'%"></span></div><div class="training-interview-feed" role="log" aria-live="polite">'+messages+'</div>'+
+  (i.step==='approach'&&Array.isArray(i.choices)&&i.choices.length?'<div class="interview-approach-options" role="group" aria-label="Escolha sua abordagem inicial">'+i.choices.map((opt,index)=>'<button type="button" data-action="interview-approach-choice" data-choice="'+esc(opt.id)+'" '+(interviewSending?'disabled':'')+'><span class="approach-number">'+(index+1)+'</span><strong>'+esc(opt.label)+'</strong><small>'+esc(opt.description)+'</small></button>').join('')+'</div>':'')+
   (i.completed?'<p class="interview-completed">✓ Entrevista concluída. Revise o perfil abaixo antes de ativar.</p>':
-  '<form id="interview-compose"><label class="sr-only" for="interview-answer">Sua resposta</label><textarea id="interview-answer" name="text" maxlength="850" rows="2" placeholder="Responda escrevendo ou por voz…" '+(interviewSending?'disabled':'')+'>'+esc(interviewInput)+'</textarea><div class="interview-compose-actions"><button type="button" class="secondary '+(interviewVoice?'recording':'')+'" data-action="interview-voice-toggle">'+(interviewVoice?'Desligar voz':'Conversar por voz')+'</button><button type="submit" class="primary" '+(interviewSending?'disabled':'')+'>'+(interviewSending?'Registrando…':'Enviar ↗')+'</button></div><p id="interview-voice-status" role="status">'+esc(interviewVoiceLabel())+'</p></form>')+
+  '<form id="interview-compose"><label class="sr-only" for="interview-answer">Sua resposta</label><textarea id="interview-answer" name="text" maxlength="850" rows="2" placeholder="'+(i.step==='approach_custom'?'Escreva a mensagem exata, com {{nome}}, {{empresa}} e {{servico}}…':'Responda escrevendo ou por voz…')+'" '+(interviewSending?'disabled':'')+'>'+esc(interviewInput)+'</textarea><div class="interview-compose-actions"><button type="button" class="secondary '+(interviewVoice?'recording':'')+'" data-action="interview-voice-toggle">'+(interviewVoice?'Desligar voz':'Conversar por voz')+'</button><button type="submit" class="primary" '+(interviewSending?'disabled':'')+'>'+(interviewSending?'Registrando…':'Enviar ↗')+'</button></div><p id="interview-voice-status" role="status">'+esc(interviewVoiceLabel())+'</p></form>')+
   '<p class="interview-hint">Você pode falar e escrever. Áudios são transcritos, não salvos como gravação. Nada é ativado sem sua aprovação.</p></section>';
  }
  const profile=(i?.completed||(!i&&(t.profile||t.draft)))?'<div class="interview-profile">'+trainingProfile(t)+'</div>':'';
@@ -544,6 +545,12 @@ async function platformAction(action,el){
   if(!answer)return true;await post('/api/platform/clients/'+el.dataset.client+'/status',{status:el.dataset.status});await loadClients();n('Acesso atualizado.');return true;
  }
  if(action==='interview-start'){await interviewStart(el.dataset.mode==='voice'?'voice':'text');return true;}
+ if(action==='interview-approach-choice'){
+  if(!trainingState?.interview||trainingState.interview.step!=='approach'||interviewSending)return true;
+  const choice=String(el.dataset.choice||'');
+  if(['permission','direct','consultative','friendly','custom'].includes(choice))await interviewSend(choice);
+  return true;
+ }
  if(action==='interview-voice-toggle'){if(interviewVoice){interviewStopVoice();render();}else await interviewStartVoice();return true;}
  if(action==='interview-reset'){const approved=await confirmInApp({title:'Recomeçar entrevista?',description:'As respostas desta entrevista serão reiniciadas. O perfil já aprovado não será alterado.',confirmLabel:'Recomeçar'});if(approved){interviewStopVoice();trainingState=await post('/api/training/interview/reset',{});interviewInput='';render();}return true;}
  if(action==='interview-analysis'){interviewShowAnalysis=!interviewShowAnalysis;render();return true;}
