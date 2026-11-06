@@ -42,7 +42,8 @@ export function insideApproachWindow(at=new Date()){
  const selectedStart=parse(selected?.start),selectedEnd=parse(selected?.end);
  const endCap=day==='saturday'?SATURDAY_APPROACH_END_MINUTES:FIRST_APPROACH_END_MINUTES;
  // Account-specific hours may NARROW, never widen, the applicable day's gate.
- const startMinute=Number.isInteger(selectedStart)&&selectedStart>=FIRST_APPROACH_START_MINUTES&&selectedStart<endCap?selectedStart:FIRST_APPROACH_START_MINUTES;
- const endMinute=Number.isInteger(selectedEnd)&&selectedEnd>startMinute&&selectedEnd<=endCap?selectedEnd:endCap;
+ if(Number.isInteger(selectedStart)&&selectedStart>=endCap)return false; // Do not widen an account's Saturday start time.
+ const startMinute=Number.isInteger(selectedStart)&&selectedStart>=FIRST_APPROACH_START_MINUTES?selectedStart:FIRST_APPROACH_START_MINUTES;
+ const endMinute=Number.isInteger(selectedEnd)?Math.min(selectedEnd,endCap):endCap;
  return minutes>=startMinute&&minutes<endMinute;
 }
