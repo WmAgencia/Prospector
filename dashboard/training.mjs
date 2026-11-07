@@ -7,7 +7,7 @@ import {groqChat} from './groq-models.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import crypto from 'node:crypto';
 import {trainingInterviewStatus,startTrainingInterview,advanceTrainingInterview,resetTrainingInterview} from './francisca-training-interview.mjs';
-import {reviewTextState,publicReviewCards,createCardDraft} from './training-review-cards.mjs';
+import {reviewTextState,publicReviewCards,analysisSuggestionCards,createCardDraft} from './training-review-cards.mjs';
 import {storeTrainingMarkdown,readTrainingMarkdown,removeTrainingMarkdown,trainingMarkdownName} from './training-markdown.mjs';
 import {globalSalesMarkdown,globalSalesVoiceGuide,GLOBAL_SALES_FILENAME,GLOBAL_SALES_VERSION} from './francisca-vendas-global.mjs';
 import fs from 'node:fs';
@@ -105,6 +105,16 @@ if(isConsecomInternal()){
  catch(error){console.warn('[internal training]',String(error?.message||error).slice(0,100));}
 }
 
+const decisionsKey='training_analysis_suggestion_decisions_v1';
+function analysisReviewState(runs){
+ const latest=runs.find(r=>r.status==='REVIEW'&&r.report);
+ if(!latest)return {runId:null,cards:[],pendingCount:0};
+ const decisions=getSetting(decisionsKey,{});
+ const perRun=decisions?.[latest.id]||{};
+ const cards=analysisSuggestionCards(latest.report).map(c=>({...c,status:perRun[c.id]||'new'}));
+ return {runId:latest.id,cards,pendingCount:cards.filter(c=>c.status==='new').length,
+  total:cards.length,conversations:Number(latest.details?.conversations)||0};
+}
 const hiddenGlobalKey='training_review_hidden_shared_cards_v1';
 function hiddenGlobalCardIds(){
  const saved=getSetting(hiddenGlobalKey,[]);
@@ -119,10 +129,11 @@ export function trainingStatus(){
  const meta=getSetting('training_active',null),active=readActiveTrainingMarkdown();
  const profile=meta&&active?{...getSetting('training_active',meta),text:active,filename:trainingMarkdownName('active'),format:'markdown'}:null;
  const rawDraft=getSetting('training_draft',null);
- const draft=rawDraft?.source==='interview'?{...rawDraft,text:readTrainingMarkdown('draft')||''}:rawDraft;
- return {profile,draft,review:{...reviewTextState(active,draft),...sharedCardReview()},salesEvidence:evidenceStatus(),closing:salesClosingStatus(),paymentQueue:salesPaymentQueue(),internalAccount:isConsecomInternal(),globalKnowledge:{filename:GLOBAL_SALES_FILENAME,version:GLOBAL_SALES_VERSION,readOnly:true,scope:'shared'},business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),
+ const draft=rawDraft?.source==='whatsapp'?null:rawDraft?.source==='interview'?{...rawDraft,text:readTrainingMarkdown('draft')||''}:rawDraft;
+ const runs=all('SELECT id,status,report,details,created_at FROM training_runs ORDER BY rowid DESC LIMIT 10').map(r=>{const {selectionKeys,...details}=JSON.parse(r.details||'{}');return {...r,details};});
+ return {profile,draft,review:{...reviewTextState(active,draft),...sharedCardReview()},analysis:analysisReviewState(runs),salesEvidence:evidenceStatus(),closing:salesClosingStatus(),paymentQueue:salesPaymentQueue(),internalAccount:isConsecomInternal(),globalKnowledge:{filename:GLOBAL_SALES_FILENAME,version:GLOBAL_SALES_VERSION,readOnly:true,scope:'shared'},business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),
   chat:all('SELECT role,body,at FROM training_chat ORDER BY rowid DESC LIMIT 40').reverse(),interview:trainingInterviewStatus(),
-  runs:all('SELECT id,status,report,details,created_at FROM training_runs ORDER BY rowid DESC LIMIT 10').map(r=>{const {selectionKeys,...details}=JSON.parse(r.details||'{}');return {...r,details};})};
+  runs};
 }
 export function trainingPrompt(){
  const tenantMarkdown=readActiveTrainingMarkdown(),business=getSetting('training_business',null);
@@ -194,8 +205,9 @@ async function analyzeRun(id,selection,chat,model){
    text=String(output.choice?.content||'').trim().slice(0,9000);
   }
   if(!text)throw Error('A IA não retornou um relatório. Tente novamente ou escolha outras conversas; nenhum treinamento foi ativado.');
-  const draft={id,source:'whatsapp',text,at:now(),sampleCount:Math.min(samples.length,160),conversations:selection.length,skipped};setSetting('training_draft',draft);
-  run("UPDATE training_runs SET status='REVIEW',report=?,details=? WHERE id=?",text,JSON.stringify({sampleCount:draft.sampleCount,conversations:selection.length,sessions,processed:selection.length,percent:100,phase:'review',skipped}),id);
+  // Findings stay in their own review run. Never overwrite an existing unapproved draft.
+  // The owner selectively imports suggestions into the company training later.
+  run("UPDATE training_runs SET status='REVIEW',report=?,details=? WHERE id=?",text,JSON.stringify({sampleCount:Math.min(samples.length,160),conversations:selection.length,sessions,processed:selection.length,percent:100,phase:'review',skipped}),id);
  }catch(e){
   const message=String(e.message||'Falha desconhecida');
   const code=/não há mensagens enviadas/.test(message)?'NO_SENT_MESSAGES':/não retornou um relatório/.test(message)?'EMPTY_MODEL_RESPONSE':/Conversa não autorizada/.test(message)?'UNAUTHORIZED_CHAT':'PROVIDER_OR_READ_ERROR';
@@ -228,6 +240,30 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
  const p=url.pathname;if(!p.startsWith('/api/training'))return false;
  const model=deps.model||groqChat;
  if(req.method==='GET'&&p==='/api/training'){respond(res,200,trainingStatus());return true;}
+ if(req.method==='POST'&&p==='/api/training/suggestions'){
+  try{
+   const input=await json(req),runId=String(input.runId||''),cardId=String(input.cardId||''),action=String(input.action||'');
+   const row=one('SELECT id,status,report FROM training_runs WHERE id=?',runId);
+   if(!row||row.status!=='REVIEW'||!row.report)throw Error('Análise indisponível para revisão');
+   const target=analysisSuggestionCards(row.report).find(c=>c.id===cardId);
+   if(!target)throw Error('Sugestão desatualizada. Atualize o painel');
+   const saved=getSetting(decisionsKey,{});
+   const decisions={...(saved[runId]||{})};
+   if(action==='ignore')decisions[cardId]='ignored';
+   else if(action==='restore')delete decisions[cardId];
+   else if(action==='add'){
+    if(decisions[cardId]==='added')throw Error('Esta sugestão já foi adicionada ao rascunho');
+    const title=String(input.title||target.title);
+    const body=String(input.body||target.editText);
+    // The draft is reviewed separately. Nothing enters the active profile here.
+    createCardDraft({action:'add',title,body},readActiveTrainingMarkdown());
+    decisions[cardId]='added';
+   }else throw Error('Ação desconhecida');
+   setSetting(decisionsKey,{...saved,[runId]:decisions});
+   respond(res,200,trainingStatus());
+  }catch(e){respond(res,422,{error:String(e.message).slice(0,180)});}
+  return true;
+ }
  if(req.method==='POST'&&p==='/api/training/global-cards'){
   try{
    const input=await json(req);
@@ -375,6 +411,7 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
  if(req.method==='POST'&&p==='/api/training/approve'){
   const input=await json(req),draft=getSetting('training_draft',null),text=String(input.text||'').trim();
   if(!draft||input.id!==draft.id){respond(res,409,{error:'O perfil mudou. Atualize e revise a versão mais recente.'});return true;}
+  if(draft.source==='whatsapp'){respond(res,409,{error:'Importe e aprove as sugestões individualmente; a análise não substitui o treinamento inteiro.'});return true;}
   if(!text||text.length>17900){respond(res,422,{error:'Revise o perfil (até 17.900 caracteres)'});return true;}
   // Markdown is authoritative. Write first; never activate a profile if the write fails.
   const markdown=draft.source==='interview'?text.replace('> Documento de treinamento preparado para revisão. Só utilizar após aprovação explícita.','> Manual revisado e aprovado pelo responsável da empresa.'):(text.trimStart().startsWith('#')?text:'# Orientações de atendimento aprovadas\n\n'+text);
