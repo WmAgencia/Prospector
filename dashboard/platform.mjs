@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {openPlatformStore} from './platform-store.mjs';
 import {CREDIT_PACKAGES} from './credit-packages.mjs';
 import {masterAnalytics} from './platform-analytics.mjs';
-import {billingReady,checkoutForRequest,handleStripeWebhook,embeddedReady,embeddedCheckoutForRequest} from './stripe-billing.mjs';
+import {billingReady,checkoutForRequest,handleStripeWebhook,embeddedReady,embeddedCheckoutForRequest,embeddedCheckoutForSignup} from './stripe-billing.mjs';
 import {createAccessLimiter,accessClientKey} from './access-rate-limit.mjs';
 const isWorker=!!process.env.PROSPECTOR_TENANT_ID;
 const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform');
@@ -110,6 +110,41 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  }
  if(req.method==='GET'&&['/landing.css','/landing-redesign.css','/landing.js','/signup-validation.js','/product-theme.css','/product-icons.js'].includes(p)){
   res.writeHead(200,{'Content-Type':p.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','Cache-Control':'no-cache'});fs.createReadStream(fileURLToPath(new URL('./public'+p,import.meta.url))).pipe(res);return true;
+ }
+ // A paid plan is a Stripe payment before a customer account can exist.
+ if(p==='/api/platform/paid-checkout'&&req.method==='POST'){
+  const ip=accessClientKey(req);
+  if(signupLimiter.blocked(ip)){respond(res,429,{error:'Muitas tentativas. Aguarde para tentar novamente.'});return true;}
+  if(!embeddedReady()){respond(res,503,{error:'Pagamento temporariamente indisponível. Tente novamente mais tarde.'});return true;}
+  signupLimiter.failed(ip);
+  try{
+   const input=await json(req);
+   const order=registry().createPaidSignupOrder(input.packageId);
+   const checkout=await embeddedCheckoutForSignup(order);
+   registry().attachPaidSignupSession(order.id,checkout.sessionId);
+   respond(res,201,{...checkout,packageId:order.package_id,credits:order.credits,priceCents:order.price_cents});
+  }catch(error){
+   console.warn('[paid checkout]',String(error.message||error).slice(0,150));
+   respond(res,503,{error:'Não foi possível iniciar o pagamento. Nenhuma conta foi criada nem cobrança efetuada.'});
+  }
+  return true;
+ }
+ if(p==='/api/platform/paid-checkout/status'&&req.method==='GET'){
+  const sessionId=String(url.searchParams.get('session_id')||'');
+  const status=registry().paidSignupStatus(sessionId);
+  respond(res,status?200:404,status||{error:'Pagamento não localizado'});return true;
+ }
+ if(p==='/api/platform/paid-checkout/activate'&&req.method==='POST'){
+  const ip=accessClientKey(req);
+  if(signupLimiter.blocked(ip)){respond(res,429,{error:'Muitas tentativas. Aguarde para tentar novamente.'});return true;}
+  signupLimiter.failed(ip);
+  try{
+   const result=registry().activatePaidSignup(await json(req));
+   if(!result.existing){signupLimiter.clear(ip);res.setHeader('Set-Cookie',clientCookie(result.client));}
+   respond(res,200,{ok:true,existing:result.existing,credits:result.credits,
+    next:result.existing?'/entrar':'/#/training'});
+  }catch(error){respond(res,422,{error:String(error.message||error).slice(0,200)});}
+  return true;
  }
  if((p==='/api/platform/signup'||p==='/api/platform/signin')&&req.method==='POST'){
   const signingUp=p.endsWith('/signup'),guard=signingUp?signupLimiter:passwordLimiter,ip=accessClientKey(req);
