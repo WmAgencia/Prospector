@@ -737,9 +737,10 @@ async function platformAction(action,el){
   const answer=await confirmInApp({title:'Comprar '+pack.credits.toLocaleString('pt-BR')+' créditos',description:'Pacote '+pack.name+' no valor de '+moneyFromCents(pack.priceCents)+'. Você será direcionado ao checkout seguro. O saldo só será liberado após confirmação do pagamento pelo provedor.',confirmLabel:'Continuar para o pagamento'});
   if(!answer)return true;
   const order=await post('/api/platform/credit-requests',{packageId:pack.id,requestKey:crypto.randomUUID()});
-  if(!order.checkoutUrl)throw Error('Checkout indisponível. Nenhuma cobrança foi realizada.');
+  if(!order.checkoutUrl&&!order.clientSecret)throw Error('Checkout indisponível. Nenhuma cobrança foi realizada.');
   try{sessionStorage.setItem('prospector-last-checkout-request',order.request.id);}catch{}
   preferredPackage='';try{sessionStorage.removeItem('prospector-preferred-package');}catch{}
+  if(order.clientSecret){await openProspectorCheckout(order);return true;}
   location.assign(order.checkoutUrl);return true;
  }
  if(action==='credit-request-approve'||action==='credit-request-decline'){
