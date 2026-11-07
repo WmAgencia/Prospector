@@ -17,15 +17,9 @@ const outreachPaused=()=>ownerProspectionPaused()||getSetting('paused',true)===t
 const daySP=date=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);
 const datePattern=/^\d{4}-\d{2}-\d{2}$/;
 const isMonday=d=>new Date(d+'T12:00:00Z').getUTCDay()===1;
-// A coherent written version of the SAME ORIGINAL audio.
-// It must not add promises, extra discounts, or guarantees absent in the recording.
-export const OFFER_AB_TEXT=[
- 'Vou te explicar por aqui. A minha agência precisa entregar um portfólio do nicho de vocês na segunda-feira, e precisamos de mais um site desse mesmo segmento para concluir o projeto.',
- 'Estou disposto a reduzir bastante o valor desse site profissional. Normalmente, um projeto assim custaria entre R$ 2.500 e R$ 3.000; nesta ação de portfólio, a proposta é fazer o de vocês por R$ 550.',
- 'O site inclui um ano de domínio e Master SEO, com otimizações para melhorar a presença nas pesquisas do Google, sem promessa de posição específica.',
- 'A ideia é termos autorização para mostrar esse trabalho no nosso portfólio e divulgá-lo no Instagram e no site da Consecom, dando também visibilidade ao negócio de vocês.',
- 'Queria saber se essa proposta faz sentido para vocês e se podemos trabalhar dessa forma.'
-].join('\n\n');
+// The text variant uses the transcribed original audio, not a separate sales pitch.
+export {OFFER_AB_TEXT} from './consecom-offer-copy.mjs';
+import {OFFER_AB_TEXT} from './consecom-offer-copy.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS consecom_offer_ab(lead_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,variant TEXT NOT NULL CHECK(variant IN ('AUDIO','TEXT')),phase INTEGER NOT NULL,provider_id TEXT UNIQUE NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,sent_at TEXT,updated_at TEXT NOT NULL,reason TEXT)");
 db.exec("CREATE INDEX IF NOT EXISTS ix_consecom_offer_ab_variant ON consecom_offer_ab(variant,status,sent_at)");
