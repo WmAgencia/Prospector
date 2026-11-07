@@ -212,8 +212,9 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   }
   if(req.method==='POST'){
    if(!client||client.is_internal===1){respond(res,403,{error:'Disponível somente para clientes'});return true;}
+   if(!billingReady()){respond(res,503,{error:'Checkout temporariamente indisponível. Nenhuma solicitação de pagamento foi criada.'});return true;}
    const input=await json(req);
-   try{const request=registry().requestCredits(client.id,input.packageId,input.requestKey);respond(res,201,{request,checkoutUrl:checkoutForRequest(request),automaticBilling:billingReady()});}
+   try{const request=registry().requestCredits(client.id,input.packageId,input.requestKey);respond(res,201,{request,checkoutUrl:checkoutForRequest(request),automaticBilling:true});}
    catch(e){respond(res,422,{error:String(e.message).slice(0,200)});}
    return true;
   }
