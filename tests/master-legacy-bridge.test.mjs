@@ -66,7 +66,7 @@ test('non-owner is never promoted by opening Master',async()=>{
  assert.equal(unknown.status,302);
  assert.equal(unknown.headers.Location,'/entrar');
  assert.equal(unknown.headers['Set-Cookie'],undefined);
- const external=await request('/master',{cookie:clientCookie(client)});
+ const external=await request('/master',{cookie:clientCookie(store.get(client.id))});
  assert.equal(external.status,302);
  assert.equal(external.headers.Location,'/#/overview');
  assert.equal(external.headers['Set-Cookie'],undefined);
