@@ -81,7 +81,8 @@ test('messages sent by an owned number are ignored rather than answering the ass
  const event={isGroup:true,key:{id:'AAAA22222',remoteJid:jid,fromMe:true,participant:owner+'@s.whatsapp.net'},
   type:'TEXT',sender:owner+'@s.whatsapp.net',content:'relatório'};
  const received=await assistant.receivePrivateGroupWebhook({sessionId:session,data:event,request});
- assert.equal(received.handled,false);
+ assert.equal(received.handled,true);
+ assert.equal(received.ignored,true);
 });
 test('first WhatsApp creator can command in a one-person group through human message.sent',async()=>{
  const fromMe={isGroup:true,key:{id:'MANUAL444444',remoteJid:jid,fromMe:true},
