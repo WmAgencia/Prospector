@@ -178,6 +178,8 @@ export async function tickOfferReferences({currentTime=()=>Date.now(),getWaStatu
   const item=one("SELECT * FROM consecom_offer_references WHERE state='WAITING' AND due_at<=? ORDER BY due_at,created_at LIMIT 1",new Date(currentTime()).toISOString());
   if(!item)return {state:'NOT_DUE'};
   const cancel=reason=>{run("UPDATE consecom_offer_references SET state='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND state='WAITING'",reason,now(),item.lead_id);audit('OFFER_AB_REFERENCES_CANCELLED',item.lead_id,{reason});return {state:'CANCELLED',reason};};
+  // A paused or disconnected campaign must never dispatch an old 25-second follow-up hours later.
+  if(currentTime()-Date.parse(item.due_at)>90_000)return cancel('FOLLOWUP_WINDOW_EXPIRED');
   const original=one("SELECT status,sent_at,provider_id FROM consecom_offer_ab WHERE lead_id=?",item.lead_id);
   const lead=one("SELECT l.phone,l.stage,t.manual_takeover FROM leads l LEFT JOIN threads t ON t.lead_id=l.id WHERE l.id=?",item.lead_id);
   if(!original||original.status!=='SENT'||original.provider_id!==item.source_provider_id||!original.sent_at)return cancel('OFFER_NOT_CONFIRMED');
@@ -191,6 +193,10 @@ export async function tickOfferReferences({currentTime=()=>Date.now(),getWaStatu
   const connection=await getWaStatus(item.session_id);
   if(!connection?.connected)return {state:'WAITING',reason:'WHATSAPP_OFFLINE'};
   if(outreachPaused())return {state:'PAUSED'};
+  // A reply or opt-out arriving during the connection check takes precedence.
+  const freshest=one("SELECT 1 FROM waakg_inbox WHERE jid=? AND received_at>? LIMIT 1",item.jid,original.sent_at);
+  if(freshest||one('SELECT 1 FROM suppressions WHERE phone=?',lead.phone)||!conversationAuthorized(item.lead_id))return cancel('CONTACT_CHANGED_BEFORE_FOLLOWUP');
+  if(currentTime()-Date.parse(item.due_at)>90_000)return cancel('FOLLOWUP_WINDOW_EXPIRED');
   // No retries on any in-flight transport. Crash recovery marks SENDING UNKNOWN.
   const locked=run("UPDATE consecom_offer_references SET state='SENDING',updated_at=? WHERE lead_id=? AND state='WAITING' AND due_at<=?",now(),item.lead_id,new Date(currentTime()).toISOString()).changes===1;
   if(!locked)return {state:'SKIP'};
