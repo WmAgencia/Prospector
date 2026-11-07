@@ -641,6 +641,37 @@ async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/an
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
 async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');billingLastChecked=Date.now();platformContext.available=creditState.available;if(view==='credits')render();maybeOpenBillingReminder();}catch(e){n(e.message);}}
 async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
+
+let stripeEmbeddedInstance=null;
+async function openProspectorCheckout(order){
+ if(!order?.clientSecret||!order?.publishableKey)return false;
+ if(!/^pk_live_/.test(order.publishableKey))throw Error('Checkout não configurado.');
+ const existing=document.querySelector('#prospector-embedded-payment');if(existing)existing.remove();
+ const overlay=document.createElement('div');overlay.id='prospector-embedded-payment';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Pagamento seguro');
+ overlay.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(8,11,19,.82);display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto';
+ const panel=document.createElement('section');panel.style.cssText='position:relative;width:min(100%,640px);max-height:95vh;overflow:auto;background:#fff;color:#141414;padding:24px;border-radius:18px;box-shadow:0 20px 80px #0005';
+ const heading=document.createElement('div');heading.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px';
+ const title=document.createElement('strong');title.textContent='Pagamento seguro · Prospector';
+ const close=document.createElement('button');close.type='button';close.textContent='Fechar';close.style.cssText='padding:8px 14px;border-radius:9px;border:1px solid #ddd;background:#fff;color:#222;cursor:pointer';
+ const mount=document.createElement('div');mount.id='prospector-stripe-checkout';
+ const info=document.createElement('p');info.textContent='Pix e cartão são processados de forma segura pela Stripe. Créditos somente após confirmação do pagamento.';info.style.cssText='font-size:12px;color:#666;line-height:1.5';
+ heading.append(title,close);panel.append(heading,info,mount);overlay.append(panel);document.body.append(overlay);
+ const release=()=>{try{stripeEmbeddedInstance?.destroy();}catch{}stripeEmbeddedInstance=null;overlay.remove();};
+ close.addEventListener('click',release);overlay.addEventListener('click',e=>{if(e.target===overlay)release();});
+ try{
+  if(!window.Stripe){
+   await new Promise((resolve,reject)=>{
+    const script=document.createElement('script');script.src='https://js.stripe.com/v3/';script.async=true;script.onload=resolve;script.onerror=()=>reject(Error('Não foi possível carregar a Stripe'));document.head.append(script);
+   });
+  }
+  if(!document.contains(overlay))return true;
+  const stripe=window.Stripe(order.publishableKey);
+  stripeEmbeddedInstance=await stripe.initEmbeddedCheckout({clientSecret:order.clientSecret});
+  if(document.contains(mount))stripeEmbeddedInstance.mount('#prospector-stripe-checkout');
+  return true;
+ }catch(error){release();throw error;}
+}
+
 async function platformAction(action,el){
  if(action==='client-demo-login'){
   const client=clientList.find(c=>c.id===el.dataset.client);
@@ -694,8 +725,9 @@ async function platformAction(action,el){
   const request=(creditState?.requests||[]).find(x=>x.id===id&&x.status==='PENDING');
   if(!request)throw Error('Pedido pendente não encontrado. Atualize seus créditos.');
   const order=await post('/api/platform/credit-requests/'+encodeURIComponent(id)+'/checkout',{});
-  if(!order.checkoutUrl)throw Error('Checkout temporariamente indisponível.');
+  if(!order.checkoutUrl&&!order.clientSecret)throw Error('Checkout temporariamente indisponível.');
   try{sessionStorage.setItem('prospector-last-checkout-request',id);}catch{}
+  if(order.clientSecret){await openProspectorCheckout(order);return true;}
   location.assign(order.checkoutUrl);return true;
  }
  if(action==='request-credit-package'){
