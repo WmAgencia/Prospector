@@ -17,7 +17,14 @@ import {salesPaymentQueue,confirmPayment} from './sales-payment-flow.mjs';
 import {readSalesContextMarkdown,salesContextFilename} from './sales-training-documents.mjs';
 db.exec(`CREATE TABLE IF NOT EXISTS training_chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,body TEXT NOT NULL,at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS training_runs(id TEXT PRIMARY KEY,status TEXT NOT NULL,report TEXT,details TEXT NOT NULL,created_at TEXT NOT NULL);`);
-run("UPDATE training_runs SET status='FAILED',details=? WHERE status='RUNNING'",JSON.stringify({error:'Análise interrompida pelo reinício. Inicie novamente quando desejar.'}));
+// Recover interrupted background analyses after a deployment/restart.
+// The selections stay private in the tenant SQLite database, never in client storage.
+for(const item of all("SELECT id,details FROM training_runs WHERE status='RUNNING'")){
+ let saved;try{saved=JSON.parse(item.details||'{}');}catch{saved={};}
+ if(Array.isArray(saved.selectionKeys)&&saved.selectionKeys.length){
+  run("UPDATE training_runs SET status='QUEUED',details=? WHERE id=?",JSON.stringify({...saved,phase:'queued',percent:Math.min(95,saved.percent||0)}),item.id);
+ }else run("UPDATE training_runs SET status='FAILED',details=? WHERE id=?",JSON.stringify({error:'Análise interrompida sem seleção recuperável. Reinicie quando desejar.'}),item.id);
+}
 const jidOK=x=>/^\d{10,15}@s\.whatsapp\.net$/.test(x);
 export const redactTrainingText=x=>String(x||'').replace(/https?:\/\/\S+/gi,'[link]').replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi,'[e-mail]').replace(/\+?\d[\d\s().-]{8,}\d/g,'[número]').slice(0,1200);
 // Each tenant process can read only its own fixed data directory. Never accept a
@@ -184,6 +191,27 @@ async function analyzeRun(id,selection,chat,model){
  }
  finally{activeRun=false;}
 }
+// Continue a previously acknowledged job without any browser connection.
+const queuedRun=one("SELECT id,details FROM training_runs WHERE status='QUEUED' ORDER BY created_at LIMIT 1");
+if(queuedRun){
+ const timer=setTimeout(async()=>{
+  if(activeRun)return;
+  try{
+   const details=JSON.parse(queuedRun.details||'{}');
+   const available=await listTrainingChats();
+   const allowed=new Set(details.selectionKeys||[]);
+   const selection=available.items.filter(x=>allowed.has(x.key));
+   if(!selection.length)throw Error('Os WhatsApps ou as conversas autorizadas não estão disponíveis após o reinício');
+   activeRun=true;
+   run("UPDATE training_runs SET status='RUNNING',details=? WHERE id=? AND status='QUEUED'",JSON.stringify({...details,phase:'reading',percent:0,processed:0}),queuedRun.id);
+   void analyzeRun(queuedRun.id,selection,null,groqChat);
+  }catch(error){
+   activeRun=false;
+   run("UPDATE training_runs SET status='FAILED',details=? WHERE id=? AND status='QUEUED'",JSON.stringify({error:String(error?.message||error).slice(0,180),code:'RECOVERY_FAILED'}),queuedRun.id);
+  }
+ },9000);
+ timer.unref?.();
+}
 export async function handleTraining(req,res,url,{json,respond},deps={}){
  const p=url.pathname;if(!p.startsWith('/api/training'))return false;
  const model=deps.model||groqChat;
@@ -272,7 +300,7 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
 
  if(req.method==='GET'&&p==='/api/training/chats'){respond(res,200,await listTrainingChats());return true;}
  if(req.method==='POST'&&p==='/api/training/analyze'){
-  if(activeRun){respond(res,409,{error:'Já existe uma análise em andamento'});return true;}
+  if(activeRun||one("SELECT 1 FROM training_runs WHERE status='QUEUED' LIMIT 1")){respond(res,409,{error:'Já existe uma análise em andamento ou retomada'});return true;}
   const sessions=managedSessions();
   const connectionCheck=deps.connectionStatus||waControlStatus;
   const statuses=await Promise.all(sessions.slice(0,15).map(s=>connectionCheck(s.session_id)));
@@ -284,7 +312,7 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
   const keys=Array.isArray(input.keys)?input.keys:[];
   const selection=input.mode==='all'?available.items:available.items.filter(x=>keys.includes(x.key));
   if(!selection.length){respond(res,422,{error:'Selecione ao menos uma conversa disponível'});return true;}
-  const id=crypto.randomUUID();activeRun=true;run('INSERT INTO training_runs VALUES(?,?,?,?,?)',id,'RUNNING',null,JSON.stringify({conversations:selection.length,processed:0,percent:0,phase:'reading'}),now());
+  const id=crypto.randomUUID();activeRun=true;run('INSERT INTO training_runs VALUES(?,?,?,?,?)',id,'RUNNING',null,JSON.stringify({conversations:selection.length,selectionKeys:selection.map(x=>x.key),processed:0,percent:0,phase:'reading'}),now());
   void analyzeRun(id,selection,null,model);respond(res,202,{id,status:'RUNNING'});return true;
  }
  if(req.method==='POST'&&p==='/api/training/voice-note'){
