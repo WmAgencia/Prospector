@@ -91,6 +91,7 @@ export function createPaidSignupStore({db,loginPhone}){
     let client=db.prepare('SELECT * FROM clients WHERE lower(email)=?').get(order.customer_email);
     const existing=!!client;
     if(client&&client.status!=='active')throw Error('Existe uma conta suspensa com este e-mail. Contate o suporte');
+    if(client&&(client.is_internal===1||client.is_demo===1||client.plan_id==='unlimited'))throw Error('Esta conta não aceita contratação de créditos');
     if(!client){
      const result=this.create({name,email:order.customer_email,phone:normalizedPhone,planId:'credits'});
      client=this.get(result.client.id);
