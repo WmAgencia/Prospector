@@ -1,0 +1,42 @@
+name: Backend CNPJ and WhatsApp routing
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'dashboard/decisor-enrichment.mjs'
+      - 'dashboard/cnpj-identity-match.mjs'
+      - 'dashboard/business-contact-routing.mjs'
+      - 'dashboard/gosom-maps.mjs'
+      - 'dashboard/osm-discovery.mjs'
+      - 'dashboard/prospecting-introduction.mjs'
+      - 'dashboard/prospecting-queue.mjs'
+      - 'dashboard/db.mjs'
+      - 'tests/cnpj-contact-routing.test.mjs'
+      - 'tests/decisor-enrichment.test.mjs'
+      - 'tests/groq-autonomous-research.test.mjs'
+      - '.github/workflows/decisor-routing.yml'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Syntax-check all changed backend modules
+        run: |
+          node --check dashboard/cnpj-identity-match.mjs
+          node --check dashboard/business-contact-routing.mjs
+          node --check dashboard/decisor-enrichment.mjs
+          node --check dashboard/gosom-maps.mjs
+          node --check dashboard/osm-discovery.mjs
+          node --check dashboard/prospecting-introduction.mjs
+          node --check dashboard/prospecting-queue.mjs
+          node --check dashboard/db.mjs
+          node --check dashboard/server.mjs
+      - name: Focused backend tests (no live customer messages)
+        run: node --test tests/cnpj-contact-routing.test.mjs tests/decisor-enrichment.test.mjs tests/groq-autonomous-research.test.mjs
