@@ -167,7 +167,7 @@ export async function commandReply(text,{sender,ask=groqChat}={}){
 // All messages authored by the Prospector use WhatsApp's bold marker,
 // followed by exactly ONE newline before the message body.
 export function formatProspectorGroupReply(text){
- const prefix='*PROSPECTOR*\\n'.replace('\\n','\n');
+ const prefix='*PROSPECTOR*\n';
  let body=String(text??'').trim().replace(/^(?:\\*PROSPECTOR\\*\\s*)+/ig,'').trim();
  if(!body)return '';
  return prefix+body.slice(0,3000-prefix.length);
