@@ -19,10 +19,11 @@ test('CNPJ checksum rejects invalid or placeholder strings',()=>{
 test('verified QSA enriches person name without overwriting business WhatsApp',async()=>{
  const saved=addLead({business:'BANCO DO BRASIL SA',city:'Brasilia',phone:'61999999999',source:'cnpj',official_id:'cnpj:00000000000191',contact_permission:false});
  recordOrigin(saved.lead.id,'cnpj',{identity:'cnpj:00000000000191',reference:'00000000000191'});
+ recordOrigin(saved.lead.id,'maps_extension',{identity:'https://www.google.com/maps/place/BancoBrasil',address:'Rua da Caixa, 10, Brasilia, DF',city:'Brasilia'});
  const originalPhone=one('SELECT phone FROM leads WHERE id=?',saved.lead.id).phone;
  let calls=0;
  const fetchImpl=async()=>{calls++;return {status:200,ok:true,json:async()=>({success:true,data:{
-  cnpj:'00000000000191',razaoSocial:'BANCO DO BRASIL SA',municipio:'BRASILIA',telefone:'6134939002',
+  cnpj:'00000000000191',razaoSocial:'BANCO DO BRASIL SA',municipio:'BRASILIA',logradouro:'Rua da Caixa',numero:'10',uf:'DF',telefone:'6134939002',
   socios:[{nomeSocio:'PESSOA DE TESTE',descricao:'Presidente'}]
  }})};};
  const outcome=await enrichDecisorLead(saved.lead.id,{fetchImpl});
