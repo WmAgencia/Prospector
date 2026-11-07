@@ -23,7 +23,7 @@ export function trialCpfDigest(value,secret){
  if(!secret||String(secret).length<24)throw Error('Validação de CPF indisponível. Contate o suporte.');
  return crypto.createHmac('sha256',String(secret)).update('trial-cpf-v1:'+normalizeCpf(value)).digest('hex');
 }
-export const TRIAL_FREE_CREDITS=50;
+export const TRIAL_FREE_CREDITS=100;
 
 // Stored only until verification, never exposed to the browser except via
 // explicit authenticated Master identity-review action. Derived AES-256 key
