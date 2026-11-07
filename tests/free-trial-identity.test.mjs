@@ -10,7 +10,7 @@ const SECRET='unit-test-secret-key-that-is-intentionally-nonproduction';
 process.env.PROSPECTOR_CPF_HMAC_SECRET=SECRET;
 const testName='Maria Oliveira';
 const base={name:testName,cpf:'529.982.247-25',email:'maria1@example.test',phone:'11999990011',password:'valid-testing-password',privacyAcknowledged:true};
-const make=()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-free-50-'));return {dir,store:openPlatformStore(dir)}};
+const make=()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-free-100-'));return {dir,store:openPlatformStore(dir)}};
 const close=({dir,store})=>{store.db.close();fs.rmSync(dir,{recursive:true,force:true})};
 
 test('CPF check digits are not identity verification',()=>{
@@ -30,7 +30,7 @@ test('signup creates zero-charge, zero-credit pending grant and encrypted CPF',(
   assert.equal(ref.store.balance(account.id),0);
   const pub=ref.store.publicClient(account);
   assert.equal(pub.trial.status,'PENDING');
-  assert.equal(pub.trial.credits,50);
+  assert.equal(pub.trial.credits,100);
   assert.equal(pub.trial.verified,false);
   assert.equal(pub.phone,'5511999990011');
   assert.match(pub.cpfMasked||'',/\*{2,}/);
@@ -56,7 +56,7 @@ test('CPF, phone, and email each independently block a second free trial',()=>{
  }finally{close(ref)}
 });
 
-test('Master must attest trusted name-to-CPF match; exactly 50 credits issued once',()=>{
+test('Master must attest trusted name-to-CPF match; exactly 100 credits issued once',()=>{
  const ref=make();try{
   const c=ref.store.signup(base);
   const method='OFFICIAL_REGISTRY_MANUAL',evidenceReference='Protocol-number-not-a-CPF';
@@ -64,14 +64,14 @@ test('Master must attest trusted name-to-CPF match; exactly 50 credits issued on
   assert.equal(ref.store.balance(c.id),0);
   const approved=ref.store.reviewFreeTrial(c.id,{approved:true,verifiedNameAndCpf:true,verificationMethod:method,evidenceReference});
   assert.equal(approved.status,'APPROVED');
-  assert.equal(ref.store.balance(c.id),50);
+  assert.equal(ref.store.balance(c.id),100);
   assert.equal(ref.store.reviewFreeTrial(c.id,{approved:true,verifiedNameAndCpf:true,verificationMethod:method,evidenceReference}).alreadyReviewed,true);
-  assert.equal(ref.store.balance(c.id),50);
+  assert.equal(ref.store.balance(c.id),100);
   assert.equal(ref.store.db.prepare('SELECT cpf_ciphertext FROM free_trial_claims WHERE client_id=?').get(c.id).cpf_ciphertext,null);
   assert.throws(()=>ref.store.pendingTrialIdentity(c.id));
   assert.throws(()=>ref.store.signup({...base,email:'second@example.test',phone:'11999990044'}));
   ref.store.adjust(c.id,-1,'Abordagem confirmada','usage-01');
-  assert.equal(ref.store.balance(c.id),49);
+  assert.equal(ref.store.balance(c.id),99);
  }finally{close(ref)}
 });
 
