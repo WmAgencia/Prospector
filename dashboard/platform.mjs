@@ -16,6 +16,10 @@ const isWorker=!!process.env.PROSPECTOR_TENANT_ID;
 const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform');
 let store;
 const registry=()=>store||=openPlatformStore(root);
+if(!isWorker&&process.env.PROSPECTOR_ENABLE_DEMO_ACCOUNT==='true'){
+ try{registry().ensureDemoClient();console.info('[demo account] isolated customer preview ready; no live payments or outreach');}
+ catch(error){console.error('[demo account]',String(error.message||error).slice(0,150));}
+}
 const workers=new Map(),starting=new Map(),limiter=createAccessLimiter();
 const signupLimiter=createAccessLimiter({limit:5}),passwordLimiter=createAccessLimiter({limit:10});
 const accountPasswordLimiter=createAccessLimiter({limit:10});
@@ -54,12 +58,13 @@ function primaryMode(req,client){
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const port=s.address().port;await new Promise(r=>s.close(r));return port;}
 export function workerEnvironment(client,port){
  const allowed=['PATH','Path','SystemRoot','TEMP','TMP','HOME','NODE_ENV','GROQ_API_KEY','GROQ_MODEL','WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD','FRANCISCA_PYTHON','EDGE_TTS_PYTHON','FRANCISCA_TTS_ENABLED','PUBLIC_BASE_URL'];
- const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]));
+ const demo=client.is_demo===1;
+ const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined&&(!demo||!['WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD'].includes(k))).map(k=>[k,process.env[k]]));
  return {...env,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
-  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
+  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_DEMO_MODE:client.is_demo===1?'true':'false',PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
   PROSPECTOR_SESSION_DIR:path.join(root,'clients',client.id,'wa-session'),
   ADMIN_ACCESS_TOKEN:client.secret,ADMIN_SESSION_SECRET:client.secret,WA_AKG_WEBHOOK_SECRET:client.secret,
-  WHATSAPP_TRANSPORT:'waakg',PROSPECTOR_INBOUND_AUTOREPLY_ENABLED:'true',AI_CONVERSATION_AUTOSEND:'true',
+  WHATSAPP_TRANSPORT:'waakg',PROSPECTOR_INBOUND_AUTOREPLY_ENABLED:demo?'false':'true',AI_CONVERSATION_AUTOSEND:demo?'false':'true',
   PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false',PROSPECTOR_COLD_FIRST_APPROACH:'false',
   PROSPECTOR_REPLY_PACING_ENABLED:'true',PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED:'false'};
 }
@@ -276,6 +281,9 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  if(client){
   if(p==='/access'||p==='/api/auth/exchange'||p.startsWith('/mcp')){respond(res,403,{error:'Acesso exclusivo do administrador'});return true;}
   if(client.is_internal===1)return false;
+  if(client.is_demo===1&&req.method!=='GET'&&/^\/api\/(?:whatsapp|wa-akg|prospecting|outreach|threads\/|ai\/francisca|sales\/)/.test(p)){
+   respond(res,403,{error:'Modo de demonstração: conexão, envios e automações externas estão desativados.'});return true;
+  }
   await proxy(req,res,client);return true;
  }
  // A stale client cookie must never fall through to an administrator session.
