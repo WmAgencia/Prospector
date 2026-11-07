@@ -34,6 +34,19 @@ export function addSalesEvidence(input={}){
  // No automatic claim of client count, performance, testimonial authenticity or approval.
  state.items=[...(state.items||[]),item];setSetting(evidenceKey,state);return item;
 }
+export function updateSalesEvidence(id,input={}){
+ const state=readEvidence(),item=(state.items||[]).find(x=>x.id===String(id||''));
+ if(!item)throw Error('Material não encontrado');
+ const kind=clean(input.kind||item.kind,25),title=clean(input.title??item.title,120),description=clean(input.description??item.description,350);
+ if(!validKinds.has(kind)||title.length<3)throw Error('Tipo ou título inválido');
+ const url=input.url===undefined?item.url:(input.url?linkAllowed(String(input.url).trim()):null);
+ if(input.url&&!url)throw Error('Link HTTPS inválido');
+ if(!url&&!item.mediaId)throw Error('O material precisa de arquivo ou link');
+ const changed=item.title!==title||item.kind!==kind||item.description!==description||item.url!==url;
+ Object.assign(item,{title,kind,description,url});
+ if(changed){item.approved=false;delete item.approvedAt;}
+ setSetting(evidenceKey,state);syncSalesProofs();return evidenceStatus();
+}
 export function approveSalesEvidence(id){
  const state=readEvidence(),item=(state.items||[]).find(x=>x.id===id);
  if(!item)throw Error('Material não encontrado.');
