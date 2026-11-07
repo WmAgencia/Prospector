@@ -58,6 +58,23 @@ test('if the person replies after the proposal the scheduled links are canceled'
  assert.equal(sends,0);
  db.run('DELETE FROM waakg_inbox');
 });
+test('a delayed follow-up expires instead of firing long after its 25-second window',async()=>{
+ schedule(Date.now()-120000);
+ const res=await tickOfferReferences(params);
+ assert.equal(res.state,'CANCELLED');
+ assert.equal(res.reason,'FOLLOWUP_WINDOW_EXPIRED');
+ assert.equal(sends,0);
+});
+test('uncertain WhatsApp acknowledgement is not automatically retried',async()=>{
+ schedule(Date.now()-5000);
+ let attempts=0;
+ const uncertain=await tickOfferReferences({...params,send:async()=>{attempts++;return {status:false};}});
+ assert.equal(uncertain.state,'UNKNOWN');
+ assert.equal(attempts,1);
+ const again=await tickOfferReferences({...params,send:async()=>{attempts++;return {status:true};}});
+ assert.equal(again.state,'NOT_DUE');
+ assert.equal(attempts,1);
+});
 test('one approved follow-up is sent once; further ticks never resend it',async()=>{
  schedule(Date.now()-5000);
  const res=await tickOfferReferences(params);
