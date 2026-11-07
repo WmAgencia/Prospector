@@ -21,13 +21,15 @@ export function reviewSections(markdown){
  const value=text(markdown);
  if(!value.trim())return [];
  const split=value.split(/(?=^## (?!#))/m);
+ let offset=0;
  return split.map((raw,index)=>{
+  const start=offset;offset+=raw.length;
   const heading=/^## ([^\n]+)/m.exec(raw);
   const title=heading?heading[1].replace(/[*_]/g,'').trim():'Informações gerais';
   const body=heading?raw.replace(/^## [^\n]*\n?/, '').trim():raw.trim();
   const lines=body.split('\n').map(x=>x.trim()).filter(Boolean);
   const plain=lines.map(line=>line.replace(/^#{1,6}\s+/, '').replace(/^>\s*/, '').replace(/^[-*+]\s+/, '').replace(/\*\*|__/g,'').replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'$1 ($2)')).filter(Boolean);
-  return {id:sha(index+'|'+raw),index,title,body,
+  return {id:sha(index+'|'+raw),index,start,title,body,
    summary:conciseTrainingSummary(plain),
    points:plain.slice(0,80),count:plain.length,raw};
  });
@@ -58,8 +60,8 @@ export function modifyReviewMarkdown(markdown,{action,index,cardId,title,body,ve
  if(action==='delete'){
   const card=parts.find(x=>x.index===index&&x.id===cardId);
   if(!card)throw Error('Orientação alterada ou não encontrada. Atualize a página');
-  const pos=original.indexOf(card.raw);
-  if(pos<0)throw Error('Versão desatualizada');
+  const pos=card.start;
+  if(original.slice(pos,pos+card.raw.length)!==card.raw)throw Error('Versão desatualizada');
   const updated=(original.slice(0,pos)+original.slice(pos+card.raw.length)).replace(/\n{3,}/g,'\n\n').trim();
   return updated.length>=20?updated+'\n':'# Orientações da empresa\n\nNenhuma orientação comercial específica aprovada.\n';
  }
@@ -75,8 +77,8 @@ export function modifyReviewMarkdown(markdown,{action,index,cardId,title,body,ve
  if(!card)throw Error('Orientação alterada ou não encontrada. Atualize a página');
  if(!nextTitle||nextTitle.length<3)throw Error('Informe um título para a orientação');
  const replacement='## '+nextTitle+'\n\n'+safeBody(body);
- const start=original.indexOf(card.raw);
- if(start<0)throw Error('Versão desatualizada');
+ const start=card.start;
+ if(original.slice(start,start+card.raw.length)!==card.raw)throw Error('Versão desatualizada');
  const changed=original.slice(0,start)+replacement+'\n\n'+original.slice(start+card.raw.length);
  if(changed.length>17900)throw Error('O treinamento atingiu o limite de tamanho');
  return changed;
