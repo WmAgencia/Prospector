@@ -100,7 +100,7 @@ test('at 8am daily report targets group not any personal number; no duplicate se
  assert.equal(sent.reportDay,'2026-11-06');
  const send=calls.find(x=>x.url.endsWith('/send'));
  assert.ok(send);
- assert.match(send.url,/@g\.us/);
+ assert.match(send.url,/%40g\.us/);
  assert.match(send.opts.data.message.text,/2026-11-06/);
  const again=await assistant.scheduledGroupReport(new Date('2026-11-07T11:10:00Z'),{request});
  assert.equal(again.state,'ALREADY_ATTEMPTED');
