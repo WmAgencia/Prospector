@@ -258,6 +258,12 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  }
  if(p.startsWith('/api/platform/')){
   if((client&&!ownerMaster)||(!ownerMaster&&!authorized(req))){respond(res,403,{error:'Acesso exclusivo do painel master'});return true;}
+  if(p==='/api/platform/demo-login'&&req.method==='POST'){
+   if(process.env.PROSPECTOR_ENABLE_DEMO_ACCOUNT!=='true'){respond(res,403,{error:'Demonstração desativada'});return true;}
+   try{respond(res,200,registry().resetDemoPassword());}
+   catch(e){respond(res,422,{error:String(e.message).slice(0,140)});}
+   return true;
+  }
   if(p==='/api/platform/primary-client'&&req.method==='POST'){respond(res,200,registry().configurePrimary(await json(req)));return true;}
   if(p==='/api/platform/clients'&&req.method==='GET'){respond(res,200,{items:registry().list()});return true;}
   if(p==='/api/platform/clients'&&req.method==='POST'){const r=registry().create(await json(req));respond(res,201,{...r,accessPath:'/client/access#'+r.token});return true;}
