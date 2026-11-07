@@ -151,6 +151,15 @@ function masterDashboard(){
  '<p class="master-metric-note">Valores financeiros mostram exclusivamente pagamentos confirmados via integração. Os saldos incluem as contas de créditos, mas não contabilizam uso ilimitado como créditos fictícios. '+(m.billing?.configured?'Cobranças automáticas ativadas.':'Checkout e webhook ainda precisam estar conectados para liberar créditos automaticamente.')+'</p></div>';
 }
 function masterSettings(){
+ if(!platformContext.internalAccount){
+  return '<div class="workspace-head"><div><span class="kicker">SEGURANÇA / ADMINISTRAÇÃO</span><h2>Recuperar acesso ao Master</h2><p>Disponível apenas após autenticar o acesso administrativo principal do Prospector.</p></div></div>'+
+   '<section class="panel master-security-card"><h3>Redefinir senha da conta Master existente</h3><p>Digite o e-mail que já pertence à conta Master e defina uma nova senha. Nenhum novo administrador será criado. As sessões anteriores serão encerradas.</p>'+
+   '<form id="master-recovery" class="stack-form"><label>E-mail atual do Master<input name="email" type="email" autocomplete="username" maxlength="200" required></label>'+
+   '<label>Nova senha<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required placeholder="Pelo menos 12 caracteres"></label>'+
+   '<label>Confirmar nova senha<input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>'+
+   '<button type="submit" class="primary">Redefinir senha do Master</button></form>'+
+   '<p class="footnote">Este formulário exige sessão administrativa autorizada, não recebe a senha antiga e não altera a conta de outros clientes.</p></section>';
+ }
  return '<div class="workspace-head"><div><span class="kicker">SEGURANÇA / ADMINISTRAÇÃO</span><h2>Configurações da conta Master</h2><p>O mesmo login é utilizado no Master e no painel de Produção.</p></div><span class="tag green">Conta interna protegida</span></div>'+
  '<div class="master-security-grid"><section class="panel master-security-card"><span class="kicker">LOGIN E SENHA</span><h3>Dados de acesso</h3><p>Atualize suas credenciais. As alterações também valem para sua conta de produção.</p><form id="account-credentials" class="stack-form"><label>E-mail do administrador<input type="email" name="newEmail" required maxlength="200" autocomplete="email" value="'+esc(platformContext.email||'')+'"></label><label>Senha atual<input type="password" name="currentPassword" required autocomplete="current-password" maxlength="128"></label><label>Nova senha (opcional)<input type="password" name="newPassword" autocomplete="new-password" minlength="10" maxlength="128" placeholder="Mínimo de 10 caracteres"></label><button class="primary" type="submit">Salvar alterações</button></form><p class="footnote">Depois de mudar o e-mail ou a senha, outras sessões são encerradas por segurança.</p></section>'+
  '<section class="panel master-security-card"><span class="kicker">PERMISSÕES</span><h3>Seu ambiente, protegido</h3><div class="master-security-fact"><span>Perfil administrativo</span><strong>Master exclusivo</strong></div><div class="master-security-fact"><span>Ambiente de operação</span><strong>Mesmas credenciais</strong></div><div class="master-security-fact"><span>Dados dos clientes</span><strong>Ambientes separados</strong></div><button class="secondary" data-action="switch-workspace">Ir para Produção</button></section></div>';
@@ -1126,6 +1135,16 @@ document.addEventListener("submit",async ev=>{
  if(ev.target.id==='outreach-hours-form'){
   const payload=Object.fromEntries(new FormData(ev.target));
   try{const r=await post('/api/settings/outreach-hours',payload);outreachHours=r.hours;n('Horário de abordagem salvo.');render();}catch(e){n(e.message);}return;
+ }
+ if(ev.target.id==='master-recovery'){
+  const input=Object.fromEntries(new FormData(ev.target));
+  if(input.password!==input.confirmPassword){n('A confirmação da nova senha não corresponde.');return;}
+  try{
+   await post('/api/platform/master-recovery',{email:input.email,password:input.password});
+   ev.target.reset();
+   n('Senha da conta Master redefinida. Todas as sessões antigas foram encerradas. Abra Entrar para acessar o Master.');
+  }catch(error){n(error.message);}
+  return;
  }
  if(ev.target.id==='account-credentials'){
   const payload=Object.fromEntries(new FormData(ev.target));
