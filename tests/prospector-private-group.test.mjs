@@ -29,7 +29,7 @@ test('waits for an authenticated WA-AKG WhatsApp, not merely tenant registration
  assert.equal(called,0);
  assert.equal(privateGroupState(),null);
 });
-test('first connected WhatsApp attempts a self-only group without adding unrelated numbers',async()=>{
+test('first connected WhatsApp creates a group with zero invited members',async()=>{
  const calls=[];
  const result=await reconcilePrivateGroup({getSessions:pool(connected),at:date('12:00:00'),request:async(url,options)=>{
   calls.push({url,options});
@@ -38,7 +38,7 @@ test('first connected WhatsApp attempts a self-only group without adding unrelat
  assert.equal(result.state,'CREATED');
  assert.equal(calls.length,1);
  assert.equal(calls[0].url,'/api/groups/prospector-first/create');
- assert.deepEqual(calls[0].options.data,{subject:'Meu Prospector',participants:[owner+'@s.whatsapp.net']});
+ assert.deepEqual(calls[0].options.data,{subject:'Meu Prospector',participants:[]});
  assert.equal(privateGroupState().group_jid,jid);
 });
 test('second number joins the SAME group, without creating a second group',async()=>{
@@ -73,26 +73,23 @@ test('second number joins the SAME group, without creating a second group',async
  assert.equal(countCreate,1);
  assert.equal(countInvite,1);
 });
-test('when self-only creation is rejected, waits for another *owned* connected number',async()=>{
+test('temporary gateway rejection is retried with zero invited members after cooldown',async()=>{
  let create=0;
  const request=async(url,options)=>{
   if(options?.method==='POST'){
    create++;
-   if(create===1)throw Error('WA-AKG HTTP 500: Failed to create group');
-   assert.deepEqual(options.data.participants,[second+'@s.whatsapp.net']);
+   assert.deepEqual(options.data.participants,[]);
+   if(create===1)throw Error('WA-AKG HTTP 500: temporary error');
    return {status:true,data:{group:{id:jid}}};
   }
   return {status:true,data:[]};
  };
  const first=await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')});
- assert.equal(first.state,'WAITING_SECOND');
+ assert.equal(first.state,'CREATION_RETRY');
  const soon=await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:01:00')});
- assert.equal(soon.state,'WAITING_SECOND');
+ assert.equal(soon.state,'CREATION_RETRY');
  const later=await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:04:00')});
- assert.equal(later.state,'WAITING_SECOND');
- assert.equal(create,1);
- const joined=await reconcilePrivateGroup({getSessions:pool([...connected,session('prospector-second',second)]),request,at:date('12:05:00')});
- assert.equal(joined.state,'CREATED');
+ assert.equal(later.state,'CREATED');
  assert.equal(create,2);
 });
 test('uncertain create may recover only a matching group containing owned numbers',async()=>{
@@ -101,7 +98,7 @@ test('uncertain create may recover only a matching group containing owned number
   if(options?.method==='POST'){create++;throw Error('WA-AKG timeout');}
   return {status:true,data:create?[group([owner])]:[]};
  };
- assert.equal((await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')})).state,'WAITING_SECOND');
+ assert.equal((await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')})).state,'CREATION_RETRY');
  const recovered=await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:04:00')});
  assert.equal(recovered.state,'RECOVERED');
  assert.equal(create,1);
@@ -115,7 +112,7 @@ test('does not adopt unrelated same-name groups or add unknown people',async()=>
  };
  await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')});
  const next=await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:04:00')});
- assert.equal(next.state,'WAITING_SECOND');
+ assert.equal(next.state,'GROUP_MATCH_AMBIGUOUS');
  assert.equal(privateGroupState().group_jid,null);
  assert.equal(create,1);
 });
