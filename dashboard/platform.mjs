@@ -208,6 +208,21 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   catch(e){respond(res,422,{error:String(e.message).slice(0,200)});}
   return true;
  }
+ const trialReview=p.match(/^\/api\/platform\/free-trials\/([a-f0-9-]{36})\/(identity|review)$/i);
+ if(trialReview){
+  if((client&&!ownerMaster)||(!ownerMaster&&!authorized(req))){respond(res,403,{error:'Acesso exclusivo do Master'});return true;}
+  try{
+   if(trialReview[2]==='identity'&&req.method==='GET'){
+    res.setHeader('Cache-Control','no-store');
+    respond(res,200,registry().pendingTrialIdentity(trialReview[1]));return true;
+   }
+   if(trialReview[2]==='review'&&req.method==='POST'){
+    const payload=await json(req);
+    respond(res,200,{result:registry().reviewFreeTrial(trialReview[1],payload)});return true;
+   }
+   respond(res,405,{error:'Método indisponível'});return true;
+  }catch(err){respond(res,422,{error:String(err.message).slice(0,200)});return true;}
+ }
  if(p.startsWith('/api/platform/')){
   if((client&&!ownerMaster)||(!ownerMaster&&!authorized(req))){respond(res,403,{error:'Acesso exclusivo do painel master'});return true;}
   if(p==='/api/platform/primary-client'&&req.method==='POST'){respond(res,200,registry().configurePrimary(await json(req)));return true;}
