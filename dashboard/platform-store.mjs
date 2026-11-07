@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {getCreditPackage,CREDIT_PACKAGES} from './credit-packages.mjs';
+import {normalizeCpf,validCpf,legalName,trialCpfDigest,TRIAL_FREE_CREDITS} from './trial-identity.mjs';
 export function openPlatformStore(root){
  fs.mkdirSync(root,{recursive:true});
  const db=new DatabaseSync(path.join(root,'platform.sqlite'));
@@ -33,12 +34,27 @@ export function openPlatformStore(root){
   client_id TEXT NOT NULL REFERENCES clients(id),stripe_event_id TEXT NOT NULL UNIQUE,
   price_cents INTEGER NOT NULL,credits INTEGER NOT NULL,created_at TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS idx_verified_payments_date ON verified_payments(created_at);`);
+ // Permanent, privacy-minimized anti-abuse ledger. A suspended/closed account
+ // must never recover a free trial by signing up with new credentials.
+ db.exec(`CREATE TABLE IF NOT EXISTS free_trial_claims(
+  client_id TEXT PRIMARY KEY REFERENCES clients(id),
+  cpf_digest TEXT NOT NULL UNIQUE,
+  phone TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  status TEXT NOT NULL CHECK(status IN ('PENDING','APPROVED','REJECTED')),
+  created_at TEXT NOT NULL,
+  reviewed_at TEXT,
+  evidence_reference TEXT,
+  verification_method TEXT
+ );`);
  const loginPhone=value=>{let x=String(value||'').replace(/\D/g,'');if(x.length===11)x='55'+x;return /^55\d{11}$/.test(x)?x:null;};
  const hash=x=>crypto.createHash('sha256').update(String(x)).digest('hex');
  const balance=id=>Number(db.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM credit_events WHERE client_id=?').get(id).n);
  const pending=id=>Number(db.prepare("SELECT COUNT(*) AS n FROM credit_reservations WHERE client_id=? AND state='RESERVED'").get(id).n);
  const unlimited=r=>r&&(r.is_internal===1||r.plan_id==='unlimited');
+ const trial=id=>db.prepare('SELECT status,created_at,reviewed_at FROM free_trial_claims WHERE client_id=?').get(id)||null;
  const publicClient=r=>r?{id:r.id,name:r.name,email:r.email,status:r.status,createdAt:r.created_at,unlimited:unlimited(r),internal:r.is_internal===1,
+  trial:trial(r.id)?{status:trial(r.id).status,credits:TRIAL_FREE_CREDITS,verified:trial(r.id).status==='APPROVED',requestedAt:trial(r.id).created_at}:null,
   planId:r.is_internal===1?'unlimited':r.plan_id||'credits',customCredits:r.custom_credits||null,customPriceCents:r.custom_price_cents||null,
   phone:r.contact_phone||null,cpfMasked:r.cpf_last4?'***.***.*'+r.cpf_last4.slice(0,2)+'-'+r.cpf_last4.slice(2):null,
   balance:balance(r.id),reserved:unlimited(r)?0:pending(r.id),available:unlimited(r)?null:balance(r.id)-pending(r.id)}:null;
@@ -135,16 +151,49 @@ export function openPlatformStore(root){
     db.exec('COMMIT');return get(clientId);
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
-  signup({name,email,password,phone,privacyAcknowledged}){
+  signup({name,email,password,phone,cpf,privacyAcknowledged}){
+   name=legalName(name);
+   if(!validCpf(cpf))throw Error('Informe um CPF válido para solicitar o teste gratuito');
+   const secret=process.env.PROSPECTOR_CPF_HMAC_SECRET||process.env.ADMIN_SESSION_SECRET||'';
+   const identityHash=trialCpfDigest(cpf,secret);
+   const legacyHash=crypto.createHmac('sha256',secret).update(normalizeCpf(cpf)).digest('hex');
    email=String(email||'').trim().toLowerCase();password=String(password||'');
    if(privacyAcknowledged!==true||password.length<10||password.length>128)throw Error('Use uma senha de 10 a 128 caracteres e confirme a leitura sobre seus dados');
    const normalizedPhone=loginPhone(phone);if(!normalizedPhone)throw Error('Informe seu celular com DDD');
    const salt=crypto.randomBytes(24).toString('hex'),passwordHash=crypto.scryptSync(password,salt,64).toString('hex');
    db.exec('BEGIN IMMEDIATE');try{
-    if(db.prepare('SELECT 1 FROM clients WHERE lower(email)=?').get(email))throw Error('Não foi possível criar esta conta. Se já possui cadastro, entre ou fale com a Consecom.');
-    const result=this.create({name,email});
-    db.prepare('INSERT INTO client_passwords(client_id,email,salt,password_hash,privacy_version,created_at,phone) VALUES(?,?,?,?,?,?,?)').run(result.client.id,email,salt,passwordHash,'2026-11-05',new Date().toISOString(),normalizedPhone);
+    if(db.prepare('SELECT 1 FROM clients WHERE lower(email)=?').get(email)||
+       db.prepare('SELECT 1 FROM client_passwords WHERE phone=?').get(normalizedPhone)||
+       db.prepare('SELECT 1 FROM clients WHERE contact_phone=? OR cpf_digest=?').get(normalizedPhone,legacyHash)||
+       db.prepare('SELECT 1 FROM free_trial_claims WHERE cpf_digest=? OR phone=? OR email=?').get(identityHash,normalizedPhone,email))
+      throw Error('Não foi possível liberar outro teste para estes dados. Se já possui cadastro, entre ou fale com a Consecom.');
+    const result=this.create({name,email,phone:normalizedPhone,cpf});
+    const at=new Date().toISOString();
+    db.prepare('INSERT INTO client_passwords(client_id,email,salt,password_hash,privacy_version,created_at,phone) VALUES(?,?,?,?,?,?,?)').run(result.client.id,email,salt,passwordHash,'2026-11-07-free-trial-pending',at,normalizedPhone);
+    // Register the one-time claim atomically with signup. No money is charged and
+    // NO credits are issued before a qualified name/CPF verification.
+    db.prepare("INSERT INTO free_trial_claims(client_id,cpf_digest,phone,email,status,created_at) VALUES(?,?,?,?,'PENDING',?)")
+     .run(result.client.id,identityHash,normalizedPhone,email,at);
     db.exec('COMMIT');return get(result.client.id);
+   }catch(e){db.exec('ROLLBACK');throw e;}
+  },
+  reviewFreeTrial(clientId,{approved=false,verifiedNameAndCpf=false,evidenceReference='',verificationMethod=''}={}){
+   const ref=String(evidenceReference||'').trim(),method=String(verificationMethod||'').trim().toUpperCase();
+   if(!ref||ref.length<12||ref.length>240)throw Error('Informe uma referência de conferência de identidade, sem armazenar o CPF completo');
+   if(!['OFFICIAL_REGISTRY_MANUAL','TRUSTED_IDENTITY_PROVIDER'].includes(method))throw Error('Informe uma fonte verificável de comparação do nome com o CPF');
+   if(approved&&verifiedNameAndCpf!==true)throw Error('Confirme a comparação efetiva do nome com o CPF em uma fonte confiável');
+   db.exec('BEGIN IMMEDIATE');try{
+    const row=db.prepare('SELECT * FROM free_trial_claims WHERE client_id=?').get(clientId);
+    if(!row)throw Error('Este cliente não possui solicitação de teste gratuito');
+    if(row.status!=='PENDING'){db.exec('COMMIT');return {status:row.status,credits:row.status==='APPROVED'?TRIAL_FREE_CREDITS:0,alreadyReviewed:true};}
+    const current=get(clientId);
+    if(!current||current.is_internal===1||current.status!=='active')throw Error('Conta indisponível');
+    const status=approved?'APPROVED':'REJECTED',at=new Date().toISOString();
+    db.prepare('UPDATE free_trial_claims SET status=?,reviewed_at=?,evidence_reference=?,verification_method=? WHERE client_id=? AND status=?')
+     .run(status,at,ref,method,clientId,'PENDING');
+    if(approved)db.prepare('INSERT OR IGNORE INTO credit_events(id,client_id,amount,reason,reference,created_at) VALUES(?,?,?,?,?,?)')
+     .run(crypto.randomUUID(),clientId,TRIAL_FREE_CREDITS,'Teste grátis verificado: 50 abordagens','free-trial:'+clientId,at);
+    db.exec('COMMIT');return {status,credits:approved?TRIAL_FREE_CREDITS:0,alreadyReviewed:false};
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
   signin({email,identifier,password}){
