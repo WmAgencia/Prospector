@@ -28,6 +28,7 @@ test.beforeEach(()=>{
  db.run('DELETE FROM prospector_group_audio');
  db.run('DELETE FROM prospector_group_daily_reports');
  db.run('DELETE FROM prospector_group_confirmations');
+ db.run('DELETE FROM prospector_group_outgoing_guard');
  db.run('DELETE FROM prospector_private_group_avatar');
  db.setSetting('paused',false);
  db.run("INSERT INTO prospector_owner_group(singleton,owner_session,owner_number,group_jid,state,updated_at) VALUES(1,?,?,?,?,?)",
@@ -81,6 +82,24 @@ test('messages sent by an owned number are ignored rather than answering the ass
   type:'TEXT',sender:owner+'@s.whatsapp.net',content:'relatório'};
  const received=await assistant.receivePrivateGroupWebhook({sessionId:session,data:event,request});
  assert.equal(received.handled,false);
+});
+test('first WhatsApp creator can command in a one-person group through human message.sent',async()=>{
+ const fromMe={isGroup:true,key:{id:'MANUAL444444',remoteJid:jid,fromMe:true},
+  type:'TEXT',fromMe:true,from:owner+'@s.whatsapp.net',sender:'ME',content:'pausa a prospecção'};
+ const answer=await assistant.receivePrivateGroupWebhook({sessionId:session,data:fromMe,event:'message.sent',request,
+  getSessions:async()=>({items:[{sessionId:session,number:owner,connected:true}]})});
+ assert.equal(answer.queued,true);
+ assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,1);
+});
+test('bot group replies cannot cause a message.sent feedback loop',async()=>{
+ await assistant.sendGroupMessage({sessionId:session,groupId:jid,text:'Relatório da Francisca',request});
+ const fromMe={isGroup:true,key:{id:'BOTMSG44444',remoteJid:jid,fromMe:true},
+  type:'TEXT',fromMe:true,from:owner+'@s.whatsapp.net',sender:'ME',content:'Relatório da Francisca'};
+ const answer=await assistant.receivePrivateGroupWebhook({sessionId:session,data:fromMe,event:'message.sent',request,
+  getSessions:async()=>({items:[{sessionId:session,number:owner,connected:true}]})});
+ assert.equal(answer.ignored,true);
+ assert.equal(answer.reason,'BOT_OUTGOING');
+ assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
 });
 test('audio in the group is accepted only from a current participant, with safe media path',async()=>{
  const event={isGroup:true,key:{id:'AAAA33333',remoteJid:jid,fromMe:false,participant:partner+'@s.whatsapp.net'},
