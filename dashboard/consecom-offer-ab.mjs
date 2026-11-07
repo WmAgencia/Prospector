@@ -61,7 +61,7 @@ export function offerAbStatus(){
   const conversions=one("SELECT COUNT(DISTINCT a.lead_id) n FROM consecom_offer_ab a JOIN leads l ON l.id=a.lead_id WHERE a.variant=? AND a.status='SENT' AND l.stage='CLOSED_WON'",variant)?.n||0;
   metrics.push({variant,sent,humanReplies:replies,closed:conversions,replyRate:sent?Math.round(replies/sent*1000)/10:null,closeRate:sent?Math.round(conversions/sent*1000)/10:null});
  }
- return {available:true,config:c,counts:totals,metrics,referenceFollowups:all('SELECT state,COUNT(*) n FROM consecom_offer_references GROUP BY state'),referenceDelaySeconds:OFFER_AB_REFERENCES_DELAY_MS/1000,design:'alternating eligible leads in chronological assignment order, AUDIO then TEXT, independent of WhatsApp session',note:'No spam-evasion guarantees; measure only permission-based conversations'};
+ return {available:true,config:c,counts:totals,metrics,proposalPreview:OFFER_AB_TEXT,referencesPreview:OFFER_AB_REFERENCES_TEXT,referenceFollowups:all('SELECT state,COUNT(*) n FROM consecom_offer_references GROUP BY state'),referenceDelaySeconds:OFFER_AB_REFERENCES_DELAY_MS/1000,design:'alternating eligible leads in chronological assignment order, AUDIO then TEXT, independent of WhatsApp session',note:'No spam-evasion guarantees; measure only permission-based conversations'};
 }
 export function attachOriginalAbAudio(mediaId,{confirmedScript=false}={}){
  if(!allowed())throw Error('CONSECOM_ONLY');
