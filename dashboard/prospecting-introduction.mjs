@@ -11,6 +11,7 @@ import {threeMonthsAfter} from './prospecting-recontact.mjs';
 import {priceQuestion} from './sales-policy.mjs';
 import {detectAutomaticReply,friendlyGreeting,portfolioQuestion} from './portfolio-offer-550.mjs';
 import {tenantApproachGreeting} from './tenant-approach.mjs';
+import {selectionStatus} from './business-contact-routing.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 
@@ -34,9 +35,10 @@ export function greetingForProspect(lead={},at=new Date()){
   // Only an address-verified CNPJ company line with a confirmed WhatsApp gets
   // a request to speak with the QSA person (never claim they own the number).
   if(lead?.id){
-   const route=one("SELECT status FROM lead_contact_selection WHERE lead_id=?",lead.id);
+   const route=selectionStatus(lead.id);
    if(route?.status==='READY_CNPJ'){
-    const d=one('SELECT decision_maker FROM lead_decisor_enrichment WHERE lead_id=?',lead.id);
+    const exists=one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='lead_decisor_enrichment'");
+    const d=exists?one('SELECT decision_maker FROM lead_decisor_enrichment WHERE lead_id=?',lead.id):null;
     const first=String(d?.decision_maker||'').trim().split(/\s+/)[0];
     if(first&&first.length<=32&&/^[\p{L}'-]+$/u.test(first))
      return 'Oi, tudo bem? Me chamo Wesley, queria falar com '+first+'.';
@@ -128,7 +130,7 @@ export async function tickIntroductions(deps={}){
   if(!run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND stage='WAITING' AND due_at<=?",
    new Date(at).toISOString(),now(),item.lead_id,new Date(at).toISOString()).changes)return {state:'BUSY'};
   // The first CNPJ-routed greeting already introduces Wesley by name.
-  const route=one('SELECT status FROM lead_contact_selection WHERE lead_id=?',item.lead_id);
+  const route=selectionStatus(item.lead_id);
   const introText=route?.status==='READY_CNPJ'?CNPJ_FOLLOWUP_INTRO:WESLEY_INTRO;
   try{
    const ack=await send('/api/messages/'+encodeURIComponent(item.session_id)+'/'+encodeURIComponent(item.phone+'@s.whatsapp.net')+'/send',
