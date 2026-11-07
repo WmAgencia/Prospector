@@ -508,7 +508,7 @@ async function interviewStart(mode){
 }
 function trainingMaterials(){
  const t=trainingState||{},e=t.salesEvidence||{items:[]};
- const library='<section class="panel training-addons-card"><div class="heading"><div><span class="kicker">PORTFÓLIO E PROVAS SOCIAIS</span><h3>Materiais que a Francisca pode apresentar</h3><p>Imagens, PDFs, cases, depoimentos autorizados e links.</p></div><span class="tag">'+(e.approved?.length||0)+' aprovados</span></div>'+
+ const library='<section class="panel training-addons-card"><div class="heading"><div><span class="kicker">REFERÊNCIAS DA FRANCISCA</span><h3>Materiais que ela pode apresentar</h3><p>Imagens, PDFs, cases, depoimentos autorizados e links.</p></div><span class="tag">'+(e.approved?.length||0)+' aprovados</span></div>'+
  '<form id="training-proof-form" class="training-addons-form"><div class="training-addons-pair"><label>Tipo<select name="kind"><option value="portfolio">Portfólio</option><option value="case">Case</option><option value="testimonial">Depoimento</option><option value="other">Outro</option></select></label><label>Título<input name="title" maxlength="120" required placeholder="Ex.: Site de oficina"></label></div><label>Descrição comprovável<input name="description" maxlength="350" placeholder="Explique o que realmente foi entregue"></label><label>Link HTTPS (opcional)<input name="url" type="url" maxlength="700" placeholder="https://..."></label><label>Ou envie imagem ou PDF de até 8 MB<input name="file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></label><label class="training-consent-check"><input type="checkbox" name="authorized" required> Tenho autorização para usar este material comercialmente.</label><button class="primary" type="submit">Adicionar material</button></form>'+
  ((e.items||[]).length?'<div class="training-proof-list">'+e.items.map(x=>'<article class="training-proof-item"><div><strong>'+esc(x.title)+'</strong><small>'+esc(x.kind)+' · '+(x.approved?'Aprovado':'Aguardando aprovação')+'</small><p>'+esc(x.description||'')+'</p>'+(x.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(x.url)+'">Ver link ↗</a>':'')+(x.mediaId?'<a target="_blank" rel="noopener noreferrer" href="/api/media/'+esc(x.mediaId)+'">Ver arquivo ↗</a>':'')+'</div><div class="training-proof-controls">'+(!x.approved?'<button type="button" class="secondary compact" data-action="training-proof-approve" data-id="'+esc(x.id)+'">Aprovar</button>':'')+'<button type="button" class="secondary compact" data-action="training-proof-remove" data-id="'+esc(x.id)+'">Excluir</button></div></article>').join('')+'</div>':'<p class="training-muted">Nenhum material cadastrado. Você pode continuar e acrescentar depois.</p>')+'</section>';
  return library;
@@ -541,14 +541,14 @@ function interviewView(){
  const profile=((t.internalAccount&&t.profile)||i?.completed||(!i&&(t.profile||t.draft)))?'<div class="interview-profile">'+trainingProfile(shownTraining)+'</div>':'';
  const advanced='<div class="interview-final-stage">'+trainingAnalysis(t)+'</div>';
  const shared='<div class="training-markdown-info"><span><strong>Método global de vendas</strong> · compartilhado e somente leitura. O seu perfil de serviços, preços e tom é privado.</span><a href="/api/training/global.md" download="francisca-vendas-global.md" class="secondary compact">Baixar base global .md ↗</a></div>';
- return top+'<div class="interview-layout">'+body+profile+'</div>'+trainingSalesExtras()+advanced;
+ return top+'<div class="interview-layout">'+body+'</div>'+profile+trainingSalesExtras()+advanced;
 }
 function trainingView(){return interviewView();}
 
 async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/analytics');if(platformContext.role==='master'&&view==='dashboard')render();}catch(e){n('Indicadores indisponíveis: '+e.message);}}
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
 async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');if(view==='credits')render();}catch(e){n(e.message);}}
-async function loadTraining(){try{trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if(view==='training'&&!q('textarea:focus,input:focus'))render();}catch(e){n(e.message);}}
+async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
 async function platformAction(action,el){
  if(action==='client-open'){await post('/api/platform/clients/'+el.dataset.client+'/open',{});location.assign('/');return true;}
  if(action==='logout-client'){await post('/api/platform/logout',{});location.assign('/conheca');return true;}
@@ -1345,6 +1345,7 @@ setInterval(async()=>{
  await refreshWa();
  if(busy||q("input:focus,textarea:focus,select:focus"))return;
  if(trainingBusy)return;
+ if(view!=="training"&&trainingState?.runs?.some(x=>x.status==='RUNNING'))await loadTraining();
  if(view==="training"){await loadTraining();return;}
  if(view==="conversations"&&Date.now()-lastRefresh>24000)await reload();
  else if(Date.now()-lastRefresh>45000&&state)await reload();
