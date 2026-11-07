@@ -91,7 +91,7 @@ async function queryProvider(cnpj,provider,{fetchImpl=fetch}={}){
  return parseCompany(await response.json(),cnpj,provider.name);
 }
 const busy=new Set();
-export async function enrichDecisorLead(leadId,{fetchImpl=fetch}={}){
+export async function enrichDecisorLead(leadId,{fetchImpl=fetch,checkWhatsapp}={}){
  if(busy.has(leadId))return {status:'BUSY'};
  const lead=one('SELECT id,business,city,phone,stage FROM leads WHERE id=?',leadId);
  if(!lead)return {status:'MISSING'};
@@ -119,7 +119,7 @@ export async function enrichDecisorLead(leadId,{fetchImpl=fetch}={}){
   // Routes only pre-contact business numbers. An address match does NOT imply
   // that the CNPJ telephone is personally owned by the named administrator.
   let selection={status:'UNAVAILABLE'};
-  try{selection=await routeBusinessContact(lead.id,{matchedCompany:verified});}
+  try{selection=await routeBusinessContact(lead.id,{matchedCompany:verified,checkWhatsapp});}
   catch(error){selection={status:'PENDING_CHECK'};console.warn('[decisor contact routing]',String(error?.message||error).slice(0,100));}
   if(selection.status==='PENDING_CHECK'){
    run('UPDATE lead_decisor_enrichment SET next_attempt_at=? WHERE lead_id=?',
