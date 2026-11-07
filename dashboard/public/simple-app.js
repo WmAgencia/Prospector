@@ -6,6 +6,30 @@ const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",con
 let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="all",trainingAllConfirmed=false,trainingBusy=false,clientAccess="",demoLoginCredentials=null;
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
 let billingReminderOpen=false,billingReminderDismissed=false,billingDemoExhausted=false,billingDemoStep=0,billingDemoPackage='',billingLastChecked=0;
+let billingCheckoutReturn=null;
+try{
+ if(new URLSearchParams(location.search).get('pagamento')==='retorno'){
+  billingCheckoutReturn={requestId:sessionStorage.getItem('prospector-last-checkout-request')||'',startedAt:Date.now()};
+  // Remove the query parameter so refreshes do not falsely suggest another return.
+  const clean=new URL(location.href);clean.searchParams.delete('pagamento');
+  history.replaceState(null,'',clean.pathname+clean.search+clean.hash);
+ }
+}catch{}
+function checkoutReturnBanner(){
+ if(!billingCheckoutReturn||platformContext.demo||platformContext.role==='master')return '';
+ const order=(creditState?.requests||[]).find(x=>x.id===billingCheckoutReturn.requestId);
+ const status=order?.status||'CHECKING',isApproved=status==='APPROVED',isDeclined=status==='DECLINED';
+ if(isApproved){try{sessionStorage.removeItem('prospector-last-checkout-request');}catch{}}
+ const elapsed=Date.now()-billingCheckoutReturn.startedAt;
+ const title=isApproved?'Pagamento confirmado — créditos liberados':isDeclined?'Pedido não aprovado':'Conferindo seu pagamento com a Stripe';
+ const description=isApproved?'Seu saldo foi atualizado após o webhook confirmado pela Stripe.':
+  isDeclined?'A solicitação não foi concluída. Nenhum crédito foi liberado por este pedido.':
+  elapsed>180000?'Ainda não recebemos a confirmação da Stripe. Se pagou via Pix ou outro método assíncrono, acompanhe o status do pedido e atualize seu saldo.':
+  'O retorno do checkout não confirma o pagamento. Os créditos serão adicionados somente após a confirmação segura da Stripe.';
+ const statusTag=isApproved?'Confirmado':isDeclined?'Não aprovado':'Aguardando confirmação';
+ return '<section class="panel billing-return-status" role="status" aria-live="polite"><div><span class="kicker">STRIPE / STATUS DO PEDIDO</span><h3>'+title+'</h3><p>'+description+'</p><span class="tag '+(isApproved?'green':'')+'">'+statusTag+'</span></div><div class="billing-return-actions"><button type="button" class="secondary compact" data-action="refresh-credits">Atualizar saldo</button><button type="button" class="secondary compact" data-action="billing-return-close">Fechar aviso</button></div></section>';
+}
+
 let preferredPackage='';
 try{preferredPackage=sessionStorage.getItem('prospector-preferred-package')||'';}catch{}
 let offerType='portfolio';
@@ -161,6 +185,7 @@ function billingOfferDialog(){
  return '<div class="billing-renew-backdrop"><section role="dialog" aria-modal="true" aria-labelledby="billing-renew-title" class="billing-renew-modal"><div class="billing-renew-header"><div><span class="kicker">'+(demo?'DEMONSTRAÇÃO · SEM COBRANÇAS':'RECARREGUE QUANDO PRECISAR')+'</span><h2 id="billing-renew-title">'+(demo?'Como o cliente renova':'Suas abordagens chegaram ao fim')+'</h2><p>'+(demo?'Esta é a experiência quando os 100 créditos gratuitos acabam. Nenhum WhatsApp será acionado.':'Seu painel, treinamento e conversas continuam disponíveis. Para iniciar novas abordagens, escolha uma recarga.')+'</p></div><button type="button" class="billing-renew-close" data-action="billing-reminder-close" aria-label="Fechar aviso de recarga">×</button></div>'+options+'</section></div>';
 }
 function maybeOpenBillingReminder(){
+ if(billingCheckoutReturn)return; // Let the Stripe confirmation status remain visible instead of covering it.
  if(!billingNeedsRenewal()||billingReminderDismissed||billingReminderOpen)return;
  if(!platformContext.demo){try{if(sessionStorage.getItem('prospector-billing-reminder-'+platformContext.id)==='dismissed')return;}catch{}}
  billingReminderOpen=true;render();
@@ -240,7 +265,7 @@ function creditsView(){
  const demoBanner=c.demo?'<section class="panel billing-demo-banner"><span class="kicker">DEMONSTRAÇÃO · SEM PAGAMENTO</span><h3>Visualize a experiência do cliente</h3><p>Esta conta inclui 100 créditos fictícios. Ela permite explorar o painel, mas não envia mensagens nem faz cobranças reais.</p><button type="button" class="primary" data-action="billing-demo-toggle">'+(billingDemoExhausted?'Encerrar simulação':'Simular fim dos 100 créditos')+'</button></section>':'';
  const trialInfo=c.trial?'<section class="panel" style="margin-bottom:18px"><span class="kicker">TESTE GRATUITO · 100 ABORDAGENS</span><h3>'+(c.trial.status==='PENDING'?'Seu teste aguarda a conferência do CPF':c.trial.status==='APPROVED'?'Seu teste gratuito já foi liberado':'Seu teste não foi aprovado')+'</h3><p>'+(c.trial.status==='PENDING'?'Nenhum pagamento é necessário. A liberação das '+Number(c.trial.credits||100)+' abordagens depende de uma verificação confiável do nome completo com o CPF informado. Cada CPF, celular e e-mail pode receber o teste uma única vez.':c.trial.status==='APPROVED'?''+Number(c.trial.credits||100)+' abordagens gratuitas foram creditadas uma única vez. As abordagens usam esse saldo conforme as regras do canal.':'Para esclarecer a verificação de identidade, entre em contato com o suporte Consecom.')+'</p></section>':'';
  return '<div class="workspace-head"><div><span class="kicker">CRÉDITOS SOB DEMANDA</span><h2>Escolha seu ritmo. A IA faz o restante.</h2><p>Sem mensalidade obrigatória. Uma nova abordagem aceita pelo canal consome um crédito; a continuidade da mesma conversa não consome novos créditos de abordagem.</p></div></div>'+
- demoBanner+trialInfo+'<div class="credit-summary-grid"><section class="panel credit-balance"><span>Seu saldo disponível</span><strong>'+esc(c.available??platformContext.available??0)+'</strong><p>créditos de abordagem</p><button class="secondary compact" data-action="refresh-credits">Atualizar saldo</button></section><section class="panel credit-explain"><span class="kicker">COMO FUNCIONA</span><h3>Créditos sem vencimento</h3><p>Escolha um pacote e pague no checkout seguro da Stripe quando estiver disponível. Os créditos são liberados somente após a confirmação de pagamento.</p><p><strong>Importante:</strong> comprar um pacote maior não aumenta o teto de até 250 novas abordagens por dia nem garante entregas.</p></section></div>'+
+ demoBanner+trialInfo+checkoutReturnBanner()+'<div class="credit-summary-grid"><section class="panel credit-balance"><span>Seu saldo disponível</span><strong>'+esc(c.available??platformContext.available??0)+'</strong><p>créditos de abordagem</p><button class="secondary compact" data-action="refresh-credits">Atualizar saldo</button></section><section class="panel credit-explain"><span class="kicker">COMO FUNCIONA</span><h3>Créditos sem vencimento</h3><p>Escolha um pacote e pague no checkout seguro da Stripe quando estiver disponível. Os créditos são liberados somente após a confirmação de pagamento.</p><p><strong>Importante:</strong> comprar um pacote maior não aumenta o teto de até 250 novas abordagens por dia nem garante entregas.</p></section></div>'+
  '<div class="heading credit-package-title"><div><h3>Pacotes disponíveis</h3><p>Escolha o que combina com sua operação.</p></div></div>'+
  (preferredPackage&&packs.some(p=>p.id===preferredPackage)?'<div class="credit-preference"><div><strong>Seu pacote escolhido na landing: '+esc(packs.find(p=>p.id===preferredPackage).name)+'</strong><p>Você já criou seu acesso. Se quiser, envie o pedido para a Consecom liberar os créditos após o pagamento.</p></div><button class="primary" data-action="request-credit-package" data-package="'+esc(preferredPackage)+'">Solicitar pacote selecionado</button></div>':'')+
  '<div class="credit-packages-grid">'+packs.map(p=>'<article class="credit-packet '+(p.id==='dias7'?'featured':'')+'"><div class="credit-packet-top"><span>'+esc(p.name)+'</span>'+(p.id==='dias7'?'<span class="tag green">Mais indicado</span>':'')+'</div><strong class="credit-packet-volume">'+Number(p.credits).toLocaleString('pt-BR')+'</strong><small>abordagens</small><div class="credit-packet-price">'+moneyFromCents(p.priceCents)+'</div><p>'+'R$ '+(p.priceCents/100/p.credits).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:5})+' por abordagem</p><button class="primary" data-action="request-credit-package" data-package="'+esc(p.id)+'">Solicitar '+esc(p.name)+'</button></article>').join('')+'</div>'+
@@ -642,6 +667,10 @@ async function platformAction(action,el){
  if(action==='master-client-close'){masterCreateOpen=false;render();return true;}
  if(action==='refresh-master'){await Promise.all([loadClients(),loadMasterMetrics()]);n('Dados atualizados.');return true;}
  if(action==='refresh-clients'){await loadClients();return true;}
+ if(action==='billing-return-close'){
+  billingCheckoutReturn=null;
+  render();return true;
+ }
  if(action==='billing-reminder-close'){
   billingReminderOpen=false;billingReminderDismissed=true;billingDemoStep=0;
   if(!platformContext.demo){try{sessionStorage.setItem('prospector-billing-reminder-'+platformContext.id,'dismissed');}catch{}}
@@ -667,6 +696,7 @@ async function platformAction(action,el){
   if(!answer)return true;
   const order=await post('/api/platform/credit-requests',{packageId:pack.id,requestKey:crypto.randomUUID()});
   if(!order.checkoutUrl)throw Error('Checkout indisponível. Nenhuma cobrança foi realizada.');
+  try{sessionStorage.setItem('prospector-last-checkout-request',order.request.id);}catch{}
   preferredPackage='';try{sessionStorage.removeItem('prospector-preferred-package');}catch{}
   location.assign(order.checkoutUrl);return true;
  }
@@ -1501,7 +1531,7 @@ setInterval(async()=>{
  await refreshWa();
  if(busy||q("input:focus,textarea:focus,select:focus"))return;
  if(trainingBusy)return;
- if(platformContext.role!=='master'&&Date.now()-billingLastChecked>30000)await loadCredits();
+ if(platformContext.role!=='master'&&Date.now()-billingLastChecked>(billingCheckoutReturn?6000:30000))await loadCredits();
  if(view!=="training"&&trainingState?.runs?.some(x=>x.status==='RUNNING'))await loadTraining();
  if(view==="training"){await loadTraining();return;}
  if(view==="conversations"&&Date.now()-lastRefresh>24000)await reload();
