@@ -53,12 +53,13 @@ export async function receiveWebhook(req){
  if(!safeEq(req.headers["x-webhook-signature"],expected))return {status:401,body:{accepted:false,reason:"BAD_SIGNATURE"}};
  let payload;try{payload=JSON.parse(raw.toString("utf8"));}catch{return {status:400,body:{accepted:false,reason:"BAD_JSON"}};}
  if(payload.event==="test")return {status:200,body:{accepted:true,test:true}};
- if(payload.event!=="message.received")return {status:200,body:{accepted:true,ignored:true}};
+ if(payload.event!=="message.received"&&payload.event!=="message.sent")
+  return {status:200,body:{accepted:true,ignored:true}};
  const data=payload.data||{},key=data.key||{};
  if(data.isGroup===true){
   const sid=String(payload.sessionId||'');
   try{
-   const handled=await receivePrivateGroupWebhook({sessionId:sid,data});
+   const handled=await receivePrivateGroupWebhook({sessionId:sid,data,event:payload.event});
    return {status:200,body:{accepted:true,groupCommand:handled.queued===true,audioQueued:handled.audioQueued===true,
     reason:handled.reason||null}};
   }catch(err){
@@ -66,7 +67,8 @@ export async function receiveWebhook(req){
    return {status:503,body:{accepted:false,reason:'GROUP_COMMAND_UNAVAILABLE'}};
   }
  }
- if(key.fromMe===true||data.fromMe===true)return {status:200,body:{accepted:true,ignored:true}};
+ if(payload.event!=="message.received"||key.fromMe===true||data.fromMe===true)
+  return {status:200,body:{accepted:true,ignored:true}};
  const sid=String(payload.sessionId||"");
  if(!isManagedSession(sid))return {status:200,body:{accepted:true,ignored:true}};
  const jid=String(key.remoteJid||data.from||"");
