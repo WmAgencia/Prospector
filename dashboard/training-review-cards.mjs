@@ -41,6 +41,24 @@ export function publicReviewCards(markdown){
  const visible=sections.length>1?sections.filter(c=>c.index!==0||/^\s*[-*+]\s+\S/m.test(c.raw)):sections;
  return visible.map(({id,index,title,summary,points,editText,count})=>({id,index,title,summary,points,editText,count}));
 }
+// A WhatsApp analysis is evidence to review, never a complete replacement manual.
+// Older reports may not have headings; keep them readable in one explanation card.
+export function analysisSuggestionCards(report){
+ const original=String(report||'').trim().slice(0,9000);
+ if(!original)return [];
+ const structured=/^##\s+\S/m.test(original);
+ if(structured)return publicReviewCards(original).filter(c=>c.count>0).slice(0,12);
+ const cleaned=original.replace(/^#{1,6}\s+/gm,'').replace(/\*\*/g,'').trim();
+ const paragraphs=cleaned.split(/\n\s*\n+/).map(x=>x.trim()).filter(Boolean);
+ const textBody=paragraphs.join('\n\n');
+ if(!textBody)return [];
+ return [{
+  id:sha('legacy-analysis|'+original),index:0,
+  title:'Padrões e sugestões identificados',summary:conciseTrainingSummary(paragraphs),
+  points:cleaned.split(/\n+/).map(x=>x.replace(/^[-*+]\s*/, '').trim()).filter(Boolean).slice(0,80),
+  editText:cleaned,count:paragraphs.length||1
+ }];
+}
 export function reviewTextState(active,existingDraft){
  const draftText=existingDraft?.text||'';
  const markdown=draftText||active||'';
@@ -86,7 +104,7 @@ export function modifyReviewMarkdown(markdown,{action,index,cardId,title,body,ve
 }
 export function createCardDraft(input,activeMarkdown){
  const existing=getSetting('training_draft',null);
- const before=(existing?.source==='interview'?readTrainingMarkdown('draft'):null)||existing?.text||activeMarkdown||'';
+ const before=(existing?.source==='interview'?readTrainingMarkdown('draft'):null)||(existing?.source==='whatsapp'?null:existing?.text)||activeMarkdown||'';
  const next=modifyReviewMarkdown(before,input);
  const interview=existing?.source==='interview';
  // Keep verified interview settings (business identity and closing mode) when
