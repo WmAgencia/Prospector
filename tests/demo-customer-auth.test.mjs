@@ -50,7 +50,7 @@ test('real HTTP demo invitation, client login, 100 credit balance and blocked ou
  assert.equal((await post('/api/whatsapp/connect',{sessionId:'demo'})).status,403);
  assert.equal((await post('/api/prospecting/search',{niche:'café'})).status,403);
  assert.equal((await post('/api/platform/credit-requests',{packageId:'dia1',requestKey:crypto.randomUUID()})).status,422);
- assert.equal((await get('/client/access')).status,403,'client session cannot open admin-only invite endpoint');
+ assert.equal((await get('/client/access')).status,200,'public invitation landing is safe; the fragment token is required for actual account access');
  assert.equal((await get('/api/platform/credits')).status,200);
  assert.equal((await get('/api/state')).status,200,'demo workspace must load normally');
 },{timeout:35000});
