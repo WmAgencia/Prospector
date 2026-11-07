@@ -74,6 +74,7 @@ export function openPlatformStore(root){
  }
  const selectRequest=db.prepare("SELECT r.id,r.client_id,r.package_id,r.credits,r.price_cents,r.status,r.created_at,r.updated_at,c.name AS client_name,c.email AS client_email FROM credit_requests r JOIN clients c ON c.id=r.client_id WHERE r.id=?");
  return {db,get,balance,adjust,publicClient,pending,
+  primaryAccount(){const account=db.prepare('SELECT * FROM clients WHERE is_internal=1').get();return account?.status==='active'?account:null;},
   listCreditRequests(clientId=null){
    return clientId
     ?db.prepare("SELECT r.id,r.client_id,r.package_id,r.credits,r.price_cents,r.status,r.created_at,r.updated_at FROM credit_requests r WHERE r.client_id=? ORDER BY r.created_at DESC LIMIT 100").all(clientId)
