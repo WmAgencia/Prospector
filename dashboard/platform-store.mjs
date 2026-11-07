@@ -56,8 +56,9 @@ export function openPlatformStore(root){
  const pending=id=>Number(db.prepare("SELECT COUNT(*) AS n FROM credit_reservations WHERE client_id=? AND state='RESERVED'").get(id).n);
  const unlimited=r=>r&&(r.is_internal===1||r.plan_id==='unlimited');
  const trial=id=>db.prepare('SELECT status,created_at,reviewed_at FROM free_trial_claims WHERE client_id=?').get(id)||null;
+ const issuedTrialCredits=id=>db.prepare('SELECT amount FROM credit_events WHERE client_id=? AND reference=?').get(id,'free-trial:'+id)?.amount||TRIAL_FREE_CREDITS;
  const publicClient=r=>r?{id:r.id,name:r.name,email:r.email,status:r.status,createdAt:r.created_at,unlimited:unlimited(r),internal:r.is_internal===1,demo:r.is_demo===1,
-  trial:trial(r.id)?{status:trial(r.id).status,credits:TRIAL_FREE_CREDITS,verified:trial(r.id).status==='APPROVED',requestedAt:trial(r.id).created_at}:null,
+  trial:trial(r.id)?{status:trial(r.id).status,credits:trial(r.id).status==='APPROVED'?issuedTrialCredits(r.id):TRIAL_FREE_CREDITS,verified:trial(r.id).status==='APPROVED',requestedAt:trial(r.id).created_at}:null,
   planId:r.is_internal===1?'unlimited':r.plan_id||'credits',customCredits:r.custom_credits||null,customPriceCents:r.custom_price_cents||null,
   phone:r.contact_phone||null,cpfMasked:r.cpf_last4?'***.***.*'+r.cpf_last4.slice(0,2)+'-'+r.cpf_last4.slice(2):null,
   balance:balance(r.id),reserved:unlimited(r)?0:pending(r.id),available:unlimited(r)?null:balance(r.id)-pending(r.id)}:null;
