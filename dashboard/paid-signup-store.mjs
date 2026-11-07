@@ -56,8 +56,22 @@ export function createPaidSignupStore({db,loginPhone}){
      db.exec('COMMIT');return {ok:true,duplicate:true,requestId};
     }
     if(row.status!=='PENDING')throw Error('Pedido inválido');
-    db.prepare("UPDATE paid_signup_orders SET status='PAID',stripe_session_id=?,stripe_event_id=?,customer_email=?,paid_at=? WHERE id=?")
-     .run(sessionId,eventId,email,new Date().toISOString(),requestId);
+    const at=new Date().toISOString();
+    const existing=db.prepare('SELECT * FROM clients WHERE lower(email)=?').get(email);
+    if(existing&&existing.status==='active'&&existing.is_internal!==1&&existing.is_demo!==1&&existing.plan_id!=='unlimited'){
+     // Existing paid/trial client: safely credit the existing account, never reset credentials.
+     db.prepare("INSERT INTO credit_requests(id,client_id,package_id,credits,price_cents,status,request_key,created_at,updated_at) VALUES(?,?,?,?,?,'APPROVED',?,?,?)")
+      .run(row.id,existing.id,row.package_id,row.credits,row.price_cents,row.id,row.created_at,at);
+     db.prepare('INSERT INTO verified_payments VALUES(?,?,?,?,?,?,?)')
+      .run(sessionId,row.id,existing.id,eventId,row.price_cents,row.credits,at);
+     db.prepare('INSERT INTO credit_events VALUES(?,?,?,?,?,?)')
+      .run(crypto.randomUUID(),existing.id,row.credits,'Plano pago Stripe confirmado','stripe-payment:'+row.id,at);
+     db.prepare("UPDATE paid_signup_orders SET status='CLAIMED',stripe_session_id=?,stripe_event_id=?,customer_email=?,paid_at=?,claimed_at=?,client_id=? WHERE id=?")
+      .run(sessionId,eventId,email,at,at,existing.id,row.id);
+    }else{
+     db.prepare("UPDATE paid_signup_orders SET status='PAID',stripe_session_id=?,stripe_event_id=?,customer_email=?,paid_at=? WHERE id=?")
+      .run(sessionId,eventId,email,at,requestId);
+    }
     db.exec('COMMIT');return {ok:true,duplicate:false,requestId};
    }catch(error){db.exec('ROLLBACK');throw error;}
   },
