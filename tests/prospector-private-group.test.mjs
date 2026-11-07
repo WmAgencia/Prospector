@@ -58,7 +58,7 @@ test('second number joins the SAME group, without creating a second group',async
    assert.deepEqual(options.data,{action:'add',participants:[second+'@s.whatsapp.net']});
    return {success:true,result:[{status:'200'}]};
   }
-  return {status:true,data:[group([owner])]};
+  return url.endsWith(encodeURIComponent(jid))?group([owner]):{status:true,data:[group([owner])]};
  };
  const result=await reconcilePrivateGroup({getSessions:both,request,at:date('12:01:00')});
  assert.equal(result.state,'MEMBERSHIP_PENDING');
@@ -66,12 +66,29 @@ test('second number joins the SAME group, without creating a second group',async
  assert.equal(countInvite,1);
  const confirmed=await reconcilePrivateGroup({getSessions:both,request:async(url,options)=>{
   if(options)throw Error('No duplicate membership request');
-  return {status:true,data:[group([owner,second])]};
+  return url.endsWith(encodeURIComponent(jid))?group([owner,second]):{status:true,data:[group([owner,second])]};
  },at:date('12:02:00')});
  assert.equal(confirmed.state,'READY');
  assert.equal(confirmed.members,2);
  assert.equal(countCreate,1);
  assert.equal(countInvite,1);
+});
+test('both WhatsApps online at first run: create empty, then add second using owner',async()=>{
+ const both=pool([...connected,session('prospector-second',second)]);
+ const calls=[];
+ const api=async(url,opts)=>{
+  calls.push({url,opts});
+  if(opts?.method==='POST')return {status:true,data:{group:{id:jid}}};
+  if(opts?.method==='PUT')return {success:true,result:[{status:'200'}]};
+  return group([owner]);
+ };
+ const created=await reconcilePrivateGroup({getSessions:both,request:api,at:date('12:00:00')});
+ assert.equal(created.state,'CREATED');
+ assert.deepEqual(calls[0].opts.data.participants,[]);
+ const synced=await reconcilePrivateGroup({getSessions:both,request:api,at:date('12:01:00')});
+ assert.equal(synced.state,'MEMBERSHIP_PENDING');
+ assert.deepEqual(calls.find(x=>x.opts?.method==='PUT').opts.data.participants,[second+'@s.whatsapp.net']);
+ assert.equal(calls.filter(x=>x.opts?.method==='POST').length,1);
 });
 test('temporary gateway rejection is retried with zero invited members after cooldown',async()=>{
  let create=0;
@@ -108,7 +125,7 @@ test('does not adopt unrelated same-name groups or add unknown people',async()=>
  let create=0;
  const request=async(url,options)=>{
   if(options?.method==='POST'){create++;throw Error('WA-AKG error');}
-  return {status:true,data:[group([owner,'5515999994444'])]};
+  return url.endsWith(encodeURIComponent(jid))?group([owner,'5515999994444']):{status:true,data:[group([owner,'5515999994444'])]};
  };
  await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')});
  const next=await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:04:00')});
@@ -135,7 +152,7 @@ test('disconnect/reconnect of owner does not lead to another group creation',asy
  let create=0;
  const request=async(url,opts)=>{
   if(opts?.method==='POST'){create++;return {status:true,data:{group:{id:jid}}};}
-  return {status:true,data:[group([owner])]};
+  return url.endsWith(encodeURIComponent(jid))?group([owner]):{status:true,data:[group([owner])]};
  };
  await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')});
  const disconnected=await reconcilePrivateGroup({getSessions:pool([session('prospector-second',second)]),request,at:date('12:01:00')});
