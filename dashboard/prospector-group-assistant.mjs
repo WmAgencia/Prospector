@@ -149,7 +149,6 @@ export async function sendGroupMessage({sessionId,groupId,text,request=waRequest
  // A positive ack means gateway accepted, not necessarily delivered to every phone.
  return {ok:payload.status===true,acceptedId:String(payload.data?.key?.id||payload.data?.id||'')};
 }
-const pending=[];
 let running=false;
 export async function receivePrivateGroupWebhook({sessionId,data={},request=waRequest}={}){
  const key=data.key||{},groupId=String(key.remoteJid||data.from||'');
@@ -159,7 +158,7 @@ export async function receivePrivateGroupWebhook({sessionId,data={},request=waRe
  if(!authorized.ok)return {handled:true,accepted:false,reason:authorized.reason};
  const messageId=String(key.id||data.id||'');
  if(!ID.test(messageId))return {handled:true,accepted:false,reason:'INVALID_MESSAGE_ID'};
- const unique=sessionId+':'+messageId;
+ const unique=groupId+':'+messageId;
  if(one('SELECT 1 FROM prospector_group_commands WHERE event_id=?',unique)||
     one('SELECT 1 FROM prospector_group_audio WHERE event_id=?',unique))
   return {handled:true,accepted:true,duplicate:true};
@@ -180,8 +179,7 @@ export async function queueGroupCommand({unique,sessionId,groupId,sender,text,re
  const inserted=run('INSERT OR IGNORE INTO prospector_group_commands(event_id,group_jid,sender_jid,session_id,kind,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
  unique,groupId,sender,sessionId,'TEXT',String(text).slice(0,2200),'PENDING',now(),now());
  if(!inserted.changes)return {handled:true,accepted:true,duplicate:true};
- pending.push({unique,request});
- setImmediate(()=>processGroupCommands().catch(err=>console.warn('[group command]',String(err?.message||err).slice(0,100))));
+ setImmediate(()=>processGroupCommands({request}).catch(err=>console.warn('[group command]',String(err?.message||err).slice(0,100))));
  return {handled:true,accepted:true,queued:true};
 }
 export async function processGroupCommands({ask=groqChat,request=waRequest}={}){
