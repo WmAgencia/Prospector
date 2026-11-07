@@ -44,7 +44,9 @@ function getMembership(entry){
  if(!participants)return null;
  const numbers=new Set();
  for(const item of participants){
-  const value=typeof item==='string'?item:item?.id||item?.jid||'';
+  // WhatsApp may use LIDs internally; prefer the separately supplied
+  // verified phone-number JID, rather than treating an opaque LID as a phone.
+  const value=typeof item==='string'?item:item?.phoneNumber||item?.phone_number||item?.phone||item?.id||item?.jid||'';
   const number=jidNumber(value);
   if(!number)return {numbers,unknown:true};
   numbers.add(number);
