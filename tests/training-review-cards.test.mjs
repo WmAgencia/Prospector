@@ -75,6 +75,14 @@ test('duplicate identical headings are edited/deleted by exact position, never b
  assert.ok(removed.includes('## Fechamento'));
  assert.ok(!removed.includes('## Regras da segunda parte'));
 });
+test('editing a long approved card keeps the text beyond its visible preview',()=>{
+ const bullets=Array.from({length:100},(_,i)=>'- Quando surgir uma situação comercial '+(i+1)+', confirme apenas as condições aprovadas pela empresa.').join('\n');
+ const long='# Manual de atendimento\n\n## Orientações completas\n'+bullets+'\n';
+ const card=reviewTextState(long,null).cards[0];
+ assert.equal(card.points.length,80,'Expanded preview intentionally limits list height');
+ assert.match(card.editText,/situação comercial 100/);
+ assert.ok(card.editText.length>card.summary.length);
+});
 test(' UI has no plain Markdown preview; includes search, add/edit, material review, checklist and analysis',()=>{
  const src=fs.readFileSync(new URL('../dashboard/public/simple-app.js',import.meta.url),'utf8');
  assert.match(src,/id="training-review-search"/);
