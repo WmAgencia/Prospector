@@ -29,7 +29,7 @@ test('history analysis learns only sent text; reports require explicit revision 
 });
 test('manual training merges guidance into a reviewable draft and preserves the approved version',async()=>{
  await call('/api/training/chat',{text:'Explique que vendemos consultoria e chame o gestor para aprovar valores.'},async()=>({choice:{content:'Oferecer consultoria. Encaminhar valores para o gestor.'}}));
- assert.equal(d.getSetting('training_draft').source,'manual');assert.match(d.getSetting('training_active').text,/Respostas curtas/);
+ assert.equal(d.getSetting('training_draft').source,'manual');assert.match(training.readActiveTrainingMarkdown(),/Respostas curtas/);
  assert.equal((await call('/api/training/edit',{})).status,200);assert.match(d.getSetting('training_draft').text,/Respostas curtas/);
  assert.equal((await call('/api/training/analyze',{mode:'selected',keys:['forged-key']})).status,422);
 });
