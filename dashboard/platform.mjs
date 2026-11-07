@@ -16,6 +16,23 @@ const isWorker=!!process.env.PROSPECTOR_TENANT_ID;
 const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform');
 let store;
 const registry=()=>store||=openPlatformStore(root);
+// Read-only Master account verification, opt-in through a target e-mail SHA-256.
+// Emits booleans only; never logs credentials, account identifiers or personal data.
+if(!isWorker&&process.env.PROSPECTOR_MASTER_DIAGNOSTIC_EMAIL_HASH){
+ try{
+  const db=registry().db;
+  const owner=db.prepare('SELECT id,email,status FROM clients WHERE is_internal=1').get();
+  const expected=String(process.env.PROSPECTOR_MASTER_DIAGNOSTIC_EMAIL_HASH).trim();
+  const emailHash=crypto.createHash('sha256').update(String(owner?.email||'').trim().toLowerCase()).digest('hex');
+  console.info('[master account check]',JSON.stringify({
+   masterExists:!!owner,
+   requestedEmailMatches:!!owner&&emailHash===expected,
+   passwordConfigured:!!owner&&registry().hasPassword(owner.id),
+   accountActive:owner?.status==='active'
+  }));
+ }catch(err){console.warn('[master account check] unavailable:',String(err?.code||'error').slice(0,60));}
+}
+
 const workers=new Map(),starting=new Map(),limiter=createAccessLimiter();
 const signupLimiter=createAccessLimiter({limit:5}),passwordLimiter=createAccessLimiter({limit:10});
 const accountPasswordLimiter=createAccessLimiter({limit:10});
