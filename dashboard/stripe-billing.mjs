@@ -43,7 +43,10 @@ export function verifyStripeSignature(raw,header,secret,now=Date.now()){
 export async function handleStripeWebhook(req,res,{respond,ledger}){
  if(req.method!=='POST'){respond(res,405,{error:'Método não permitido'});return;}
  const secret=process.env.STRIPE_PROSPECTOR_WEBHOOK_SECRET;
- if(!billingReady()){respond(res,503,{error:'Faturamento automático ainda não está configurado'});return;}
+ // The Consecom Stripe account also processes other businesses' checkouts.
+ // Verify the signature, then ACK unrelated checkout events without retries.
+ // Do not require every Prospector plan to be enabled merely to validate events.
+ if(!secret?.startsWith('whsec_')){respond(res,503,{error:'Assinatura Stripe ainda não configurada'});return;}
  const chunks=[];let bytes=0;
  for await (const chunk of req){bytes+=chunk.length;if(bytes>256_000){respond(res,413,{error:'Evento grande demais'});return;}chunks.push(chunk);}
  const raw=Buffer.concat(chunks);
