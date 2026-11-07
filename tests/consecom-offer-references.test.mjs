@@ -20,7 +20,7 @@ db.run("INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VAL
 db.getThread(lead.id,jid);
 const src='offer-ab:'+lead.id;
 db.run("INSERT INTO consecom_offer_ab(lead_id,session_id,variant,phase,provider_id,status,created_at,sent_at,updated_at) VALUES(?,?,'TEXT',0,?,'SENT',?,?,?)",lead.id,'test-session',src,t,t,t);
-db.run("CREATE TABLE IF NOT EXISTS waakg_inbox(jid TEXT,received_at TEXT)");
+db.run("CREATE TABLE IF NOT EXISTS waakg_inbox(jid TEXT,received_at TEXT,session_id TEXT,lead_id TEXT)");
 function schedule(dueMs){
  db.run("INSERT INTO consecom_offer_references(lead_id,session_id,jid,source_provider_id,state,due_at,created_at,updated_at) VALUES(?,?,?,?,'WAITING',?,?,?) ON CONFLICT(lead_id) DO UPDATE SET state='WAITING',due_at=excluded.due_at,reason=NULL,updated_at=excluded.updated_at",lead.id,'test-session',jid,src,new Date(dueMs).toISOString(),t,t);
 }
