@@ -14,6 +14,7 @@ export function openPlatformStore(root){
  db.exec(`CREATE TABLE IF NOT EXISTS client_passwords(client_id TEXT PRIMARY KEY REFERENCES clients(id),email TEXT NOT NULL UNIQUE,salt TEXT NOT NULL,password_hash TEXT NOT NULL,privacy_version TEXT NOT NULL,created_at TEXT NOT NULL);`);
  const clientCols=db.prepare('PRAGMA table_info(clients)').all().map(x=>x.name);
  if(!clientCols.includes('is_internal'))db.exec('ALTER TABLE clients ADD COLUMN is_internal INTEGER NOT NULL DEFAULT 0');
+ if(!clientCols.includes('is_demo'))db.exec('ALTER TABLE clients ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0');
  for(const [column,definition] of [['plan_id',"TEXT NOT NULL DEFAULT 'credits'"],['custom_credits','INTEGER'],['custom_price_cents','INTEGER'],['contact_phone','TEXT'],['cpf_last4','TEXT'],['cpf_digest','TEXT']])
   if(!clientCols.includes(column))db.exec('ALTER TABLE clients ADD COLUMN '+column+' '+definition);
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS only_one_internal_client ON clients(is_internal) WHERE is_internal=1');
@@ -55,7 +56,7 @@ export function openPlatformStore(root){
  const pending=id=>Number(db.prepare("SELECT COUNT(*) AS n FROM credit_reservations WHERE client_id=? AND state='RESERVED'").get(id).n);
  const unlimited=r=>r&&(r.is_internal===1||r.plan_id==='unlimited');
  const trial=id=>db.prepare('SELECT status,created_at,reviewed_at FROM free_trial_claims WHERE client_id=?').get(id)||null;
- const publicClient=r=>r?{id:r.id,name:r.name,email:r.email,status:r.status,createdAt:r.created_at,unlimited:unlimited(r),internal:r.is_internal===1,
+ const publicClient=r=>r?{id:r.id,name:r.name,email:r.email,status:r.status,createdAt:r.created_at,unlimited:unlimited(r),internal:r.is_internal===1,demo:r.is_demo===1,
   trial:trial(r.id)?{status:trial(r.id).status,credits:TRIAL_FREE_CREDITS,verified:trial(r.id).status==='APPROVED',requestedAt:trial(r.id).created_at}:null,
   planId:r.is_internal===1?'unlimited':r.plan_id||'credits',customCredits:r.custom_credits||null,customPriceCents:r.custom_price_cents||null,
   phone:r.contact_phone||null,cpfMasked:r.cpf_last4?'***.***.*'+r.cpf_last4.slice(0,2)+'-'+r.cpf_last4.slice(2):null,
@@ -75,6 +76,15 @@ export function openPlatformStore(root){
  const selectRequest=db.prepare("SELECT r.id,r.client_id,r.package_id,r.credits,r.price_cents,r.status,r.created_at,r.updated_at,c.name AS client_name,c.email AS client_email FROM credit_requests r JOIN clients c ON c.id=r.client_id WHERE r.id=?");
  return {db,get,balance,adjust,publicClient,pending,
   primaryAccount(){const account=db.prepare('SELECT * FROM clients WHERE is_internal=1').get();return account?.status==='active'?account:null;},
+  ensureDemoClient(){
+   const email='demo.prospector@exemplo.invalid';
+   let row=db.prepare('SELECT * FROM clients WHERE lower(email)=?').get(email);
+   if(row){if(row.is_demo!==1)throw Error('Endereço reservado já pertence a outra conta');return publicClient(row);}
+   const created=this.create({name:'Agência Exemplo · Demonstração',email,planId:'credits'});
+   db.prepare('UPDATE clients SET is_demo=1 WHERE id=?').run(created.client.id);
+   this.adjust(created.client.id,100,'Créditos fictícios para demonstração','demo-credit-initial-v1');
+   return publicClient(get(created.client.id));
+  },
   listCreditRequests(clientId=null){
    return clientId
     ?db.prepare("SELECT r.id,r.client_id,r.package_id,r.credits,r.price_cents,r.status,r.created_at,r.updated_at FROM credit_requests r WHERE r.client_id=? ORDER BY r.created_at DESC LIMIT 100").all(clientId)
@@ -82,7 +92,7 @@ export function openPlatformStore(root){
   },
   requestCredits(clientId,packageId,requestKey){
    const client=get(clientId),pack=getCreditPackage(packageId);
-   if(!client||client.status!=='active'||unlimited(client))throw Error('Conta indisponível para recarga');
+   if(!client||client.status!=='active'||unlimited(client)||client.is_demo===1)throw Error('Conta de demonstração não realiza pagamentos. Abra uma conta real para comprar créditos.');
    if(!pack)throw Error('Pacote inválido');
    if(!/^[a-f0-9-]{36}$/i.test(String(requestKey||'')))throw Error('Identificador da solicitação inválido');
    db.exec('BEGIN IMMEDIATE');try{
