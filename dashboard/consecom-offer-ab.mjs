@@ -16,15 +16,14 @@ const allowed=()=>!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENA
 const outreachPaused=()=>ownerProspectionPaused()||getSetting('paused',true)===true;
 const daySP=date=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);
 const datePattern=/^\d{4}-\d{2}-\d{2}$/;
-const isMonday=d=>new Date(d+'T12:00:00Z').getUTCDay()===1;
 // The text variant uses the transcribed original audio, not a separate sales pitch.
 export {OFFER_AB_TEXT} from './consecom-offer-copy.mjs';
-import {OFFER_AB_TEXT} from './consecom-offer-copy.mjs';
+import {OFFER_AB_TEXT,OFFER_AB_COPY_VERSION,offerDeadlineMatchesScript} from './consecom-offer-copy.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS consecom_offer_ab(lead_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,variant TEXT NOT NULL CHECK(variant IN ('AUDIO','TEXT')),phase INTEGER NOT NULL,provider_id TEXT UNIQUE NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,sent_at TEXT,updated_at TEXT NOT NULL,reason TEXT)");
 db.exec("CREATE INDEX IF NOT EXISTS ix_consecom_offer_ab_variant ON consecom_offer_ab(variant,status,sent_at)");
 run("UPDATE consecom_offer_ab SET status='UNKNOWN',reason='Send interrupted; do not resend without manual verification',updated_at=? WHERE status='SENDING'",now());
-const baseConfig={enabled:false,audioMediaId:null,deadlineMonday:null,confirmedAt:null,startDate:null,rotationDays:7};
+const baseConfig={enabled:false,audioMediaId:null,audioCopyVersion:null,portfolioDueDate:null,confirmedAt:null,startDate:null,rotationDays:7};
 const config=()=>({...baseConfig,...(getSetting(KEY,null)||{})});
 const mediaRecord=c=>{
  if(!c.audioMediaId)return null;
@@ -37,19 +36,15 @@ const mediaRecord=c=>{
  try{const st=fs.lstatSync(file);if(st.isSymbolicLink()||!st.isFile()||st.size!==item.bytes)return null;}catch{return null;}
  return {...item,file};
 };
-function deadlineReady(c,at=new Date()){
- if(!datePattern.test(c.deadlineMonday||'')||!isMonday(c.deadlineMonday))return false;
- const today=daySP(at),days=Math.round((Date.parse(c.deadlineMonday)-Date.parse(today))/86400000);
- // "na segunda-feira" in the original audio is meaningful ONLY while that
- // delivery is upcoming. Fail closed after expiry rather than alter the audio.
- return days>=0&&days<=7&&!!c.confirmedAt;
-}
+const deadlineReady=(c,at=new Date())=>offerDeadlineMatchesScript(c,at);
 export function offerAbConfig(){
  const c=config(),asset=mediaRecord(c),sessions=managedSessions();
- return {enabled:c.enabled,paused:outreachPaused(),assetReady:!!asset,audioMediaId:c.audioMediaId,
-  deadlineMonday:c.deadlineMonday,deadlineReady:deadlineReady(c),startDate:c.startDate,
+ const audioCurrent=!!asset&&c.audioCopyVersion===OFFER_AB_COPY_VERSION;
+ return {enabled:c.enabled,paused:outreachPaused(),assetReady:audioCurrent,audioNeedsUpdate:!!asset&&!audioCurrent,
+  audioMediaId:audioCurrent?c.audioMediaId:null,copyVersion:OFFER_AB_COPY_VERSION,
+  portfolioDueDate:c.portfolioDueDate,deadlineReady:deadlineReady(c),startDate:c.startDate,
   rotationDays:c.rotationDays,sessionA:sessions[0]?.label||null,sessionB:sessions[1]?.label||null,
-  availableSessions:sessions.length,ready:allowed()&&c.enabled&&!outreachPaused()&&!!asset&&sessions.length>=1&&deadlineReady(c)};
+  availableSessions:sessions.length,ready:allowed()&&c.enabled&&!outreachPaused()&&audioCurrent&&sessions.length>=1&&deadlineReady(c)};
 }
 export function offerAbStatus(){
  if(!allowed())return {available:false,reason:'CONSECOM_ONLY'};
@@ -64,24 +59,27 @@ export function offerAbStatus(){
  }
  return {available:true,config:c,counts:totals,metrics,design:'alternating eligible leads in chronological assignment order, AUDIO then TEXT, independent of WhatsApp session',note:'No spam-evasion guarantees; measure only permission-based conversations'};
 }
-export function attachOriginalAbAudio(mediaId){
+export function attachOriginalAbAudio(mediaId,{confirmedScript=false}={}){
  if(!allowed())throw Error('CONSECOM_ONLY');
+ if(confirmedScript!==true)throw Error('Confirme que este áudio foi regravado com o roteiro atualizado.');
  const audioMediaId=String(mediaId||'');
  const candidate=mediaRecord({...config(),audioMediaId});
- if(!candidate)throw Error('Envie o áudio OGG original para a biblioteca antes de selecioná-lo.');
- const c={...config(),audioMediaId,enabled:false};
- setSetting(KEY,c);audit('OFFER_AB_AUDIO_REGISTERED',null,{mediaId:audioMediaId,bytes:candidate.bytes});
+ if(!candidate)throw Error('Envie o novo áudio OGG para a biblioteca antes de selecioná-lo.');
+ const c={...config(),audioMediaId,audioCopyVersion:OFFER_AB_COPY_VERSION,enabled:false};
+ setSetting(KEY,c);audit('OFFER_AB_AUDIO_REGISTERED',null,{mediaId:audioMediaId,bytes:candidate.bytes,copyVersion:OFFER_AB_COPY_VERSION});
  return offerAbStatus();
 }
-export function setOfferAbPlan({deadlineMonday,startDate,enabled=false}={}){
+export function setOfferAbPlan({portfolioDueDate,startDate,enabled=false}={}){
  if(!allowed())throw Error('CONSECOM_ONLY');
- const delivery=String(deadlineMonday||'').trim(),start=String(startDate||daySP(new Date())).trim();
- if(!datePattern.test(delivery)||!isMonday(delivery))throw Error('Informe uma segunda-feira real para a promessa gravada no áudio.');
+ const delivery=String(portfolioDueDate||'').trim(),start=String(startDate||daySP(new Date())).trim();
+ if(!datePattern.test(delivery)||!Number.isFinite(Date.parse(delivery+'T12:00:00Z'))||new Date(delivery+'T12:00:00Z').toISOString().slice(0,10)!==delivery)
+  throw Error('Informe a data real de entrega do portfólio.');
  if(!datePattern.test(start))throw Error('Informe a data inicial AAAA-MM-DD.');
- const next={...config(),deadlineMonday:delivery,confirmedAt:now(),startDate:start,enabled:enabled===true};
- if(next.enabled&&(!mediaRecord(next)||outreachPaused()))throw Error('Não é possível ativar enquanto pausado ou sem áudio cadastrado.');
+ const next={...config(),portfolioDueDate:delivery,confirmedAt:now(),startDate:start,enabled:enabled===true};
+ if(next.enabled&&(!mediaRecord(next)||next.audioCopyVersion!==OFFER_AB_COPY_VERSION||outreachPaused()||!deadlineReady(next)))
+  throw Error('Ativação indisponível: envie o novo áudio, confirme o prazo de três dias e libere a prospecção.');
  setSetting(KEY,next);
- audit('OFFER_AB_PLAN_SAVED',null,{enabled:next.enabled,deadlineMonday:next.deadlineMonday,startDate:next.startDate});
+ audit('OFFER_AB_PLAN_SAVED',null,{enabled:next.enabled,portfolioDueDate:delivery,startDate:start,copyVersion:OFFER_AB_COPY_VERSION});
  return offerAbStatus();
 }
 export function offerAbDecision({leadId,sessionId,at=new Date()}={}){
@@ -89,8 +87,8 @@ export function offerAbDecision({leadId,sessionId,at=new Date()}={}){
  const c=config();
  if(!c.enabled)return {eligible:false,reason:'EXPERIMENT_DISABLED'};
  if(outreachPaused())return {eligible:false,reason:'OWNER_PAUSED'};
- if(!mediaRecord(c))return {eligible:false,reason:'AUDIO_NOT_READY'};
- if(!deadlineReady(c,at))return {eligible:false,reason:'MONDAY_CLAIM_UNVERIFIED_OR_EXPIRED'};
+ if(!mediaRecord(c)||c.audioCopyVersion!==OFFER_AB_COPY_VERSION)return {eligible:false,reason:'UPDATED_AUDIO_NOT_READY'};
+ if(!deadlineReady(c,at))return {eligible:false,reason:'THREE_DAY_CLAIM_UNVERIFIED_OR_EXPIRED'};
  if(!datePattern.test(c.startDate||'')||daySP(at)<c.startDate)return {eligible:false,reason:'NOT_STARTED'};
  if(!leadId||leadSession(leadId)!==sessionId||!isManagedSession(sessionId))return {eligible:false,reason:'SESSION_MISMATCH'};
  const prior=one("SELECT variant,status FROM consecom_offer_ab WHERE lead_id=?",leadId);
@@ -115,6 +113,7 @@ export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=n
  const status=await connected(sessionId);
  if(!status?.connected)return {state:'NOT_SENT',reason:'WA_OFFLINE'};
  if(outreachPaused())return {state:'NOT_SENT',reason:'OWNER_PAUSED'};
+ if(!deadlineReady(config(),new Date())||config().audioCopyVersion!==OFFER_AB_COPY_VERSION)return {state:'NOT_SENT',reason:'OUTDATED_SCRIPT_OR_DEADLINE'};
  const current=one("SELECT provider_id,state FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",jid);
  if(!current||current.provider_id!==providerId||current.state!=='REVIEW'||!prospectorChatEligible({jid,sessionId})||
     one("SELECT phone FROM suppressions WHERE phone=?",String(jid).split('@')[0]))
