@@ -13,7 +13,7 @@ test('landing shows all credit packages and explicitly says no automatic charge'
   assert.ok(landingJs.includes(name+':'));
  }
  for(const p of ['9,90','25,90','59,90','109,90','219,90'])assert.ok(landing.includes(p));
- assert.match(landing,/não realiza cobrança automática/);
+ assert.match(landing,/sem cobrança automática|não realiza cobrança automática/i);
 });
 test('workspace exposes billing, logout, consent and Master UX elements',()=>{
  for(const t of ['data-action="logout-client"','function masterCreditRequests','credit-request-approve','master-directory-toolbar','client-status-filter','training-all-confirm','setup-progress','request-credit-package'])assert.ok(app.includes(t),t);
