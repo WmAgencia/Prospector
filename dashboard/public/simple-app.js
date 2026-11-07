@@ -11,7 +11,7 @@ try{
  if(new URLSearchParams(location.search).get('pagamento')==='retorno'){
   billingCheckoutReturn={requestId:sessionStorage.getItem('prospector-last-checkout-request')||'',startedAt:Date.now()};
   // Remove the query parameter so refreshes do not falsely suggest another return.
-  const clean=new URL(location.href);clean.searchParams.delete('pagamento');
+  const clean=new URL(location.href);clean.searchParams.delete('pagamento');clean.hash='#/credits';
   history.replaceState(null,'',clean.pathname+clean.search+clean.hash);
  }
 }catch{}
@@ -727,7 +727,7 @@ async function platformAction(action,el){
   const order=await post('/api/platform/credit-requests/'+encodeURIComponent(id)+'/checkout',{});
   if(!order.checkoutUrl&&!order.clientSecret)throw Error('Checkout temporariamente indisponível.');
   try{sessionStorage.setItem('prospector-last-checkout-request',id);}catch{}
-  if(order.clientSecret){await openProspectorCheckout(order);return true;}
+  if(order.clientSecret){try{await openProspectorCheckout(order);return true;}catch(e){if(!order.checkoutUrl)throw e;}}
   location.assign(order.checkoutUrl);return true;
  }
  if(action==='request-credit-package'){
@@ -740,7 +740,7 @@ async function platformAction(action,el){
   if(!order.checkoutUrl&&!order.clientSecret)throw Error('Checkout indisponível. Nenhuma cobrança foi realizada.');
   try{sessionStorage.setItem('prospector-last-checkout-request',order.request.id);}catch{}
   preferredPackage='';try{sessionStorage.removeItem('prospector-preferred-package');}catch{}
-  if(order.clientSecret){await openProspectorCheckout(order);return true;}
+  if(order.clientSecret){try{await openProspectorCheckout(order);return true;}catch(e){if(!order.checkoutUrl)throw e;}}
   location.assign(order.checkoutUrl);return true;
  }
  if(action==='credit-request-approve'||action==='credit-request-decline'){
