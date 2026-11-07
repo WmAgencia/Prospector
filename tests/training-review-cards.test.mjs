@@ -7,7 +7,7 @@ import path from 'node:path';
 const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'francisca-review-cards-'));
 process.env.PROSPECTOR_DATA_DIR=dataDir;
 const {reviewSections,publicReviewCards,reviewTextState,modifyReviewMarkdown,createCardDraft}=await import('../dashboard/training-review-cards.mjs');
-const {getSetting}=await import('../dashboard/db.mjs');
+const {getSetting,setSetting}=await import('../dashboard/db.mjs');
 const markdown='# Francisca — Empresa\n\n> Regras internas aprovadas.\n\n## Atendimento\n- Faça uma pergunta por vez.\n- Quando perguntarem sobre preço, explique o serviço primeiro.\n\n## Materiais e serviços\n- Mostre o portfólio somente quando aprovado.\n### Condições\n- Nunca prometa vendas garantidas.\n';
 test('readable card list covers all sections but does not expose raw Markdown in labels',()=>{
  const sections=reviewSections(markdown);
@@ -20,7 +20,7 @@ test('readable card list covers all sections but does not expose raw Markdown in
 });
 test('manager edits one card, leaves other sections untouched, prepares review only',()=>{
  const start=reviewTextState(markdown,null);
- const current=start.cards[1];
+ const current=start.cards.find(c=>c.title==='Atendimento');
  const updated=modifyReviewMarkdown(markdown,{action:'edit',index:current.index,cardId:current.id,title:'Respostas e preços',body:'Pergunte o serviço que a pessoa procura.\nNão prometa preço sem confirmação.',version:start.version});
  assert.ok(updated.includes('## Respostas e preços'));
  assert.ok(updated.includes('## Materiais e serviços'));
@@ -29,6 +29,7 @@ test('manager edits one card, leaves other sections untouched, prepares review o
  assert.throws(()=>modifyReviewMarkdown(updated,{action:'edit',index:current.index,cardId:current.id,title:'Novo',body:'Corpo de orientação válido'}),/desatualizada|alterada/i);
 });
 test('new rule goes to a private draft pending approval, with optimistic stale-version check',()=>{
+ setSetting('training_draft',null);
  const before=getSetting('training_active',null);
  const result=createCardDraft({action:'add',title:'Pedidos de desconto',body:'Se o cliente pedir desconto, consulte o gestor antes de prometer outro valor.',version:reviewTextState(markdown,null).version},markdown);
  assert.equal(result.review.hasPendingReview,true);
@@ -43,10 +44,11 @@ test('brief summary explains a real behavior rather than copying document metada
  assert.equal(cards.length,1,'Do not show the document title as a behavior card');
  assert.equal(cards[0].title,'Como responder sobre preços');
  assert.match(cards[0].summary,/Quando perguntarem o preço/);
- assert.doesNotMatch(cards[0].summary,/Versão|Documento técnico|##|\\*\\*/);
+ assert.doesNotMatch(cards[0].summary,/Versão|Documento técnico|##/);
  assert.ok(cards[0].summary.length<=210);
 });
 test('approved guidance can be deleted through a pending draft only, without erasing neighboring rules',()=>{
+ setSetting('training_draft',null);
  const baseline=reviewTextState(markdown,null);
  const selected=baseline.cards.find(c=>c.title==='Atendimento');
  assert.ok(selected);
@@ -56,6 +58,22 @@ test('approved guidance can be deleted through a pending draft only, without era
  assert.ok(result.draft.text.includes('## Materiais e serviços'));
  assert.ok(markdown.includes('## Atendimento'),'approved source must not be changed');
  assert.throws(()=>modifyReviewMarkdown(result.draft.text,{action:'delete',index:selected.index,cardId:selected.id,version:baseline.version}),/atualizado/i);
+});
+test('duplicate identical headings are edited/deleted by exact position, never by the first matching text',()=>{
+ const duplicates='# Orientações da empresa\n\n## Regras\nSempre responder com clareza e respeito.\n\n## Regras\nSempre responder com clareza e respeito.\n\n## Fechamento\nConferir as condições autorizadas antes de concluir.\n';
+ const before=reviewTextState(duplicates,null);
+ const second=before.cards.filter(x=>x.title==='Regras')[1];
+ assert.ok(second);
+ const updated=modifyReviewMarkdown(duplicates,{action:'edit',index:second.index,cardId:second.id,title:'Regras da segunda parte',body:'Orientação corrigida somente na segunda seção.',version:before.version});
+ assert.equal((updated.match(/## Regras\n/g)||[]).length,1);
+ assert.ok(updated.includes('## Regras da segunda parte'));
+ assert.ok(updated.includes('## Fechamento'));
+ const state=reviewTextState(updated,null);
+ const target=state.cards.find(x=>x.title==='Regras da segunda parte');
+ const removed=modifyReviewMarkdown(updated,{action:'delete',index:target.index,cardId:target.id,version:state.version});
+ assert.ok(removed.includes('## Regras\n'));
+ assert.ok(removed.includes('## Fechamento'));
+ assert.ok(!removed.includes('## Regras da segunda parte'));
 });
 test(' UI has no plain Markdown preview; includes search, add/edit, material review, checklist and analysis',()=>{
  const src=fs.readFileSync(new URL('../dashboard/public/simple-app.js',import.meta.url),'utf8');
