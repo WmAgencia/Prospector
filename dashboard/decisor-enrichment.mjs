@@ -71,18 +71,34 @@ export function declaredCnpj(leadId){
 async function candidateCnpjs(lead){
  const official=declaredCnpj(lead.id);
  if(official)return [official];
- if(process.env.BRAVE_SEARCH_API_KEY!==undefined&&process.env.BRAVE_SEARCH_API_KEY!==''){
+ const found=new Set();
+ // Free local lookup in the operator-imported official CNPJ registry.
+ // This works even without a paid search API; exact address still must
+ // be checked against the CNPJ provider before any number is considered.
+ const imported=all(
+  "SELECT l.business,o.identity,o.details FROM lead_origins o JOIN leads l ON l.id=o.lead_id WHERE o.source='cnpj' AND l.city=? COLLATE NOCASE ORDER BY o.at DESC LIMIT 400",
+  lead.city||'');
+ const q=clean(lead.business);
+ for(const row of imported){
+  const n=clean(row.business);
+  if(n!==q&&!n.startsWith(q+' ltda')&&!n.startsWith(q+' me')&&!n.startsWith(q+' eireli'))continue;
+  let details={};try{details=JSON.parse(row.details||'{}')}catch{}
+  const c=cnpjDigits(details.reference||row.identity);
+  if(validCnpj(c))found.add(c);
+  if(found.size>=3)break;
+ }
+ if(found.size)return [...found];
+ // Search is optional: no automatic scraping of protected directories.
+ if(process.env.BRAVE_SEARCH_API_KEY){
   const query='"'+String(lead.business).replace(/["']/g,'').slice(0,85)+'" "'+String(lead.city).replace(/["']/g,'').slice(0,65)+'" CNPJ';
   const results=await braveSearch(query,5).catch(()=>[]);
-  const found=new Set();
   for(const item of results){
    const snippet=String(item.title||'')+' '+String(item.description||'');
    for(const match of snippet.matchAll(/\b\d{2}[.]?\d{3}[.]?\d{3}[/]?\d{4}[-]?\d{2}\b/g))
     if(validCnpj(match[0]))found.add(cnpjDigits(match[0]));
   }
-  return [...found].slice(0,3);
  }
- return [];
+ return [...found].slice(0,3);
 }
 async function queryProvider(cnpj,provider,{fetchImpl=fetch}={}){
  const response=await fetchImpl(provider.url(cnpj),{headers:{Accept:'application/json'},signal:AbortSignal.timeout(8500)});
