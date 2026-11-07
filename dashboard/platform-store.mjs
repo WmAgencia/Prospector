@@ -224,6 +224,26 @@ export function openPlatformStore(root){
     db.exec('COMMIT');return publicClient(get(client.id));
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
+  recoverPrimaryCredentials({email,password}={}){
+   // Only invoked through the separately authenticated legacy-administrator API.
+   // Never creates/promotes a client or accepts a different owner email.
+   const expected=String(email||'').trim().toLowerCase(),newPassword=String(password||'');
+   if(!expected||newPassword.length<12||newPassword.length>128)throw Error('Informe o e-mail atual do Master e uma nova senha de pelo menos 12 caracteres');
+   db.exec('BEGIN IMMEDIATE');try{
+    const owner=db.prepare('SELECT id,email,status FROM clients WHERE is_internal=1').get();
+    if(!owner||owner.status!=='active'||owner.email.trim().toLowerCase()!==expected)
+     throw Error('Não foi possível verificar esta conta Master');
+    const existing=db.prepare('SELECT 1 FROM client_passwords WHERE client_id=?').get(owner.id);
+    if(!existing)throw Error('A conta Master não possui credenciais recuperáveis');
+    const salt=crypto.randomBytes(24).toString('hex');
+    const digest=crypto.scryptSync(newPassword,salt,64).toString('hex');
+    db.prepare("UPDATE client_passwords SET salt=?,password_hash=?,privacy_version='owner-recovered' WHERE client_id=?").run(salt,digest,owner.id);
+    // End all existing primary sessions. Legacy owner-auth remains independent.
+    db.prepare('UPDATE clients SET token_hash=? WHERE id=?').run(crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex'),owner.id);
+    db.exec('COMMIT');
+    return {ok:true,updated:true};
+   }catch(err){db.exec('ROLLBACK');throw err;}
+  },
   releaseUncertain(id){
    if(get(id)?.status!=='suspended')throw Error('Suspenda a conta e confira as entregas antes de liberar reservas');
    return Number(db.prepare("UPDATE credit_reservations SET state='RELEASED' WHERE client_id=? AND state='RESERVED'").run(id).changes);
