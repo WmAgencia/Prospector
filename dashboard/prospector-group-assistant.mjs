@@ -34,6 +34,7 @@ function groupEndpoint(sessionId,groupId){
  return '/api/groups/'+encodeURIComponent(sessionId)+'/'+encodeURIComponent(groupId);
 }
 export async function verifyGroupMember({sessionId,groupId,sender,request=waRequest}={}){
+ if(process.env.PROSPECTOR_AUTO_GROUP_ENABLED==='false')return {ok:false,reason:'GROUP_ASSISTANT_DISABLED'};
  const saved=privateGroupState();
  if(!saved||saved.group_jid!==groupId||!GROUP.test(String(groupId||''))||
   !isManagedSession(sessionId)&&sessionId!==saved.owner_session)return {ok:false,reason:'NOT_MANAGED_GROUP'};
@@ -261,6 +262,7 @@ export async function processGroupAudio({download=fetchPrivateAudio,transcribe=t
  }finally{audioBusy=false;}
 }
 export async function scheduledGroupReport(at=new Date(),{request=waRequest}={}){
+ if(process.env.PROSPECTOR_AUTO_GROUP_ENABLED==='false')return {state:'DISABLED'};
  // 08:00 São Paulo, report on the COMPLETE previous business day.
  const hour=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',hour:'2-digit',hour12:false}).format(at))%24;
  if(hour!==8)return {state:'OUTSIDE_REPORT_HOUR'};
@@ -284,6 +286,7 @@ export async function scheduledGroupReport(at=new Date(),{request=waRequest}={})
 
 let lastWebhookSweep=0;
 export async function ensureGroupWebhookSubscriptions({request=waRequest,getSessions}={}){
+ if(process.env.PROSPECTOR_AUTO_GROUP_ENABLED==='false')return {state:'DISABLED'};
  if(Date.now()-lastWebhookSweep<5*60_000)return {state:'COOLDOWN'};
  const group=privateGroupState();
  if(!group?.group_jid)return {state:'GROUP_NOT_READY'};
