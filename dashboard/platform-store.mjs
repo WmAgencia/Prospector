@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {getCreditPackage,CREDIT_PACKAGES} from './credit-packages.mjs';
 import {normalizeCpf,validCpf,legalName,trialCpfDigest,sealTrialCpf,unsealTrialCpf,TRIAL_FREE_CREDITS} from './trial-identity.mjs';
+import {createPaidSignupStore} from './paid-signup-store.mjs';
 export function openPlatformStore(root){
  fs.mkdirSync(root,{recursive:true});
  const db=new DatabaseSync(path.join(root,'platform.sqlite'));
@@ -75,7 +76,7 @@ export function openPlatformStore(root){
   }catch(e){db.exec('ROLLBACK');throw e;}
  }
  const selectRequest=db.prepare("SELECT r.id,r.client_id,r.package_id,r.credits,r.price_cents,r.status,r.created_at,r.updated_at,c.name AS client_name,c.email AS client_email FROM credit_requests r JOIN clients c ON c.id=r.client_id WHERE r.id=?");
- return {db,get,balance,adjust,publicClient,pending,
+ return {...createPaidSignupStore({db,loginPhone}),db,get,balance,adjust,publicClient,pending,
   primaryAccount(){const account=db.prepare('SELECT * FROM clients WHERE is_internal=1').get();return account?.status==='active'?account:null;},
   ensureDemoClient(){
    const email='demo.prospector@exemplo.invalid';
