@@ -115,7 +115,7 @@ async function proxy(req:Request){
  const returned=new Headers();
  for(const name of ["content-type","content-disposition","etag","last-modified","accept-ranges","content-range","www-authenticate","mcp-protocol-version","mcp-session-id","allow"]){const val=response.headers.get(name);if(val)returned.set(name,val);}
  if(oauthBrowser){for(const value of response.headers.getSetCookie()){if(value.startsWith("ps_mcp_approval="))returned.append("Set-Cookie",value);}}
- for(const value of response.headers.getSetCookie()){if(value.startsWith("ps_client="))returned.append("Set-Cookie",value);}
+ for(const value of response.headers.getSetCookie()){if(value.startsWith("ps_client=")||value.startsWith("ps_primary_mode="))returned.append("Set-Cookie",value);}
  returned.set("Cache-Control","no-store");returned.set("X-Content-Type-Options","nosniff");returned.set("X-Frame-Options","DENY");returned.set("Referrer-Policy","no-referrer");
  if(response.status>=300&&response.status<400){const location=response.headers.get("location");if(location){const target=new URL(location,remote);if(target.origin===remote.origin)returned.set("Location",target.pathname+target.search+target.hash);else if(oauthBrowser)returned.set("Location",target.href);}}
  return new Response(method==="HEAD"?null:response.body,{status:response.status,headers:returned});
