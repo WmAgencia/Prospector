@@ -177,8 +177,10 @@ export async function handleSalesTurn(providerId,deps={}){
  }
   // An eligible prospect must explicitly ask to hear the proposal. An
   // automated receptionist's questions never trigger the offer A/B send.
-  if(portfolioAllowed&&!buyerCommitment&&!offerAlreadyExplained&&portfolioQuestion(r.body)&&offerAbConfig().enabled){
+  if(portfolioAllowed&&!buyerCommitment&&!offerAlreadyExplained&&portfolioQuestion(r.body)){
    if(stale())return finish(stale());
+   // Do not send a different text pitch while the new matching recorded audio is pending.
+   if(!offerAbConfig().enabled)return finish('REVIEW','OFFER_AB_AWAITING_NEW_AUDIO_AND_APPROVAL');
    const ab=await sendOfferAb({leadId:r.lead_id,jid:r.jid,sessionId:r.session_id,providerId,threadId:r.thread_id,at:new Date(),sendText:deps.send||waRequest,
     sendAudio:deps.sendRecordedOffer});
    if(ab.state==='SENT')return finish('SENT');
