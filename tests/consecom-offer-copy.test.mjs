@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {OFFER_AB_COPY_VERSION,OFFER_AB_TEXT,OFFER_AB_AUDIO_SCRIPT,OFFER_AB_REFERENCES_TEXT,OFFER_AB_REFERENCES_DELAY_MS,offerDeadlineMatchesScript} from '../dashboard/consecom-offer-copy.mjs';
 
-test('áudio e texto de proposta usam roteiro v3 correspondente à instrução do operador',()=>{
+test('áudio e texto de proposta usam roteiro v4 correspondente à gravação PROPOSTA.ogg',()=>{
  assert.equal(OFFER_AB_AUDIO_SCRIPT,OFFER_AB_TEXT);
- assert.match(OFFER_AB_COPY_VERSION,/2026-11-07-v3/);
- assert.match(OFFER_AB_TEXT,/uma empresa que está fechando com a gente, daqui a três dias/);
- assert.match(OFFER_AB_TEXT,/mais um site desse segmento pra concluir esse projeto/);
+ assert.match(OFFER_AB_COPY_VERSION,/2026-11-07-v4-audio-ogg/);
+ assert.match(OFFER_AB_TEXT,/uma empresa que tá fechando aqui com a gente daqui a três dias/);
+ assert.match(OFFER_AB_TEXT,/mais um site desse segmento pra concluir o projeto/);
  assert.match(OFFER_AB_TEXT,/SEO Master/);
- assert.match(OFFER_AB_TEXT,/entregar em 3 dias/);
+ assert.match(OFFER_AB_TEXT,/entregar em três dias/);
  assert.match(OFFER_AB_TEXT,/cerca de 80%/);
  assert.ok(OFFER_AB_TEXT.includes('R$ 550'));
  assert.ok(OFFER_AB_TEXT.includes('R$ 2.500 e R$ 3.000'));
