@@ -383,22 +383,24 @@ function trainingConversation(t){
  '<p class="footnote">Áudios são transcritos para um texto que você confere antes de enviar. A gravação original não é salva pelo painel.</p></section>';
 }
 function trainingProfile(t){
- const review=t.review||{cards:[]},cards=review.cards||[];
+ const review=t.review||{cards:[]},cards=review.cards||[],globalCards=review.globalCards||[];
  const ready=!!t.profile,needsReview=!!t.draft;
  const search=trainingReviewSearch.trim().toLocaleLowerCase('pt-BR');
  const matches=v=>!search||String(v).toLocaleLowerCase('pt-BR').includes(search);
  const filtered=cards.filter(c=>matches(c.title+' '+c.summary+' '+(c.points||[]).join(' ')));
+ const filteredGlobal=globalCards.filter(c=>matches(c.title+' '+c.summary+' '+(c.points||[]).join(' ')));
  const evidence=t.salesEvidence?.items||[];
  const filteredEvidence=evidence.filter(m=>matches(m.title+' '+(m.description||'')+' '+(m.url||'')+' '+m.kind));
  const ruleCards=filtered.map(c=>'<article class="fr-review-card" data-review-card="'+esc(c.id)+'"><div class="fr-review-card-top"><span class="fr-review-symbol">'+glyph('check')+'</span><small>'+esc(c.count||0)+' orientações</small></div><h4>'+esc(c.title)+'</h4><p>'+esc(c.summary||'Sem descrição. Abra para revisar.')+'</p><details><summary>Ver todas as orientações</summary><ul>'+((c.points||[]).map(point=>'<li>'+esc(point)+'</li>').join('')||'<li>Nenhuma orientação adicional.</li>')+'</ul></details><button class="secondary compact" type="button" data-action="training-review-edit" data-id="'+esc(c.id)+'" data-index="'+c.index+'">Editar orientação</button></article>').join('');
+ const sharedCards=filteredGlobal.map(c=>'<article class="fr-review-card fr-shared-card"><div class="fr-review-card-top"><span class="fr-review-symbol">✦</span><small>Método geral</small></div><h4>'+esc(c.title)+'</h4><p>'+esc(c.summary||'Método de vendas compartilhado')+'</p><details><summary>Ver orientações</summary><ul>'+(c.points||[]).map(point=>'<li>'+esc(point)+'</li>').join('')+'</ul></details><button type="button" class="secondary compact" data-action="training-review-copy" data-id="'+esc(c.id)+'" data-index="'+c.index+'">Personalizar para minha empresa</button></article>').join('');
  const materialCards=filteredEvidence.map(x=>'<article class="fr-review-card fr-reference-card"><div class="fr-review-card-top"><span class="fr-review-symbol">▧</span><small>'+(x.approved?'Aprovado':'Aguardando revisão')+'</small></div><h4>'+esc(x.title)+'</h4><p>'+esc(x.description||'Arquivo ou link de referência')+'</p><div class="fr-review-card-actions">'+(x.url?'<a href="'+esc(x.url)+'" rel="noopener noreferrer" target="_blank">Abrir referência ↗</a>':'')+(x.mediaId?'<a href="/api/media/'+esc(x.mediaId)+'" target="_blank" rel="noopener noreferrer">Ver material ↗</a>':'')+'<button type="button" class="secondary compact" data-action="training-proof-edit" data-id="'+esc(x.id)+'">Editar</button>'+(!x.approved?'<button type="button" class="secondary compact" data-action="training-proof-approve" data-id="'+esc(x.id)+'">Aprovar</button>':'')+'<button type="button" class="secondary compact" data-action="training-proof-remove" data-id="'+esc(x.id)+'">Excluir</button></div></article>').join('');
  const status=needsReview?'<span class="tag">Alterações aguardando aprovação</span>':ready?'<span class="tag green">Treinamento ativo</span>':'<span class="tag">Ainda não treinada</span>';
  return '<section class="panel francisca-review"><div class="heading"><div><span class="kicker">REVISÃO DO GESTOR</span><h3>O que a Francisca aprendeu</h3><p>Consulte tudo que ela pode explicar, oferecer e como deve responder. Edite uma orientação de cada vez, sem precisar trabalhar com arquivos técnicos.</p></div>'+status+'</div>'+
  '<div class="fr-review-toolbar"><label class="fr-review-search">'+glyph('search')+'<input id="training-review-search" type="search" aria-label="Buscar nos treinamentos" placeholder="Pesquisar serviços, respostas, regras..." value="'+esc(trainingReviewSearch)+'"></label><button type="button" class="primary" data-action="training-review-add">+ Adicionar</button></div>'+
  (needsReview?'<div class="fr-review-pending"><div><strong>Revise antes de publicar</strong><p>A Francisca continua usando o treinamento já aprovado até você confirmar as mudanças.</p></div><button type="button" class="primary" data-action="training-review-approve">Aprovar alterações</button></div>':'')+
  (trainingShowComposer?'<div class="fr-review-composer"><div class="heading"><div><h4>Ensine algo novo conversando com a Francisca</h4><p>Ex.: “Quando perguntarem sobre prazo, explique nossas condições e avise o gestor se for urgente.”</p></div><button type="button" class="secondary compact" data-action="training-review-close">Fechar</button></div>'+trainingConversation(t)+'<button type="button" class="secondary compact" data-action="training-review-new">Ou criar uma orientação manual</button></div>':'')+
- '<div class="fr-review-stats"><span>'+cards.length+' assuntos no treinamento</span><span>'+evidence.length+' materiais e referências</span></div>'+
- '<div class="fr-review-grid">'+(ruleCards+materialCards||'<div class="fr-review-empty">Nenhum treinamento corresponde à pesquisa. Tente outra palavra ou adicione uma orientação.</div>')+'</div>'+
+ '<div class="fr-review-stats"><span>'+cards.length+' regras da empresa</span><span>'+globalCards.length+' orientações do método geral</span><span>'+evidence.length+' materiais</span></div>'+ 
+ '<div class="fr-review-grid">'+(ruleCards+materialCards+sharedCards||'<div class="fr-review-empty">Nenhum treinamento corresponde à pesquisa. Tente outra palavra ou adicione uma orientação.</div>')+'</div>'+
  '<details class="fr-review-materials"><summary><strong>Gerenciar materiais que ela pode apresentar</strong><span>Adicionar link, imagem ou PDF autorizado</span></summary>'+trainingMaterials()+'</details>'+
  (!needsReview&&ready?'<p class="fr-review-hint">Treinamento aprovado e ativo. Novas edições só entram no atendimento depois da revisão do gestor.</p>':'')+'</section>';
 }
@@ -645,15 +647,17 @@ async function platformAction(action,el){
   trainingState=await post('/api/training/approve',{id:draft.id,text:draft.text});
   trainingShowComposer=false;render();n('Orientações aprovadas. A Francisca já pode utilizá-las.');return true;
  }
- if(action==='training-review-new'||action==='training-review-edit'){
+ if(action==='training-review-new'||action==='training-review-edit'||action==='training-review-copy'){
   const card=action==='training-review-edit'?(trainingState?.review?.cards||[]).find(x=>x.id===el.dataset.id&&x.index===Number(el.dataset.index)):null;
+  const copy=action==='training-review-copy'?(trainingState?.review?.globalCards||[]).find(x=>x.id===el.dataset.id&&x.index===Number(el.dataset.index)):null;
+  const selected=card||copy;
   if(action==='training-review-edit'&&!card)throw Error('Orientação desatualizada. Atualize a página.');
   const result=await confirmInApp({
-   title:card?'Editar orientação da Francisca':'Adicionar orientação manual',
+   title:card?'Editar orientação da Francisca':copy?'Personalizar método de vendas':'Adicionar orientação manual',
    description:'Explique o que a Francisca deve saber, quando responder e o que não deve prometer. A alteração ficará para aprovação.',
    confirmLabel:'Salvar para revisão',
-   fields:'<div class="dialog-fields"><label>Assunto<input name="title" maxlength="110" minlength="3" required value="'+esc(card?.title||'')+'" placeholder="Ex.: Como responder sobre prazos"></label>'+
-   '<label>O que a Francisca deve fazer ou responder<textarea name="body" rows="8" minlength="12" maxlength="2500" required placeholder="Quando o cliente perguntar..., a Francisca deve...">'+esc((card?.points||[]).join('\n'))+'</textarea></label></div>'
+   fields:'<div class="dialog-fields"><label>Assunto<input name="title" maxlength="110" minlength="3" required value="'+esc(selected?.title||'')+'" placeholder="Ex.: Como responder sobre prazos"></label>'+
+   '<label>O que a Francisca deve fazer ou responder<textarea name="body" rows="8" minlength="12" maxlength="2500" required placeholder="Quando o cliente perguntar..., a Francisca deve...">'+esc((selected?.points||[]).join('\n'))+'</textarea></label></div>'
   });
   if(!result)return true;
   trainingState=await post('/api/training/cards',{action:card?'edit':'add',index:card?.index,cardId:card?.id,title:result.title,body:result.body,version:trainingState?.review?.version});
