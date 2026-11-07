@@ -164,9 +164,18 @@ export async function commandReply(text,{sender,ask=groqChat}={}){
   return String(result.choice?.content||'Não consegui responder agora.').trim().slice(0,2600)||'Não consegui responder agora.';
  }catch{return 'Não consegui consultar a IA agora. Peça um relatório, consulte o status ou pause a prospecção.';}
 }
+// All messages authored by the Prospector use WhatsApp's bold marker,
+// followed by exactly ONE newline before the message body.
+export function formatProspectorGroupReply(text){
+ const prefix='*PROSPECTOR*\\n'.replace('\\n','\n');
+ let body=String(text??'').trim().replace(/^(?:\\*PROSPECTOR\\*\\s*)+/ig,'').trim();
+ if(!body)return '';
+ return prefix+body.slice(0,3000-prefix.length);
+}
 export async function sendGroupMessage({sessionId,groupId,text,request=waRequest}={}){
- if(!GROUP.test(String(groupId||''))||!String(text||'').trim())return {ok:false};
- const actual=String(text).slice(0,3000);
+ if(!GROUP.test(String(groupId||'')))return {ok:false};
+ const actual=formatProspectorGroupReply(text);
+ if(!actual)return {ok:false};
  // Register the reply BEFORE the gateway call. WhatsApp's message.sent webhook
  // may arrive before HTTP acknowledgement; this pre-claim prevents bot loops.
  const hash=groupTextHash(actual);
