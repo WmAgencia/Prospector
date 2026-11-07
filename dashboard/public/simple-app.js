@@ -394,6 +394,30 @@ function trainingConversation(t){
  '<form class="training-composer" id="training-chat"><label class="sr-only" for="training-input">Orientações para a IA</label><textarea id="training-input" name="text" maxlength="3000" rows="3" required placeholder="Fale de forma natural sobre a sua empresa…">'+esc(trainingRecordedText)+'</textarea><div class="training-compose-actions"><button type="button" class="secondary training-record '+(trainingRecording?'recording':'')+'" data-action="training-record-toggle">'+(trainingRecording?'■ Parar gravação':'🎙 Falar por áudio')+'</button><button class="primary" type="submit" '+(trainingBusy?'disabled':'')+'>Enviar orientação ↗</button></div></form>'+
  '<p class="footnote">Áudios são transcritos para um texto que você confere antes de enviar. A gravação original não é salva pelo painel.</p></section>';
 }
+function trainingAnalysisReview(t){
+ const analysis=t.analysis||{cards:[]};
+ const cards=Array.isArray(analysis.cards)?analysis.cards:[];
+ if(!cards.length)return '';
+ const term=trainingReviewSearch.trim().toLocaleLowerCase('pt-BR');
+ const filtered=cards.filter(c=>!term||(c.title+' '+c.summary+' '+(c.points||[]).join(' ')).toLocaleLowerCase('pt-BR').includes(term));
+ const cardMarkup=filtered.map(c=>{
+  const status=c.status==='added'?'Adicionada para aprovação':c.status==='ignored'?'Ignorada':'Aguardando decisão';
+  const buttons=c.status==='new'?
+   '<button type="button" class="primary compact" data-action="training-analysis-add" data-id="'+esc(c.id)+'">Revisar e adicionar</button><button type="button" class="secondary compact" data-action="training-analysis-ignore" data-id="'+esc(c.id)+'">Ignorar</button>':
+   c.status==='ignored'?'<button type="button" class="secondary compact" data-action="training-analysis-restore" data-id="'+esc(c.id)+'">Restaurar sugestão</button>':
+   '<span class="fr-suggestion-added">✓ No rascunho para aprovação</span>';
+  return '<article class="fr-review-card fr-suggestion-card '+(c.status==='ignored'?'is-ignored':'')+'">'+
+   '<div class="fr-review-card-top"><span class="fr-review-symbol">✦</span><small>'+status+'</small></div>'+
+   '<h4>'+esc(c.title)+'</h4><p>'+esc(c.summary||'Sugestão baseada nas conversas analisadas.')+'</p>'+
+   '<details><summary>Entender a sugestão</summary><ul>'+((c.points||[]).map(x=>'<li>'+esc(x)+'</li>').join('')||'<li>Reveja a orientação proposta antes de adicioná-la.</li>')+'</ul></details>'+
+   '<div class="fr-review-card-actions fr-review-card-footer">'+buttons+'</div></article>';
+ }).join('');
+ return '<section class="fr-analysis-suggestions" id="fr-analysis-suggestions" aria-label="Sugestões da análise do WhatsApp">'+
+  '<div class="fr-analysis-suggestions-head"><div><span class="kicker">APRENDIZADO DAS CONVERSAS</span><h4>Sugestões aguardando sua revisão</h4><p>A Francisca identificou padrões em '+Number(analysis.conversations||0)+' conversa(s). Escolha o que faz sentido. Nenhuma sugestão entra no atendimento automaticamente.</p></div>'+
+  '<span class="tag">'+Number(analysis.pendingCount||0)+' para revisar</span></div>'+
+  (filtered.length?'<div class="fr-review-grid">'+cardMarkup+'</div>':'<p class="fr-review-empty">Nenhuma sugestão corresponde à pesquisa.</p>')+
+  '</section>';
+}
 function trainingProfile(t){
  const review=t.review||{cards:[]},cards=review.cards||[],globalCards=review.globalCards||[];
  const ready=!!t.profile,needsReview=!!t.draft;
@@ -412,7 +436,7 @@ function trainingProfile(t){
  (needsReview?'<div class="fr-review-pending"><div><strong>Revise antes de publicar</strong><p>A Francisca continua usando o treinamento já aprovado até você confirmar as mudanças.</p></div><button type="button" class="primary" data-action="training-review-approve">Aprovar alterações</button></div>':'')+
  (trainingShowComposer?'<div class="fr-review-composer"><div class="heading"><div><h4>Ensine algo novo conversando com a Francisca</h4><p>Ex.: “Quando perguntarem sobre prazo, explique nossas condições e avise o gestor se for urgente.”</p></div><button type="button" class="secondary compact" data-action="training-review-close">Fechar</button></div>'+trainingConversation(t)+'<button type="button" class="secondary compact" data-action="training-review-new">Ou criar uma orientação manual</button></div>':'')+
  '<div class="fr-review-stats"><span>'+cards.length+' regras da empresa</span><span>'+globalCards.length+' orientações do método geral</span><span>'+evidence.length+' materiais</span>'+(review.hiddenGlobalCount?'<button class="secondary compact" type="button" data-action="training-review-restore-shared">Restaurar '+review.hiddenGlobalCount+' orientação(ões) ocultada(s)</button>':'')+'</div>'+ 
- '<div class="fr-review-grid">'+(ruleCards+materialCards+sharedCards||'<div class="fr-review-empty">Nenhum treinamento corresponde à pesquisa. Tente outra palavra ou adicione uma orientação.</div>')+'</div>'+
+ trainingAnalysisReview(t)+'<div class="fr-review-grid">'+(ruleCards+materialCards+sharedCards||'<div class="fr-review-empty">Nenhum treinamento corresponde à pesquisa. Tente outra palavra ou adicione uma orientação.</div>')+'</div>'+
  '<details class="fr-review-materials"><summary><strong>Gerenciar materiais que ela pode apresentar</strong><span>Adicionar link, imagem ou PDF autorizado</span></summary>'+trainingMaterials()+'</details>'+
  (!needsReview&&ready?'<p class="fr-review-hint">Treinamento aprovado e ativo. Novas edições só entram no atendimento depois da revisão do gestor.</p>':'')+'</section>';
 }
@@ -556,7 +580,7 @@ function interviewView(){
   '<p class="interview-hint">Você pode falar e escrever. Áudios são transcritos, não salvos como gravação. Nada é ativado sem sua aprovação.</p></section>';
  }
  const shownTraining=t.internalAccount&&t.profile&&t.draft?.source==='interview'?{...t,draft:null}:t;
- const profile=((t.internalAccount&&t.profile)||i?.completed||(!i&&(t.profile||t.draft)))?'<div class="interview-profile">'+trainingProfile(shownTraining)+'</div>':'';
+ const profile=((t.internalAccount&&t.profile)||i?.completed||(!i&&(t.profile||t.draft))||(t.analysis?.cards||[]).length)?'<div class="interview-profile">'+trainingProfile(shownTraining)+'</div>':'';
  const advanced='<div class="interview-final-stage">'+trainingAnalysis(t)+'</div>';
  const shared='<div class="training-markdown-info"><span><strong>Método global de vendas</strong> · compartilhado e somente leitura. O seu perfil de serviços, preços e tom é privado.</span><a href="/api/training/global.md" download="francisca-vendas-global.md" class="secondary compact">Baixar base global .md ↗</a></div>';
  return top+'<div class="interview-layout">'+body+'</div>'+profile+trainingSalesExtras()+advanced;
@@ -654,7 +678,7 @@ async function platformAction(action,el){
  if(action==='training-setup-analyze'){nav('training');setTimeout(()=>q('.fr-analysis')?.scrollIntoView({behavior:'smooth',block:'start'}),80);return true;}
  if(action==='training-review-add'){trainingShowComposer=true;render();q('#training-input')?.focus();return true;}
  if(action==='training-review-close'){trainingShowComposer=false;render();return true;}
- if(action==='training-review-focus'){q('.francisca-review')?.scrollIntoView({behavior:'smooth',block:'start'});return true;}
+ if(action==='training-review-focus'){(q('.fr-analysis-suggestions')||q('.francisca-review'))?.scrollIntoView({behavior:'smooth',block:'start'});return true;}
  if(action==='training-review-approve'){
   const draft=trainingState?.draft;
   if(!draft)return true;
@@ -662,6 +686,27 @@ async function platformAction(action,el){
   if(!confirmation)return true;
   trainingState=await post('/api/training/approve',{id:draft.id,text:draft.text});
   trainingShowComposer=false;render();n('Orientações aprovadas. A Francisca já pode utilizá-las.');return true;
+ }
+ if(action==='training-analysis-add'||action==='training-analysis-ignore'||action==='training-analysis-restore'){
+  const analysis=trainingState?.analysis||{};
+  const card=(analysis.cards||[]).find(c=>c.id===el.dataset.id);
+  if(!card||!analysis.runId)throw Error('Sugestão indisponível. Atualize a página.');
+  const request={runId:analysis.runId,cardId:card.id,action:action==='training-analysis-add'?'add':action==='training-analysis-ignore'?'ignore':'restore'};
+  if(request.action==='add'){
+   const confirmation=await confirmInApp({
+    title:'Adicionar ao treinamento da Francisca?',
+    description:'Você pode ajustar o que ela deve fazer e dizer. Esta orientação será salva apenas como rascunho, até sua aprovação explícita.',
+    confirmLabel:'Adicionar para revisão',
+    fields:'<div class="dialog-fields"><label>Assunto<input name="title" maxlength="110" minlength="3" required value="'+esc(card.title)+'"></label>'+
+     '<label>Como a Francisca deve agir<textarea name="body" rows="8" minlength="12" maxlength="16000" required>'+esc(card.editText||(card.points||[]).join('\n'))+'</textarea></label></div>'
+   });
+   if(!confirmation)return true;
+   request.title=confirmation.title;request.body=confirmation.body;
+  }
+  trainingState=await post('/api/training/suggestions',request);
+  render();
+  n(request.action==='add'?'Sugestão adicionada ao rascunho. Revise e aprove para ativar.':request.action==='ignore'?'Sugestão ignorada. Você pode restaurá-la quando quiser.':'Sugestão restaurada.');
+  return true;
  }
  if(action==='training-review-delete'){
   const card=(trainingState?.review?.cards||[]).find(c=>c.id===el.dataset.id&&c.index===Number(el.dataset.index));
