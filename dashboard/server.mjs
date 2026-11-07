@@ -857,14 +857,15 @@ if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_DEMO_MODE!=='true'){
  let lastPrivateGroupState='';
  const checkPrivateGroup=()=>{
   reconcilePrivateGroup().then(result=>{
-   if(result.state!==lastPrivateGroupState&&
-      ['CREATED','RECOVERED','MEMBERSHIP_PENDING','READY','GROUP_MATCH_AMBIGUOUS','UNEXPECTED_GROUP_MEMBER','CREATION_RETRY'].includes(result.state)){
-    console.info('[private group]',JSON.stringify({state:result.state,members:result.members||null,missing:result.missing||0,tenantScoped:true}));
+   if(result.state!==lastPrivateGroupState){
     if(typeof process.send==='function')process.send({type:'PRIVATE_GROUP_STATUS',state:result.state,
      members:Number.isInteger(result.members)?result.members:null,missing:Number.isInteger(result.missing)?result.missing:0});
    }
    lastPrivateGroupState=result.state;
-  }).catch(error=>console.warn('[private group]',String(error?.message||error).slice(0,120)));
+  }).catch(error=>{
+   console.warn('[private group]',String(error?.message||error).slice(0,120));
+   if(typeof process.send==='function')process.send({type:'PRIVATE_GROUP_STATUS',state:'ERROR',members:null,missing:0});
+  });
  };
  const privateGroupTimer=setInterval(checkPrivateGroup,60*1000);
  privateGroupTimer.unref();
