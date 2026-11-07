@@ -608,6 +608,43 @@ async function platformAction(action,el){
   const answer=await confirmInApp({title:suspend?'Suspender acesso?':'Reativar acesso?',description:suspend?'O gestor '+(client?.name||'selecionado')+' deixará de acessar o painel e seu processo de atendimento será interrompido.':'O cliente voltará a acessar seu ambiente privado.',danger:suspend,confirmLabel:suspend?'Suspender conta':'Reativar conta'});
   if(!answer)return true;await post('/api/platform/clients/'+el.dataset.client+'/status',{status:el.dataset.status});await loadClients();n('Acesso atualizado.');return true;
  }
+ if(action==='training-review-add'){trainingShowComposer=true;render();q('#training-input')?.focus();return true;}
+ if(action==='training-review-close'){trainingShowComposer=false;render();return true;}
+ if(action==='training-review-focus'){q('.francisca-review')?.scrollIntoView({behavior:'smooth',block:'start'});return true;}
+ if(action==='training-review-approve'){
+  const draft=trainingState?.draft;
+  if(!draft)return true;
+  const confirmation=await confirmInApp({title:'Publicar orientações revisadas?',description:'As novas regras passarão a ser utilizadas pela Francisca. O histórico aprovado será atualizado somente após sua confirmação.',confirmLabel:'Aprovar orientações'});
+  if(!confirmation)return true;
+  trainingState=await post('/api/training/approve',{id:draft.id,text:draft.text});
+  trainingShowComposer=false;render();n('Orientações aprovadas. A Francisca já pode utilizá-las.');return true;
+ }
+ if(action==='training-review-new'||action==='training-review-edit'){
+  const card=action==='training-review-edit'?(trainingState?.review?.cards||[]).find(x=>x.id===el.dataset.id&&x.index===Number(el.dataset.index)):null;
+  if(action==='training-review-edit'&&!card)throw Error('Orientação desatualizada. Atualize a página.');
+  const result=await confirmInApp({
+   title:card?'Editar orientação da Francisca':'Adicionar orientação manual',
+   description:'Explique o que a Francisca deve saber, quando responder e o que não deve prometer. A alteração ficará para aprovação.',
+   confirmLabel:'Salvar para revisão',
+   fields:'<div class="dialog-fields"><label>Assunto<input name="title" maxlength="110" minlength="3" required value="'+esc(card?.title||'')+'" placeholder="Ex.: Como responder sobre prazos"></label>'+
+   '<label>O que a Francisca deve fazer ou responder<textarea name="body" rows="8" minlength="12" maxlength="2500" required placeholder="Quando o cliente perguntar..., a Francisca deve...">'+esc((card?.points||[]).join('\n'))+'</textarea></label></div>'
+  });
+  if(!result)return true;
+  trainingState=await post('/api/training/cards',{action:card?'edit':'add',index:card?.index,cardId:card?.id,title:result.title,body:result.body,version:trainingState?.review?.version});
+  trainingShowComposer=false;render();n('Orientação salva para revisão. Aprove as alterações para ativar.');return true;
+ }
+ if(action==='training-proof-edit'){
+  const item=trainingState?.salesEvidence?.items?.find(x=>x.id===el.dataset.id);
+  if(!item)throw Error('Material não encontrado');
+  const changed=await confirmInApp({title:'Editar material da Francisca',description:'A referência editada voltará a aguardar aprovação antes de poder ser mostrada aos contatos.',confirmLabel:'Salvar edição',fields:
+   '<div class="dialog-fields"><label>Título<input name="title" value="'+esc(item.title)+'" maxlength="120" minlength="3" required></label>'+
+   '<label>Tipo<select name="kind">'+[['portfolio','Portfólio'],['case','Projeto'],['testimonial','Depoimento'],['other','Outro']].map(([key,val])=>'<option value="'+key+'" '+(item.kind===key?'selected':'')+'>'+val+'</option>').join('')+'</select></label>'+
+   '<label>Descrição<textarea name="description" rows="4" maxlength="350">'+esc(item.description||'')+'</textarea></label>'+
+   '<label>Link HTTPS<input name="url" type="url" value="'+esc(item.url||'')+'" maxlength="700"></label></div>'});
+  if(!changed)return true;
+  await post('/api/training/evidence/update',{id:item.id,...changed});
+  await loadTraining();n('Material editado e enviado para aprovação.');return true;
+ }
  if(action==='interview-start'){await interviewStart(el.dataset.mode==='voice'?'voice':'text');return true;}
  if(action==='interview-choice'){
   if(!trainingState?.interview||!['approach','closing_mode','payment_methods'].includes(trainingState.interview.step)||interviewSending)return true;
@@ -1261,6 +1298,11 @@ document.addEventListener("input",e=>{
 
  if(e.target.id==='interview-answer'){interviewInput=e.target.value;return;}
   if(e.target.id==='training-input'){trainingRecordedText=e.target.value;return;}
+ if(e.target.id==='training-review-search'){
+  trainingReviewSearch=e.target.value;const pos=e.target.selectionStart;
+  render();const replacement=q('#training-review-search');
+  if(replacement){replacement.focus();replacement.setSelectionRange(pos,pos);}return;
+ }
  if(e.target.id==='client-search'){
   clientSearch=e.target.value;const cursor=e.target.selectionStart;render();
   const input=q('#client-search');if(input){input.focus();input.setSelectionRange(cursor,cursor);}return;
