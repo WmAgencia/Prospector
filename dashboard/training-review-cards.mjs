@@ -2,6 +2,7 @@
 // The underlying .md remains authoritative, never shown as raw Markdown.
 import crypto from 'node:crypto';
 import {getSetting,setSetting,now} from './db.mjs';
+import {readTrainingMarkdown,storeTrainingMarkdown} from './training-markdown.mjs';
 const sha=s=>crypto.createHash('sha256').update(s).digest('hex').slice(0,20);
 export function conciseTrainingSummary(lines){
  const options=(Array.isArray(lines)?lines:[])
@@ -85,9 +86,14 @@ export function modifyReviewMarkdown(markdown,{action,index,cardId,title,body,ve
 }
 export function createCardDraft(input,activeMarkdown){
  const existing=getSetting('training_draft',null);
- const before=existing?.text||activeMarkdown||'';
+ const before=(existing?.source==='interview'?readTrainingMarkdown('draft'):null)||existing?.text||activeMarkdown||'';
  const next=modifyReviewMarkdown(before,input);
- const draft={id:crypto.randomUUID(),source:'cards',text:next,at:now()};
+ const interview=existing?.source==='interview';
+ // Keep verified interview settings (business identity and closing mode) when
+ // the manager edits the draft as cards. The interview draft is file-backed.
+ if(interview)storeTrainingMarkdown('draft',next);
+ const draft=interview?{...existing,id:crypto.randomUUID(),source:'interview',text:next,at:now()}:
+  {id:crypto.randomUUID(),source:'cards',text:next,at:now()};
  setSetting('training_draft',draft);
  return {draft,review:reviewTextState(activeMarkdown,draft)};
 }
