@@ -31,14 +31,14 @@ export function reviewSections(markdown){
   const plain=lines.map(line=>line.replace(/^#{1,6}\s+/, '').replace(/^>\s*/, '').replace(/^[-*+]\s+/, '').replace(/\*\*|__/g,'').replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'$1 ($2)')).filter(Boolean);
   return {id:sha(index+'|'+raw),index,start,title,body,
    summary:conciseTrainingSummary(plain),
-   points:plain.slice(0,80),count:plain.length,raw};
+   points:plain.slice(0,80),editText:plain.join('\n'),count:plain.length,raw};
  });
 }
 export function publicReviewCards(markdown){
  const sections=reviewSections(markdown);
  // File titles and frontmatter are not themselves a learned behavior.
  const visible=sections.length>1?sections.filter(c=>c.index!==0||/^\s*[-*+]\s+\S/m.test(c.raw)):sections;
- return visible.map(({id,index,title,summary,points,count})=>({id,index,title,summary,points,count}));
+ return visible.map(({id,index,title,summary,points,editText,count})=>({id,index,title,summary,points,editText,count}));
 }
 export function reviewTextState(active,existingDraft){
  const draftText=existingDraft?.text||'';
@@ -49,7 +49,7 @@ export function reviewTextState(active,existingDraft){
 const safeTitle=s=>String(s||'').replace(/[\r\n#<>]/g,' ').trim().slice(0,110);
 function safeBody(v){
  const body=text(v).trim();
- if(body.length<12||body.length>2500)throw Error('Escreva uma orientação com 12 a 2.500 caracteres');
+ if(body.length<12||body.length>16000)throw Error('Escreva uma orientação com 12 a 16.000 caracteres');
  return body;
 }
 export function modifyReviewMarkdown(markdown,{action,index,cardId,title,body,version}={}){
