@@ -73,7 +73,13 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
  if(busy)return {state:'BUSY'};
  busy=true;
  try{
-  const sessions=connectedSessions(await getSessions());
+  const pool=await getSessions();
+  const sessions=connectedSessions(pool);
+  // Previously paired but temporarily offline numbers are still members of
+  // this tenant's group. Do not mistake them for third-party participants.
+  const ownedNumbers=new Set((Array.isArray(pool?.items)?pool.items:[])
+   .filter(x=>SESSION_ID.test(String(x?.sessionId||''))&&CONNECTED_PHONE.test(String(x?.number||'')))
+   .map(x=>x.number));
   let saved=privateGroupState();
   if(!sessions.length)return {state:'WAITING_WHATSAPP'};
   const owner=saved?sessions.find(s=>s.sessionId===saved.owner_session):sessions[0];
@@ -82,7 +88,7 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
   const ownerNumber=saved?.owner_number||owner.number;
   // The session must still belong to its original authenticated number.
   if(owner.number!==ownerNumber)return {state:'OWNER_IDENTITY_CHANGED'};
-  const managed=new Set(sessions.map(s=>s.number));
+  const managed=ownedNumbers;
   const path='/api/groups/'+encodeURIComponent(ownerSession);
   let entries=null;
   const fetchGroups=async()=>{
@@ -101,7 +107,7 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
    if(!membership.numbers.has(ownerNumber))return {state:'OWNER_NOT_IN_GROUP',groupCreated:true};
    // No unintended third parties. If somebody manually adds an unknown
    // member, do not automatically grant group access to further numbers.
-   const allowed=new Set([...managed,ownerNumber]);
+   const allowed=new Set([...ownedNumbers,ownerNumber]);
    if([...membership.numbers].some(n=>!allowed.has(n)))
     return {state:'UNEXPECTED_GROUP_MEMBER',groupCreated:true};
    const missing=sessions.filter(s=>!membership.numbers.has(s.number));
