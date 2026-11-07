@@ -1,0 +1,1 @@
+Prospector frontend routing artifact. Dynamic pages are securely served by the persistent Railway gateway.
