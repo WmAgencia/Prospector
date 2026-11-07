@@ -693,7 +693,7 @@ async function platformAction(action,el){
    description:'Explique o que a Francisca deve saber, quando responder e o que não deve prometer. A alteração ficará para aprovação.',
    confirmLabel:'Salvar para revisão',
    fields:'<div class="dialog-fields"><label>Assunto<input name="title" maxlength="110" minlength="3" required value="'+esc(selected?.title||'')+'" placeholder="Ex.: Como responder sobre prazos"></label>'+
-   '<label>O que a Francisca deve fazer ou responder<textarea name="body" rows="8" minlength="12" maxlength="2500" required placeholder="Quando o cliente perguntar..., a Francisca deve...">'+esc((selected?.points||[]).join('\n'))+'</textarea></label></div>'
+   '<label>O que a Francisca deve fazer ou responder<textarea name="body" rows="9" minlength="12" maxlength="16000" required placeholder="Quando o cliente perguntar..., a Francisca deve...">'+esc(selected?.editText||(selected?.points||[]).join('\n'))+'</textarea></label></div>'
   });
   if(!result)return true;
   trainingState=await post('/api/training/cards',{action:card?'edit':'add',index:card?.index,cardId:card?.id,title:result.title,body:result.body,version:trainingState?.review?.version});
