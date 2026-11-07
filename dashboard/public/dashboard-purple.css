@@ -933,3 +933,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .demo-credentials-card input{display:block;width:100%;margin-top:6px;border:1px solid #dcd6ed;border-radius:10px;padding:12px;background:#fff;font-family:ui-monospace,monospace;font-size:13px;user-select:all;color:#27213a}
 .demo-credentials-card .actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:17px}
 @media(max-width:740px){.demo-credentials-card{padding:16px}.demo-credentials-card .actions>button{flex:1}}
+
+
+/* Post-Stripe return: explicit pending confirmation, not a success claim based on URL. */
+.billing-return-status{display:flex;gap:16px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin:16px 0 22px!important;padding:20px 23px!important;border:1px solid #e4ddf2!important;border-radius:16px;background:linear-gradient(120deg,#fbfaff,#fff);box-shadow:0 6px 22px #3d23790b}
+.billing-return-status .kicker{font-size:10px;letter-spacing:1.2px}
+.billing-return-status h3{font-size:19px;line-height:1.28;color:#29223d;margin:6px 0 8px}
+.billing-return-status p{font-size:12px;line-height:1.65;color:#6b647c;max-width:680px;margin:0 0 10px}
+.billing-return-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.billing-return-actions .secondary{font-size:12px;white-space:nowrap;border-radius:10px}
+@media(max-width:700px){.billing-return-status{padding:16px!important;align-items:stretch}.billing-return-actions{width:100%}.billing-return-actions button{flex:1}}
