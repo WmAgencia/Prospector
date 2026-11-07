@@ -36,7 +36,7 @@ const EMBEDDED_PRICES={
  dias30:'price_1UZEpeJj6d3ODR9EYHeH5XmY'
 };
 export function embeddedReady(){
- return billingReady()&&/^sk_live_/.test(process.env.STRIPE_SECRET_KEY||'')&&/^pk_live_/.test(process.env.STRIPE_PUBLISHABLE_KEY||'');
+ return billingReady()&&/^(?:sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY||'')&&/^pk_live_/.test(process.env.STRIPE_PUBLISHABLE_KEY||'');
 }
 export async function embeddedCheckoutForRequest(request){
  if(!embeddedReady())return null;
