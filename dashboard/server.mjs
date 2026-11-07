@@ -13,6 +13,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {one,all,run,tx,id,now,addLead,stage,getThread,getSetting,setSetting,audit,phone} from './db.mjs';
 import {providerStatus,scoreLead,recordOrigin,discoverProfiles,verifyWebsiteCandidate} from './discovery.mjs';
+import {tickDecisorEnrichment} from './decisor-enrichment.mjs';
 import {setSalesCampaign} from './sales-campaign.mjs';
 import {searchDirectory} from './external-research.mjs';
 import {catalogQuery,catalogSummary} from './lead-catalog.mjs';
@@ -934,7 +935,7 @@ let lastOSMStatus='',lastOSMLogAt=0;
 function checkOSMDiscovery(){
  if(ownerProspectionPaused())return Promise.resolve({status:'PAUSED_BY_OWNER'});
  const scheduled=processProspectingSchedule();
- if(scheduled.applied){console.info('[scheduled research] Activated approved scope at 05:00 São Paulo');notify();}
+ if(scheduled.applied){console.info('[scheduled research] Activated approved scope in São Paulo');notify();}
  return dailyLocalDiscovery().then(x=>{
   if(x?.source==='osm'&&x.added)notify();
   if(x?.source==='osm'||x?.status==='SOURCE_ERROR'||x?.status==='PROVIDER_LIMIT'){
@@ -948,6 +949,12 @@ function checkOSMDiscovery(){
  }).catch(err=>console.error('[osm discovery]',err.message));
 }
 const osmTimer=setInterval(checkOSMDiscovery,60*1000);
+// Backend-only daily enrichment starts at the configured discovery hour (00:00 SP).
+// Runs in small batches without emitting WhatsApp traffic or modifying the frontend.
+const decisorEnrichmentTimer=setInterval(()=>{
+ tickDecisorEnrichment({maxPerRun:3}).catch(error=>console.warn('[decisor enrichment worker]',String(error?.message||error).slice(0,120)));
+},60*1000);
+setTimeout(()=>tickDecisorEnrichment({maxPerRun:3}).catch(error=>console.warn('[decisor enrichment startup]',String(error?.message||error).slice(0,120))),5000).unref();
 // Keep already-started Google Maps jobs updated on the server even if the browser closes.
 // This is status-only: no lead import, campaign activation, or WhatsApp sending.
 async function checkMapsJobs(){
