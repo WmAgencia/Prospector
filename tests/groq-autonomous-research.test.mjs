@@ -87,7 +87,7 @@ test('Three complete calendar months protect already approached contacts, no opt
  db.run('INSERT INTO suppressions(phone,reason,created_at) VALUES(?,?,?)',l.phone,'INBOUND_OPTOUT',initial);
  assert.equal(recontactDecision({id:l.id,phone:l.phone,stage:'NO_INTEREST'},Date.parse('2027-09-05T14:00:00Z')).reason,'OPT_OUT');
 });
-test('Research starts at 5am São Paulo, replenishes lead stock, respects manual send gate and dedupes same business',async()=>{
+test('Research starts at midnight São Paulo, replenishes lead stock, respects manual send gate and dedupes same business',async()=>{
  let createCalls=0,files=0;
  const providerId='11111111-1111-4111-8111-111111111111';
  globalThis.fetch=async(url,opts={})=>{
@@ -106,13 +106,11 @@ test('Research starts at 5am São Paulo, replenishes lead stock, respects manual
   }
   throw Error('Unknown mock URL '+u.pathname);
  };
- const tooEarly=await maps.automaticMapsDiscovery({at:new Date('2026-11-04T07:59:00Z')});
- assert.equal(tooEarly.status,'BEFORE_START');
- const first=await maps.automaticMapsDiscovery({at:new Date('2026-11-04T08:15:00Z')});
+ const first=await maps.automaticMapsDiscovery({at:new Date('2026-11-04T03:15:00Z')});
  assert.equal(first.status,'PENDING');
  assert.equal(first.created,true);
  assert.equal(createCalls,1);
- const second=await maps.automaticMapsDiscovery({at:new Date('2026-11-04T08:16:00Z')});
+ const second=await maps.automaticMapsDiscovery({at:new Date('2026-11-04T03:16:00Z')});
  assert.equal(second.status,'IMPORTED');
  assert.equal(second.added,1);
  assert.equal(files,1);
@@ -121,7 +119,7 @@ test('Research starts at 5am São Paulo, replenishes lead stock, respects manual
  assert(present.ready>=1);
  assert.equal(db.one('SELECT COUNT(*) n FROM initial_contacts').n,1);
  assert.equal(db.getSetting('paused',true),true);
- const next=await maps.automaticMapsDiscovery({at:new Date('2026-11-04T08:17:00Z')});
+ const next=await maps.automaticMapsDiscovery({at:new Date('2026-11-04T03:17:00Z')});
  assert.equal(next.status,'COOLDOWN');
  assert.equal(createCalls,1);
 });
