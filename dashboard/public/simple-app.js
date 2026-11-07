@@ -31,7 +31,7 @@ let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
 let trainingReviewSearch='',trainingShowComposer=false,trainingSetupMinimized=true;
-try{trainingSetupMinimized=sessionStorage.getItem('prospector-setup-minimized')!=='0';}catch{}
+try{trainingSetupMinimized=sessionStorage.getItem('prospector-setup-compact-v2')!=='0';}catch{}
 let waAccountsLastCheck=0;
 let outreachHours={start:'08:00',end:'17:30'};
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
@@ -416,14 +416,18 @@ function trainingAnalysis(t){
  const count=Math.max(waAccounts.filter(x=>x.connected===true).length,wa?.connected===true?1:0);
  const connected=count>0;
  const ready=!!t.profile&&connected;
- return '<section class="panel fr-analysis"><div class="heading"><div><span class="kicker">ÚLTIMA ETAPA · APRENDER COM SEUS ATENDIMENTOS</span><h3>Analisar conversas do WhatsApp</h3><p>Depois do treinamento, a Francisca identifica como sua equipe conversa, pergunta e responde. As sugestões ficam aguardando sua revisão.</p></div><span class="tag '+(run?.status==='REVIEW'?'green':'')+'">'+(running?'Analisando em segundo plano':run?.status==='REVIEW'?'Análise concluída':'Etapa final')+'</span></div>'+
+ const latestCompleted=(t.runs||[]).find(x=>x.status==='REVIEW'||x.status==='APPROVED');
+ const covered=new Set(Array.isArray(latestCompleted?.details?.sessions)?latestCompleted.details.sessions:[]);
+ const liveIds=waAccounts.filter(x=>x.connected===true).map(x=>x.session_id).filter(Boolean);
+ const hasNewChannel=!!latestCompleted&&liveIds.some(id=>!covered.has(id));
+ return '<section class="panel fr-analysis"><div class="heading"><div><span class="kicker">ÚLTIMA ETAPA · APRENDER COM SEUS ATENDIMENTOS</span><h3>Analisar conversas do WhatsApp</h3><p>Depois do treinamento, a Francisca identifica como sua equipe conversa, pergunta e responde. As sugestões ficam aguardando sua revisão.</p></div><span class="tag '+(run?.status==='REVIEW'?'green':'')+'">'+(running?'Analisando em segundo plano':hasNewChannel?'Novo número para analisar':run?.status==='REVIEW'?'Análise concluída':'Etapa final')+'</span></div>'+
  (!t.profile?'<div class="fr-analysis-gate"><strong>Finalize e aprove o treinamento primeiro</strong><p>Conclua a conversa com a Francisca e revise as orientações acima para liberar a análise.</p></div>':'')+
  (!connected?'<div class="training-connect-notice"><span class="training-connection-icon">'+glyph('connections')+'</span><div><strong>Conecte pelo menos um WhatsApp</strong><p>Você escolhe quantos números deseja conectar. A análise fica disponível assim que ao menos um estiver online.</p></div><button type="button" class="primary" data-tab="connections">Conectar números</button></div>':
  '<p class="fr-analysis-ready">✓ '+count+' número(s) conectado(s). É possível analisar agora; novos números poderão ser analisados depois.</p>')+
  (running?'<div class="fr-analysis-progress" role="progressbar" aria-label="Andamento da análise de conversas" aria-valuenow="'+percent+'" aria-valuemin="0" aria-valuemax="100"><div><strong>Analisando mensagens...</strong><span>'+percent+'%</span></div><i><b style="width:'+percent+'%"></b></i><p>Pode continuar usando as outras telas. O processamento ocorre no servidor e o progresso é salvo.</p></div>':
- run?.status==='REVIEW'?'<div class="fr-analysis-result"><strong>✓ Conversas analisadas</strong><p>'+Number(run.details?.conversations||0)+' conversa(s) incluída(s). A Francisca preparou sugestões de estilo e atendimento para o gestor revisar nos cards acima.</p><button type="button" class="secondary compact" data-action="training-review-focus">Revisar sugestões</button></div>':
+ run?.status==='REVIEW'?'<div class="fr-analysis-result"><strong>'+(hasNewChannel?'Novo WhatsApp conectado':'✓ Conversas analisadas')+'</strong><p>'+Number(run.details?.conversations||0)+' conversa(s) incluída(s) na última análise. '+(hasNewChannel?'Você pode analisar tudo novamente para incluir o novo número.':'A Francisca preparou sugestões para revisão do gestor.')+'</p><button type="button" class="secondary compact" data-action="training-review-focus">Revisar sugestões</button></div>':
  run?.status==='FAILED'?'<p class="fr-analysis-warning">A análise anterior não terminou: '+esc(run.details?.error||'Tente novamente após verificar a conexão.')+'</p>':'')+
- (!running?'<div class="fr-analysis-start"><label class="training-all-confirm"><input id="training-all-confirm" type="checkbox" '+(trainingAllConfirmed?'checked':'')+'> Confirmo que os históricos diretos destes números são profissionais e tenho autorização para utilizá-los no treinamento. Não incluirei conversas pessoais.</label><button type="button" class="primary" data-action="training-analyze" '+(!ready||trainingBusy?'disabled':'')+'>Analisar conversas ↗</button></div>':'')+
+ (!running?'<div class="fr-analysis-start"><label class="training-all-confirm"><input id="training-all-confirm" type="checkbox" '+(trainingAllConfirmed?'checked':'')+'> Confirmo que os históricos diretos destes números são profissionais e tenho autorização para utilizá-los no treinamento. Não incluirei conversas pessoais.</label><button type="button" class="primary" data-action="training-analyze" '+(!ready||trainingBusy?'disabled':'')+'>'+(hasNewChannel?'Analisar tudo novamente ↗':'Analisar conversas ↗')+'</button></div>':'')+
  '<p class="footnote">A análise não envia mensagens nem acessa grupos. Confirme que os históricos usados são comerciais; não selecione conversas pessoais. Nenhuma sugestão entra em uso antes da aprovação.</p></section>';
 }
 let interviewVoice=false,interviewVoiceSession=null,interviewAudio=null,interviewAudioUrl=null,interviewAudioDone=null,interviewVoiceState='off',interviewSending=false,interviewInput='',interviewShowAnalysis=false;
@@ -637,7 +641,7 @@ async function platformAction(action,el){
  }
  if(action==='training-setup-toggle'){
   trainingSetupMinimized=!trainingSetupMinimized;
-  try{sessionStorage.setItem('prospector-setup-minimized',trainingSetupMinimized?'1':'0');}catch{}
+  try{sessionStorage.setItem('prospector-setup-compact-v2',trainingSetupMinimized?'1':'0');}catch{}
   render();return true;
  }
  if(action==='training-setup-go'){nav(el.dataset.tabTarget||'training');return true;}
@@ -914,9 +918,12 @@ async function refreshWa(redraw=true){
  if(waRefreshing)return waRefreshing;
  waRefreshing=(async()=>{
   try{
+   let sessionListChanged=false;
    if(view==='connections'||Date.now()-waAccountsLastCheck>45000){
+    const beforeAccounts=waAccounts.map(x=>x.session_id+':'+Boolean(x.connected)).sort().join('|');
     const pool=await api('/api/whatsapp/sessions').catch(()=>null);
     if(pool?.items){waAccounts=Array.isArray(pool.items)?pool.items:[];waAccountsLastCheck=Date.now();}
+    sessionListChanged=beforeAccounts!==waAccounts.map(x=>x.session_id+':'+Boolean(x.connected)).sort().join('|');
     if(!connectionSession&&waAccounts.length)connectionSession=waAccounts[0].session_id;
    }
    const w=await api("/api/whatsapp/status"+(view==='connections'?waSessionQuery():''));
@@ -929,7 +936,7 @@ async function refreshWa(redraw=true){
    else if(view==="connections"&&w.hasSession&&["SCAN_QR","CONNECTING","INITIALIZING"].includes(w.status)){
     qrResult=await api("/api/whatsapp/qr"+waSessionQuery()).catch(e=>({qr:null,message:e.message}));
    }else if(view==="connections")qrResult=null;
-   if(redraw&&(changed||(view==="connections"&&oldQr!==(qrResult?.qr||null))))render();
+   if(redraw&&(changed||sessionListChanged||(view==="connections"&&oldQr!==(qrResult?.qr||null))))render();
    if(view==="conversations"&&w.connected&&(!wasConnected||!remoteChats.length))await loadChats();
   }catch(e){
    const changed=wa?.ok!==false||wa?.message!==e.message;
