@@ -61,7 +61,10 @@ export function workerEnvironment(client,port){
  const demo=client.is_demo===1;
  const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined&&(!demo||!['WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD'].includes(k))).map(k=>[k,process.env[k]]));
  return {...env,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
-  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_DEMO_MODE:client.is_demo===1?'true':'false',PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
+  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_DEMO_MODE:client.is_demo===1?'true':'false',
+  // An authenticated one-time group import is scoped solely to the Consecom internal tenant.
+  PROSPECTOR_GROUP_IMPORT_JID:client.is_internal===1?(process.env.PROSPECTOR_GROUP_IMPORT_JID||''):'',
+  PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
   PROSPECTOR_SESSION_DIR:path.join(root,'clients',client.id,'wa-session'),
   ADMIN_ACCESS_TOKEN:client.secret,ADMIN_SESSION_SECRET:client.secret,WA_AKG_WEBHOOK_SECRET:client.secret,
   WHATSAPP_TRANSPORT:'waakg',PROSPECTOR_INBOUND_AUTOREPLY_ENABLED:demo?'false':'true',AI_CONVERSATION_AUTOSEND:demo?'false':'true',
