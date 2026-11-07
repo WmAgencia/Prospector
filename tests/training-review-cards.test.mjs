@@ -83,6 +83,19 @@ test('editing a long approved card keeps the text beyond its visible preview',()
  assert.match(card.editText,/situação comercial 100/);
  assert.ok(card.editText.length>card.summary.length);
 });
+test('editing an interview draft preserves its business settings and updates the file-backed review',async()=>{
+ const {storeTrainingMarkdown,readTrainingMarkdown,removeTrainingMarkdown}=await import('../dashboard/training-markdown.mjs');
+ const source='# Entrevista inicial\n\n## Como vender\nPergunte ao cliente sobre o problema antes de falar de valores.\n';
+ storeTrainingMarkdown('draft',source);
+ setSetting('training_draft',{id:'interview-before-edit',source:'interview',interviewData:{company:'Empresa de teste',closingMode:'handoff'},at:'2026-11-07T00:00:00Z'});
+ const card=reviewTextState(source,{text:source}).cards[0];
+ const change=createCardDraft({action:'edit',index:card.index,cardId:card.id,title:'Atendimento consultivo',body:'Pergunte primeiro sobre a necessidade e depois explique apenas preços aprovados.',version:reviewTextState(source,null).version},'# manual aprovado anterior');
+ assert.equal(change.draft.source,'interview');
+ assert.equal(change.draft.interviewData.company,'Empresa de teste');
+ assert.equal(change.draft.interviewData.closingMode,'handoff');
+ assert.match(readTrainingMarkdown('draft'),/Atendimento consultivo/);
+ setSetting('training_draft',null);removeTrainingMarkdown('draft');
+});
 test(' UI has no plain Markdown preview; includes search, add/edit, material review, checklist and analysis',()=>{
  const src=fs.readFileSync(new URL('../dashboard/public/simple-app.js',import.meta.url),'utf8');
  assert.match(src,/id="training-review-search"/);
