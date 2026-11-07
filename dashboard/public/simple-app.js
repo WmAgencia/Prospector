@@ -388,7 +388,7 @@ async function toggleFranciscaRecording(){
  }
 }
 function trainingConversation(t){
- return '<section class="panel training-manual"><div class="heading"><div><span class="kicker">DO SEU JEITO</span><h3>O que seu atendimento precisa saber?</h3><p>Explique com suas próprias palavras. A IA transformará suas orientações em um perfil para sua revisão.</p></div></div>'+
+ return '<section class="panel training-manual"><div class="heading"><div><span class="kicker">DO SEU JEITO</span><h3>O que seu atendimento precisa saber?</h3><p>Explique com suas próprias palavras. As novas orientações são acrescentadas ao rascunho, sem apagar as regras anteriores. Você decide quando aprovar.</p></div></div>'+
  '<div class="training-tips"><strong>Você pode contar:</strong><span>O que sua empresa faz</span><span>Para quem vocês vendem</span><span>Quais serviços oferecem</span><span>Como prefere responder e quando assumir</span></div>'+
  '<div class="training-messages" role="log" aria-label="Conversa de treinamento">'+(t.chat?.length?t.chat.map(m=>'<div class="training-message '+(m.role==='user'?'sent':'received')+'"><small>'+(m.role==='user'?'Você':'Assistente de treinamento')+'</small><p>'+esc(m.body)+'</p></div>').join(''):'<div class="training-welcome"><strong>Conte como sua empresa trabalha.</strong><p>Exemplo: “Atendemos oficinas mecânicas, oferecemos gestão de tráfego e preferimos perguntas curtas. Quando alguém pedir valores, me avise para eu assumir.”</p></div>')+'</div>'+
  '<form class="training-composer" id="training-chat"><label class="sr-only" for="training-input">Orientações para a IA</label><textarea id="training-input" name="text" maxlength="3000" rows="3" required placeholder="Fale de forma natural sobre a sua empresa…">'+esc(trainingRecordedText)+'</textarea><div class="training-compose-actions"><button type="button" class="secondary training-record '+(trainingRecording?'recording':'')+'" data-action="training-record-toggle">'+(trainingRecording?'■ Parar gravação':'🎙 Falar por áudio')+'</button><button class="primary" type="submit" '+(trainingBusy?'disabled':'')+'>Enviar orientação ↗</button></div></form>'+
@@ -859,7 +859,17 @@ async function platformSubmit(ev){
    await Promise.all([loadClients(),loadMasterMetrics()]);
    n('Cliente criado. Compartilhe o convite privado com o responsável.');
   }
-  else{trainingState=await post('/api/training/'+({ 'training-business':'business','training-chat':'chat','training-approve':'approve'})[id],input);if(id==='training-business')trainingStep=1;if(id==='training-chat')trainingRecordedText='';if(id==='training-approve'){trainingWizardReopen=false;trainingStep=0;}n(id==='training-approve'?'Perfil aprovado e ativo.':'Informações de treinamento salvas.');}
+  else{
+   trainingState=await post('/api/training/'+({'training-business':'business','training-chat':'chat','training-approve':'approve'})[id],input);
+   if(id==='training-business')trainingStep=1;
+   if(id==='training-chat'){
+    trainingRecordedText='';
+    n(trainingState.chatResult?.saved?'Nova orientação adicionada ao rascunho. Revise e aprove antes de ativar.':'A Francisca respondeu no chat. Nenhuma orientação foi ativada; continue a conversa para completar o treinamento.');
+   }else{
+    if(id==='training-approve'){trainingWizardReopen=false;trainingStep=0;}
+    n(id==='training-approve'?'Perfil aprovado e ativo.':'Informações de treinamento salvas.');
+   }
+  }
  }catch(e){n(e.message);}finally{trainingBusy=false;busy=false;render();}return true;
 }
 function pipelineGraphic(k){
