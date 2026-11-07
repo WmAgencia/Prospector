@@ -33,7 +33,10 @@ export function reviewSections(markdown){
  });
 }
 export function publicReviewCards(markdown){
- return reviewSections(markdown).map(({id,index,title,summary,points,count})=>({id,index,title,summary,points,count}));
+ const sections=reviewSections(markdown);
+ // File titles and frontmatter are not themselves a learned behavior.
+ const visible=sections.length>1?sections.filter(c=>c.index!==0||/^\s*[-*+]\s+\S/m.test(c.raw)):sections;
+ return visible.map(({id,index,title,summary,points,count})=>({id,index,title,summary,points,count}));
 }
 export function reviewTextState(active,existingDraft){
  const draftText=existingDraft?.text||'';
