@@ -40,8 +40,10 @@ export function greetingForProspect(lead={},at=new Date()){
     const exists=one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='lead_decisor_enrichment'");
     const d=exists?one('SELECT decision_maker FROM lead_decisor_enrichment WHERE lead_id=?',lead.id):null;
     const first=String(d?.decision_maker||'').trim().split(/\s+/)[0];
-    if(first&&first.length<=32&&/^[\p{L}'-]+$/u.test(first))
-     return 'Oi, tudo bem? Me chamo Wesley, queria falar com '+first+'.';
+    if(first&&first.length<=32&&/^[\p{L}'-]+$/u.test(first)){
+     const display=first.charAt(0).toLocaleUpperCase('pt-BR')+first.slice(1).toLocaleLowerCase('pt-BR');
+     return 'Oi, tudo bem? Me chamo Wesley, queria falar com '+display+'.';
+    }
    }
   }
   return friendlyGreeting(lead,at);
