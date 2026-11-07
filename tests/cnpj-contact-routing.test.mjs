@@ -10,6 +10,7 @@ const {recordOrigin}=await import('../dashboard/discovery.mjs');
 const {isSameBusiness}=await import('../dashboard/cnpj-identity-match.mjs');
 const {enrichDecisorLead}=await import('../dashboard/decisor-enrichment.mjs');
 const {selectionStatus,routingAllowsOutreach,checkWhatsappNumber}=await import('../dashboard/business-contact-routing.mjs');
+const {greetingForProspect,CNPJ_FOLLOWUP_INTRO}=await import('../dashboard/prospecting-introduction.mjs');
 
 const CNPJ='00000000000191';
 const companyPhone='5515988888888';
@@ -18,7 +19,7 @@ const rawCompany=()=>({success:true,data:{
  cnpj:CNPJ,razaoSocial:'MECANICA TESTE LTDA',nomeFantasia:'MECANICA TESTE',
  municipio:'Sorocaba',uf:'SP',logradouro:'Rua Quinze de Novembro',
  numero:'123',bairro:'Centro',cep:'18010000',telefone:'(15) 98888-8888',
- socios:[{nomeSocio:'ROGERIO DA SILVA',descricao:'Sócio-Administrador'}]
+ socios:[{nomeSocio:'ROGÉRIO DA SILVA',descricao:'Sócio-Administrador'}]
 }});
 let seq=0;
 function foundMapsCompany({business='MECANICA TESTE',address='Rua Quinze de Novembro, 123, Centro, Sorocaba - SP, 18010-000',city='Sorocaba'}={}){
@@ -66,7 +67,9 @@ test('CNPJ phone replaces business listing phone only with strict match and What
  assert.equal(db.one('SELECT phone FROM leads WHERE id=?',lead.id).phone,companyPhone);
  assert.equal(selectionStatus(lead.id).original_phone,initial);
  assert.equal(selectionStatus(lead.id).route_source,'cnpj_registered');
- assert.equal(db.one('SELECT decision_maker FROM lead_decisor_enrichment WHERE lead_id=?',lead.id).decision_maker,'ROGERIO DA SILVA');
+ assert.equal(db.one('SELECT decision_maker FROM lead_decisor_enrichment WHERE lead_id=?',lead.id).decision_maker,'ROGÉRIO DA SILVA');
+ assert.equal(greetingForProspect({id:lead.id,business:lead.business}),'Oi, tudo bem? Me chamo Wesley, queria falar com Rogério.');
+ assert.match(CNPJ_FOLLOWUP_INTRO,/Consecom/);
 });
 test('unregistered CNPJ phone falls back to WhatsApp from Google Maps',async()=>{
  const lead=foundMapsCompany();
@@ -79,6 +82,7 @@ test('unregistered CNPJ phone falls back to WhatsApp from Google Maps',async()=>
  assert.equal(selectionStatus(lead.id).chosen_phone,original);
  assert.equal(db.one('SELECT phone FROM leads WHERE id=?',lead.id).phone,original);
  assert.deepEqual(checked,[companyPhone,original]);
+ assert.doesNotMatch(greetingForProspect({id:lead.id,business:lead.business}),/queria falar com Rogério/);
 });
 test('mismatched address or city never promotes CNPJ phone',async()=>{
  const lead=foundMapsCompany({address:'Rua Quinze de Novembro, 124, Centro, Sorocaba'});
