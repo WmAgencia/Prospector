@@ -99,8 +99,66 @@ test('bot group replies cannot cause a message.sent feedback loop',async()=>{
  const answer=await assistant.receivePrivateGroupWebhook({sessionId:session,data:fromMe,event:'message.sent',request,
   getSessions:async()=>({items:[{sessionId:session,number:owner,connected:true}]})});
  assert.equal(answer.ignored,true);
- assert.equal(answer.reason,'BOT_OUTGOING');
+ assert.equal(answer.reason,'BOT_ECHO_ALL_SESSIONS');
  assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
+});
+test('a bot report received as a normal message on SECOND WhatsApp is ignored',async()=>{
+ const report='📊 *Prospector Consecom — relatório diário*\n📅 2026-11-07 (Brasília)\n\n📨 Abordagens (empresas): 4\n✉️ Mensagens enviadas: 6';
+ await assistant.sendGroupMessage({sessionId:session,groupId:jid,text:report,request});
+ const echoed={isGroup:true,key:{id:'SECONDSESSION001',remoteJid:jid,fromMe:false,participant:owner+'@s.whatsapp.net'},
+  type:'TEXT',sender:owner+'@s.whatsapp.net',content:report};
+ const received=await assistant.receivePrivateGroupWebhook({
+  sessionId:'prospector-second',data:echoed,event:'message.received',request
+ });
+ assert.equal(received.ignored,true);
+ assert.equal(received.reason,'BOT_ECHO_ALL_SESSIONS');
+ assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
+ assert.equal(calls.filter(x=>x.url.endsWith('/send')).length,1);
+});
+test('same bot reply with varied whitespace is ignored by persistent normalized fingerprint',async()=>{
+ const report='Resposta Francisca\n  Abordagens: 3  \n Interessados: 1';
+ await assistant.sendGroupMessage({sessionId:session,groupId:jid,text:report,request});
+ const echoed={isGroup:true,key:{id:'SECONDSESSION002',remoteJid:jid,fromMe:false},
+  type:'TEXT',sender:partner+'@s.whatsapp.net',content:'Resposta Francisca\r\n Abordagens: 3\n Interessados: 1 '};
+ const received=await assistant.receivePrivateGroupWebhook({
+  sessionId:'prospector-second',data:echoed,request
+ });
+ assert.equal(received.reason,'BOT_ECHO_ALL_SESSIONS');
+ assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
+});
+test('a previously generated daily report is ignored even without an outgoing hash',async()=>{
+ const event={isGroup:true,key:{id:'SECONDSESSION003',remoteJid:jid,fromMe:false},
+  type:'TEXT',sender:partner+'@s.whatsapp.net',
+  content:'📊 *Prospector Consecom — relatório diário*\n📅 2026-11-07\n📨 Abordagens: 5\n✉️ Mensagens enviadas: 9'};
+ const result=await assistant.receivePrivateGroupWebhook({sessionId:session,data:event,request});
+ assert.equal(result.ignored,true);
+ assert.equal(result.reason,'GENERATED_REPORT');
+ assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
+});
+test('rapid duplicate commands and runaway command bursts are blocked',async()=>{
+ const sender=partner+'@s.whatsapp.net';
+ const first=await assistant.queueGroupCommand({unique:'command:001',sessionId:session,groupId:jid,sender,text:'relatório de hoje',request});
+ assert.equal(first.queued,true);
+ const duplicate=await assistant.queueGroupCommand({unique:'command:002',sessionId:session,groupId:jid,sender,text:'relatório de hoje',request});
+ assert.equal(duplicate.reason,'RECENT_DUPLICATE');
+ // A group-wide upper bound also limits replies from new message IDs.
+ for(let i=0;i<9;i++){
+  await assistant.queueGroupCommand({unique:'command:burst:'+i,sessionId:session,groupId:jid,sender,text:'status da operação '+i,request});
+ }
+ const limited=await assistant.queueGroupCommand({unique:'command:overflow',sessionId:session,groupId:jid,sender,text:'status fora do limite',request});
+ assert.equal(limited.reason,'RATE_LIMIT');
+ assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,10);
+});
+test('while circuit breaker is enabled, manual report request is NOT answered',async()=>{
+ process.env.PROSPECTOR_AUTO_GROUP_ENABLED='false';
+ try{
+  const result=await assistant.receivePrivateGroupWebhook({sessionId:session,data:{
+   isGroup:true,key:{id:'MANUAL_STOPPED_01',remoteJid:jid,fromMe:false},
+   type:'TEXT',sender:partner+'@s.whatsapp.net',content:'relatório de hoje'},request});
+  assert.equal(result.accepted,false);
+  assert.equal(result.reason,'GROUP_ASSISTANT_DISABLED');
+  assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
+ }finally{delete process.env.PROSPECTOR_AUTO_GROUP_ENABLED;}
 });
 test('audio in the group is accepted only from a current participant, with safe media path',async()=>{
  const event={isGroup:true,key:{id:'AAAA33333',remoteJid:jid,fromMe:false,participant:partner+'@s.whatsapp.net'},
