@@ -845,3 +845,22 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .fr-shared-card{background:#fdfcff;border-style:dashed;border-color:#ddd4f1}
 .fr-shared-card .fr-review-symbol{background:#f4eefa;color:#6744b8}
 .fr-shared-card>.secondary{border-color:#d6caee;color:#5e418e}
+
+
+/* Keep the compact setup guide INSIDE the workspace edge, above the sidebar layer. */
+.fr-setup-widget{left:104px!important;bottom:18px!important;width:min(335px,calc(100vw - 124px))!important;z-index:120!important;max-height:min(540px,calc(100dvh - 30px));overflow-y:auto;box-shadow:0 10px 35px #251a5025!important}
+.fr-setup-widget.is-minimized{width:min(275px,calc(100vw - 124px))!important;box-shadow:0 6px 24px #251a5020!important}
+.fr-setup-widget.is-minimized .fr-setup-heading{padding:11px 13px!important;min-height:58px}
+.fr-setup-widget.is-minimized .fr-setup-emblem{width:28px;height:28px;font-size:14px}
+.fr-setup-widget.is-minimized .fr-setup-heading strong{font-size:11px}
+.fr-setup-widget.is-minimized .fr-setup-heading small{font-size:10px;margin-top:2px}
+.fr-setup-widget:focus-within{outline:2px solid #a38bf3;outline-offset:2px}
+@media(max-width:940px){
+ .fr-setup-widget{left:14px!important;bottom:12px!important;width:min(335px,calc(100vw - 28px))!important}
+ .fr-setup-widget.is-minimized{width:min(275px,calc(100vw - 28px))!important}
+ .shell:has(.side.mobile-open)~.fr-setup-widget{display:none}
+}
+@media(max-width:420px){
+ .fr-setup-widget{width:calc(100vw - 24px)!important;left:12px!important;bottom:10px!important}
+ .fr-setup-widget.is-minimized{width:min(258px,calc(100vw - 24px))!important}
+}
