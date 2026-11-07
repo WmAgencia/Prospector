@@ -4,12 +4,12 @@
 // This does NOT verify that the number belongs personally to any shareholder.
 import {db,one,run,now,audit,phone} from './db.mjs';
 import {selectedWaSession,waControlStatus,waRequest} from './waakg-control.mjs';
-db.exec(\`CREATE TABLE IF NOT EXISTS lead_contact_selection (
+db.exec(`CREATE TABLE IF NOT EXISTS lead_contact_selection (
  lead_id TEXT PRIMARY KEY REFERENCES leads(id),
  original_phone TEXT, chosen_phone TEXT,
  route_source TEXT NOT NULL, status TEXT NOT NULL,
  checked_at TEXT, reason TEXT, updated_at TEXT NOT NULL
-)\`);
+)`);
 
 export async function checkWhatsappNumber(value,{request=waRequest,checkSession=waControlStatus}={}){
  const n=phone(value);
@@ -30,19 +30,20 @@ export async function checkWhatsappNumber(value,{request=waRequest,checkSession=
   return {state:'UNKNOWN',reason:'CHECK_FAILED'};
  }
 }
+function hasTable(table){return !!one("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",table);}
 function hasHistory(lead){
  return !!one('SELECT 1 FROM initial_contacts WHERE lead_id=? OR phone=? LIMIT 1',lead.id,lead.phone||'')
   ||!!one('SELECT 1 FROM threads WHERE lead_id=? LIMIT 1',lead.id)
-  ||!!one("SELECT 1 FROM prospecting_batch_items WHERE lead_id=? AND status IN ('QUEUED','SENDING','SENT','UNKNOWN') LIMIT 1",lead.id)
+  ||(hasTable('prospecting_batch_items')&&!!one("SELECT 1 FROM prospecting_batch_items WHERE lead_id=? AND status IN ('QUEUED','SENDING','SENT','UNKNOWN') LIMIT 1",lead.id))
   ||!!one("SELECT 1 FROM jobs WHERE lead_id=? AND status IN ('PENDING','SENDING','SENT','UNKNOWN') LIMIT 1",lead.id)
   ||!!one("SELECT 1 FROM contact_cadence WHERE lead_id=? LIMIT 1",lead.id);
 }
 function selectRecord(leadId,original,chosen,status,source,reason){
- run(\`INSERT INTO lead_contact_selection(lead_id,original_phone,chosen_phone,route_source,status,checked_at,reason,updated_at)
+ run(`INSERT INTO lead_contact_selection(lead_id,original_phone,chosen_phone,route_source,status,checked_at,reason,updated_at)
  VALUES(?,?,?,?,?,?,?,?)
  ON CONFLICT(lead_id) DO UPDATE SET original_phone=excluded.original_phone,
  chosen_phone=excluded.chosen_phone,route_source=excluded.route_source,status=excluded.status,
- checked_at=excluded.checked_at,reason=excluded.reason,updated_at=excluded.updated_at\`,
+ checked_at=excluded.checked_at,reason=excluded.reason,updated_at=excluded.updated_at`,
  leadId,original||null,chosen||null,source,status,now(),reason||null,now());
  audit('BUSINESS_CONTACT_ROUTED',leadId,{source,status,reason,phoneChanged:!!chosen&&chosen!==original});
  return {status,source,reason,phoneChanged:!!chosen&&chosen!==original};
@@ -72,7 +73,7 @@ export async function routeBusinessContact(leadId,{matchedCompany=null,checkWhat
   return result;
  }
  const preferredResult=preferred?await valid(preferred):{state:'NO',reason:'NOT_FOUND'};
- let chosen=null,source='maps_osm',reason='CNJP_NOT_CONFIRMED';
+ let chosen=null,source='maps_osm',reason='CNPJ_NOT_CONFIRMED';
  if(matchedCompany&&preferredResult.state==='YES'){
   chosen=preferred;source='cnpj_registered';reason='CNPJ_ADDRESS_AND_WHATSAPP_VERIFIED';
  }
