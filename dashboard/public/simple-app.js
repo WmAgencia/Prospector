@@ -5,6 +5,7 @@ const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short"
 const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
 let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="all",trainingAllConfirmed=false,trainingBusy=false,clientAccess="";
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
+let billingReminderOpen=false,billingReminderDismissed=false,billingDemoExhausted=false,billingDemoStep=0,billingDemoPackage='';
 let preferredPackage='';
 try{preferredPackage=sessionStorage.getItem('prospector-preferred-package')||'';}catch{}
 let offerType='portfolio';
@@ -141,9 +142,32 @@ function franciscaOnboarding(){
   (trainingSetupMinimized?'':'<div class="fr-setup-body"><div class="fr-setup-track"><span style="width:'+Math.round(done/3*100)+'%"></span></div>'+
   stages.map((x,i)=>'<div class="fr-setup-row '+(x.done?'done':'')+'"><span class="fr-setup-step">'+(x.done?'✓':i+1)+'</span><div><strong>'+esc(x.title)+'</strong><small>'+esc(x.sub)+'</small></div>'+(x.done?'':'<button type="button" class="secondary compact" data-action="'+(i===2?'training-setup-analyze':'training-setup-go')+'" data-tab-target="'+x.tab+'">'+esc(x.action)+'</button>')+'</div>').join('')+'</div>')+'</aside>';
 }
+function billingNeedsRenewal(){
+ if(platformContext.role==='master'||platformContext.unlimited)return false;
+ if(platformContext.demo)return billingDemoExhausted;
+ if(creditState?.trial?.status==='PENDING')return false;
+ const count=Number(creditState?.available??platformContext.available);
+ return Number.isFinite(count)&&count<=0;
+}
+function billingOfferDialog(){
+ if(!billingReminderOpen||!billingNeedsRenewal())return '';
+ const demo=platformContext.demo===true,packs=creditState?.packages||[];
+ const chosen=packs.find(x=>x.id===billingDemoPackage);
+ const options=(demo&&billingDemoStep===1&&chosen)?
+  '<div class="billing-renew-demo"><div class="billing-summary"><strong>'+esc(chosen.name)+' · '+Number(chosen.credits).toLocaleString('pt-BR')+' abordagens</strong><b>'+moneyFromCents(chosen.priceCents)+'</b></div><h4>Prévia do checkout</h4><p>Na compra real, o cliente paga na página protegida da Stripe. O Prospector não recebe números de cartão.</p><div class="billing-payment-example">▣ <span>Cartão de crédito</span></div><div class="billing-payment-example">◇ <span>Pix, se habilitado pela Stripe</span></div><div class="billing-renew-demo-actions"><button type="button" class="secondary" data-action="billing-demo-back">Voltar</button><small>Exemplo visual. Nenhum pagamento foi criado.</small></div></div>':
+  '<div class="billing-renew-plans">'+packs.map(x=>'<article class="billing-renew-plan"><div><strong>'+esc(x.name)+'</strong><small>'+Number(x.credits).toLocaleString('pt-BR')+' abordagens</small></div><b>'+moneyFromCents(x.priceCents)+'</b><button type="button" class="primary compact" data-action="'+(demo?'billing-demo-select':'request-credit-package')+'" data-package="'+esc(x.id)+'">'+(demo?'Ver pagamento':'Escolher')+'</button></article>').join('')+'</div>'+
+   (!demo&&!creditState?.automaticBilling?'<p class="billing-renew-warning">Checkout em configuração. Nenhuma cobrança será efetuada até a ativação.</p>':'')+
+   '<p class="billing-renew-footnote">Sem renovação automática. Você escolhe quando comprar. Novos créditos só entram após confirmação segura do pagamento.</p>';
+ return '<div class="billing-renew-backdrop"><section role="dialog" aria-modal="true" aria-labelledby="billing-renew-title" class="billing-renew-modal"><div class="billing-renew-header"><div><span class="kicker">'+(demo?'DEMONSTRAÇÃO · SEM COBRANÇAS':'RECARREGUE QUANDO PRECISAR')+'</span><h2 id="billing-renew-title">'+(demo?'Como o cliente renova':'Suas abordagens chegaram ao fim')+'</h2><p>'+(demo?'Esta é a experiência quando os 100 créditos gratuitos acabam. Nenhum WhatsApp será acionado.':'Seu painel, treinamento e conversas continuam disponíveis. Para iniciar novas abordagens, escolha uma recarga.')+'</p></div><button type="button" class="billing-renew-close" data-action="billing-reminder-close" aria-label="Fechar aviso de recarga">×</button></div>'+options+'</section></div>';
+}
+function maybeOpenBillingReminder(){
+ if(!billingNeedsRenewal()||billingReminderDismissed||billingReminderOpen)return;
+ if(!platformContext.demo){try{if(sessionStorage.getItem('prospector-billing-reminder-'+platformContext.id)==='dismissed')return;}catch{}}
+ billingReminderOpen=true;render();
+}
 function shell(){
  const active=tabs[view]||tabs.overview,connected=!!wa?.connected;
- root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["dashboard","clients","credits","settings"].includes(key):!["dashboard","clients"].includes(key)).map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button sidebar-switch" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+'</div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div><div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'Desconectado')+'</span></span>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+(platformContext.role!=="master"&&!connected?'<button class="wa-inline-connect" type="button" data-action="reconnect-qr">'+glyph('connections')+' Conectar</button>':'')+'<button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>'+franciscaWidget()+activationModal()+franciscaOnboarding();
+ root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["dashboard","clients","credits","settings"].includes(key):!["dashboard","clients"].includes(key)).map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button sidebar-switch" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+'</div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div><div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'Desconectado')+'</span></span>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+(platformContext.role!=="master"&&!connected?'<button class="wa-inline-connect" type="button" data-action="reconnect-qr">'+glyph('connections')+' Conectar</button>':'')+'<button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>'+franciscaWidget()+activationModal()+franciscaOnboarding()+billingOfferDialog();
 }
 
 
@@ -589,7 +613,7 @@ function trainingView(){return interviewView();}
 
 async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/analytics');if(platformContext.role==='master'&&view==='dashboard')render();}catch(e){n('Indicadores indisponíveis: '+e.message);}}
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
-async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');if(view==='credits')render();}catch(e){n(e.message);}}
+async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');platformContext.available=creditState.available;if(view==='credits')render();maybeOpenBillingReminder();}catch(e){n(e.message);}}
 async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
 async function platformAction(action,el){
  if(action==='client-open'){await post('/api/platform/clients/'+el.dataset.client+'/open',{});location.assign('/');return true;}
@@ -602,6 +626,23 @@ async function platformAction(action,el){
  if(action==='master-client-close'){masterCreateOpen=false;render();return true;}
  if(action==='refresh-master'){await Promise.all([loadClients(),loadMasterMetrics()]);n('Dados atualizados.');return true;}
  if(action==='refresh-clients'){await loadClients();return true;}
+ if(action==='billing-reminder-close'){
+  billingReminderOpen=false;billingReminderDismissed=true;billingDemoStep=0;
+  if(!platformContext.demo){try{sessionStorage.setItem('prospector-billing-reminder-'+platformContext.id,'dismissed');}catch{}}
+  render();return true;
+ }
+ if(action==='billing-reminder-open'){billingReminderOpen=true;billingReminderDismissed=false;billingDemoStep=0;render();return true;}
+ if(action==='billing-demo-toggle'){
+  if(!platformContext.demo)return true;
+  billingDemoExhausted=!billingDemoExhausted;billingDemoStep=0;
+  billingReminderOpen=billingDemoExhausted;billingReminderDismissed=false;render();return true;
+ }
+ if(action==='billing-demo-select'){
+  if(!platformContext.demo)return true;
+  const pack=creditState?.packages?.find(x=>x.id===el.dataset.package);
+  if(pack){billingDemoPackage=pack.id;billingDemoStep=1;render();}return true;
+ }
+ if(action==='billing-demo-back'){billingDemoStep=0;render();return true;}
  if(action==='request-credit-package'){
   if(!creditState?.automaticBilling){n('O checkout automático está sendo configurado. Nenhuma cobrança ou recarga foi efetuada.');return true;}
   const pack=creditState?.packages?.find(p=>p.id===el.dataset.package);
@@ -1159,6 +1200,7 @@ async function reload(){
   if(platformContext.role==="master"){await Promise.all([loadClients(),loadMasterMetrics()]);lastRefresh=Date.now();render();return;}
   state=await api("/api/state");lastRefresh=Date.now();
   if(!trainingState)await loadTraining();
+  if(!creditState)await loadCredits();
   if(view==="clients")await loadClients();else if(view==="training")await loadTraining();else if(view==="credits"){render();await loadCredits();}else if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else render();
  }catch(e){if(!state)root.innerHTML='<main class="load-error"><h2>Não foi possível abrir o Prospector</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';else n(e.message);}
 }
