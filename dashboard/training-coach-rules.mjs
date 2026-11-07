@@ -4,7 +4,7 @@ export function trainingChatDraftProposal(userText,assistantText){
  const user=String(userText||'').trim().replace(/\s+/g,' ');
  const answer=String(assistantText||'').trim();
  if(user.length<5||answer.length<20||/\?\s*$/.test(answer))return null;
- if(!/\b(quando|sempre|nunca|deve|precisa|faça|pergunte|responda|explique|informe|confirme|encaminhe|ofereça|apresente|cliente|atendimento|serviço|empresa|venda|preço|orçamento|prazo|pagamento|contrato)\b/i.test(answer))return null;
+ if(!/\b(quando|sempre|nunca|deve|precisa|faça|pergunte|responda|explique|informe|confirme|encaminhe|encaminhar|ofereça|oferecer|apresente|apresentar|explicar|perguntar|responder|informar|confirmar|orientar|repassar|cliente|atendimento|serviço|empresa|venda|preço|orçamento|prazo|pagamento|contrato)\b/i.test(answer))return null;
  const topic=user
   .replace(/^(?:eu\s+)?(?:quero|gostaria|preciso)\s+(?:que\s+(?:a\s+)?(?:francisca|você)\s+)?(?:adicione|adicionar|ensine|ensinar|fale|responda|explique|registrar?|coloque)\s*/i,'')
   .replace(/^(?:orientação|regra)\s*:\s*/i,'')
