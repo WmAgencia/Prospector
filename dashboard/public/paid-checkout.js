@@ -101,14 +101,14 @@
   if(!sessionPattern.test(sessionId))return;
   const body=shell({title:'Ativar meu plano',subtitle:'Acesso liberado somente após confirmação do pagamento.'});
   body.innerHTML='<div class="ps-pay-spinner"></div><p>Conferindo o pagamento com a Stripe…</p>';
-  let last='',started=Date.now();
+  let last='',started=Date.now(),terminal=false;
   const refresh=async ()=>{
    try{
     const info=await status(sessionId);
     if(!dialog?.open)return;
-    if(info.status==='PAID'){stopPoll();activationForm(body,info,sessionId);return;}
+    if(info.status==='PAID'){terminal=true;stopPoll();activationForm(body,info,sessionId);return;}
     if(info.status==='CLAIMED'){
-     stopPoll();sessionStorage.removeItem('prospector-paid-return-session');
+     terminal=true;stopPoll();sessionStorage.removeItem('prospector-paid-return-session');
      body.innerHTML='<div class="ps-pay-success"><span>✓</span><strong>Pagamento confirmado</strong><p>Os créditos foram adicionados a uma conta existente ou já ativada.</p></div><a class="ps-pay-primary ps-pay-link" href="/entrar">Entrar no meu painel →</a>';
      return;
     }
@@ -124,7 +124,7 @@
     body.querySelector('#ps-pay-retry')?.addEventListener('click',refresh);
    }
   };
-  await refresh();if(dialog?.open&&!poll)poll=setInterval(refresh,6500);
+  await refresh();if(dialog?.open&&!terminal&&!poll)poll=setInterval(refresh,6500);
  }
  document.addEventListener('click',e=>{
   const link=e.target.closest('[data-plan-checkout]');
