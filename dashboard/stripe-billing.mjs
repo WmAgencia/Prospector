@@ -27,6 +27,40 @@ export function checkoutForRequest(request){
  url.searchParams.set('client_reference_id',request.id);
  return url.toString();
 }
+
+const EMBEDDED_PRICES={
+ dia1:'price_1UZEp9Jj6d3ODR9EVnPSfkTW',
+ dias3:'price_1UZEpPJj6d3ODR9E1cEI7aT8',
+ dias7:'price_1UZEpUJj6d3ODR9EFVYlihpV',
+ dias14:'price_1UZEpYJj6d3ODR9EbGOL7jem',
+ dias30:'price_1UZEpeJj6d3ODR9EYHeH5XmY'
+};
+export function embeddedReady(){
+ return billingReady()&&/^sk_live_/.test(process.env.STRIPE_SECRET_KEY||'')&&/^pk_live_/.test(process.env.STRIPE_PUBLISHABLE_KEY||'');
+}
+export async function embeddedCheckoutForRequest(request){
+ if(!embeddedReady())return null;
+ const pack=CREDIT_PACKAGES.find(p=>p.id===request?.package_id);
+ const price=EMBEDDED_PRICES[pack?.id];
+ if(!pack||!price||!uuid.test(request.id))throw Error('Pacote inválido');
+ const base=(process.env.APP_BASE_URL||'https://prospector.consecom.com.br').replace(/\/$/,'');
+ if(!/^https:\/\//.test(base))throw Error('Domínio público inválido');
+ const body=new URLSearchParams({
+  mode:'payment',ui_mode:'embedded','line_items[0][price]':price,'line_items[0][quantity]':'1',
+  'payment_method_types[0]':'card','payment_method_types[1]':'pix',
+  'client_reference_id':request.id,'metadata[app]':'prospector','metadata[request_id]':request.id,'metadata[package_id]':pack.id,
+  return_url:base+'/?pagamento=retorno&session_id={CHECKOUT_SESSION_ID}',
+  'expires_at':String(Math.floor(Date.now()/1000)+1800)
+ });
+ const response=await fetch('https://api.stripe.com/v1/checkout/sessions',{
+  method:'POST',headers:{Authorization:'Bearer '+process.env.STRIPE_SECRET_KEY,'Content-Type':'application/x-www-form-urlencoded','Idempotency-Key':'prospector-embedded-'+request.id},
+  body:body.toString(),signal:AbortSignal.timeout(12000)
+ });
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok||!/^cs_live_/.test(data.id||'')||!data.client_secret)throw Error('Não foi possível preparar o pagamento seguro.');
+ return {clientSecret:data.client_secret,publishableKey:process.env.STRIPE_PUBLISHABLE_KEY};
+}
+
 export function verifyStripeSignature(raw,header,secret,now=Date.now()){
  if(!Buffer.isBuffer(raw)||raw.length>256_000||typeof header!=='string'||!secret?.startsWith('whsec_'))return false;
  const entries=header.split(',').map(kv=>kv.trim().split('='));
@@ -64,13 +98,15 @@ export async function handleStripeWebhook(req,res,{respond,ledger}){
   respond(res,200,{received:true,ignored:true,reason:'not-prospector'});return;
  }
  const expectedLink=Object.entries(paymentLinks()).find(([,v])=>v.id===session.payment_link);
- if(!expectedLink){respond(res,200,{received:true,ignored:true,reason:'other-payment-link'});return;}
+ const embeddedPackage=(!session.payment_link&&session.metadata?.app==='prospector'&&session.metadata?.request_id===session.client_reference_id&&EMBEDDED_PRICES[session.metadata?.package_id])?session.metadata.package_id:null;
+ const packageId=expectedLink?.[0]||embeddedPackage;
+ if(!packageId){respond(res,200,{received:true,ignored:true,reason:'other-checkout'});return;}
  if(session.currency!=='brl'||!Number.isSafeInteger(session.amount_total)||session.amount_total<100){
   respond(res,200,{received:true,ignored:true,reason:'invalid-amount'});return;
  }
  try{
   const result=ledger.confirmVerifiedPayment({
-   requestId:session.client_reference_id,packageId:expectedLink[0],
+   requestId:session.client_reference_id,packageId,
    amountCents:session.amount_total,sessionId:session.id,eventId:event.id
   });
   respond(res,200,{received:true,confirmed:result.ok,duplicate:result.duplicate||false});
