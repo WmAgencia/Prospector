@@ -97,6 +97,24 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
    const reply=await request(path);
    return listEntries(reply);
   };
+  // Restore the exact JID from a previously verified, user-authorized live
+  // creation. The WA-AKG Prisma group list can lag despite live metadata being
+  // correct; never create a second group while this import remains unresolved.
+  const importedJid=process.env.PROSPECTOR_TENANT_INTERNAL==='true'?
+   groupId(process.env.PROSPECTOR_GROUP_IMPORT_JID):'';
+  if(!saved&&importedJid){
+   let metadata;
+   try{metadata=await request(path+'/'+encodeURIComponent(importedJid));}
+   catch{return {state:'GROUP_METADATA_UNAVAILABLE'};}
+   const members=getMembership(metadata);
+   if(groupId(metadata?.id||metadata?.jid)!==importedJid||
+      metadata?.subject!==PROSPECTOR_GROUP_NAME||!members||members.unknown||
+      !members.numbers.has(ownerNumber)||
+      [...members.numbers].some(n=>!ownedNumbers.has(n)))return {state:'GROUP_MATCH_AMBIGUOUS'};
+   saveGroup({ownerSession,ownerNumber,groupJid:importedJid,state:'READY',attemptedAt:at.toISOString()});
+   audit('PRIVATE_GROUP_KNOWN_ID_RESTORED',null,{members:members.numbers.size,verified:true});
+   return {state:'RECOVERED',groupCreated:true,members:members.numbers.size};
+  }
   // Recover a group explicitly created by this account before this worker
   // was enabled (or by a one-time authenticated activation). Never duplicate
   // an already existing group with the exact managed title.
