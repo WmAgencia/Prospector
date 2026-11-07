@@ -571,8 +571,8 @@ async function handler(req,res){
    if(req.method==='POST'){
     const v=await json(req);
     try{
-     if(v.action==='register-audio')return respond(res,200,attachOriginalAbAudio(v.mediaId));
-     if(v.action==='configure')return respond(res,200,setOfferAbPlan({deadlineMonday:v.deadlineMonday,startDate:v.startDate,enabled:v.enabled===true}));
+     if(v.action==='register-audio')return respond(res,200,attachOriginalAbAudio(v.mediaId,{confirmedScript:v.confirmedScript===true}));
+     if(v.action==='configure')return respond(res,200,setOfferAbPlan({portfolioDueDate:v.portfolioDueDate,startDate:v.startDate,enabled:v.enabled===true}));
      return respond(res,422,{error:'Ação não reconhecida'});
     }catch(err){return respond(res,422,{error:String(err.message).slice(0,190)});}
    }
