@@ -3,6 +3,19 @@
 import crypto from 'node:crypto';
 import {getSetting,setSetting,now} from './db.mjs';
 const sha=s=>crypto.createHash('sha256').update(s).digest('hex').slice(0,20);
+export function conciseTrainingSummary(lines){
+ const options=(Array.isArray(lines)?lines:[])
+  .map(x=>String(x||'').replace(/\s+/g,' ').trim())
+  .filter(x=>x.length>=18&&!/^(versão|escopo|idioma|fonte|arquivo|documento):/i.test(x)&&!/^[-–—|#`*_]+$/.test(x));
+ const selected=options.slice(0,2);
+ if(!selected.length)return 'Abra as orientações para conferir o que a Francisca pode fazer e responder.';
+ let short=selected[0].replace(/^\d+[.)]\s*/,'');
+ if(short.length<105&&selected[1])short+=' • '+selected[1].replace(/^\d+[.)]\s*/,'');
+ if(short.length<=210)return short;
+ const cropped=short.slice(0,207).replace(/\s+\S*$/,'').replace(/[.,;:!?\s-]+$/,'');
+ return cropped+'…';
+}
+
 const text=v=>String(v||'').replace(/\r\n?/g,'\n');
 export function reviewSections(markdown){
  const value=text(markdown);
@@ -15,7 +28,7 @@ export function reviewSections(markdown){
   const lines=body.split('\n').map(x=>x.trim()).filter(Boolean);
   const plain=lines.map(line=>line.replace(/^#{1,6}\s+/, '').replace(/^>\s*/, '').replace(/^[-*+]\s+/, '').replace(/\*\*|__/g,'').replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'$1 ($2)')).filter(Boolean);
   return {id:sha(index+'|'+raw),index,title,body,
-   summary:plain.slice(0,2).join(' · ').slice(0,240),
+   summary:conciseTrainingSummary(plain),
    points:plain.slice(0,80),count:plain.length,raw};
  });
 }
@@ -39,6 +52,14 @@ export function modifyReviewMarkdown(markdown,{action,index,cardId,title,body,ve
  if(version&&sha(original)!==version)throw Error('O treinamento foi atualizado. Atualize a página antes de editar');
  const parts=reviewSections(original);
  const nextTitle=safeTitle(title);
+ if(action==='delete'){
+  const card=parts.find(x=>x.index===index&&x.id===cardId);
+  if(!card)throw Error('Orientação alterada ou não encontrada. Atualize a página');
+  const pos=original.indexOf(card.raw);
+  if(pos<0)throw Error('Versão desatualizada');
+  const updated=(original.slice(0,pos)+original.slice(pos+card.raw.length)).replace(/\n{3,}/g,'\n\n').trim();
+  return updated.length>=20?updated+'\n':'# Orientações da empresa\n\nNenhuma orientação comercial específica aprovada.\n';
+ }
  if(action==='add'){
   if(!nextTitle||nextTitle.length<3)throw Error('Informe um título para a orientação');
   const entry='## '+nextTitle+'\n\n'+safeBody(body);
