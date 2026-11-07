@@ -841,3 +841,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  .fr-review-materials>summary{flex-direction:column;align-items:flex-start}
 }
 @media(prefers-reduced-motion:reduce){.fr-review-card,.fr-analysis-progress>i>b{transition:none}}
+
+.fr-shared-card{background:#fdfcff;border-style:dashed;border-color:#ddd4f1}
+.fr-shared-card .fr-review-symbol{background:#f4eefa;color:#6744b8}
+.fr-shared-card>.secondary{border-color:#d6caee;color:#5e418e}
