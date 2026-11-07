@@ -164,6 +164,7 @@ export async function receivePrivateGroupWebhook({sessionId,data={},request=waRe
  const fromMe=key.fromMe===true||data.fromMe===true;
  let actor=senderIdentities(data);
  if(fromMe){
+  if(event!=='message.sent')return {handled:true,accepted:true,ignored:true,reason:'FROM_ME_NOT_SENT_EVENT'};
   // The person who connected the very first WhatsApp must also be able to
   // send commands while alone in the group. Verify the current live identity
   // of THAT authenticated session, rather than trusting a supplied sender JID.
@@ -176,7 +177,6 @@ export async function receivePrivateGroupWebhook({sessionId,data={},request=waRe
   if(one('SELECT 1 FROM prospector_group_outgoing_guard WHERE group_jid=? AND hash=? AND at>? LIMIT 1',
    groupId,hash,new Date(Date.now()-5*60_000).toISOString()))
    return {handled:true,accepted:true,ignored:true,reason:'BOT_OUTGOING'};
-  if(event!=='message.sent')return {handled:true,accepted:true,ignored:true,reason:'FROM_ME_NOT_SENT_EVENT'};
  }
  const authorized=await verifyGroupMember({sessionId,groupId,sender:actor,request});
  if(!authorized.ok)return {handled:true,accepted:false,reason:authorized.reason};
