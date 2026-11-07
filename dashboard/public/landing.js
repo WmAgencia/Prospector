@@ -1,3 +1,28 @@
+// Client-side field checks. These checks do NOT query government records,
+// attest CPF ownership, or establish a match between the name and the CPF.
+(function(root){
+  'use strict';
+  const digits=value=>String(value||'').replace(/\D/g,'').slice(0,11);
+  const validCpf=value=>{
+    const cpf=digits(value);
+    if(!/^\d{11}$/.test(cpf)||/^(\d)\1{10}$/.test(cpf))return false;
+    for(const pos of [9,10]){
+      let sum=0;for(let i=0;i<pos;i++)sum+=Number(cpf[i])*(pos+1-i);
+      if(Number(cpf[pos])!==((sum*10)%11)%10)return false;
+    }
+    return true;
+  };
+  const nameIsComplete=value=>{
+    const name=String(value||'').normalize('NFC').trim().replace(/\s+/g,' ');
+    return name.length>=5&&name.length<=100&&name.split(' ').filter(Boolean).length>=2&&/^[\p{L}][\p{L}\p{M} .'-]*$/u.test(name);
+  };
+  const formatCpf=value=>{
+    const cpf=digits(value);
+    return cpf.replace(/^(\d{3})(\d)/,'$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/,'$1.$2.$3').replace(/(\d{3}\.\d{3}\.\d{3})(\d{1,2})$/,'$1-$2');
+  };
+  root.ProspectorSignupValidation=Object.freeze({digits,validCpf,nameIsComplete,formatCpf});
+})(typeof window!=='undefined'?window:globalThis);
+
 const dialog=document.querySelector('#auth-dialog'),form=document.querySelector('#auth-form');let mode='signup',sending=false;
 const $=s=>document.querySelector(s);
 function openAuth(next){mode=next;const signup=mode==='signup';document.querySelectorAll('.signup-only').forEach(x=>x.hidden=!signup);$('#signup-name').required=signup;$('#signup-cpf').required=signup;$('#signup-phone').required=signup;$('#signup-email').type=signup?'email':'text';$('#signup-email').required=true;$('#signup-email').placeholder=signup?'voce@agencia.com.br':'E-mail ou celular com DDD';$('#identifier-label').textContent=signup?'E-mail profissional':'E-mail ou celular';$('#signup-password').autocomplete=signup?'new-password':'current-password';$('#auth-title').textContent=signup?'Vamos começar?':'Bom ter você de volta.';$('#auth-description').textContent=signup?'Cadastre seu nome completo, CPF, celular e e-mail para solicitar 50 abordagens gratuitas. Nenhuma cobrança no cadastro; os créditos são liberados após confirmação da identidade.':'Entre no seu espaço para continuar de onde parou.';$('#auth-eyebrow').textContent=signup?'SEU ESPAÇO COMEÇA AQUI':'SEU PAINEL PROSPECTOR';$('#auth-submit').textContent=signup?'Criar conta gratuita ↗':'Entrar no meu painel ↗';$('#auth-switch').replaceChildren(document.createTextNode(signup?'Já tem uma conta? ':'Primeira vez aqui? '));const b=document.createElement('button');b.type='button';b.dataset.switch=signup?'signin':'signup';b.textContent=signup?'Entrar':'Criar conta';$('#auth-switch').append(b);$('#login-help').hidden=signup;$('#auth-message').textContent='';for(const [field,feedback] of [['#signup-name','#signup-name-feedback'],['#signup-cpf','#signup-cpf-feedback']]){const input=$(field);delete input.dataset.touched;input.setCustomValidity('');input.removeAttribute('aria-invalid');$(feedback).hidden=true;}if(!dialog.open)dialog.showModal();}
