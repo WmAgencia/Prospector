@@ -36,9 +36,10 @@ test('first connected WhatsApp creates a group with zero invited members',async(
   return {status:true,data:{group:{id:jid}}};
  }});
  assert.equal(result.state,'CREATED');
- assert.equal(calls.length,1);
- assert.equal(calls[0].url,'/api/groups/prospector-first/create');
- assert.deepEqual(calls[0].options.data,{subject:'Meu Prospector',participants:[]});
+ const create=calls.filter(x=>x.options?.method==='POST');
+ assert.equal(create.length,1);
+ assert.equal(create[0].url,'/api/groups/prospector-first/create');
+ assert.deepEqual(create[0].options.data,{subject:'Meu Prospector',participants:[]});
  assert.equal(privateGroupState().group_jid,jid);
 });
 test('second number joins the SAME group, without creating a second group',async()=>{
@@ -90,6 +91,21 @@ test('both WhatsApps online at first run: create empty, then add second using ow
  assert.deepEqual(calls.find(x=>x.opts?.method==='PUT').opts.data.participants,[second+'@s.whatsapp.net']);
  assert.equal(calls.filter(x=>x.opts?.method==='POST').length,1);
 });
+test('recognizes one already existing and verified group without creating a duplicate',async()=>{
+ const both=pool([...connected,session('prospector-second',second)]);
+ let creates=0;
+ const request=async(url,opts)=>{
+  if(opts?.method==='POST'){creates++;throw Error('duplicate group creation');}
+  return url.endsWith(encodeURIComponent(jid))?group([owner,second]):{status:true,data:[group([owner,second])]};
+ };
+ const result=await reconcilePrivateGroup({getSessions:both,request,at:date('12:00:00')});
+ assert.equal(result.state,'RECOVERED');
+ assert.equal(privateGroupState().group_jid,jid);
+ assert.equal(result.members,2);
+ const confirmed=await reconcilePrivateGroup({getSessions:both,request,at:date('12:01:00')});
+ assert.equal(confirmed.state,'READY');
+ assert.equal(creates,0);
+});
 test('temporary gateway rejection is retried with zero invited members after cooldown',async()=>{
  let create=0;
  const request=async(url,options)=>{
@@ -131,12 +147,13 @@ test('does not adopt unrelated same-name groups or add unknown people',async()=>
  const next=await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:04:00')});
  assert.equal(next.state,'GROUP_MATCH_AMBIGUOUS');
  assert.equal(privateGroupState().group_jid,null);
- assert.equal(create,1);
+ assert.equal(create,0);
 });
 test('an existing group with an unknown member is blocked from further updates',async()=>{
+ let created=false;
  const request=async(url,opts)=>{
-  if(opts?.method==='POST')return {status:true,data:{group:{id:jid}}};
-  return url.endsWith(encodeURIComponent(jid))?group([owner,'5515999994444']):{status:true,data:[group([owner,'5515999994444'])]};
+  if(opts?.method==='POST'){created=true;return {status:true,data:{group:{id:jid}}};}
+  return created?(url.endsWith(encodeURIComponent(jid))?group([owner,'5515999994444']):{status:true,data:[group([owner,'5515999994444'])]}):{status:true,data:[]};
  };
  await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')});
  const result=await reconcilePrivateGroup({
@@ -152,7 +169,7 @@ test('disconnect/reconnect of owner does not lead to another group creation',asy
  let create=0;
  const request=async(url,opts)=>{
   if(opts?.method==='POST'){create++;return {status:true,data:{group:{id:jid}}};}
-  return url.endsWith(encodeURIComponent(jid))?group([owner]):{status:true,data:[group([owner])]};
+  return create?(url.endsWith(encodeURIComponent(jid))?group([owner]):{status:true,data:[group([owner])]}):{status:true,data:[]};
  };
  await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')});
  const disconnected=await reconcilePrivateGroup({getSessions:pool([session('prospector-second',second)]),request,at:date('12:01:00')});
