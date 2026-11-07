@@ -43,14 +43,15 @@ export async function embeddedCheckoutForRequest(request){
  const pack=CREDIT_PACKAGES.find(p=>p.id===request?.package_id);
  const price=EMBEDDED_PRICES[pack?.id];
  if(!pack||!price||!uuid.test(request.id))throw Error('Pacote inválido');
- const base=(process.env.APP_BASE_URL||'https://prospector.consecom.com.br').replace(/\/$/,'');
+ const base=(process.env.STRIPE_PROSPECTOR_RETURN_URL||'https://prospector.consecom.com.br').replace(/\/$/,'');
  if(!/^https:\/\//.test(base))throw Error('Domínio público inválido');
  const body=new URLSearchParams({
-  mode:'payment',ui_mode:'embedded','line_items[0][price]':price,'line_items[0][quantity]':'1',
-  'payment_method_types[0]':'card','payment_method_types[1]':'pix',
+  mode:'payment',ui_mode:'embedded_page','line_items[0][price]':price,'line_items[0][quantity]':'1',
+  'allowed_payment_method_types[0]':'card','allowed_payment_method_types[1]':'pix',
+  locale:'pt-BR',
   'client_reference_id':request.id,'metadata[app]':'prospector','metadata[request_id]':request.id,'metadata[package_id]':pack.id,
   return_url:base+'/?pagamento=retorno&session_id={CHECKOUT_SESSION_ID}',
-  'expires_at':String(Math.floor(Date.now()/1000)+1800)
+  'redirect_on_completion':'always'
  });
  const response=await fetch('https://api.stripe.com/v1/checkout/sessions',{
   method:'POST',headers:{Authorization:'Bearer '+process.env.STRIPE_SECRET_KEY,'Content-Type':'application/x-www-form-urlencoded','Idempotency-Key':'prospector-embedded-'+request.id},
