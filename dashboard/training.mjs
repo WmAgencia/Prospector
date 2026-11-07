@@ -7,7 +7,7 @@ import {groqChat} from './groq-models.mjs';
 import {transcribeAudio} from './waakg-audio-inbound.mjs';
 import crypto from 'node:crypto';
 import {trainingInterviewStatus,startTrainingInterview,advanceTrainingInterview,resetTrainingInterview} from './francisca-training-interview.mjs';
-import {reviewTextState,createCardDraft} from './training-review-cards.mjs';
+import {reviewTextState,publicReviewCards,createCardDraft} from './training-review-cards.mjs';
 import {storeTrainingMarkdown,readTrainingMarkdown,removeTrainingMarkdown,trainingMarkdownName} from './training-markdown.mjs';
 import {globalSalesMarkdown,globalSalesVoiceGuide,GLOBAL_SALES_FILENAME,GLOBAL_SALES_VERSION} from './francisca-vendas-global.mjs';
 import fs from 'node:fs';
@@ -110,9 +110,9 @@ export function trainingStatus(){
  const profile=meta&&active?{...getSetting('training_active',meta),text:active,filename:trainingMarkdownName('active'),format:'markdown'}:null;
  const rawDraft=getSetting('training_draft',null);
  const draft=rawDraft?.source==='interview'?{...rawDraft,text:readTrainingMarkdown('draft')||''}:rawDraft;
- return {profile,draft,review:reviewTextState(active,draft),salesEvidence:evidenceStatus(),closing:salesClosingStatus(),paymentQueue:salesPaymentQueue(),internalAccount:isConsecomInternal(),globalKnowledge:{filename:GLOBAL_SALES_FILENAME,version:GLOBAL_SALES_VERSION,readOnly:true,scope:'shared'},business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),
+ return {profile,draft,review:{...reviewTextState(active,draft),globalCards:publicReviewCards(globalSalesMarkdown()).slice(0,40)},salesEvidence:evidenceStatus(),closing:salesClosingStatus(),paymentQueue:salesPaymentQueue(),internalAccount:isConsecomInternal(),globalKnowledge:{filename:GLOBAL_SALES_FILENAME,version:GLOBAL_SALES_VERSION,readOnly:true,scope:'shared'},business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),
   chat:all('SELECT role,body,at FROM training_chat ORDER BY rowid DESC LIMIT 40').reverse(),interview:trainingInterviewStatus(),
-  runs:all('SELECT id,status,report,details,created_at FROM training_runs ORDER BY rowid DESC LIMIT 10').map(r=>({...r,details:JSON.parse(r.details)}))};
+  runs:all('SELECT id,status,report,details,created_at FROM training_runs ORDER BY rowid DESC LIMIT 10').map(r=>{const {selectionKeys,...details}=JSON.parse(r.details||'{}');return {...r,details};})};
 }
 export function trainingPrompt(){
  const tenantMarkdown=readActiveTrainingMarkdown(),business=getSetting('training_business',null);
