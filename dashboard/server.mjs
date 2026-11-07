@@ -66,7 +66,7 @@ import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
 import {resumeOwnerApprovedProspecting} from './prospection-resume.mjs';
-import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan} from './consecom-offer-ab.mjs';
+import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} from './consecom-offer-ab.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
@@ -918,6 +918,13 @@ const prospectIntroductionTimer=setInterval(()=>{if(ownerProspectionPaused())ret
  if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160)));},1000);
+// Persistent 25-second follow-up with portfolio references, after the approved
+// offer is acknowledged. The owner pause applies to both campaign steps.
+const offerReferencesTimer=setInterval(()=>{
+ if(ownerProspectionPaused())return;
+ tickOfferReferences().then(r=>{if(['SENT','CANCELLED','UNKNOWN'].includes(r.state))notify();if(r.state==='UNKNOWN')console.warn('[offer references] delivery uncertain; manual review required');})
+ .catch(e=>console.error('[offer references]',String(e.message||e).slice(0,160)));
+},1000);
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
 setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
 setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
