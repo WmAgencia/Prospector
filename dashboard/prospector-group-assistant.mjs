@@ -15,6 +15,7 @@ db.exec("CREATE TABLE IF NOT EXISTS prospector_group_commands (event_id TEXT PRI
 db.exec("CREATE TABLE IF NOT EXISTS prospector_group_audio (event_id TEXT PRIMARY KEY,group_jid TEXT NOT NULL,sender_jid TEXT NOT NULL,session_id TEXT NOT NULL,media_path TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS prospector_group_confirmations (code TEXT PRIMARY KEY,kind TEXT NOT NULL,status TEXT NOT NULL,expires_at INTEGER NOT NULL,requested_by TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS prospector_group_daily_reports (day TEXT PRIMARY KEY,report_day TEXT NOT NULL,group_jid TEXT NOT NULL,status TEXT NOT NULL,attempted_at TEXT NOT NULL,accepted_id TEXT)");
+db.exec("CREATE TABLE IF NOT EXISTS prospector_group_outgoing_guard (id TEXT PRIMARY KEY, group_jid TEXT NOT NULL, hash TEXT NOT NULL,at TEXT NOT NULL)");
 
 const GROUP=/^\d{8,30}@g\.us$/;
 const ID=/^[\w-]{5,150}$/;
@@ -144,16 +145,39 @@ export async function commandReply(text,{sender,ask=groqChat}={}){
 }
 export async function sendGroupMessage({sessionId,groupId,text,request=waRequest}={}){
  if(!GROUP.test(String(groupId||''))||!String(text||'').trim())return {ok:false};
+ const actual=String(text).slice(0,3000);
+ // Register the reply BEFORE the gateway call. WhatsApp's message.sent webhook
+ // may arrive before HTTP acknowledgement; this pre-claim prevents bot loops.
+ const hash=crypto.createHash('sha256').update(actual).digest('hex');
+ run('INSERT INTO prospector_group_outgoing_guard(id,group_jid,hash,at) VALUES(?,?,?,?)',
+  crypto.randomUUID(),groupId,hash,now());
+ run("DELETE FROM prospector_group_outgoing_guard WHERE at<?",new Date(Date.now()-10*60_000).toISOString());
  const payload=await request('/api/messages/'+encodeURIComponent(sessionId)+'/'+encodeURIComponent(groupId)+'/send',
-  {method:'POST',data:{message:{text:String(text).slice(0,3000)}}});
+  {method:'POST',data:{message:{text:actual}}});
  // A positive ack means gateway accepted, not necessarily delivered to every phone.
  return {ok:payload.status===true,acceptedId:String(payload.data?.key?.id||payload.data?.id||'')};
 }
 let running=false;
-export async function receivePrivateGroupWebhook({sessionId,data={},request=waRequest}={}){
+export async function receivePrivateGroupWebhook({sessionId,data={},request=waRequest,event='message.received',getSessions}={}){
  const key=data.key||{},groupId=String(key.remoteJid||data.from||'');
- if(!data.isGroup||!GROUP.test(groupId)||key.fromMe===true||data.fromMe===true)return {handled:false};
- const actor=senderIdentities(data);
+ if(!data.isGroup||!GROUP.test(groupId))return {handled:false};
+ const fromMe=key.fromMe===true||data.fromMe===true;
+ let actor=senderIdentities(data);
+ if(fromMe){
+  // The person who connected the very first WhatsApp must also be able to
+  // send commands while alone in the group. Verify the current live identity
+  // of THAT authenticated session, rather than trusting a supplied sender JID.
+  const pool=getSessions?await getSessions():await import('./waakg-control.mjs').then(m=>m.waSessionList());
+  const connected=(pool?.items||[]).find(x=>x.sessionId===sessionId&&x.connected===true);
+  if(!connected||!/^55\d{10,11}$/.test(String(connected.number||'')))return {handled:true,accepted:false,reason:'SENDER_NOT_CONNECTED'};
+  actor=[connected.number+'@s.whatsapp.net'];
+  const content=typeof data.content==='string'?data.content:String(data.content?.text||'');
+  const hash=crypto.createHash('sha256').update(content.slice(0,3000)).digest('hex');
+  if(one('SELECT 1 FROM prospector_group_outgoing_guard WHERE group_jid=? AND hash=? AND at>? LIMIT 1',
+   groupId,hash,new Date(Date.now()-5*60_000).toISOString()))
+   return {handled:true,accepted:true,ignored:true,reason:'BOT_OUTGOING'};
+  if(event!=='message.sent')return {handled:true,accepted:true,ignored:true,reason:'FROM_ME_NOT_SENT_EVENT'};
+ }
  const authorized=await verifyGroupMember({sessionId,groupId,sender:actor,request});
  if(!authorized.ok)return {handled:true,accepted:false,reason:authorized.reason};
  const messageId=String(key.id||data.id||'');
@@ -275,10 +299,13 @@ export async function ensureGroupWebhookSubscriptions({request=waRequest,getSess
   try{
    const path='/api/webhooks/'+encodeURIComponent(id);
    const existing=await request(path);
-   const ready=(Array.isArray(existing.data)?existing.data:[]).some(h=>
-    h.isActive!==false&&h.url===url&&Array.isArray(h.events)&&h.events.includes('message.received'));
-   if(!ready)await request(path,{method:'POST',data:{name:'Meu Prospector — comandos',url,secret,
-    events:['message.received','connection.update']}});
+   const hooks=(Array.isArray(existing.data)?existing.data:[]).filter(h=>h.isActive!==false&&h.url===url);
+   const hasReceived=hooks.some(h=>Array.isArray(h.events)&&h.events.includes('message.received'));
+   const hasSent=hooks.some(h=>Array.isArray(h.events)&&h.events.includes('message.sent'));
+   if(!hasReceived)await request(path,{method:'POST',data:{name:'Meu Prospector — comandos',url,secret,
+    events:['message.received','connection.update',...(!hasSent?['message.sent']:[])]}});
+   else if(!hasSent)await request(path,{method:'POST',data:{name:'Meu Prospector — comandos enviados',url,secret,
+    events:['message.sent']}});
    ensured++;
   }catch{errors++;}
  }
