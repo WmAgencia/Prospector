@@ -37,6 +37,26 @@ test('new rule goes to a private draft pending approval, with optimistic stale-v
  assert.equal(getSetting('training_draft').id,result.draft.id);
  assert.throws(()=>createCardDraft({action:'add',title:'Outra',body:'A instrução não pode ser aplicada à versão antiga.',version:reviewTextState(markdown,null).version},markdown),/atualizado/i);
 });
+test('brief summary explains a real behavior rather than copying document metadata or raw Markdown',()=>{
+ const sample='# Francisca — Documento técnico\n**Versão:** 1.0\n\n## Como responder sobre preços\n- Quando perguntarem o preço, informe apenas os valores aprovados pela empresa; se o valor não estiver disponível, peça ao responsável.\n- Nunca invente descontos ou condições diferentes do contrato vigente.\n';
+ const cards=publicReviewCards(sample);
+ assert.equal(cards.length,1,'Do not show the document title as a behavior card');
+ assert.equal(cards[0].title,'Como responder sobre preços');
+ assert.match(cards[0].summary,/Quando perguntarem o preço/);
+ assert.doesNotMatch(cards[0].summary,/Versão|Documento técnico|##|\\*\\*/);
+ assert.ok(cards[0].summary.length<=210);
+});
+test('approved guidance can be deleted through a pending draft only, without erasing neighboring rules',()=>{
+ const baseline=reviewTextState(markdown,null);
+ const selected=baseline.cards.find(c=>c.title==='Atendimento');
+ assert.ok(selected);
+ const result=createCardDraft({action:'delete',index:selected.index,cardId:selected.id,version:baseline.version},markdown);
+ assert.equal(result.review.hasPendingReview,true);
+ assert.ok(!result.draft.text.includes('## Atendimento'));
+ assert.ok(result.draft.text.includes('## Materiais e serviços'));
+ assert.ok(markdown.includes('## Atendimento'),'approved source must not be changed');
+ assert.throws(()=>modifyReviewMarkdown(result.draft.text,{action:'delete',index:selected.index,cardId:selected.id,version:baseline.version}),/atualizado/i);
+});
 test(' UI has no plain Markdown preview; includes search, add/edit, material review, checklist and analysis',()=>{
  const src=fs.readFileSync(new URL('../dashboard/public/simple-app.js',import.meta.url),'utf8');
  assert.match(src,/id="training-review-search"/);
