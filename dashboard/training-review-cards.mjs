@@ -1,0 +1,67 @@
+// User-friendly view over the tenant-private, approved Francisca manual.
+// The underlying .md remains authoritative, never shown as raw Markdown.
+import crypto from 'node:crypto';
+import {getSetting,setSetting,now} from './db.mjs';
+const sha=s=>crypto.createHash('sha256').update(s).digest('hex').slice(0,20);
+const text=v=>String(v||'').replace(/\r\n?/g,'\n');
+export function reviewSections(markdown){
+ const value=text(markdown);
+ if(!value.trim())return [];
+ const split=value.split(/(?=^## (?!#))/m);
+ return split.map((raw,index)=>{
+  const heading=/^## ([^\n]+)/m.exec(raw);
+  const title=heading?heading[1].replace(/[*_]/g,'').trim():'Informações gerais';
+  const body=heading?raw.replace(/^## [^\n]*\n?/, '').trim():raw.trim();
+  const lines=body.split('\n').map(x=>x.trim()).filter(Boolean);
+  const plain=lines.map(line=>line.replace(/^#{1,6}\s+/, '').replace(/^>\s*/, '').replace(/^[-*+]\s+/, '').replace(/\*\*|__/g,'').replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'$1 ($2)')).filter(Boolean);
+  return {id:sha(index+'|'+raw),index,title,body,
+   summary:plain.slice(0,2).join(' · ').slice(0,240),
+   points:plain.slice(0,80),count:plain.length,raw};
+ });
+}
+export function publicReviewCards(markdown){
+ return reviewSections(markdown).map(({id,index,title,summary,points,count})=>({id,index,title,summary,points,count}));
+}
+export function reviewTextState(active,existingDraft){
+ const draftText=existingDraft?.text||'';
+ const markdown=draftText||active||'';
+ return {cards:publicReviewCards(markdown),hasPendingReview:!!existingDraft,
+  version:sha(markdown),canApprove:!!existingDraft,source:existingDraft?.source||'active'};
+}
+const safeTitle=s=>String(s||'').replace(/[\r\n#<>]/g,' ').trim().slice(0,110);
+function safeBody(v){
+ const body=text(v).trim();
+ if(body.length<12||body.length>2500)throw Error('Escreva uma orientação com 12 a 2.500 caracteres');
+ return body;
+}
+export function modifyReviewMarkdown(markdown,{action,index,cardId,title,body,version}={}){
+ const original=text(markdown);
+ if(version&&sha(original)!==version)throw Error('O treinamento foi atualizado. Atualize a página antes de editar');
+ const parts=reviewSections(original);
+ const nextTitle=safeTitle(title);
+ if(action==='add'){
+  if(!nextTitle||nextTitle.length<3)throw Error('Informe um título para a orientação');
+  const entry='## '+nextTitle+'\n\n'+safeBody(body);
+  const updated=(original.trimEnd()+'\n\n'+entry+'\n').trimStart();
+  if(updated.length>17900)throw Error('O treinamento atingiu o limite de tamanho');
+  return updated;
+ }
+ if(action!=='edit')throw Error('Edição desconhecida');
+ const card=parts.find(x=>x.index===index&&x.id===cardId);
+ if(!card)throw Error('Orientação alterada ou não encontrada. Atualize a página');
+ if(!nextTitle||nextTitle.length<3)throw Error('Informe um título para a orientação');
+ const replacement='## '+nextTitle+'\n\n'+safeBody(body);
+ const start=original.indexOf(card.raw);
+ if(start<0)throw Error('Versão desatualizada');
+ const changed=original.slice(0,start)+replacement+'\n\n'+original.slice(start+card.raw.length);
+ if(changed.length>17900)throw Error('O treinamento atingiu o limite de tamanho');
+ return changed;
+}
+export function createCardDraft(input,activeMarkdown){
+ const existing=getSetting('training_draft',null);
+ const before=existing?.text||activeMarkdown||'';
+ const next=modifyReviewMarkdown(before,input);
+ const draft={id:crypto.randomUUID(),source:'cards',text:next,at:now()};
+ setSetting('training_draft',draft);
+ return {draft,review:reviewTextState(activeMarkdown,draft)};
+}
