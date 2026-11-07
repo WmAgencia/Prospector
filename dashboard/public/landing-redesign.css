@@ -158,6 +158,11 @@ body.p3-site{background:#f7f7ff;color:var(--deep);font:400 14px/1.55 'DM Sans',s
 .p3-site #auth-dialog :is(input[type=text],input[type=email],input[type=tel],input[type=password]):focus-visible{outline-color:#7544fa}
 .p3-site #auth-dialog .button-dark{background:linear-gradient(110deg,#8650ff,#5127ed);box-shadow:0 9px 24px #5330d92c;color:#fff}
 .p3-site #auth-dialog .form-message{color:#5b36bd}
+.p3-site #auth-dialog .signup-field-feedback{display:flex;align-items:flex-start;gap:7px;margin:7px 0 0;color:#bd354f;font-size:12px;font-weight:600;line-height:1.45}
+.p3-site #auth-dialog .signup-field-feedback[hidden]{display:none}
+.p3-site #auth-dialog .signup-field-feedback[data-state="pending"]{color:#5e5a6b;font-weight:500}
+.p3-site #auth-dialog input[aria-invalid="true"]{border-color:#da5470!important;background:#fffafb;box-shadow:0 0 0 2px #d73a5b13}
+
 @media(max-width:1270px){
  .p3-hero{grid-template-columns:minmax(0,.95fr) minmax(0,1.1fr)}.p3-hero h1{font-size:clamp(37px,3.7vw,52px)}.p3-hero-right{padding-left:0}
  .p3-hero-panel{grid-template-columns:42px minmax(0,1fr)}.p3-hero-side{gap:11px}.p3-panel-metrics strong{font-size:18px}.p3-kanban{gap:3px}.p3-kanban-col{padding:7px 4px}.p3-kanban-col article{padding:5px 3px}
