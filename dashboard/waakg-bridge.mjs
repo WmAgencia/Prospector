@@ -14,6 +14,7 @@ import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {configuredClosing} from "./training-sales-extras.mjs";
 import {recordReceiptMedia} from "./sales-payment-flow.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
+import {receivePrivateGroupWebhook} from './prospector-group-assistant.mjs';
 import {isManagedSession,boundLeadSession,leadSession,bindLeadSession} from './waakg-session-registry.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
@@ -54,7 +55,18 @@ export async function receiveWebhook(req){
  if(payload.event==="test")return {status:200,body:{accepted:true,test:true}};
  if(payload.event!=="message.received")return {status:200,body:{accepted:true,ignored:true}};
  const data=payload.data||{},key=data.key||{};
- if(data.isGroup===true||key.fromMe===true||data.fromMe===true)return {status:200,body:{accepted:true,ignored:true}};
+ if(data.isGroup===true){
+  const sid=String(payload.sessionId||'');
+  try{
+   const handled=await receivePrivateGroupWebhook({sessionId:sid,data});
+   return {status:200,body:{accepted:true,groupCommand:handled.queued===true,audioQueued:handled.audioQueued===true,
+    reason:handled.reason||null}};
+  }catch(err){
+   console.warn('[private group inbound]',String(err?.message||err).slice(0,100));
+   return {status:503,body:{accepted:false,reason:'GROUP_COMMAND_UNAVAILABLE'}};
+  }
+ }
+ if(key.fromMe===true||data.fromMe===true)return {status:200,body:{accepted:true,ignored:true}};
  const sid=String(payload.sessionId||"");
  if(!isManagedSession(sid))return {status:200,body:{accepted:true,ignored:true}};
  const jid=String(key.remoteJid||data.from||"");
