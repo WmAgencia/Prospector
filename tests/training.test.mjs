@@ -5,6 +5,9 @@ import os from 'node:os';
 process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/prospector-training-');
 process.env.WA_AKG_API_KEY='test-only';process.env.WA_AKG_SESSION_ID='training-channel';
 const d=await import('../dashboard/db.mjs');const training=await import('../dashboard/training.mjs');
+// Only commercial chats previously approached by the Prospector may be analyzed.
+const sampleLead=d.addLead({business:'Empresa de teste',phone:'5511999991111',source:'test'}).lead;
+d.run("INSERT INTO initial_contacts(lead_id,phone,status,job_id,created_at) VALUES(?,?,'SENT',?,?)",sampleLead.id,'5511999991111','test-prospecting-message',d.now());
 const originalFetch=globalThis.fetch;let captured;
 globalThis.fetch=async url=>new URL(url).pathname==='/api/chat/training-channel'?
  Response.json({status:true,data:[{jid:'5511999991111@s.whatsapp.net',name:'Fictícia'},{jid:'5511999992222@g.us',name:'Grupo'}]}):
