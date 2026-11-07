@@ -78,13 +78,19 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
   dialog.className='prospector-dialog'+(danger?' danger':'');
   dialog.setAttribute('aria-labelledby','prospector-dialog-title');
   dialog.setAttribute('aria-describedby','prospector-dialog-description');
-  dialog.innerHTML='<form method="dialog" class="prospector-dialog-form"><span class="kicker">PROSPECTOR / CONFIRMAÇÃO</span><h2 id="prospector-dialog-title">'+esc(title)+'</h2><p id="prospector-dialog-description">'+esc(description)+'</p>'+fields+'<div class="prospector-dialog-actions"><button class="secondary" type="submit" value="cancel">Cancelar</button><button class="'+(danger?'danger-button':'primary')+'" type="submit" value="confirm">'+esc(confirmLabel)+'</button></div></form>';
+  dialog.innerHTML='<form method="dialog" class="prospector-dialog-form"><span class="kicker">PROSPECTOR / CONFIRMAÇÃO</span><h2 id="prospector-dialog-title">'+esc(title)+'</h2><p id="prospector-dialog-description">'+esc(description)+'</p>'+fields+'<div class="prospector-dialog-actions"><button class="secondary" type="button" data-dialog-cancel>Cancelar</button><button class="'+(danger?'danger-button':'primary')+'" type="submit" value="confirm">'+esc(confirmLabel)+'</button></div></form>';
   document.body.append(dialog);
+  // "Cancelar" MUST bypass HTML required/minlength validation.
+  // A submit-type cancel button leaves the native dialog stuck on invalid forms.
+  const cancel=()=>{if(dialog.open)dialog.close('cancel');else{dialog.remove();resolve(null);}};
+  dialog.querySelector('[data-dialog-cancel]').addEventListener('click',cancel);
+  dialog.addEventListener('cancel',()=>{dialog.returnValue='cancel';});
+  dialog.addEventListener('click',event=>{if(event.target===dialog)cancel();});
   dialog.addEventListener('close',()=>{
    const value=dialog.returnValue==='confirm'?Object.fromEntries(new FormData(dialog.querySelector('form'))):null;
    dialog.remove();resolve(value);
   },{once:true});
-  dialog.showModal();
+  try{dialog.showModal();}catch{dialog.remove();resolve(null);}
  });
 }
 
