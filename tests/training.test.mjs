@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/prospector-training-');
 process.env.WA_AKG_API_KEY='test-only';process.env.WA_AKG_SESSION_ID='training-channel';
+process.env.PROSPECTOR_TENANT_ID='synthetic-private-training-test';
 const d=await import('../dashboard/db.mjs');const training=await import('../dashboard/training.mjs');
 // Only commercial chats previously approached by the Prospector may be analyzed.
 const sampleLead=d.addLead({business:'Empresa de teste',phone:'5511999991111',source:'test'}).lead;
