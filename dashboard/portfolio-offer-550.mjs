@@ -68,7 +68,7 @@ export function fixedOfferPitch(lead={},at=new Date(),{busy=false}={}){
  // Initial explanation: short and natural. Only clarify delivery dates when specifically requested.
  const first='A ideia é fazer um site profissional pra vocês, com '+what+'. Estamos ampliando nosso portfólio nesse segmento.';
  const second='O site fica em R$ 550, com domínio pago por um ano e Master SEO, sem promessa de posição no Google. O prazo é de até 3 dias úteis após pagamento confirmado e recebimento dos materiais.';
- return first+'\\n\\n'+second+(busy?' Pode olhar com calma quando conseguir.':' Faz sentido pra vocês?');
+ return first+'\n\n'+second+(busy?' Pode olhar com calma quando conseguir.':' Faz sentido pra vocês?');
 }
 export function fixedOfferPriceReply(at=new Date()){
  return 'O site profissional de portfólio fica em R$ 550, com domínio pago por um ano. O prazo é de até 3 dias úteis após pagamento confirmado e recebimento dos materiais. Recursos extras, como checkout e integrações especiais, são avaliados à parte.';
