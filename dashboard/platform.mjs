@@ -16,23 +16,6 @@ const isWorker=!!process.env.PROSPECTOR_TENANT_ID;
 const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform');
 let store;
 const registry=()=>store||=openPlatformStore(root);
-// Read-only Master account verification, opt-in through a target e-mail SHA-256.
-// Emits booleans only; never logs credentials, account identifiers or personal data.
-if(!isWorker&&process.env.PROSPECTOR_MASTER_DIAGNOSTIC_EMAIL_HASH){
- try{
-  const db=registry().db;
-  const owner=db.prepare('SELECT id,email,status FROM clients WHERE is_internal=1').get();
-  const expected=String(process.env.PROSPECTOR_MASTER_DIAGNOSTIC_EMAIL_HASH).trim();
-  const emailHash=crypto.createHash('sha256').update(String(owner?.email||'').trim().toLowerCase()).digest('hex');
-  console.info('[master account check]',JSON.stringify({
-   masterExists:!!owner,
-   requestedEmailMatches:!!owner&&emailHash===expected,
-   passwordConfigured:!!owner&&registry().hasPassword(owner.id),
-   accountActive:owner?.status==='active'
-  }));
- }catch(err){console.warn('[master account check] unavailable:',String(err?.code||'error').slice(0,60));}
-}
-
 const workers=new Map(),starting=new Map(),limiter=createAccessLimiter();
 const signupLimiter=createAccessLimiter({limit:5}),passwordLimiter=createAccessLimiter({limit:10});
 const accountPasswordLimiter=createAccessLimiter({limit:10});
@@ -239,6 +222,21 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
    }
    respond(res,405,{error:'Método indisponível'});return true;
   }catch(err){respond(res,422,{error:String(err.message).slice(0,200)});return true;}
+ }
+ if(p==='/api/platform/master-recovery'&&req.method==='POST'){
+  // Separate owner-admin session is mandatory: the untrusted public login form
+  // cannot change an account or grant Master privileges.
+  if(!authorized(req)){respond(res,403,{error:'A recuperação da conta Master exige acesso administrativo autenticado'});return true;}
+  const ip=accessClientKey(req);
+  if(passwordLimiter.blocked(ip)){respond(res,429,{error:'Muitas tentativas. Tente mais tarde.'});return true;}
+  try{
+   const result=registry().recoverPrimaryCredentials(await json(req));
+   passwordLimiter.clear(ip);respond(res,200,result);
+  }catch(error){
+   passwordLimiter.failed(ip);
+   respond(res,422,{error:String(error.message).slice(0,160)});
+  }
+  return true;
  }
  if(p.startsWith('/api/platform/')){
   if((client&&!ownerMaster)||(!ownerMaster&&!authorized(req))){respond(res,403,{error:'Acesso exclusivo do painel master'});return true;}
