@@ -9,6 +9,7 @@ import {ownerProspectionPaused} from './prospection-pause.mjs';
 import {waRequest,waControlStatus} from './waakg-control.mjs';
 import {sendRecordedOfferVoiceMedia} from './waakg-media.mjs';
 import {prospectorChatEligible} from './whatsapp-roles.mjs';
+import {offerVariantForOrdinal} from './consecom-offer-rotation.mjs';
 
 const KEY='consecom_offer_ab_2026_v1';
 const allowed=()=>!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
@@ -50,11 +51,11 @@ function deadlineReady(c,at=new Date()){
  return days>=0&&days<=7&&!!c.confirmedAt;
 }
 export function offerAbConfig(){
- const c=config(),asset=mediaRecord(c),two=managedSessions().slice(0,2);
+ const c=config(),asset=mediaRecord(c),sessions=managedSessions();
  return {enabled:c.enabled,paused:outreachPaused(),assetReady:!!asset,audioMediaId:c.audioMediaId,
   deadlineMonday:c.deadlineMonday,deadlineReady:deadlineReady(c),startDate:c.startDate,
-  rotationDays:c.rotationDays,sessionA:two[0]?.label||null,sessionB:two[1]?.label||null,
-  availableSessions:managedSessions().length,ready:allowed()&&c.enabled&&!outreachPaused()&&!!asset&&two.length===2&&deadlineReady(c)};
+  rotationDays:c.rotationDays,sessionA:sessions[0]?.label||null,sessionB:sessions[1]?.label||null,
+  availableSessions:sessions.length,ready:allowed()&&c.enabled&&!outreachPaused()&&!!asset&&sessions.length>=1&&deadlineReady(c)};
 }
 export function offerAbStatus(){
  if(!allowed())return {available:false,reason:'CONSECOM_ONLY'};
@@ -67,7 +68,7 @@ export function offerAbStatus(){
   const conversions=one("SELECT COUNT(DISTINCT a.lead_id) n FROM consecom_offer_ab a JOIN leads l ON l.id=a.lead_id WHERE a.variant=? AND a.status='SENT' AND l.stage='CLOSED_WON'",variant)?.n||0;
   metrics.push({variant,sent,humanReplies:replies,closed:conversions,replyRate:sent?Math.round(replies/sent*1000)/10:null,closeRate:sent?Math.round(conversions/sent*1000)/10:null});
  }
- return {available:true,config:c,counts:totals,metrics,design:'weekly crossover; session 1 AUDIO / session 2 TEXT, then inverted after seven days',note:'No spam-evasion guarantees; measure only permission-based conversations'};
+ return {available:true,config:c,counts:totals,metrics,design:'alternating eligible leads in chronological assignment order, AUDIO then TEXT, independent of WhatsApp session',note:'No spam-evasion guarantees; measure only permission-based conversations'};
 }
 export function attachOriginalAbAudio(mediaId){
  if(!allowed())throw Error('CONSECOM_ONLY');
@@ -97,14 +98,13 @@ export function offerAbDecision({leadId,sessionId,at=new Date()}={}){
  if(!mediaRecord(c))return {eligible:false,reason:'AUDIO_NOT_READY'};
  if(!deadlineReady(c,at))return {eligible:false,reason:'MONDAY_CLAIM_UNVERIFIED_OR_EXPIRED'};
  if(!datePattern.test(c.startDate||'')||daySP(at)<c.startDate)return {eligible:false,reason:'NOT_STARTED'};
- const sessions=managedSessions().slice(0,2).map(x=>x.session_id);
- if(sessions.length!==2||!sessions.includes(sessionId))return {eligible:false,reason:'NEEDS_TWO_WHATSAPPS'};
  if(!leadId||leadSession(leadId)!==sessionId||!isManagedSession(sessionId))return {eligible:false,reason:'SESSION_MISMATCH'};
  const prior=one("SELECT variant,status FROM consecom_offer_ab WHERE lead_id=?",leadId);
  if(prior)return {eligible:false,reason:'ALREADY_ASSIGNED',prior};
  const elapsed=Math.floor((Date.parse(daySP(at))-Date.parse(c.startDate))/86400000);
- const phase=Math.floor(elapsed/7),idx=sessions.indexOf(sessionId);
- const variant=(idx+phase)%2===0?'AUDIO':'TEXT';
+ const phase=Math.floor(elapsed/7);
+ const nextOrdinal=Number(one('SELECT COUNT(*) n FROM consecom_offer_ab')?.n||0);
+ const variant=offerVariantForOrdinal(nextOrdinal);
  return {eligible:true,leadId,sessionId,variant,phase,body:OFFER_AB_TEXT};
 }
 export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=new Date(),sendText=waRequest,sendAudio=sendRecordedOfferVoiceMedia,connected=waControlStatus}={}){
@@ -126,10 +126,16 @@ export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=n
     one("SELECT phone FROM suppressions WHERE phone=?",String(jid).split('@')[0]))
   return {state:'NOT_SENT',reason:'CONTACT_CHANGED_BEFORE_SEND'};
  const stamp=now(),recordId='offer-ab:'+String(leadId);
- const saved=tx(()=>{if(outreachPaused()||one('SELECT 1 FROM consecom_offer_ab WHERE lead_id=?',leadId))return false;
-  return run("INSERT OR IGNORE INTO consecom_offer_ab(lead_id,session_id,variant,phase,provider_id,status,created_at,updated_at) VALUES(?,?,?,?,?,'SENDING',?,?)",
-   leadId,sessionId,plan.variant,plan.phase,recordId,stamp,stamp).changes===1;});
- if(!saved)return {state:'NOT_SENT',reason:'ALREADY_RESERVED'};
+ const reserved=tx(()=>{if(outreachPaused()||one('SELECT 1 FROM consecom_offer_ab WHERE lead_id=?',leadId))return null;
+  // Assign the next slot inside the transaction, so concurrent replies do not get the same channel.
+  const nextOrdinal=Number(one('SELECT COUNT(*) n FROM consecom_offer_ab')?.n||0);
+  const variant=offerVariantForOrdinal(nextOrdinal);
+  const saved=run("INSERT OR IGNORE INTO consecom_offer_ab(lead_id,session_id,variant,phase,provider_id,status,created_at,updated_at) VALUES(?,?,?,?,?,'SENDING',?,?)",
+   leadId,sessionId,variant,plan.phase,recordId,stamp,stamp).changes===1;
+  return saved?variant:null;
+ });
+ if(!reserved)return {state:'NOT_SENT',reason:'ALREADY_RESERVED'};
+ plan.variant=reserved;
  try{
   let acknowledged=false;
   if(plan.variant==='AUDIO'){
