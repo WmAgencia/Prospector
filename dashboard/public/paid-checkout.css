@@ -1,0 +1,34 @@
+/* Payment dialog shared by live Stripe Checkout and post-payment activation */
+.prospector-pay-dialog{border:0;padding:0;max-width:min(620px,calc(100vw - 22px));width:620px;max-height:min(94dvh,850px);margin:auto;border-radius:24px;box-shadow:0 28px 100px rgba(26,15,65,.34);background:#fff;color:#261c3c;overflow:auto}
+.prospector-pay-dialog::backdrop{background:rgba(19,12,42,.72);backdrop-filter:blur(5px)}
+.ps-pay-panel{font-family:"DM Sans",system-ui,sans-serif}
+.ps-pay-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 26px;border-bottom:1px solid #f0ecf7}
+.ps-pay-brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:800;letter-spacing:-.5px}
+.ps-pay-brand>span{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:linear-gradient(140deg,#8e54ff,#6336d7);color:#fff}
+.ps-pay-brand small{font-size:12px;font-weight:500;color:#81788f;letter-spacing:0}
+.ps-pay-close{border:1px solid #e7e0f0;border-radius:11px;background:#fff;font-size:24px;line-height:1;padding:4px 11px;cursor:pointer;color:#5d526a}
+.ps-pay-close:hover,.ps-pay-close:focus-visible{background:#f5f0ff;outline-color:#7f4ae8}
+.ps-pay-content{padding:28px 28px 24px}
+.ps-pay-overline{display:block;color:#8450e9;font-size:10px;letter-spacing:1.6px;font-weight:900;margin-bottom:8px}
+.ps-pay-title{font-size:28px;letter-spacing:-1.1px;color:#211438;margin:0 0 8px;line-height:1.2}
+.ps-pay-subtitle{font-size:14px;color:#71677e;margin:0 0 22px}
+.ps-pay-body{min-height:110px}
+.ps-pay-summary{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:15px 17px;background:#f7f4ff;border:1px solid #e6ddfc;border-radius:13px;margin-bottom:18px}
+.ps-pay-summary div{display:flex;flex-direction:column;gap:3px}.ps-pay-summary strong{font-size:15px}.ps-pay-summary small{font-size:12px;color:#81758e}.ps-pay-summary b{font-size:22px;color:#6339b8}
+.ps-pay-stripe{min-height:320px}
+.ps-pay-foot{padding:13px 25px;border-top:1px solid #eeeaf2;color:#81788c;font-size:11px;text-align:center}
+.ps-pay-spinner{height:28px;width:28px;margin:25px auto 12px;border-radius:50%;border:3px solid #eae2f8;border-top-color:#8550e8;animation:ps-spin .7s linear infinite}@keyframes ps-spin{to{transform:rotate(360deg)}}
+.ps-pay-error,.ps-pay-await{border-radius:14px;padding:20px;background:#fff4f4;border:1px solid #f5cccc;color:#673a3a}.ps-pay-await{background:#f9f6ff;color:#3b3051;border-color:#e6def6}.ps-pay-error strong,.ps-pay-await strong{font-size:17px}.ps-pay-error p,.ps-pay-await p{line-height:1.55;font-size:14px}
+.ps-pay-success{display:grid;gap:7px;padding:20px;background:#f4fcf7;border:1px solid #ccecd9;border-radius:14px;color:#285b41;margin-bottom:20px}.ps-pay-success>span{font-size:24px}.ps-pay-success strong{font-size:19px}.ps-pay-success p{margin:0;line-height:1.5;font-size:14px}
+.ps-pay-email{font-size:13px;color:#6e6478;word-break:break-word}
+.ps-pay-form{display:grid;gap:15px}.ps-pay-form>label:not(.ps-pay-agree){display:grid;gap:7px;font-size:13px;color:#44394f;font-weight:700}
+.ps-pay-form input:not([type=checkbox]){width:100%;box-sizing:border-box;padding:13px 15px;border-radius:11px;border:1px solid #ddd4e8;background:#fff;color:#27193b;font-size:14px;outline-color:#7950cb}
+.ps-pay-agree{display:flex;align-items:flex-start;gap:10px;font-size:12px;line-height:1.6;color:#6e6278;font-weight:400}.ps-pay-agree input{accent-color:#7443d8;flex-shrink:0;margin-top:4px}
+.ps-pay-primary,.ps-pay-secondary{appearance:none;border:0;border-radius:12px;padding:14px 18px;font-size:14px;font-weight:800;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.ps-pay-primary{background:linear-gradient(110deg,#7c49e6,#5525b8);color:#fff;box-shadow:0 8px 21px rgba(100,54,195,.22);width:100%}.ps-pay-primary:hover{transform:translateY(-1px)}
+.ps-pay-primary:disabled{opacity:.6;cursor:wait}
+.ps-pay-secondary{border:1px solid #d9cbea;background:#fff;color:#5d3aa9}
+.ps-pay-link{display:block;text-decoration:none;text-align:center;box-sizing:border-box}
+.ps-pay-feedback{font-size:13px;color:#8051bd;min-height:18px;margin:0}
+@media(max-width:600px){.prospector-pay-dialog{width:calc(100vw - 16px);max-width:none;max-height:96dvh;border-radius:17px}.ps-pay-top{padding:14px 15px}.ps-pay-brand small{display:none}.ps-pay-content{padding:21px 16px}.ps-pay-title{font-size:24px}.ps-pay-summary b{font-size:19px}.ps-pay-foot{padding:14px;font-size:10px}}
+@media(prefers-reduced-motion:reduce){.ps-pay-spinner{animation:none}.ps-pay-primary{transition:none}}
