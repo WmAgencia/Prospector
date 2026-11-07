@@ -9,6 +9,7 @@ import {ownerProspectionPaused} from './prospection-pause.mjs';
 import {waRequest,waControlStatus} from './waakg-control.mjs';
 import {sendRecordedOfferVoiceMedia} from './waakg-media.mjs';
 import {prospectorChatEligible} from './whatsapp-roles.mjs';
+import {conversationAuthorized} from './operator-outreach.mjs';
 import {offerVariantForOrdinal} from './consecom-offer-rotation.mjs';
 
 const KEY='consecom_offer_ab_2026_v1';
@@ -18,11 +19,14 @@ const daySP=date=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',
 const datePattern=/^\d{4}-\d{2}-\d{2}$/;
 // The text variant uses the transcribed original audio, not a separate sales pitch.
 export {OFFER_AB_TEXT} from './consecom-offer-copy.mjs';
-import {OFFER_AB_TEXT,OFFER_AB_COPY_VERSION,offerDeadlineMatchesScript} from './consecom-offer-copy.mjs';
+import {OFFER_AB_TEXT,OFFER_AB_COPY_VERSION,OFFER_AB_REFERENCES_TEXT,OFFER_AB_REFERENCES_DELAY_MS,offerDeadlineMatchesScript} from './consecom-offer-copy.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS consecom_offer_ab(lead_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,variant TEXT NOT NULL CHECK(variant IN ('AUDIO','TEXT')),phase INTEGER NOT NULL,provider_id TEXT UNIQUE NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,sent_at TEXT,updated_at TEXT NOT NULL,reason TEXT)");
 db.exec("CREATE INDEX IF NOT EXISTS ix_consecom_offer_ab_variant ON consecom_offer_ab(variant,status,sent_at)");
 run("UPDATE consecom_offer_ab SET status='UNKNOWN',reason='Send interrupted; do not resend without manual verification',updated_at=? WHERE status='SENDING'",now());
+db.exec("CREATE TABLE IF NOT EXISTS consecom_offer_references(lead_id TEXT PRIMARY KEY REFERENCES leads(id),session_id TEXT NOT NULL,jid TEXT NOT NULL,source_provider_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('HELD','WAITING','SENDING','SENT','UNKNOWN','CANCELLED')),due_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,sent_at TEXT,reason TEXT)");
+db.exec("CREATE INDEX IF NOT EXISTS ix_consecom_offer_references_due ON consecom_offer_references(state,due_at)");
+run("UPDATE consecom_offer_references SET state='UNKNOWN',reason='Process interrupted during reference send; manual review required',updated_at=? WHERE state='SENDING'",now());
 const baseConfig={enabled:false,audioMediaId:null,audioCopyVersion:null,portfolioDueDate:null,confirmedAt:null,startDate:null,rotationDays:7};
 const config=()=>({...baseConfig,...(getSetting(KEY,null)||{})});
 const mediaRecord=c=>{
@@ -57,7 +61,7 @@ export function offerAbStatus(){
   const conversions=one("SELECT COUNT(DISTINCT a.lead_id) n FROM consecom_offer_ab a JOIN leads l ON l.id=a.lead_id WHERE a.variant=? AND a.status='SENT' AND l.stage='CLOSED_WON'",variant)?.n||0;
   metrics.push({variant,sent,humanReplies:replies,closed:conversions,replyRate:sent?Math.round(replies/sent*1000)/10:null,closeRate:sent?Math.round(conversions/sent*1000)/10:null});
  }
- return {available:true,config:c,counts:totals,metrics,design:'alternating eligible leads in chronological assignment order, AUDIO then TEXT, independent of WhatsApp session',note:'No spam-evasion guarantees; measure only permission-based conversations'};
+ return {available:true,config:c,counts:totals,metrics,referenceFollowups:all('SELECT state,COUNT(*) n FROM consecom_offer_references GROUP BY state'),referenceDelaySeconds:OFFER_AB_REFERENCES_DELAY_MS/1000,design:'alternating eligible leads in chronological assignment order, AUDIO then TEXT, independent of WhatsApp session',note:'No spam-evasion guarantees; measure only permission-based conversations'};
 }
 export function attachOriginalAbAudio(mediaId,{confirmedScript=false}={}){
  if(!allowed())throw Error('CONSECOM_ONLY');
@@ -125,6 +129,7 @@ export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=n
   const variant=offerVariantForOrdinal(nextOrdinal);
   const saved=run("INSERT OR IGNORE INTO consecom_offer_ab(lead_id,session_id,variant,phase,provider_id,status,created_at,updated_at) VALUES(?,?,?,?,?,'SENDING',?,?)",
    leadId,sessionId,variant,plan.phase,recordId,stamp,stamp).changes===1;
+  if(saved)run("INSERT OR IGNORE INTO consecom_offer_references(lead_id,session_id,jid,source_provider_id,state,created_at,updated_at) VALUES(?,?,?,?,'HELD',?,?)",leadId,sessionId,jid,recordId,stamp,stamp);
   return saved?variant:null;
  });
  if(!reserved)return {state:'NOT_SENT',reason:'ALREADY_RESERVED'};
@@ -143,7 +148,11 @@ export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=n
    acknowledged=r?.status===true;
   }
   if(!acknowledged)throw Error('TRANSPORT_UNCONFIRMED');
-  run("UPDATE consecom_offer_ab SET status='SENT',sent_at=?,updated_at=? WHERE lead_id=? AND status='SENDING'",now(),now(),leadId);
+  tx(()=>{
+   const acceptedAt=now();
+   run("UPDATE consecom_offer_ab SET status='SENT',sent_at=?,updated_at=? WHERE lead_id=? AND status='SENDING'",acceptedAt,acceptedAt,leadId);
+   run("UPDATE consecom_offer_references SET state='WAITING',due_at=?,updated_at=? WHERE lead_id=? AND state='HELD'",new Date(Date.now()+OFFER_AB_REFERENCES_DELAY_MS).toISOString(),acceptedAt,leadId);
+  });
   const thread=threadId?{id:threadId}:getThread(leadId,jid);
   addMessage({threadId:thread.id,providerId:recordId,direction:'out',type:plan.variant==='AUDIO'?'audio':'text',
    body:plan.variant==='AUDIO'?'[Áudio original de proposta Consecom — variante A/B]':plan.body,status:'sent'});
@@ -152,7 +161,54 @@ export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=n
  }catch(error){
   run("UPDATE consecom_offer_ab SET status='UNKNOWN',reason=?,updated_at=? WHERE lead_id=? AND status='SENDING'",
    String(error.message||'UNCERTAIN_DELIVERY').slice(0,95),now(),leadId);
+  run("UPDATE consecom_offer_references SET state='CANCELLED',reason='Proposal delivery unconfirmed',updated_at=? WHERE lead_id=? AND state IN ('HELD','WAITING')",now(),leadId);
   audit('OFFER_AB_SEND_UNKNOWN',leadId,{variant:plan.variant,needsReview:true});
   return {state:'UNKNOWN',variant:plan.variant,reason:'TRANSPORT_UNCERTAIN_NO_RETRY'};
  }
+}
+
+let referencesTicking=false;
+// A separate persisted worker sends the references after the initial text or
+// recorded audio is acknowledged by WA-AKG. Never retry uncertain deliveries.
+export async function tickOfferReferences({currentTime=()=>Date.now(),getWaStatus=waControlStatus,send=waRequest}={}){
+ if(referencesTicking)return {state:'BUSY'};
+ if(!allowed()||outreachPaused())return {state:'PAUSED'};
+ referencesTicking=true;
+ try{
+  const item=one("SELECT * FROM consecom_offer_references WHERE state='WAITING' AND due_at<=? ORDER BY due_at,created_at LIMIT 1",new Date(currentTime()).toISOString());
+  if(!item)return {state:'NOT_DUE'};
+  const cancel=reason=>{run("UPDATE consecom_offer_references SET state='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND state='WAITING'",reason,now(),item.lead_id);audit('OFFER_AB_REFERENCES_CANCELLED',item.lead_id,{reason});return {state:'CANCELLED',reason};};
+  const original=one("SELECT status,sent_at,provider_id FROM consecom_offer_ab WHERE lead_id=?",item.lead_id);
+  const lead=one("SELECT l.phone,l.stage,t.manual_takeover FROM leads l LEFT JOIN threads t ON t.lead_id=l.id WHERE l.id=?",item.lead_id);
+  if(!original||original.status!=='SENT'||original.provider_id!==item.source_provider_id||!original.sent_at)return cancel('OFFER_NOT_CONFIRMED');
+  if(!lead||lead.phone!==String(item.jid).split('@')[0]||['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)||lead.manual_takeover===1)return cancel('LEAD_CHANGED_OR_HANDOFF');
+  if(one('SELECT 1 FROM suppressions WHERE phone=?',lead.phone))return cancel('OPTED_OUT');
+  if(!isManagedSession(item.session_id)||leadSession(item.lead_id)!==item.session_id||!prospectorChatEligible({jid:item.jid,sessionId:item.session_id})||!conversationAuthorized(item.lead_id))return cancel('NO_LONGER_AUTHORIZED');
+  // If the person replies before the 25-second follow-up, allow the human/AI
+  // conversation to proceed instead of sending an untimely link blast.
+  const newerReply=one("SELECT 1 FROM waakg_inbox WHERE jid=? AND received_at>? LIMIT 1",item.jid,original.sent_at);
+  if(newerReply)return cancel('RECIPIENT_REPLIED');
+  const connection=await getWaStatus(item.session_id);
+  if(!connection?.connected)return {state:'WAITING',reason:'WHATSAPP_OFFLINE'};
+  if(outreachPaused())return {state:'PAUSED'};
+  // No retries on any in-flight transport. Crash recovery marks SENDING UNKNOWN.
+  const locked=run("UPDATE consecom_offer_references SET state='SENDING',updated_at=? WHERE lead_id=? AND state='WAITING' AND due_at<=?",now(),item.lead_id,new Date(currentTime()).toISOString()).changes===1;
+  if(!locked)return {state:'SKIP'};
+  try{
+   if(outreachPaused())throw Error('OWNER_PAUSED_DURING_SEND');
+   const ack=await send('/api/messages/'+encodeURIComponent(item.session_id)+'/'+encodeURIComponent(item.jid)+'/send',{method:'POST',data:{message:{text:OFFER_AB_REFERENCES_TEXT}}});
+   if(ack?.status!==true)throw Error('REFERENCES_TRANSPORT_UNCONFIRMED');
+   const acceptedAt=now();
+   run("UPDATE consecom_offer_references SET state='SENT',sent_at=?,updated_at=? WHERE lead_id=? AND state='SENDING'",acceptedAt,acceptedAt,item.lead_id);
+   const thread=getThread(item.lead_id,item.jid);
+   addMessage({threadId:thread.id,providerId:'offer-ab-references:'+item.lead_id,direction:'out',body:OFFER_AB_REFERENCES_TEXT,status:'sent'});
+   audit('OFFER_AB_REFERENCES_SENT',item.lead_id,{seconds:OFFER_AB_REFERENCES_DELAY_MS/1000,deliveryVerifiedOnPhone:false});
+   return {state:'SENT',leadId:item.lead_id};
+  }catch(error){
+   const reason=String(error?.message||'DELIVERY_UNCERTAIN').slice(0,100);
+   run("UPDATE consecom_offer_references SET state='UNKNOWN',reason=?,updated_at=? WHERE lead_id=? AND state='SENDING'",reason,now(),item.lead_id);
+   audit('OFFER_AB_REFERENCES_UNKNOWN',item.lead_id,{reason,manualReview:true});
+   return {state:'UNKNOWN',reason};
+  }
+ }finally{referencesTicking=false;}
 }
