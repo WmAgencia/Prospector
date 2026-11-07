@@ -28,7 +28,10 @@ test('signup UI has immediate field notifications without scary one-time notice'
  assert.doesNotMatch(html,/Uma única tentativa gratuita por CPF, e-mail e celular\. O nome deve corresponder ao cadastro oficial/);
  assert.match(html,/id="signup-cpf-feedback"/);
  assert.match(html,/id="signup-name-feedback"/);
- assert.ok(html.indexOf('/signup-validation.js')<html.indexOf('/landing.js'));
+ assert.doesNotMatch(html,/<script[^>]+src="\/signup-validation\.js"/);
+ assert.match(html,/<script[^>]+src="\/landing\.js"/);
+ const helper=fs.readFileSync(new URL('signup-validation.js',root),'utf8');
+ assert.ok(js.startsWith(helper),'Bundled validation helpers must match the tested source exactly');
  assert.match(js,/validateSignupCpf\(true\)/);
  assert.match(js,/validateSignupName\(true\)/);
  assert.match(js,/CPF válido pelo cálculo\. Nome ainda não confirmado/);
