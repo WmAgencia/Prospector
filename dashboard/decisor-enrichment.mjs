@@ -2,6 +2,8 @@
 // A company's registered phone is NEVER the individual shareholder's number.
 import {db,all,one,run,now,getSetting,audit} from './db.mjs';
 import {braveSearch} from './discovery.mjs';
+import {isSameBusiness,providerAddress} from './cnpj-identity-match.mjs';
+import {routeBusinessContact} from './business-contact-routing.mjs';
 const TABLE=`CREATE TABLE IF NOT EXISTS lead_decisor_enrichment (
  lead_id TEXT PRIMARY KEY REFERENCES leads(id),
  cnpj TEXT, company_name TEXT, city TEXT, decision_maker TEXT, decision_role TEXT,
@@ -26,22 +28,34 @@ function parseCompany(raw,cnpj,provider){
  const d=flat(raw),found=cnpjDigits(d?.cnpj);
  if(!d||found!==cnpj)return null;
  const socios=Array.isArray(d.socios)?d.socios:Array.isArray(d.qsa)?d.qsa:[];
- const priority=s=>/administrador|titular|propriet|presidente|diretor|socio.administrador/i.test(String(s.descricao||s.qualificacao_socio||s.qualificacao||s.descricao_qualificacao_socio||''));
+ const priority=x=>/administrador|titular|propriet|presidente|diretor/i.test(String(x.descricao||x.qualificacao_socio||x.qualificacao||x.descricao_qualificacao_socio||''));
  const match=socios.find(priority)||socios[0]||{};
  const name=String(match.nomeSocio||match.nome_socio||match.nome||'').trim().slice(0,110);
  const role=String(match.descricao||match.qualificacao_socio||match.qualificacao||match.descricao_qualificacao_socio||'').trim().slice(0,110);
- const city=String(d.municipio||d.nome_municipio||'').trim();
- return {cnpj,provider,company:String(d.razaoSocial||d.razao_social||'').trim(),fantasy:String(d.nomeFantasia||d.nome_fantasia||'').trim(),
-   city,uf:String(d.uf||'').trim(),name,role,companyPhone:String(d.telefone||d.ddd_telefone_1||'').trim().slice(0,35)};
+ const address=providerAddress(d);
+ return {cnpj,provider,company:String(d.razaoSocial||d.razao_social||'').trim(),
+  fantasy:String(d.nomeFantasia||d.nome_fantasia||'').trim(),
+  city:address.city,uf:address.state,address,name,role,
+  companyPhone:String(d.telefone||d.ddd_telefone_1||'').trim().slice(0,35)};
 }
-function matchesLead(company,lead){
- if(!company.company||!lead.business)return false;
- // A CNPJ query must match the actual business name AND municipality,
- // never trust an unverified search snippet as definitive identity.
- const candidate=clean(lead.business),names=[clean(company.company),clean(company.fantasy)].filter(Boolean);
- const exact=names.some(n=>n===candidate);
- const city=clean(lead.city),foundCity=clean(company.city);
- return exact&&!!city&&!!foundCity&&city===foundCity;
+export function leadBusinessEvidence(lead){
+ const rows=all("SELECT source,details FROM lead_origins WHERE lead_id=? AND source IN ('maps_extension','osm') ORDER BY at DESC LIMIT 20",lead.id);
+ for(const record of rows){
+  let data={};try{data=JSON.parse(record.details||'{}')}catch{}
+  let address=data.address;
+  // Older Maps discoveries stored the listing address in notes only.
+  if(!address&&record.source==='maps_extension'){
+   const match=String(lead.notes||'').match(/Endereço:\s*(.*?)\s*\|\s*Google Maps:/i);
+   address=match?.[1]||'';
+  }
+  if(typeof address==='string'){
+   if(address.trim())return {raw:address,city:data.city||lead.city,state:data.state||'',
+    postcode:data.postcode||''};
+  }else if(address&&typeof address==='object'){
+   if(address.street&&address.number)return {...address,city:address.city||data.city||lead.city};
+  }
+ }
+ return null;
 }
 export function declaredCnpj(leadId){
  const origins=all('SELECT source,identity,details FROM lead_origins WHERE lead_id=? ORDER BY at DESC LIMIT 20',leadId);
@@ -87,7 +101,7 @@ export async function enrichDecisorLead(leadId,{fetchImpl=fetch}={}){
   let verified=null,providerFailure=false;
   for(const cnpj of candidates){
    for(const service of SERVICE){
-    try{const result=await queryProvider(cnpj,service,{fetchImpl});if(result&&matchesLead(result,lead)){verified=result;break;}}
+    try{const result=await queryProvider(cnpj,service,{fetchImpl});if(result&&isSameBusiness(lead,result,leadBusinessEvidence(lead))){verified=result;break;}}
     catch{providerFailure=true;}
    }
    if(verified)break;
@@ -102,10 +116,17 @@ export async function enrichDecisorLead(leadId,{fetchImpl=fetch}={}){
    updated_at=excluded.updated_at,error=excluded.error`,
    lead.id,verified?.cnpj||null,verified?.company||null,verified?.city||null,verified?.name||null,verified?.role||null,
    verified?.companyPhone||null,verified?.provider||null,status,now(),next,now(),status==='RETRY'?'PROVIDER_UNAVAILABLE':null);
-  // Preserve original Maps phone and all existing send eligibility.
-  // The QSA lookup identifies a name, not a verified WhatsApp belonging to them.
-  audit('DECISOR_ENRICHMENT',lead.id,{status,provider:verified?.provider||null,hasSocio:!!verified?.name});
-  return {status,provider:verified?.provider||null,hasSocio:!!verified?.name};
+  // Routes only pre-contact business numbers. An address match does NOT imply
+  // that the CNPJ telephone is personally owned by the named administrator.
+  let selection={status:'UNAVAILABLE'};
+  try{selection=await routeBusinessContact(lead.id,{matchedCompany:verified});}
+  catch(error){selection={status:'PENDING_CHECK'};console.warn('[decisor contact routing]',String(error?.message||error).slice(0,100));}
+  if(selection.status==='PENDING_CHECK'){
+   run('UPDATE lead_decisor_enrichment SET next_attempt_at=? WHERE lead_id=?',
+     new Date(Date.now()+15*60_000).toISOString(),lead.id);
+  }
+  audit('DECISOR_ENRICHMENT',lead.id,{status,provider:verified?.provider||null,hasSocio:!!verified?.name,route:selection.status});
+  return {status,route:selection.status,provider:verified?.provider||null,hasSocio:!!verified?.name};
  }finally{busy.delete(leadId);}
 }
 let workerBusy=false;
