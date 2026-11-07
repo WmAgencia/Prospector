@@ -5,7 +5,7 @@ export const businessDay=date=>{
  return parts.year+'-'+parts.month+'-'+parts.day;
 };
 export function masterAnalytics(ledger,now=new Date()){
- const db=ledger.db,clients=ledger.list(),day=businessDay(now),month=day.slice(0,7);
+ const db=ledger.db,clients=ledger.list().filter(x=>!x.demo),day=businessDay(now),month=day.slice(0,7);
  const verified=db.prepare('SELECT p.stripe_session_id,p.price_cents,p.credits,p.created_at,c.name AS client_name,c.id AS client_id FROM verified_payments p JOIN clients c ON c.id=p.client_id ORDER BY p.created_at DESC LIMIT 10000').all();
  const today=verified.filter(x=>businessDay(x.created_at)===day);
  const thisMonth=verified.filter(x=>businessDay(x.created_at).startsWith(month));
