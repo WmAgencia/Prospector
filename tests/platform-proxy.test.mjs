@@ -12,6 +12,12 @@ test('public proxy forwards client sessions without borrowing or retrying with m
   fetch:async(url,opts={})=>{
    const p=new URL(url).pathname;calls.push({p,cookie:opts.headers?.get?.('cookie')||'',body:opts.body});
    if(p==='/api/auth/exchange')return Response.json({ok:true},{headers:{'Set-Cookie':'ps_session=internal-master; HttpOnly; Secure; Path=/'}});
+   if(p==='/api/platform/signin'){
+    const headers=new Headers();
+    headers.append('Set-Cookie','ps_client=issued-owner; HttpOnly; Secure; Path=/');
+    headers.append('Set-Cookie','ps_primary_mode=owner-master; HttpOnly; Secure; Path=/');
+    return Response.json({ok:true,next:'/#/dashboard'},{headers});
+   }
    if(p==='/api/platform/login')return Response.json({ok:true},{headers:{'Set-Cookie':'ps_client=issued-client; HttpOnly; Secure; Path=/'}});
    if(p.endsWith('/open'))return Response.json({ok:true},{headers:{'Set-Cookie':'ps_client=opened-client; HttpOnly; Secure; Path=/'}});
    if(p==='/api/platform/context')return Response.json({error:'expired'},{status:401});
@@ -20,6 +26,11 @@ test('public proxy forwards client sessions without borrowing or retrying with m
  vm.runInContext(stripTypeScriptTypes(source),context);
  const send=(p,{method='GET',cookie='',origin,body}={})=>handler(new Request('https://prospector-ui-production.up.railway.app'+p,{method,headers:{...(cookie?{cookie}:{}),...(origin?{origin}:{}),...(body?{'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}));
  assert.equal((await send('/api/platform/clients')).status,401);assert.equal(calls.length,0);
+ const signed=await send('/api/platform/signin',{method:'POST',body:{identifier:'synthetic@example.test',password:'synthetic-test-password'}});
+ assert.equal(signed.status,200);
+ const signedCookies=signed.headers.getSetCookie();
+ assert.ok(signedCookies.some(x=>x.startsWith('ps_client=')));
+ assert.ok(signedCookies.some(x=>x.startsWith('ps_primary_mode=')),'Master workspace mode cookie must be forwarded');
  const login=await send('/api/platform/login',{method:'POST',body:{token:'client-token'}});assert.match(login.headers.get('set-cookie'),/^ps_client=/);assert.equal(calls[0].cookie,'');
  calls.length=0;assert.equal((await send('/api/platform/context',{cookie:'ps_client=forged'})).status,401);assert.equal(calls.length,1);assert.equal(calls[0].cookie,'ps_client=forged');
  assert.equal((await send('/api/platform/login',{method:'POST',origin:'https://evil.example',body:{token:'x'}})).status,403);
