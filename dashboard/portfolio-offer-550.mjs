@@ -65,13 +65,13 @@ export function proposalRequestWhileBusy(text=''){
 }
 export function fixedOfferPitch(lead={},at=new Date(),{busy=false}={}){
  const what=siteFocus(lead.segment,lead.business);
- // The dates of a separate portfolio presentation are NOT asserted unless independently verified.
- const first="Vou te explicar melhor: a ideia é fazer um site profissional pra vocês, com "+what+". A gente inclui Master SEO pra ajudar nas buscas do Google, sem garantir posição.";
- const second="Estamos ampliando nosso portfólio nesse segmento. O site fica em R$ 550, com domínio pago por um ano e prazo de até 3 dias úteis após a confirmação do pagamento e o recebimento de todo o material. Se tudo for confirmado hoje, a referência de dias de semana, sujeita a feriados, é "+brDeliveryDate(at)+(busy?'. Quando tiver um tempinho, pode olhar com calma.':'. Faz sentido pra vocês?');
- return first+"\n\n"+second;
+ // Initial explanation: short and natural. Only clarify delivery dates when specifically requested.
+ const first='A ideia é fazer um site profissional pra vocês, com '+what+'. Estamos ampliando nosso portfólio nesse segmento.';
+ const second='O site fica em R$ 550, com domínio pago por um ano e Master SEO, sem promessa de posição no Google. O prazo é de até 3 dias úteis após pagamento confirmado e recebimento dos materiais.';
+ return first+'\\n\\n'+second+(busy?' Pode olhar com calma quando conseguir.':' Faz sentido pra vocês?');
 }
 export function fixedOfferPriceReply(at=new Date()){
- return "Para o site profissional de portfólio, o valor definido é R$ 550, com domínio pago por um ano. O prazo é de até 3 dias úteis após confirmar o pagamento e receber todos os materiais; se isso ocorrer hoje, a referência de dias de semana, sujeita a feriados, é "+brDeliveryDate(at)+". Se precisar de loja virtual, sistema ou integrações extras, avaliamos o escopo com o responsável.";
+ return 'O site profissional de portfólio fica em R$ 550, com domínio pago por um ano. O prazo é de até 3 dias úteis após pagamento confirmado e recebimento dos materiais. Recursos extras, como checkout e integrações especiais, são avaliados à parte.';
 }
 export function approvedPortfolioText(text,at=new Date()){
  const n=norm(text);
