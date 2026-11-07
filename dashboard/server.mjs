@@ -853,13 +853,14 @@ if(process.env.WHATSAPP_TRANSPORT==='waakg'){
 // Automatic per-customer 'Meu Prospector' WhatsApp group lifecycle.
 // Registration alone cannot create it: the worker waits until the QR pairing
 // confirms at least one real number. This is not tied to outreach permissions.
-if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_DEMO_MODE!=='true'){
+if((process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_DEMO_MODE!=='true')||(!process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_GROUP_IMPORT_JID)){
  let lastPrivateGroupState='';
  const checkPrivateGroup=()=>{
   reconcilePrivateGroup().then(result=>{
    if(result.state!==lastPrivateGroupState){
     if(typeof process.send==='function')process.send({type:'PRIVATE_GROUP_STATUS',state:result.state,
      members:Number.isInteger(result.members)?result.members:null,missing:Number.isInteger(result.missing)?result.missing:0});
+    else console.info('[private group]',JSON.stringify({state:result.state,members:Number.isInteger(result.members)?result.members:null,missing:Number.isInteger(result.missing)?result.missing:0}));
    }
    lastPrivateGroupState=result.state;
   }).catch(error=>{
