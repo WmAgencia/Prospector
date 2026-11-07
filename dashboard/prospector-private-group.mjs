@@ -99,9 +99,13 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
   };
   if(saved?.group_jid){
    if(!groupId(saved.group_jid))return {state:'INVALID_SAVED_GROUP'};
-   try{entries=await fetchGroups();}catch{return {state:'GROUP_LOOKUP_UNAVAILABLE'};}
-   const existing=findStored(entries,saved.group_jid);
-   if(!existing)return {state:'GROUP_NOT_VISIBLE',groupCreated:true};
+   // Live Baileys group metadata is authoritative: the WA-AKG database list
+   // can lag group-upsert events and falsely hide just-created groups.
+   let existing;
+   try{existing=await request(path+'/'+encodeURIComponent(saved.group_jid));}
+   catch{return {state:'GROUP_METADATA_UNAVAILABLE',groupCreated:true};}
+   if(groupId(existing?.id||existing?.jid)!==saved.group_jid)
+    return {state:'GROUP_NOT_VISIBLE',groupCreated:true};
    if(String(existing.subject||'')!==PROSPECTOR_GROUP_NAME)return {state:'GROUP_RENAMED',groupCreated:true};
    const membership=getMembership(existing);
    if(!membership)return {state:'MEMBERSHIP_NOT_YET_SYNCED',groupCreated:true};
