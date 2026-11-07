@@ -81,11 +81,11 @@ test('both WhatsApps online at first run: create empty, then add second using ow
   calls.push({url,opts});
   if(opts?.method==='POST')return {status:true,data:{group:{id:jid}}};
   if(opts?.method==='PUT')return {success:true,result:[{status:'200'}]};
-  return group([owner]);
+  return opts?.method?group([owner]):url.endsWith(encodeURIComponent(jid))?group([owner]):{status:true,data:[]};
  };
  const created=await reconcilePrivateGroup({getSessions:both,request:api,at:date('12:00:00')});
  assert.equal(created.state,'CREATED');
- assert.deepEqual(calls[0].opts.data.participants,[]);
+ assert.deepEqual(calls.find(x=>x.opts?.method==='POST').opts.data.participants,[]);
  const synced=await reconcilePrivateGroup({getSessions:both,request:api,at:date('12:01:00')});
  assert.equal(synced.state,'MEMBERSHIP_PENDING');
  assert.deepEqual(calls.find(x=>x.opts?.method==='PUT').opts.data.participants,[second+'@s.whatsapp.net']);
@@ -146,7 +146,7 @@ test('does not adopt unrelated same-name groups or add unknown people',async()=>
  await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')});
  const next=await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:04:00')});
  assert.equal(next.state,'GROUP_MATCH_AMBIGUOUS');
- assert.equal(privateGroupState().group_jid,null);
+ assert.equal(privateGroupState(),null);
  assert.equal(create,0);
 });
 test('an existing group with an unknown member is blocked from further updates',async()=>{
