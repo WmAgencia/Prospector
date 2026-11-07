@@ -91,6 +91,34 @@ test('both WhatsApps online at first run: create empty, then add second using ow
  assert.deepEqual(calls.find(x=>x.opts?.method==='PUT').opts.data.participants,[second+'@s.whatsapp.net']);
  assert.equal(calls.filter(x=>x.opts?.method==='POST').length,1);
 });
+test('imports a verified known live group even when the provider list is stale',async()=>{
+ const priorInternal=process.env.PROSPECTOR_TENANT_INTERNAL;
+ const priorImport=process.env.PROSPECTOR_GROUP_IMPORT_JID;
+ process.env.PROSPECTOR_TENANT_INTERNAL='true';
+ process.env.PROSPECTOR_GROUP_IMPORT_JID=jid;
+ let createCalls=0,readCalls=0;
+ try{
+  const response=await reconcilePrivateGroup({
+   getSessions:pool([...connected,session('prospector-second',second)]),
+   request:async(url,options)=>{
+    if(options?.method==='POST'){createCalls++;throw Error('Must not create second group');}
+    readCalls++;
+    if(url.endsWith(encodeURIComponent(jid)))return group([owner,second]);
+    return {status:true,data:[]};
+   },at:date('12:00:00')
+  });
+  assert.equal(response.state,'RECOVERED');
+  assert.equal(response.members,2);
+  assert.equal(privateGroupState().group_jid,jid);
+  assert.equal(createCalls,0);
+  assert.equal(readCalls,1);
+ }finally{
+  if(priorInternal===undefined)delete process.env.PROSPECTOR_TENANT_INTERNAL;
+  else process.env.PROSPECTOR_TENANT_INTERNAL=priorInternal;
+  if(priorImport===undefined)delete process.env.PROSPECTOR_GROUP_IMPORT_JID;
+  else process.env.PROSPECTOR_GROUP_IMPORT_JID=priorImport;
+ }
+});
 test('recognizes one already existing and verified group without creating a duplicate',async()=>{
  const both=pool([...connected,session('prospector-second',second)]);
  let creates=0;
