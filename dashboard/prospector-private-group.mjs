@@ -59,8 +59,7 @@ function safeRecovery(entries,ownerNumber,managedNumbers){
  const safe=possible.filter(g=>{
   const membership=getMembership(g);
   if(!membership||membership.unknown||!membership.numbers.has(ownerNumber))return false;
-  const registered=managedNumbers;
-  return [...membership.numbers].every(n=>registered.has(n));
+  return true;
  });
  // A manual group with the same title could exist. Only recover an exact
  // matching group after our OWN previous creation attempt, and only if unique.
@@ -109,8 +108,7 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
    const members=getMembership(metadata);
    if(groupId(metadata?.id||metadata?.jid)!==importedJid||
       metadata?.subject!==PROSPECTOR_GROUP_NAME||!members||members.unknown||
-      !members.numbers.has(ownerNumber)||
-      [...members.numbers].some(n=>!ownedNumbers.has(n)))return {state:'GROUP_MATCH_AMBIGUOUS'};
+      !members.numbers.has(ownerNumber))return {state:'GROUP_MATCH_AMBIGUOUS'};
    saveGroup({ownerSession,ownerNumber,groupJid:importedJid,state:'READY',attemptedAt:at.toISOString()});
    audit('PRIVATE_GROUP_KNOWN_ID_RESTORED',null,{members:members.numbers.size,verified:true});
    return {state:'RECOVERED',groupCreated:true,members:members.numbers.size};
@@ -131,8 +129,7 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
     catch{return {state:'GROUP_METADATA_UNAVAILABLE'};}
     const memberSet=getMembership(metadata);
     if(metadata?.subject!==PROSPECTOR_GROUP_NAME||!memberSet||memberSet.unknown||
-      !memberSet.numbers.has(ownerNumber)||
-      [...memberSet.numbers].some(n=>!ownedNumbers.has(n))){
+      !memberSet.numbers.has(ownerNumber)){
      return {state:'GROUP_MATCH_AMBIGUOUS'};
     }
     saveGroup({ownerSession,ownerNumber,groupJid:jid,state:'READY',attemptedAt:at.toISOString()});
@@ -154,11 +151,8 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
    if(!membership)return {state:'MEMBERSHIP_NOT_YET_SYNCED',groupCreated:true};
    if(membership.unknown)return {state:'MEMBERSHIP_REVIEW_REQUIRED',groupCreated:true};
    if(!membership.numbers.has(ownerNumber))return {state:'OWNER_NOT_IN_GROUP',groupCreated:true};
-   // No unintended third parties. If somebody manually adds an unknown
-   // member, do not automatically grant group access to further numbers.
-   const allowed=new Set([...ownedNumbers,ownerNumber]);
-   if([...membership.numbers].some(n=>!allowed.has(n)))
-    return {state:'UNEXPECTED_GROUP_MEMBER',groupCreated:true};
+   // Manually invited group partners are authorized to join. They are NOT
+   // managed sender sessions and cannot be used to contact prospect leads.
    const missing=sessions.filter(s=>!membership.numbers.has(s.number));
    if(!missing.length){
     if(saved.state!=='READY')saveGroup({ownerSession,ownerNumber,groupJid:saved.group_jid,state:'READY',attemptedAt:saved.last_attempt_at});
