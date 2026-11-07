@@ -103,7 +103,7 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
   fs.createReadStream(fileURLToPath(new URL('./public/landing.html',import.meta.url))).pipe(res);return true;
  }
- if(req.method==='GET'&&['/landing.css','/landing-redesign.css','/landing.js','/product-theme.css','/product-icons.js'].includes(p)){
+ if(req.method==='GET'&&['/landing.css','/landing-redesign.css','/landing.js','/signup-validation.js','/product-theme.css','/product-icons.js'].includes(p)){
   res.writeHead(200,{'Content-Type':p.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','Cache-Control':'no-cache'});fs.createReadStream(fileURLToPath(new URL('./public'+p,import.meta.url))).pipe(res);return true;
  }
  if((p==='/api/platform/signup'||p==='/api/platform/signin')&&req.method==='POST'){
