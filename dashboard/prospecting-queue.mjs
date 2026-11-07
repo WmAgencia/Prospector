@@ -12,6 +12,7 @@ import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
 import {insideApproachWindow,isOutboundBusinessDay,prospectingWindowLabel} from './outreach-window.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
+import {routingAllowsOutreach} from './business-contact-routing.mjs';
 import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
 import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
 
@@ -35,7 +36,7 @@ run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interro
 
 function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false,automaticApproved=false){
  const l=one("SELECT id,business,phone,stage,contact_permission FROM leads WHERE id=?",leadId);
- if(!l||!l.phone)return null;
+ if(!l||!l.phone||!routingAllowsOutreach(leadId))return null;
  if(ignoreQueueItemId&&one('SELECT phone FROM prospecting_batch_items WHERE id=?',ignoreQueueItemId)?.phone!==l.phone)return null;
  if(!recontactDecision(l,Date.now(),ignoreQueueItemId).eligible)return null;
  // Production safeguard: public business contact details and operator selection
@@ -255,7 +256,7 @@ export async function tickApproachQueue(deps={}){
    return true;
   });
   if(!reserved){settleApproachCredit(next.id,false);return {status:'WAITING'};}
-  const recipient=one('SELECT name,business FROM leads WHERE id=?',next.lead_id);
+  const recipient=one('SELECT id,name,business FROM leads WHERE id=?',next.lead_id);
   const message=greetingForProspect(recipient,new Date(time));
   try{
    const result=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/send',{method:'POST',data:{message:{text:message}}});
