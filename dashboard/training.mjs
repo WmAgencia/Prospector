@@ -375,7 +375,7 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
  if(req.method==='POST'&&p==='/api/training/approve'){
   const input=await json(req),draft=getSetting('training_draft',null),text=String(input.text||'').trim();
   if(!draft||input.id!==draft.id){respond(res,409,{error:'O perfil mudou. Atualize e revise a versão mais recente.'});return true;}
-  if(!text||text.length>9000){respond(res,422,{error:'Revise o perfil (até 9.000 caracteres)'});return true;}
+  if(!text||text.length>17900){respond(res,422,{error:'Revise o perfil (até 17.900 caracteres)'});return true;}
   // Markdown is authoritative. Write first; never activate a profile if the write fails.
   const markdown=draft.source==='interview'?text.replace('> Documento de treinamento preparado para revisão. Só utilizar após aprovação explícita.','> Manual revisado e aprovado pelo responsável da empresa.'):(text.trimStart().startsWith('#')?text:'# Orientações de atendimento aprovadas\n\n'+text);
   const file=storeTrainingMarkdown('active',markdown);
