@@ -133,9 +133,15 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  const ownerMaster=primary&&primaryMode(req,client)==='master';
  if(p==='/master'&&req.method==='GET'){
   if(primary){
-   res.writeHead(302,{'Location':'/#/clients','Set-Cookie':primaryModeCookie(client,'master'),'Cache-Control':'no-store'});
+   res.writeHead(302,{'Location':'/#/dashboard','Set-Cookie':primaryModeCookie(client,'master'),'Cache-Control':'no-store'});
+  }else if(!client&&authorized(req)&&registry().primaryAccount()){
+   // Owner authenticated via the legacy admin access page: attach the EXISTING
+   // primary account rather than a legacy Master without workspace switching.
+   const owner=registry().primaryAccount();
+   res.writeHead(302,{'Location':'/#/dashboard','Set-Cookie':[clientCookie(owner),primaryModeCookie(owner,'master')],'Cache-Control':'no-store'});
   }else{
-   res.writeHead(302,{'Location':'/#/clients','Set-Cookie':cookieName+'=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0','Cache-Control':'no-store'});
+   // Never discard an unrelated customer's session or elevate that account.
+   res.writeHead(302,{'Location':client?'/#/overview':'/entrar','Cache-Control':'no-store'});
   }
   res.end();return true;
  }
@@ -150,7 +156,14 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  if(p==='/api/platform/context'){
   if(ownerMaster)respond(res,200,{role:'master',name:client.name,email:client.email,canSwitchWorkspace:true,internalAccount:true,package:{credits:250,priceBrl:9.9}});
   else if(client)respond(res,200,{role:'client',...registry().publicClient(client),needsPasswordSetup:!registry().hasPassword(client.id),canSwitchWorkspace:primary,internalAccount:primary,canReturnToMaster:false,package:{credits:250,priceBrl:9.9}});
-  else if(authorized(req))respond(res,200,{role:'master',name:'Consecom Brasil',canSwitchWorkspace:false,package:{credits:250,priceBrl:9.9}});
+  else if(authorized(req)){
+   const owner=registry().primaryAccount();
+   if(owner){
+    // Handles administrators entering '/' directly after legacy authentication.
+    res.setHeader('Set-Cookie',[clientCookie(owner),primaryModeCookie(owner,'master')]);
+    respond(res,200,{role:'master',name:owner.name,email:owner.email,canSwitchWorkspace:true,internalAccount:true,package:{credits:250,priceBrl:9.9}});
+   }else respond(res,200,{role:'master',name:'Consecom Brasil',canSwitchWorkspace:false,package:{credits:250,priceBrl:9.9}});
+  }
   else respond(res,401,{error:'Acesso necessário'});return true;
  }
  if(p==='/api/platform/logout'&&req.method==='POST'){
