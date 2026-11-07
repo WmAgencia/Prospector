@@ -136,7 +136,7 @@ test('does not adopt unrelated same-name groups or add unknown people',async()=>
 test('an existing group with an unknown member is blocked from further updates',async()=>{
  const request=async(url,opts)=>{
   if(opts?.method==='POST')return {status:true,data:{group:{id:jid}}};
-  return {status:true,data:[group([owner,'5515999994444'])]};
+  return url.endsWith(encodeURIComponent(jid))?group([owner,'5515999994444']):{status:true,data:[group([owner,'5515999994444'])]};
  };
  await reconcilePrivateGroup({getSessions:pool(connected),request,at:date('12:00:00')});
  const result=await reconcilePrivateGroup({
