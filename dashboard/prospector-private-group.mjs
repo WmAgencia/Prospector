@@ -20,7 +20,7 @@ const jidNumber=value=>{
  const raw=String(value||'').split('@')[0].split(':')[0].replace(/\D/g,'');
  return CONNECTED_PHONE.test(raw)?raw:'';
 };
-const customerScope=()=>Boolean(process.env.PROSPECTOR_TENANT_ID)&&process.env.PROSPECTOR_DEMO_MODE!=='true'&&process.env.PROSPECTOR_AUTO_GROUP_ENABLED!=='false';
+const customerScope=()=>process.env.PROSPECTOR_DEMO_MODE!=='true'&&process.env.PROSPECTOR_AUTO_GROUP_ENABLED!=='false'&&(Boolean(process.env.PROSPECTOR_TENANT_ID)||(!process.env.PROSPECTOR_TENANT_ID&&Boolean(groupId(process.env.PROSPECTOR_GROUP_IMPORT_JID))));
 const nextAt=(date,delay)=>new Date(date.getTime()+delay).toISOString();
 
 export function privateGroupState(){return one('SELECT * FROM prospector_owner_group WHERE singleton=1')||null;}
@@ -100,7 +100,7 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
   // Restore the exact JID from a previously verified, user-authorized live
   // creation. The WA-AKG Prisma group list can lag despite live metadata being
   // correct; never create a second group while this import remains unresolved.
-  const importedJid=process.env.PROSPECTOR_TENANT_INTERNAL==='true'?
+  const importedJid=(process.env.PROSPECTOR_TENANT_INTERNAL==='true'||!process.env.PROSPECTOR_TENANT_ID)?
    groupId(process.env.PROSPECTOR_GROUP_IMPORT_JID):'';
   if(!saved&&importedJid){
    let metadata;
