@@ -67,7 +67,7 @@ export function workerEnvironment(client,port){
   PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
   PROSPECTOR_SESSION_DIR:path.join(root,'clients',client.id,'wa-session'),
   ADMIN_ACCESS_TOKEN:client.secret,ADMIN_SESSION_SECRET:client.secret,WA_AKG_WEBHOOK_SECRET:client.secret,
-  WHATSAPP_TRANSPORT:'waakg',PROSPECTOR_INBOUND_AUTOREPLY_ENABLED:demo?'false':'true',AI_CONVERSATION_AUTOSEND:demo?'false':'true',
+  WHATSAPP_TRANSPORT:'waakg',AUDIO_TRANSCRIPTION_ENABLED:demo?'false':'true',PROSPECTOR_INBOUND_AUTOREPLY_ENABLED:demo?'false':'true',AI_CONVERSATION_AUTOSEND:demo?'false':'true',
   PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false',PROSPECTOR_COLD_FIRST_APPROACH:'false',
   PROSPECTOR_REPLY_PACING_ENABLED:'true',PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED:'false'};
 }
