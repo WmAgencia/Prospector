@@ -86,6 +86,21 @@ export function openPlatformStore(root){
    this.adjust(created.client.id,100,'Créditos fictícios para demonstração','demo-credit-initial-v1');
    return publicClient(get(created.client.id));
   },
+  resetDemoPassword(){
+   const email='demo.prospector@exemplo.invalid';
+   const row=db.prepare('SELECT * FROM clients WHERE lower(email)=? AND is_demo=1 AND is_internal=0').get(email);
+   if(!row||row.status!=='active')throw Error('Conta demonstrativa indisponível');
+   const password='Demo-'+crypto.randomBytes(15).toString('base64url');
+   const salt=crypto.randomBytes(24).toString('hex'),digest=crypto.scryptSync(password,salt,64).toString('hex');
+   db.exec('BEGIN IMMEDIATE');
+   try{
+    db.prepare("INSERT INTO client_passwords(client_id,email,salt,password_hash,privacy_version,created_at,phone) VALUES(?,?,?,?,?,?,NULL) ON CONFLICT(client_id) DO UPDATE SET salt=excluded.salt,password_hash=excluded.password_hash,privacy_version=excluded.privacy_version")
+     .run(row.id,row.email,salt,digest,'demo-owner-reset',new Date().toISOString());
+    db.prepare('UPDATE clients SET token_hash=? WHERE id=?').run(crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex'),row.id);
+    db.exec('COMMIT');
+    return {email:row.email,password,loginPath:'/entrar',id:row.id,temporary:true};
+   }catch(error){db.exec('ROLLBACK');throw error;}
+  },
   listCreditRequests(clientId=null){
    return clientId
     ?db.prepare("SELECT r.id,r.client_id,r.package_id,r.credits,r.price_cents,r.status,r.created_at,r.updated_at FROM credit_requests r WHERE r.client_id=? ORDER BY r.created_at DESC LIMIT 100").all(clientId)
