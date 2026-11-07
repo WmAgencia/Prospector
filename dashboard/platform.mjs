@@ -81,7 +81,7 @@ async function worker(client){
   // from the WhatsApp group lifecycle for operational proof and troubleshooting.
   child.on('message',value=>{
    if(value?.type!=='PRIVATE_GROUP_STATUS'||typeof value.state!=='string')return;
-   const accepted=new Set(['CREATED','READY','RECOVERED','MEMBERSHIP_PENDING','GROUP_MATCH_AMBIGUOUS','UNEXPECTED_GROUP_MEMBER','CREATION_RETRY','GROUP_METADATA_UNAVAILABLE','WAITING_WHATSAPP']);
+   const accepted=new Set(['CREATED','READY','RECOVERED','MEMBERSHIP_PENDING','GROUP_MATCH_AMBIGUOUS','UNEXPECTED_GROUP_MEMBER','CREATION_RETRY','GROUP_METADATA_UNAVAILABLE','WAITING_WHATSAPP','WAITING_OWNER_WHATSAPP','GROUP_LOOKUP_UNAVAILABLE','OWNER_IDENTITY_CHANGED','GROUP_NOT_VISIBLE','GROUP_RENAMED','MEMBERSHIP_NOT_YET_SYNCED','MEMBERSHIP_REVIEW_REQUIRED','OWNER_NOT_IN_GROUP','ERROR','DISABLED']);
    if(!accepted.has(value.state))return;
    console.info('[tenant private group]',JSON.stringify({state:value.state,
     members:Number.isInteger(value.members)?value.members:null,
