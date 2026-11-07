@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {openPlatformStore} from './platform-store.mjs';
 import {CREDIT_PACKAGES} from './credit-packages.mjs';
 import {masterAnalytics} from './platform-analytics.mjs';
-import {billingReady,checkoutForRequest,handleStripeWebhook} from './stripe-billing.mjs';
+import {billingReady,checkoutForRequest,handleStripeWebhook,embeddedReady,embeddedCheckoutForRequest} from './stripe-billing.mjs';
 import {createAccessLimiter,accessClientKey} from './access-rate-limit.mjs';
 const isWorker=!!process.env.PROSPECTOR_TENANT_ID;
 const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform');
@@ -200,7 +200,7 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   }catch(e){passwordLimiter.failed(ip);respond(res,422,{error:String(e.message).slice(0,180)});}
   return true;
  }
- if(p==='/api/platform/credits'&&client){respond(res,200,{...registry().publicClient(client),items:registry().events(client.id),package:{credits:250,priceBrl:9.9},packages:CREDIT_PACKAGES,requests:registry().listCreditRequests(client.id),automaticBilling:billingReady()});return true;}
+ if(p==='/api/platform/credits'&&client){respond(res,200,{...registry().publicClient(client),items:registry().events(client.id),package:{credits:250,priceBrl:9.9},packages:CREDIT_PACKAGES,requests:registry().listCreditRequests(client.id),automaticBilling:billingReady(),embeddedBilling:embeddedReady()});return true;}
  if(p==='/api/platform/analytics'&&req.method==='GET'){if(!ownerMaster&&!authorized(req)){respond(res,403,{error:'Acesso exclusivo do Master'});return true;}respond(res,200,{...masterAnalytics(registry()),packages:CREDIT_PACKAGES});return true;}
  const resumeCheckout=p.match(/^\/api\/platform\/credit-requests\/([a-f\d-]{36})\/checkout$/i);
  if(resumeCheckout&&req.method==='POST'){
@@ -211,7 +211,8 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   if(request.status!=='PENDING'){respond(res,409,{error:'Este pedido já foi concluído ou encerrado'});return true;}
   const checkoutUrl=checkoutForRequest(request);
   if(!checkoutUrl){respond(res,503,{error:'Checkout temporariamente indisponível'});return true;}
-  respond(res,200,{request,checkoutUrl,automaticBilling:true});return true;
+  let embedded=null;try{embedded=await embeddedCheckoutForRequest(request);}catch(e){console.warn('[embedded checkout]',String(e.message).slice(0,150));}
+   respond(res,200,{request,checkoutUrl,...(embedded||{}),automaticBilling:true,embeddedBilling:!!embedded});return true;
  }
  if(p==='/api/platform/credit-requests'){
   if(req.method==='GET'){
@@ -225,7 +226,8 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
    if(!client||client.is_internal===1){respond(res,403,{error:'Disponível somente para clientes'});return true;}
    if(!billingReady()){respond(res,503,{error:'Checkout temporariamente indisponível. Nenhuma solicitação de pagamento foi criada.'});return true;}
    const input=await json(req);
-   try{const request=registry().requestCredits(client.id,input.packageId,input.requestKey);respond(res,201,{request,checkoutUrl:checkoutForRequest(request),automaticBilling:true});}
+   try{const request=registry().requestCredits(client.id,input.packageId,input.requestKey);let embedded=null;try{embedded=await embeddedCheckoutForRequest(request);}catch(e){console.warn('[embedded checkout]',String(e.message).slice(0,150));}
+    respond(res,201,{request,checkoutUrl:checkoutForRequest(request),...(embedded||{}),automaticBilling:true,embeddedBilling:!!embedded});}
    catch(e){respond(res,422,{error:String(e.message).slice(0,200)});}
    return true;
   }
