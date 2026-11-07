@@ -20,6 +20,24 @@ db.exec("CREATE TABLE IF NOT EXISTS prospector_group_outgoing_guard (id TEXT PRI
 const GROUP=/^\d{8,30}@g\.us$/;
 const ID=/^[\w-]{5,150}$/;
 const PARTICIPANT=/^\d{10,15}@(s\.whatsapp\.net|lid)$/;
+const GROUP_ECHO_LOOKBACK=7*86400_000;
+// Canonicalize line endings / invisible Unicode / whitespace across devices.
+export const canonicalGroupText=value=>String(value??'').normalize('NFKC')
+ .replace(/[\u200b-\u200f\u2060\ufeff]/g,'').replace(/\r\n?/g,'\n')
+ .replace(/[ \t]+/g,' ').trim();
+export const groupTextHash=value=>crypto.createHash('sha256').update(canonicalGroupText(value)).digest('hex');
+export const looksLikeAutomatedReport=value=>{
+ const x=canonicalGroupText(value);
+ return /(?:📊\s*)?\*?Prospector\b[\s\S]{0,130}(?:relat[oó]rio di[aá]rio|relatorio diario)/i.test(x)&&
+  /(?:Abordagens|Mensagens enviadas|Responderam|Interessados)/i.test(x);
+};
+// This migration quarantines replies queued by the previously broken
+// handler so a process restart does not replay a stale self-message loop.
+if(getSetting('prospector_group_echo_quarantine_20261107_v1',false)!==true){
+ run("UPDATE prospector_group_commands SET state='REVIEW',updated_at=? WHERE state='PENDING'",now());
+ setSetting('prospector_group_echo_quarantine_20261107_v1',true);
+}
+
 const normalize=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
 const jid=x=>typeof x==='string'?x:String(x?.phoneNumber||x?.phone_number||x?.id||x?.jid||'');
 function rosterIdentity(row){
@@ -149,10 +167,10 @@ export async function sendGroupMessage({sessionId,groupId,text,request=waRequest
  const actual=String(text).slice(0,3000);
  // Register the reply BEFORE the gateway call. WhatsApp's message.sent webhook
  // may arrive before HTTP acknowledgement; this pre-claim prevents bot loops.
- const hash=crypto.createHash('sha256').update(actual).digest('hex');
+ const hash=groupTextHash(actual);
  run('INSERT INTO prospector_group_outgoing_guard(id,group_jid,hash,at) VALUES(?,?,?,?)',
   crypto.randomUUID(),groupId,hash,now());
- run("DELETE FROM prospector_group_outgoing_guard WHERE at<?",new Date(Date.now()-10*60_000).toISOString());
+ run("DELETE FROM prospector_group_outgoing_guard WHERE at<?",new Date(Date.now()-GROUP_ECHO_LOOKBACK).toISOString());
  const payload=await request('/api/messages/'+encodeURIComponent(sessionId)+'/'+encodeURIComponent(groupId)+'/send',
   {method:'POST',data:{message:{text:actual}}});
  // A positive ack means gateway accepted, not necessarily delivered to every phone.
@@ -163,6 +181,22 @@ export async function receivePrivateGroupWebhook({sessionId,data={},request=waRe
  const key=data.key||{},groupId=String(key.remoteJid||data.from||'');
  if(!data.isGroup||!GROUP.test(groupId))return {handled:false};
  const fromMe=key.fromMe===true||data.fromMe===true;
+ // A message sent by Prospector on session A appears as a normal incoming
+ // message on sessions B, C, ... . Check every group webhook, not just
+ // fromMe/message.sent, BEFORE authorizing or queueing a new command.
+ const body=typeof data.content==='string'?data.content:String(data.content?.text||data.content?.body||data.content?.caption||'');
+ if(body){
+  const echo=groupTextHash(body);
+  if(one('SELECT 1 FROM prospector_group_outgoing_guard WHERE group_jid=? AND hash=? AND at>? LIMIT 1',
+    groupId,echo,new Date(Date.now()-GROUP_ECHO_LOOKBACK).toISOString()))
+   return {handled:true,accepted:true,ignored:true,reason:'BOT_ECHO_ALL_SESSIONS'};
+  // Defensive fallback for reports from the old version, before the hash
+  // guard was durable or if the gateway reformats a generated message.
+  if(looksLikeAutomatedReport(body))
+   return {handled:true,accepted:true,ignored:true,reason:'GENERATED_REPORT'};
+ }
+ if(event==='message.sent'&&!fromMe)
+  return {handled:true,accepted:true,ignored:true,reason:'UNTRUSTED_SENT_EVENT'};
  let actor=senderIdentities(data);
  if(fromMe){
   if(event!=='message.sent')return {handled:true,accepted:true,ignored:true,reason:'FROM_ME_NOT_SENT_EVENT'};
@@ -173,11 +207,7 @@ export async function receivePrivateGroupWebhook({sessionId,data={},request=waRe
   const connected=(pool?.items||[]).find(x=>x.sessionId===sessionId&&x.connected===true);
   if(!connected||!/^55\d{10,11}$/.test(String(connected.number||'')))return {handled:true,accepted:false,reason:'SENDER_NOT_CONNECTED'};
   actor=[connected.number+'@s.whatsapp.net'];
-  const content=typeof data.content==='string'?data.content:String(data.content?.text||'');
-  const hash=crypto.createHash('sha256').update(content.slice(0,3000)).digest('hex');
-  if(one('SELECT 1 FROM prospector_group_outgoing_guard WHERE group_jid=? AND hash=? AND at>? LIMIT 1',
-   groupId,hash,new Date(Date.now()-5*60_000).toISOString()))
-   return {handled:true,accepted:true,ignored:true,reason:'BOT_OUTGOING'};
+  // Echo protection already applies to all sessions above.
  }
  const authorized=await verifyGroupMember({sessionId,groupId,sender:actor,request});
  if(!authorized.ok)return {handled:true,accepted:false,reason:authorized.reason};
@@ -201,13 +231,25 @@ export async function receivePrivateGroupWebhook({sessionId,data={},request=waRe
  return await queueGroupCommand({unique,sessionId,groupId,sender:actor[0],text:content,request});
 }
 export async function queueGroupCommand({unique,sessionId,groupId,sender,text,request=waRequest}={}){
+ if(process.env.PROSPECTOR_AUTO_GROUP_ENABLED==='false')return {handled:true,accepted:false,reason:'GROUP_DISABLED'};
+ const clean=canonicalGroupText(text);
+ if(looksLikeAutomatedReport(clean))return {handled:true,accepted:true,ignored:true,reason:'GENERATED_REPORT'};
+ const recentMinute=one('SELECT COUNT(*) AS n FROM prospector_group_commands WHERE group_jid=? AND received_at>=?',
+   groupId,new Date(Date.now()-60_000).toISOString())?.n||0;
+ const recentHour=one('SELECT COUNT(*) AS n FROM prospector_group_commands WHERE group_jid=? AND received_at>=?',
+   groupId,new Date(Date.now()-3600_000).toISOString())?.n||0;
+ if(recentMinute>=10||recentHour>=50)return {handled:true,accepted:false,reason:'RATE_LIMIT'};
+ const nearDuplicate=one('SELECT 1 FROM prospector_group_commands WHERE group_jid=? AND sender_jid=? AND body=? AND received_at>=? LIMIT 1',
+  groupId,sender,clean,new Date(Date.now()-15000).toISOString());
+ if(nearDuplicate)return {handled:true,accepted:true,duplicate:true,reason:'RECENT_DUPLICATE'};
  const inserted=run('INSERT OR IGNORE INTO prospector_group_commands(event_id,group_jid,sender_jid,session_id,kind,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
- unique,groupId,sender,sessionId,'TEXT',String(text).slice(0,2200),'PENDING',now(),now());
+ unique,groupId,sender,sessionId,'TEXT',clean.slice(0,2200),'PENDING',now(),now());
  if(!inserted.changes)return {handled:true,accepted:true,duplicate:true};
  setImmediate(()=>processGroupCommands({request}).catch(err=>console.warn('[group command]',String(err?.message||err).slice(0,100))));
  return {handled:true,accepted:true,queued:true};
 }
 export async function processGroupCommands({ask=groqChat,request=waRequest}={}){
+ if(process.env.PROSPECTOR_AUTO_GROUP_ENABLED==='false')return {state:'DISABLED'};
  if(running)return {state:'BUSY'};running=true;
  try{
   // Persisted queues survive restarts; a failed uncertain send is never resent.
@@ -236,6 +278,7 @@ export async function processGroupCommands({ask=groqChat,request=waRequest}={}){
 }
 let audioBusy=false;
 export async function processGroupAudio({download=fetchPrivateAudio,transcribe=transcribeAudio,request=waRequest}={}){
+ if(process.env.PROSPECTOR_AUTO_GROUP_ENABLED==='false')return {state:'DISABLED'};
  if(audioBusy)return {state:'BUSY'};
  audioBusy=true;
  try{
