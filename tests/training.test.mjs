@@ -54,7 +54,7 @@ test('WhatsApp analysis is isolated, shows review cards and cannot overwrite cur
 test('manual training stays pending, analysis does not replace that pending draft',async()=>{
  await call('/api/training/chat',{text:'Explique que vendemos consultoria e chame o gestor para aprovar valores.'},async()=>({choice:{content:'Oferecer consultoria. Encaminhar valores para o gestor.'}}));
  const pending=d.getSetting('training_draft');
- assert.equal(pending.source,'manual');
+ assert.equal(pending.source,'cards');
  assert.match(training.readActiveTrainingMarkdown(),/Padrões observados/);
  const chats=(await call('/api/training/chats')).body.items;
  const start=await call('/api/training/analyze',{mode:'selected',keys:[chats[0].key]},async()=>({choice:{content:'## Atendimento\n- Falar com naturalidade e conferir as necessidades sem inventar propostas.\n- Confirmar preços aprovados antes de falar de pagamentos.'}}));
@@ -74,6 +74,28 @@ test('manual training stays pending, analysis does not replace that pending draf
  assert.equal((await call('/api/training/edit',{})).status,200);
  assert.match(d.getSetting('training_draft').text,/Padrões observados/);
  assert.equal((await call('/api/training/analyze',{mode:'selected',keys:['forged-key']})).status,422);
+});
+test('natural-language coaching appends rules without replacing an existing draft or approving it',async()=>{
+ const prior=d.getSetting('training_draft');
+ assert.ok(prior?.text);
+ const original=prior.text;
+ const note=await call('/api/training/chat',
+  {text:'Quando o cliente perguntar o prazo, confirme a disponibilidade antes de prometer uma data.'},
+  async()=>({choice:{content:'Quando o cliente pedir o prazo, confirmar disponibilidade real e informar somente datas aprovadas. Nunca inventar garantia.'}}));
+ assert.equal(note.status,200);
+ assert.equal(note.body.chatResult.saved,true);
+ const next=d.getSetting('training_draft');
+ assert.notEqual(next.id,prior.id);
+ assert.ok(next.text.includes(original),'prior pending draft must remain intact');
+ assert.match(next.text,/Quando o cliente pedir o prazo/);
+ assert.equal(next.source,'cards');
+ const clarification=await call('/api/training/chat',
+  {text:'E sobre devoluções?'},
+  async()=>({choice:{content:'Como funciona atualmente a política de devolução da sua empresa?'}}));
+ assert.equal(clarification.status,200);
+ assert.equal(clarification.body.chatResult.saved,false);
+ assert.equal(d.getSetting('training_draft').id,next.id,'clarification must not create or replace a pending draft');
+ assert.equal(d.getSetting('training_draft').text,next.text);
 });
 test('analysis of all chats requires explicit authorization',async()=>{
  const r=await call('/api/training/analyze',{mode:'all'},async()=>({choice:{content:'ok'}}));
