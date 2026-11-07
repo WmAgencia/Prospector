@@ -150,6 +150,10 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
      saveGroup({ownerSession,ownerNumber,groupJid:jid,state:'READY',attemptedAt:saved.last_attempt_at});
      return {state:'RECOVERED',groupCreated:true};
     }
+    // An ambiguous same-name group after an uncertain create may be ours.
+    // Halt rather than risk creating a second copy or taking over a stranger's group.
+    if(entries.some(x=>String(x?.subject||'')===PROSPECTOR_GROUP_NAME))
+     return {state:'GROUP_MATCH_AMBIGUOUS',groupCreated:false};
    }catch{return {state:'GROUP_LOOKUP_UNAVAILABLE'};}
    if(saved.state==='CREATING'&&Date.parse(saved.last_attempt_at)>at.getTime()-waitMs)return {state:'CONFIRMING_CREATION'};
   }
