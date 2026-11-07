@@ -49,6 +49,20 @@ test('unauthenticated or mismatched events do NOT release credits',async()=>{
  assert.equal((await send(unpaid)).body.ignored,true);
  assert.equal(ledger.balance(client),0);
 });
+test('events from other Consecom Stripe projects are acknowledged and never credited',async()=>{
+ const request=ledger.listCreditRequests(client)[0];
+ const unrelated=paymentEvent(request,'evt_OtherConsecomPurchase123');
+ unrelated.data.object.payment_link='plink_OtherBusiness';
+ const previous=process.env.STRIPE_PROSPECTOR_PAYMENT_LINKS;
+ process.env.STRIPE_PROSPECTOR_PAYMENT_LINKS='{}';
+ try{
+  assert.equal(billingReady(),false);
+  const response=await send(unrelated);
+  assert.equal(response.status,200);
+  assert.equal(response.body.ignored,true);
+  assert.equal(ledger.balance(client),0);
+ }finally{process.env.STRIPE_PROSPECTOR_PAYMENT_LINKS=previous;}
+});
 test('only signed paid Stripe event adds credits exactly once, even on retry',async()=>{
  const request=ledger.listCreditRequests(client)[0],event=paymentEvent(request);
  const processed=await send(event);
