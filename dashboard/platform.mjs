@@ -133,7 +133,7 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
    const c=signingUp?registry().signup(input):registry().signin(input);
    if(!c){respond(res,401,{error:'E-mail ou senha inválidos, ou conta indisponível.'});return true;}
    if(!signingUp){guard.clear(ip);accountPasswordLimiter.clear(accountKey);}
-   res.setHeader('Set-Cookie',clientCookie(c));respond(res,signingUp?201:200,{ok:true,next:signingUp?'/#/training':'/#/overview'});
+   res.setHeader('Set-Cookie',!signingUp&&c.is_internal===1?[clientCookie(c),primaryModeCookie(c,'master')]:clientCookie(c));respond(res,signingUp?201:200,{ok:true,next:signingUp?'/#/training':c.is_internal===1?'/#/dashboard':'/#/overview'});
   }catch(e){respond(res,422,{error:String(e.message).slice(0,200)});}return true;
  }
  if(p==='/client/access'&&req.method==='GET'){
