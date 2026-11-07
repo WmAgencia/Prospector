@@ -3,6 +3,7 @@
 // and a registered original audio. Other tenants cannot use this campaign.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import {db,one,all,run,now,tx,id,addMessage,audit,getSetting,setSetting,getThread} from './db.mjs';
 import {managedSessions,isManagedSession,leadSession} from './waakg-session-registry.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
@@ -19,7 +20,7 @@ const daySP=date=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',
 const datePattern=/^\d{4}-\d{2}-\d{2}$/;
 // The text variant uses the transcribed original audio, not a separate sales pitch.
 export {OFFER_AB_TEXT} from './consecom-offer-copy.mjs';
-import {OFFER_AB_TEXT,OFFER_AB_COPY_VERSION,OFFER_AB_REFERENCES_TEXT,OFFER_AB_REFERENCES_DELAY_MS,offerDeadlineMatchesScript} from './consecom-offer-copy.mjs';
+import {OFFER_AB_TEXT,OFFER_AB_COPY_VERSION,OFFER_AB_AUDIO_SHA256,OFFER_AB_AUDIO_BYTES,OFFER_AB_REFERENCES_TEXT,OFFER_AB_REFERENCES_DELAY_MS,offerDeadlineMatchesScript} from './consecom-offer-copy.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS consecom_offer_ab(lead_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,variant TEXT NOT NULL CHECK(variant IN ('AUDIO','TEXT')),phase INTEGER NOT NULL,provider_id TEXT UNIQUE NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,sent_at TEXT,updated_at TEXT NOT NULL,reason TEXT)");
 db.exec("CREATE INDEX IF NOT EXISTS ix_consecom_offer_ab_variant ON consecom_offer_ab(variant,status,sent_at)");
@@ -37,7 +38,13 @@ const mediaRecord=c=>{
  const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');
  const file=path.resolve(mediaDir,item.filename);
  if(!file.startsWith(mediaDir+path.sep))return null;
- try{const st=fs.lstatSync(file);if(st.isSymbolicLink()||!st.isFile()||st.size!==item.bytes)return null;}catch{return null;}
+ try{
+  const st=fs.lstatSync(file);
+  if(st.isSymbolicLink()||!st.isFile()||st.size!==item.bytes||st.size!==OFFER_AB_AUDIO_BYTES)return null;
+  // Prevent old/altered audio from being sent under a newly approved script.
+  const digest=crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  if(digest!==OFFER_AB_AUDIO_SHA256)return null;
+ }catch{return null;}
  return {...item,file};
 };
 const deadlineReady=(c,at=new Date())=>offerDeadlineMatchesScript(c,at);
@@ -68,7 +75,7 @@ export function attachOriginalAbAudio(mediaId,{confirmedScript=false}={}){
  if(confirmedScript!==true)throw Error('Confirme que este áudio foi regravado com o roteiro atualizado.');
  const audioMediaId=String(mediaId||'');
  const candidate=mediaRecord({...config(),audioMediaId});
- if(!candidate)throw Error('Envie o novo áudio OGG para a biblioteca antes de selecioná-lo.');
+ if(!candidate)throw Error('Envie exatamente o arquivo PROPOSTA.ogg fornecido nesta conversa, sem recomprimir ou alterar.');
  const c={...config(),audioMediaId,audioCopyVersion:OFFER_AB_COPY_VERSION,enabled:false};
  setSetting(KEY,c);audit('OFFER_AB_AUDIO_REGISTERED',null,{mediaId:audioMediaId,bytes:candidate.bytes,copyVersion:OFFER_AB_COPY_VERSION});
  return offerAbStatus();
