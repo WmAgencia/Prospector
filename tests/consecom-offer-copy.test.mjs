@@ -12,8 +12,8 @@ test('áudio e texto de proposta usam roteiro v4 correspondente à gravação PR
  assert.match(OFFER_AB_TEXT,/cerca de 80%/);
  assert.ok(OFFER_AB_TEXT.includes('R$ 550'));
  assert.ok(OFFER_AB_TEXT.includes('R$ 2.500 e R$ 3.000'));
- assert.match(OFFER_AB_TEXT,/um ano de domínio sem custo extra/);
- assert.match(OFFER_AB_TEXT,/Instagram e no site da Consecom/);
+ assert.match(OFFER_AB_TEXT,/um ano de domínio sem custo/);
+ assert.match(OFFER_AB_TEXT,/Instagram e no site da agência/);
  assert.match(OFFER_AB_TEXT,/resposta ainda hoje/);
  assert.doesNotMatch(OFFER_AB_TEXT,/na segunda-feira|por áudio|entendeu|clientes garantidos/i);
 });
