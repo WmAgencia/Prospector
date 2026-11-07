@@ -9,7 +9,7 @@ import {CREDIT_PACKAGES,getCreditPackage} from '../dashboard/credit-packages.mjs
 
 test('all published credit packages have unique names and positive price/volume',()=>{
  assert.deepEqual(CREDIT_PACKAGES.map(x=>[x.id,x.credits,x.priceCents]),[
-  ['essencial',50,490],['padrao',250,990],['pro',1000,3490],['agencia',5000,14990]
+  ['dia1',250,990],['dias3',750,2590],['dias7',1750,5990],['dias14',3500,10990],['dias30',7500,21990]
  ]);
  assert.equal(getCreditPackage('inexistente'),null);
 });
@@ -19,10 +19,10 @@ test('credit purchase requests are tenant scoped, idempotent, and require manual
  try{
   const alice=store.create({name:'Agência A',email:'test-a@example.test'}).client.id;
   const bob=store.create({name:'Agência B',email:'test-b@example.test'}).client.id;
-  const key=crypto.randomUUID(),first=store.requestCredits(alice,'padrao',key);
+  const key=crypto.randomUUID(),first=store.requestCredits(alice,'dia1',key);
   assert.equal(first.credits,250);assert.equal(first.price_cents,990);
   assert.equal(first.status,'PENDING');assert.equal(store.balance(alice),0);
-  assert.equal(store.requestCredits(alice,'padrao',key).id,first.id);
+  assert.equal(store.requestCredits(alice,'dia1',key).id,first.id);
   assert.equal(store.listCreditRequests(alice).length,1);
   assert.equal(store.listCreditRequests(bob).length,0);
   assert.throws(()=>store.settleCreditRequest(first.id,{approved:true}),/Confirme o pagamento/);
@@ -31,7 +31,7 @@ test('credit purchase requests are tenant scoped, idempotent, and require manual
   assert.equal(store.balance(alice),250);
   assert.equal(store.settleCreditRequest(first.id,{approved:true,confirmedPayment:true}).status,'APPROVED');
   assert.equal(store.balance(alice),250,'retrying approval may not double-credit');
-  const rejected=store.requestCredits(bob,'essencial',crypto.randomUUID());
+  const rejected=store.requestCredits(bob,'dias3',crypto.randomUUID());
   assert.equal(store.settleCreditRequest(rejected.id,{approved:false}).status,'DECLINED');
   assert.equal(store.balance(bob),0);
   assert.throws(()=>store.requestCredits(bob,'invalid',crypto.randomUUID()),/Pacote inválido/);
@@ -43,7 +43,7 @@ test('limit pending requests to avoid unwanted duplicate orders',()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-credit-pending-')),store=openPlatformStore(dir);
  try{
   const client=store.create({name:'Gestor',email:'gestor@example.test'}).client.id;
-  for(let i=0;i<3;i++)store.requestCredits(client,'pro',crypto.randomUUID());
-  assert.throws(()=>store.requestCredits(client,'pro',crypto.randomUUID()),/três pedidos/);
+  for(let i=0;i<3;i++)store.requestCredits(client,'dias7',crypto.randomUUID());
+  assert.throws(()=>store.requestCredits(client,'dias7',crypto.randomUUID()),/três pedidos/);
  }finally{store.db.close();fs.rmSync(dir,{recursive:true,force:true});}
 });
