@@ -1,5 +1,6 @@
 import {db,one,all,run,getSetting,setSetting,now} from './db.mjs';
 import {managedSessions,isManagedSession} from './waakg-session-registry.mjs';
+import {waControlStatus} from './waakg-control.mjs';
 import {prospectorChatVisible} from './whatsapp-roles.mjs';
 import {waRequest} from './waakg-control.mjs';
 import {groqChat} from './groq-models.mjs';
@@ -11,7 +12,7 @@ import {storeTrainingMarkdown,readTrainingMarkdown,removeTrainingMarkdown,traini
 import {globalSalesMarkdown,globalSalesVoiceGuide,GLOBAL_SALES_FILENAME,GLOBAL_SALES_VERSION} from './francisca-vendas-global.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
-import {evidenceStatus,addSalesEvidence,approveSalesEvidence,approveAllSalesEvidence,removeSalesEvidence,approvedProofText,salesClosingStatus,saveSalesClosingConfig,customerPaymentGuidance} from './training-sales-extras.mjs';
+import {evidenceStatus,addSalesEvidence,updateSalesEvidence,approveSalesEvidence,approveAllSalesEvidence,removeSalesEvidence,approvedProofText,salesClosingStatus,saveSalesClosingConfig,customerPaymentGuidance} from './training-sales-extras.mjs';
 import {salesPaymentQueue,confirmPayment} from './sales-payment-flow.mjs';
 import {readSalesContextMarkdown,salesContextFilename} from './sales-training-documents.mjs';
 db.exec(`CREATE TABLE IF NOT EXISTS training_chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,body TEXT NOT NULL,at TEXT NOT NULL);
@@ -189,6 +190,10 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
   catch(e){respond(res,422,{error:String(e.message).slice(0,170)});}
   return true;
  }
+ if(req.method==='POST'&&p==='/api/training/evidence/update'){
+  try{const input=await json(req);respond(res,200,updateSalesEvidence(String(input.id||''),input));}
+  catch(e){respond(res,422,{error:String(e.message).slice(0,180)});}return true;
+ }
  if(req.method==='POST'&&p==='/api/training/evidence/approve'){
   try{const input=await json(req);respond(res,200,approveSalesEvidence(String(input.id||'')));}
   catch(e){respond(res,422,{error:String(e.message).slice(0,170)});}
@@ -254,6 +259,12 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
  if(req.method==='GET'&&p==='/api/training/chats'){respond(res,200,await listTrainingChats());return true;}
  if(req.method==='POST'&&p==='/api/training/analyze'){
   if(activeRun){respond(res,409,{error:'Já existe uma análise em andamento'});return true;}
+  const sessions=managedSessions();
+  const connectionCheck=deps.connectionStatus||waControlStatus;
+  const statuses=await Promise.all(sessions.slice(0,15).map(s=>connectionCheck(s.session_id)));
+  if(!sessions.length||sessions.length>15||statuses.some(x=>!x?.connected)){
+   respond(res,422,{error:'Conecte todos os seus números de WhatsApp antes de analisar as conversas.'});return true;
+  }
   const input=await json(req),available=await listTrainingChats();
   if(input.mode==='all'&&input.confirmedAll!==true){respond(res,422,{error:'Confirme que todos os chats escolhidos são comerciais e autorizados para análise, ou selecione as conversas individualmente.'});return true;}
   const keys=Array.isArray(input.keys)?input.keys:[];
