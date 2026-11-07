@@ -1,6 +1,6 @@
 const dialog=document.querySelector('#auth-dialog'),form=document.querySelector('#auth-form');let mode='signup',sending=false;
 const $=s=>document.querySelector(s);
-function openAuth(next){mode=next;const signup=mode==='signup';document.querySelectorAll('.signup-only').forEach(x=>x.hidden=!signup);$('#signup-name').required=signup;$('#signup-cpf').required=signup;$('#signup-phone').required=signup;$('#signup-email').type=signup?'email':'text';$('#signup-email').required=true;$('#signup-email').placeholder=signup?'voce@agencia.com.br':'E-mail ou celular com DDD';$('#identifier-label').textContent=signup?'E-mail profissional':'E-mail ou celular';$('#signup-password').autocomplete=signup?'new-password':'current-password';$('#auth-title').textContent=signup?'Vamos começar?':'Bom ter você de volta.';$('#auth-description').textContent=signup?'Cadastre seu nome completo, CPF, celular e e-mail para solicitar 50 abordagens gratuitas. Nenhuma cobrança no cadastro; os créditos são liberados após confirmação da identidade.':'Entre no seu espaço para continuar de onde parou.';$('#auth-eyebrow').textContent=signup?'SEU ESPAÇO COMEÇA AQUI':'SEU PAINEL PROSPECTOR';$('#auth-submit').textContent=signup?'Criar conta gratuita ↗':'Entrar no meu painel ↗';$('#auth-switch').replaceChildren(document.createTextNode(signup?'Já tem uma conta? ':'Primeira vez aqui? '));const b=document.createElement('button');b.type='button';b.dataset.switch=signup?'signin':'signup';b.textContent=signup?'Entrar':'Criar conta';$('#auth-switch').append(b);$('#login-help').hidden=signup;$('#auth-message').textContent='';if(!dialog.open)dialog.showModal();}
+function openAuth(next){mode=next;const signup=mode==='signup';document.querySelectorAll('.signup-only').forEach(x=>x.hidden=!signup);$('#signup-name').required=signup;$('#signup-cpf').required=signup;$('#signup-phone').required=signup;$('#signup-email').type=signup?'email':'text';$('#signup-email').required=true;$('#signup-email').placeholder=signup?'voce@agencia.com.br':'E-mail ou celular com DDD';$('#identifier-label').textContent=signup?'E-mail profissional':'E-mail ou celular';$('#signup-password').autocomplete=signup?'new-password':'current-password';$('#auth-title').textContent=signup?'Vamos começar?':'Bom ter você de volta.';$('#auth-description').textContent=signup?'Cadastre seu nome completo, CPF, celular e e-mail para solicitar 50 abordagens gratuitas. Nenhuma cobrança no cadastro; os créditos são liberados após confirmação da identidade.':'Entre no seu espaço para continuar de onde parou.';$('#auth-eyebrow').textContent=signup?'SEU ESPAÇO COMEÇA AQUI':'SEU PAINEL PROSPECTOR';$('#auth-submit').textContent=signup?'Criar conta gratuita ↗':'Entrar no meu painel ↗';$('#auth-switch').replaceChildren(document.createTextNode(signup?'Já tem uma conta? ':'Primeira vez aqui? '));const b=document.createElement('button');b.type='button';b.dataset.switch=signup?'signin':'signup';b.textContent=signup?'Entrar':'Criar conta';$('#auth-switch').append(b);$('#login-help').hidden=signup;$('#auth-message').textContent='';for(const [field,feedback] of [['#signup-name','#signup-name-feedback'],['#signup-cpf','#signup-cpf-feedback']]){const input=$(field);delete input.dataset.touched;input.setCustomValidity('');input.removeAttribute('aria-invalid');$(feedback).hidden=true;}if(!dialog.open)dialog.showModal();}
 const packageLabels={teste:'Teste grátis · até 50 abordagens · R$ 0,00',dia1:'1 dia · até 250 abordagens · R$ 9,90',dias3:'3 dias · até 750 abordagens · R$ 25,90',dias7:'7 dias · até 1.750 abordagens · R$ 59,90',dias14:'14 dias · até 3.500 abordagens · R$ 109,90',dias30:'1 mês (30 dias) · até 7.500 abordagens · R$ 219,90'};
 document.addEventListener('click',e=>{
  const link=e.target.closest('[data-auth],[data-switch]');
@@ -14,7 +14,63 @@ document.addEventListener('click',e=>{
 $('.close-dialog').addEventListener('click',()=>{if(!sending)dialog.close();});dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(!sending&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom))dialog.close();}});dialog.addEventListener('cancel',e=>{if(sending)e.preventDefault();});
 $('#password-toggle').addEventListener('click',()=>{const input=$('#signup-password'),show=input.type==='password';input.type=show?'text':'password';$('#password-toggle').textContent=show?'Ocultar':'Mostrar';$('#password-toggle').setAttribute('aria-label',show?'Ocultar senha':'Mostrar senha');});
 $('#privacy-link').addEventListener('click',e=>{e.preventDefault();$('#privacy-description').hidden=!$('#privacy-description').hidden;});
-form.addEventListener('submit',async e=>{e.preventDefault();if(sending||!form.reportValidity())return;const message=$('#auth-message');if(mode==='signup'&&!$('#privacy-check').checked){message.textContent='Confirme a leitura sobre o uso dos dados para continuar.';$('#privacy-check').focus();return;}const input={identifier:$('#signup-email').value.trim(),password:$('#signup-password').value};if(mode==='signup')Object.assign(input,{name:$('#signup-name').value.trim(),email:input.identifier,phone:$('#signup-phone').value,cpf:$('#signup-cpf').value.trim(),privacyAcknowledged:true});sending=true;$('#auth-submit').disabled=true;message.textContent=mode==='signup'?'Preparando seu espaço…':'Verificando acesso…';try{const response=await fetch('/api/platform/'+mode,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(20000)});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||'Não foi possível continuar. Tente novamente.');message.textContent=mode==='signup'?'Conta criada. O teste grátis está aguardando a validação de identidade. Abrindo o painel…':'Tudo certo. Abrindo seu painel…';form.reset();location.assign(data.next||'/');}catch(e){message.textContent=e.name==='TimeoutError'?'A conexão demorou. Tente novamente em instantes.':e.message;$('#auth-submit').disabled=false;sending=false;}});
+
+// Confere imediatamente a validade matemática do CPF e o formato do nome.
+// Sem integração com base oficial, NÃO confirma que o CPF pertence à pessoa.
+const signupChecks=window.ProspectorSignupValidation;
+function updateSignupField(inputId,feedbackId,{ok,message='',neutral=false}={}){
+ const input=$(inputId),feedback=$(feedbackId);
+ input.setCustomValidity(ok?'':message);
+ input.setAttribute('aria-invalid',ok?'false':'true');
+ feedback.hidden=!message;
+ feedback.textContent=message;
+ feedback.dataset.state=ok?(neutral?'pending':'valid'):'error';
+ return ok;
+}
+function validateSignupName(show=false){
+ const field=$('#signup-name'),value=field.value.trim();
+ if(!value&&!show&&!field.dataset.touched)return true;
+ if(value&&!show&&!field.dataset.touched)return true;
+ const ok=!!signupChecks?.nameIsComplete(value);
+ return updateSignupField('#signup-name','#signup-name-feedback',{ok,message:ok?'':'Informe o nome completo, com nome e sobrenome.'});
+}
+function validateSignupCpf(show=false){
+ const field=$('#signup-cpf'),value=field.value.trim();
+ const complete=signupChecks?.digits(value).length===11;
+ if(!show&&!field.dataset.touched&&!complete)return true;
+ if(!value&&!show)return true;
+ const ok=!!signupChecks?.validCpf(value);
+ return updateSignupField('#signup-cpf','#signup-cpf-feedback',{
+  ok,
+  message:ok?'CPF válido pelo cálculo. Nome ainda não confirmado.':'CPF inválido. Confira os 11 dígitos.',
+  neutral:ok
+ });
+}
+$('#signup-cpf').addEventListener('input',()=>{
+ const field=$('#signup-cpf');
+ const formatted=signupChecks?.formatCpf(field.value)||field.value;
+ if(field.value!==formatted)field.value=formatted;
+ const touched=field.dataset.touched==='true';
+ if(signupChecks?.digits(field.value).length===11||touched)validateSignupCpf(true);
+ else {field.setCustomValidity('');field.removeAttribute('aria-invalid');$('#signup-cpf-feedback').hidden=true;}
+});
+$('#signup-name').addEventListener('input',()=>{
+ const field=$('#signup-name');
+ if(field.dataset.touched==='true')validateSignupName(true);
+ else {field.setCustomValidity('');field.removeAttribute('aria-invalid');$('#signup-name-feedback').hidden=true;}
+});
+$('#signup-name').addEventListener('blur',()=>{
+ if(mode!=='signup')return;
+ $('#signup-name').dataset.touched='true';
+ validateSignupName(true);
+});
+$('#signup-cpf').addEventListener('blur',()=>{
+ if(mode!=='signup')return;
+ $('#signup-cpf').dataset.touched='true';
+ validateSignupCpf(true);
+});
+
+form.addEventListener('submit',async e=>{e.preventDefault();if(sending)return;if(mode==='signup'){const validName=validateSignupName(true),validCpf=validateSignupCpf(true);if(!validName||!validCpf){(!validName?$('#signup-name'):$('#signup-cpf')).focus();return;}}if(!form.reportValidity())return;const message=$('#auth-message');if(mode==='signup'&&!$('#privacy-check').checked){message.textContent='Confirme a leitura sobre o uso dos dados para continuar.';$('#privacy-check').focus();return;}const input={identifier:$('#signup-email').value.trim(),password:$('#signup-password').value};if(mode==='signup')Object.assign(input,{name:$('#signup-name').value.trim(),email:input.identifier,phone:$('#signup-phone').value,cpf:$('#signup-cpf').value.trim(),privacyAcknowledged:true});sending=true;$('#auth-submit').disabled=true;message.textContent=mode==='signup'?'Preparando seu espaço…':'Verificando acesso…';try{const response=await fetch('/api/platform/'+mode,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(20000)});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||'Não foi possível continuar. Tente novamente.');message.textContent=mode==='signup'?'Conta criada. O teste grátis está aguardando a validação de identidade. Abrindo o painel…':'Tudo certo. Abrindo seu painel…';form.reset();location.assign(data.next||'/');}catch(e){message.textContent=e.name==='TimeoutError'?'A conexão demorou. Tente novamente em instantes.':e.message;$('#auth-submit').disabled=false;sending=false;}});
 if(location.pathname==='/cadastro')openAuth('signup');if(location.pathname==='/entrar')openAuth('signin');
 
 // Local SVG icon assets. The product demonstration only changes synthetic UI.
