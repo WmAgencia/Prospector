@@ -1,4 +1,4 @@
-// Text-to-speech uses Microsoft Francisca voice through edge-tts (unofficial).
+// Francisca is the assistant's identity; the selected Microsoft speech voice is Thalita Multilingual (Edge TTS, unofficial).
 // No automatic sending. Converts generated MP3 to WhatsApp-compatible AAC/M4A.
 import {mkdtemp,readFile,rm,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -6,7 +6,8 @@ import path from 'node:path';
 import {execFile as execFileCallback} from 'node:child_process';
 import {promisify} from 'node:util';
 const execFile=promisify(execFileCallback);
-export const FRANCISCA='pt-BR-FranciscaNeural';
+// Keep the legacy export name for existing call and WhatsApp integrations.
+export const FRANCISCA='pt-BR-ThalitaMultilingualNeural';
 export function voiceStatus(){
  return {voice:FRANCISCA,language:'pt-BR',female:true,provider:'edge-tts',
   available:process.env.FRANCISCA_TTS_ENABLED==='true',
