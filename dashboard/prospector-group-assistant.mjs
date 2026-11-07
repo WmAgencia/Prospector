@@ -239,7 +239,7 @@ export async function processGroupAudio({download=fetchPrivateAudio,transcribe=t
 export async function scheduledGroupReport(at=new Date(),{request=waRequest}={}){
  // 08:00 São Paulo, report on the COMPLETE previous business day.
  const hour=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',hour:'2-digit',hour12:false}).format(at))%24;
- if(hour<8)return {state:'BEFORE_HOUR'};
+ if(hour!==8)return {state:'OUTSIDE_REPORT_HOUR'};
  const group=privateGroupState();
  if(!group?.group_jid||group.state!=='READY')return {state:'GROUP_NOT_READY'};
  const day=localDay(at),reportDay=previousLocalDay(at);
@@ -256,4 +256,32 @@ export async function scheduledGroupReport(at=new Date(),{request=waRequest}={})
   run("UPDATE prospector_group_daily_reports SET status='UNKNOWN' WHERE day=?",day);
   return {state:'UNKNOWN'};
  }
+}
+
+let lastWebhookSweep=0;
+export async function ensureGroupWebhookSubscriptions({request=waRequest,getSessions}={}){
+ if(Date.now()-lastWebhookSweep<5*60_000)return {state:'COOLDOWN'};
+ const group=privateGroupState();
+ if(!group?.group_jid)return {state:'GROUP_NOT_READY'};
+ const secret=String(process.env.WA_AKG_WEBHOOK_SECRET||'');
+ if(secret.length<40)return {state:'WEBHOOK_SECRET_MISSING'};
+ const sessions=getSessions?await getSessions():await import('./waakg-control.mjs').then(m=>m.waSessionList());
+ const base='https://prospector-operacional-production.up.railway.app/api/wa-akg/webhook';
+ const url=base+(process.env.PROSPECTOR_TENANT_ID?'?tenant='+encodeURIComponent(process.env.PROSPECTOR_TENANT_ID):'');
+ let ensured=0,errors=0;
+ for(const candidate of (sessions?.items||[]).filter(x=>x.connected===true)){
+  const id=String(candidate.sessionId||'');
+  if(!/^[a-zA-Z0-9_-]{3,70}$/.test(id)||id!==group.owner_session&&!isManagedSession(id))continue;
+  try{
+   const path='/api/webhooks/'+encodeURIComponent(id);
+   const existing=await request(path);
+   const ready=(Array.isArray(existing.data)?existing.data:[]).some(h=>
+    h.isActive!==false&&h.url===url&&Array.isArray(h.events)&&h.events.includes('message.received'));
+   if(!ready)await request(path,{method:'POST',data:{name:'Meu Prospector — comandos',url,secret,
+    events:['message.received','connection.update']}});
+   ensured++;
+  }catch{errors++;}
+ }
+ lastWebhookSweep=Date.now();
+ return {state:errors?'PARTIAL':'READY',sessions:ensured,errors};
 }
