@@ -67,9 +67,9 @@ test('Transcription failures enter REVIEW rather than inventing a reply',async()
  assert.equal(r.status,'REVIEW');
  assert.equal(db.one('SELECT state FROM inbound_audio_jobs WHERE provider_id=?',other).state,'REVIEW');
 });
-test('Francisca is fixed to Brazilian pt-BR and never executes text as shell',async()=>{
+test('Francisca assistant uses the approved Thalita pt-BR voice and never executes text as shell',async()=>{
  process.env.FRANCISCA_TTS_ENABLED='true';
- assert.equal(voiceStatus().voice,'pt-BR-FranciscaNeural');
+ assert.equal(voiceStatus().voice,'pt-BR-ThalitaMultilingualNeural');
  assert.throws(()=>checkVoiceText(''),/VOICE_TEXT_LENGTH/);
  assert.throws(()=>checkVoiceText('x'.repeat(700)),/VOICE_TEXT_LENGTH/);
  const commands=[];
@@ -79,7 +79,7 @@ test('Francisca is fixed to Brazilian pt-BR and never executes text as shell',as
   if(cmd==='ffmpeg')await writeFile(args.at(-1),Buffer.alloc(670));
  }});
  assert.equal(rendered.bytes.length,670);
- assert.ok(commands[0][1].includes('pt-BR-FranciscaNeural'));
+ assert.ok(commands[0][1].includes('pt-BR-ThalitaMultilingualNeural'));
  assert.ok(commands[0][1].includes('--rate=-3%'));
  assert.ok(commands[1][1].includes('aac'));
 });
