@@ -92,10 +92,23 @@ test('first WhatsApp creator can command in a one-person group through human mes
  assert.equal(answer.queued,true);
  assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,1);
 });
+test('Every group reply has exactly *PROSPECTOR* and one newline before its text',async()=>{
+ const format=assistant.formatProspectorGroupReply;
+ assert.equal(format('Tudo certo.'),'*PROSPECTOR*\nTudo certo.');
+ assert.equal(format('   \n   Olá, tudo bem?   '),'*PROSPECTOR*\nOlá, tudo bem?');
+ assert.equal(format('*PROSPECTOR*\nTudo certo.'),'*PROSPECTOR*\nTudo certo.');
+ assert.equal(format('*PROSPECTOR*\n*PROSPECTOR*\nTudo certo.'),'*PROSPECTOR*\nTudo certo.');
+ assert.equal(format(''), '');
+ assert.equal(format('  *PROSPECTOR*  '), '');
+ const sent=await assistant.sendGroupMessage({sessionId:session,groupId:jid,text:'Relatório de hoje',request});
+ assert.equal(sent.ok,true);
+ assert.equal(calls.filter(x=>x.url.endsWith('/send')).length,1);
+ assert.equal(calls.find(x=>x.url.endsWith('/send')).opts.data.message.text,'*PROSPECTOR*\nRelatório de hoje');
+});
 test('bot group replies cannot cause a message.sent feedback loop',async()=>{
  await assistant.sendGroupMessage({sessionId:session,groupId:jid,text:'Relatório da Francisca',request});
  const fromMe={isGroup:true,key:{id:'BOTMSG44444',remoteJid:jid,fromMe:true},
-  type:'TEXT',fromMe:true,from:owner+'@s.whatsapp.net',sender:'ME',content:'Relatório da Francisca'};
+  type:'TEXT',fromMe:true,from:owner+'@s.whatsapp.net',sender:'ME',content:assistant.formatProspectorGroupReply('Relatório da Francisca')};
  const answer=await assistant.receivePrivateGroupWebhook({sessionId:session,data:fromMe,event:'message.sent',request,
   getSessions:async()=>({items:[{sessionId:session,number:owner,connected:true}]})});
  assert.equal(answer.ignored,true);
@@ -106,7 +119,7 @@ test('a bot report received as a normal message on SECOND WhatsApp is ignored',a
  const report='📊 *Prospector Consecom — relatório diário*\n📅 2026-11-07 (Brasília)\n\n📨 Abordagens (empresas): 4\n✉️ Mensagens enviadas: 6';
  await assistant.sendGroupMessage({sessionId:session,groupId:jid,text:report,request});
  const echoed={isGroup:true,key:{id:'SECONDSESSION001',remoteJid:jid,fromMe:false,participant:owner+'@s.whatsapp.net'},
-  type:'TEXT',sender:owner+'@s.whatsapp.net',content:report};
+  type:'TEXT',sender:owner+'@s.whatsapp.net',content:assistant.formatProspectorGroupReply(report)};
  const received=await assistant.receivePrivateGroupWebhook({
   sessionId:'prospector-second',data:echoed,event:'message.received',request
  });
@@ -119,7 +132,7 @@ test('same bot reply with varied whitespace is ignored by persistent normalized 
  const report='Resposta Francisca\n  Abordagens: 3  \n Interessados: 1';
  await assistant.sendGroupMessage({sessionId:session,groupId:jid,text:report,request});
  const echoed={isGroup:true,key:{id:'SECONDSESSION002',remoteJid:jid,fromMe:false},
-  type:'TEXT',sender:partner+'@s.whatsapp.net',content:'Resposta Francisca\r\n Abordagens: 3\n Interessados: 1 '};
+  type:'TEXT',sender:partner+'@s.whatsapp.net',content:'*PROSPECTOR*\r\nResposta Francisca\r\n Abordagens: 3\n Interessados: 1 '};
  const received=await assistant.receivePrivateGroupWebhook({
   sessionId:'prospector-second',data:echoed,request
  });
@@ -180,6 +193,8 @@ test('at 8am daily report targets group not any personal number; no duplicate se
  assert.ok(send);
  assert.match(send.url,/%40g\.us/);
  assert.match(send.opts.data.message.text,/2026-11-06/);
+ assert.ok(send.opts.data.message.text.startsWith('*PROSPECTOR*\n'));
+ assert.equal(send.opts.data.message.text.split('\n')[0],'*PROSPECTOR*');
  const again=await assistant.scheduledGroupReport(new Date('2026-11-07T11:10:00Z'),{request});
  assert.equal(again.state,'ALREADY_ATTEMPTED');
  assert.equal(calls.filter(x=>x.url.endsWith('/send')).length,1);
