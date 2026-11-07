@@ -202,6 +202,17 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  }
  if(p==='/api/platform/credits'&&client){respond(res,200,{...registry().publicClient(client),items:registry().events(client.id),package:{credits:250,priceBrl:9.9},packages:CREDIT_PACKAGES,requests:registry().listCreditRequests(client.id),automaticBilling:billingReady()});return true;}
  if(p==='/api/platform/analytics'&&req.method==='GET'){if(!ownerMaster&&!authorized(req)){respond(res,403,{error:'Acesso exclusivo do Master'});return true;}respond(res,200,{...masterAnalytics(registry()),packages:CREDIT_PACKAGES});return true;}
+ const resumeCheckout=p.match(/^\/api\/platform\/credit-requests\/([a-f\d-]{36})\/checkout$/i);
+ if(resumeCheckout&&req.method==='POST'){
+  if(!client||client.status!=='active'||client.is_internal===1||client.is_demo===1){respond(res,403,{error:'Compra disponível somente para contas de clientes ativos'});return true;}
+  if(!billingReady()){respond(res,503,{error:'Checkout temporariamente indisponível. Tente novamente.'});return true;}
+  const request=registry().listCreditRequests(client.id).find(r=>r.id===resumeCheckout[1]);
+  if(!request){respond(res,404,{error:'Pedido não encontrado nesta conta'});return true;}
+  if(request.status!=='PENDING'){respond(res,409,{error:'Este pedido já foi concluído ou encerrado'});return true;}
+  const checkoutUrl=checkoutForRequest(request);
+  if(!checkoutUrl){respond(res,503,{error:'Checkout temporariamente indisponível'});return true;}
+  respond(res,200,{request,checkoutUrl,automaticBilling:true});return true;
+ }
  if(p==='/api/platform/credit-requests'){
   if(req.method==='GET'){
    if(ownerMaster)respond(res,200,{items:registry().listCreditRequests()});
