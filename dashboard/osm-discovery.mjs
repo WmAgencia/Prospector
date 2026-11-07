@@ -217,7 +217,7 @@ export async function discoverLocal(payload={},automatic=false){
  }finally{busy=false;}
 }
 let autoBusy=false;
-export const DISCOVERY_START_HOUR=5;
+export const DISCOVERY_START_HOUR=0;
 export const OSM_DAILY_MAX_SEARCHES=12;
 export const OSM_COOLDOWN_MS=45*60000;
 export function reconcileInterruptedSearches({at=new Date(),minAgeMs=90000}={}){
