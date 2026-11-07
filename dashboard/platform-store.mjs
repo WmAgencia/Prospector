@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {getCreditPackage,CREDIT_PACKAGES} from './credit-packages.mjs';
-import {normalizeCpf,validCpf,legalName,trialCpfDigest,TRIAL_FREE_CREDITS} from './trial-identity.mjs';
+import {normalizeCpf,validCpf,legalName,trialCpfDigest,sealTrialCpf,unsealTrialCpf,TRIAL_FREE_CREDITS} from './trial-identity.mjs';
 export function openPlatformStore(root){
  fs.mkdirSync(root,{recursive:true});
  const db=new DatabaseSync(path.join(root,'platform.sqlite'));
@@ -45,8 +45,10 @@ export function openPlatformStore(root){
   created_at TEXT NOT NULL,
   reviewed_at TEXT,
   evidence_reference TEXT,
-  verification_method TEXT
+  verification_method TEXT,
+  cpf_ciphertext TEXT
  );`);
+ if(!db.prepare('PRAGMA table_info(free_trial_claims)').all().some(x=>x.name==='cpf_ciphertext'))db.exec('ALTER TABLE free_trial_claims ADD COLUMN cpf_ciphertext TEXT');
  const loginPhone=value=>{let x=String(value||'').replace(/\D/g,'');if(x.length===11)x='55'+x;return /^55\d{11}$/.test(x)?x:null;};
  const hash=x=>crypto.createHash('sha256').update(String(x)).digest('hex');
  const balance=id=>Number(db.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM credit_events WHERE client_id=?').get(id).n);
@@ -172,10 +174,17 @@ export function openPlatformStore(root){
     db.prepare('INSERT INTO client_passwords(client_id,email,salt,password_hash,privacy_version,created_at,phone) VALUES(?,?,?,?,?,?,?)').run(result.client.id,email,salt,passwordHash,'2026-11-07-free-trial-pending',at,normalizedPhone);
     // Register the one-time claim atomically with signup. No money is charged and
     // NO credits are issued before a qualified name/CPF verification.
-    db.prepare("INSERT INTO free_trial_claims(client_id,cpf_digest,phone,email,status,created_at) VALUES(?,?,?,?,'PENDING',?)")
-     .run(result.client.id,identityHash,normalizedPhone,email,at);
+    db.prepare("INSERT INTO free_trial_claims(client_id,cpf_digest,phone,email,status,created_at,cpf_ciphertext) VALUES(?,?,?,?,'PENDING',?,?)")
+     .run(result.client.id,identityHash,normalizedPhone,email,at,sealTrialCpf(cpf,secret));
     db.exec('COMMIT');return get(result.client.id);
    }catch(e){db.exec('ROLLBACK');throw e;}
+  },
+  pendingTrialIdentity(clientId){
+   const item=db.prepare("SELECT status,cpf_ciphertext FROM free_trial_claims WHERE client_id=?").get(clientId);
+   const client=get(clientId);
+   if(!client||!item||item.status!=='PENDING'||!item.cpf_ciphertext)throw Error('Solicitação de verificação indisponível');
+   const secret=process.env.PROSPECTOR_CPF_HMAC_SECRET||process.env.ADMIN_SESSION_SECRET||'';
+   return {clientId,name:client.name,cpf:unsealTrialCpf(item.cpf_ciphertext,secret),phone:client.contact_phone,email:client.email,status:'PENDING'};
   },
   reviewFreeTrial(clientId,{approved=false,verifiedNameAndCpf=false,evidenceReference='',verificationMethod=''}={}){
    const ref=String(evidenceReference||'').trim(),method=String(verificationMethod||'').trim().toUpperCase();
@@ -189,7 +198,7 @@ export function openPlatformStore(root){
     const current=get(clientId);
     if(!current||current.is_internal===1||current.status!=='active')throw Error('Conta indisponível');
     const status=approved?'APPROVED':'REJECTED',at=new Date().toISOString();
-    db.prepare('UPDATE free_trial_claims SET status=?,reviewed_at=?,evidence_reference=?,verification_method=? WHERE client_id=? AND status=?')
+    db.prepare('UPDATE free_trial_claims SET status=?,reviewed_at=?,evidence_reference=?,verification_method=?,cpf_ciphertext=NULL WHERE client_id=? AND status=?')
      .run(status,at,ref,method,clientId,'PENDING');
     if(approved)db.prepare('INSERT OR IGNORE INTO credit_events(id,client_id,amount,reason,reference,created_at) VALUES(?,?,?,?,?,?)')
      .run(crypto.randomUUID(),clientId,TRIAL_FREE_CREDITS,'Teste grátis verificado: 50 abordagens','free-trial:'+clientId,at);
