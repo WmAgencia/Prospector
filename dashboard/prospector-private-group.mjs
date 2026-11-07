@@ -133,11 +133,9 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
    return {state:'MEMBERSHIP_PENDING',groupCreated:true,missing:missing.length,attempts};
   }
 
-  // One connected number: make one legitimate API attempt using its own JID.
-  // WA-AKG validation requires a participant; WhatsApp may reject self-only
-  // groups. Never invite an unrelated 'helper' just to bypass this limitation.
-  // With 2+ connected client numbers, the other client number is an actual
-  // group participant, so creation can proceed without a stranger.
+  // Empty initial members: WhatsApp creates the group with its own creator.
+  // The first connected number owns the group; remaining managed numbers are
+  // added only after the group ID has been confirmed and persisted.
   if(saved?.next_attempt_at&&Date.parse(saved.next_attempt_at)>at.getTime())
    return {state:saved.state,nextAttemptAt:saved.next_attempt_at};
 
@@ -153,13 +151,10 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
      return {state:'RECOVERED',groupCreated:true};
     }
    }catch{return {state:'GROUP_LOOKUP_UNAVAILABLE'};}
-   if(saved.state==='WAITING_SECOND'&&sessions.length===1)return {state:'WAITING_SECOND'};
    if(saved.state==='CREATING'&&Date.parse(saved.last_attempt_at)>at.getTime()-waitMs)return {state:'CONFIRMING_CREATION'};
   }
 
-  const peers=sessions.filter(s=>s.sessionId!==ownerSession);
-  const participants=peers.length?peers.map(s=>s.number+'@s.whatsapp.net'):[ownerNumber+'@s.whatsapp.net'];
-  if(participants.some(p=>!CONNECTED_JID.test(p)))return {state:'INVALID_PARTICIPANT'};
+  const participants=[];
   saveGroup({ownerSession,ownerNumber,state:'CREATING',attemptedAt:at.toISOString(),nextAttemptAt:nextAt(at,waitMs)});
   try{
    const reply=await request(path+'/create',{method:'POST',data:{subject:PROSPECTOR_GROUP_NAME,participants}});
@@ -174,9 +169,9 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
   }catch(e){
    // A WhatsApp failure can still mean an uncertain remote completion. Re-list
    // the group after a cooldown before trying again, to avoid duplicates.
-   saveGroup({ownerSession,ownerNumber,state:sessions.length===1?'WAITING_SECOND':'CREATION_RETRY',attemptedAt:at.toISOString(),
+   saveGroup({ownerSession,ownerNumber,state:'CREATION_RETRY',attemptedAt:at.toISOString(),
     nextAttemptAt:nextAt(at,waitMs),error:String(e?.message||e).slice(0,110)});
-   return {state:sessions.length===1?'WAITING_SECOND':'CREATION_RETRY'};
+   return {state:'CREATION_RETRY'};
   }
  }finally{busy=false;}
 }
