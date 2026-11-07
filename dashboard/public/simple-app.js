@@ -269,7 +269,7 @@ function creditsView(){
  '<div class="heading credit-package-title"><div><h3>Pacotes disponíveis</h3><p>Escolha o que combina com sua operação.</p></div></div>'+
  (preferredPackage&&packs.some(p=>p.id===preferredPackage)?'<div class="credit-preference"><div><strong>Seu pacote escolhido na landing: '+esc(packs.find(p=>p.id===preferredPackage).name)+'</strong><p>Você já criou seu acesso. Se quiser, envie o pedido para a Consecom liberar os créditos após o pagamento.</p></div><button class="primary" data-action="request-credit-package" data-package="'+esc(preferredPackage)+'">Solicitar pacote selecionado</button></div>':'')+
  '<div class="credit-packages-grid">'+packs.map(p=>'<article class="credit-packet '+(p.id==='dias7'?'featured':'')+'"><div class="credit-packet-top"><span>'+esc(p.name)+'</span>'+(p.id==='dias7'?'<span class="tag green">Mais indicado</span>':'')+'</div><strong class="credit-packet-volume">'+Number(p.credits).toLocaleString('pt-BR')+'</strong><small>abordagens</small><div class="credit-packet-price">'+moneyFromCents(p.priceCents)+'</div><p>'+'R$ '+(p.priceCents/100/p.credits).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:5})+' por abordagem</p><button class="primary" data-action="request-credit-package" data-package="'+esc(p.id)+'">Solicitar '+esc(p.name)+'</button></article>').join('')+'</div>'+
- '<section class="panel"><div class="heading"><div><h3>Meus pedidos de recarga</h3><p>Um pedido não é uma cobrança automática.</p></div><button class="secondary compact" data-action="refresh-credits">Atualizar</button></div>'+(requests.length?'<div class="orders-list">'+requests.slice(0,15).map(x=>'<div class="order-row"><div class="order-identity"><strong>'+Number(x.credits).toLocaleString('pt-BR')+' créditos · '+moneyFromCents(x.price_cents)+'</strong><small>'+stamp(x.created_at)+'</small></div><span class="tag '+(x.status==='APPROVED'?'green':'')+'">'+(x.status==='PENDING'?'Aguardando confirmação':x.status==='APPROVED'?'Créditos liberados':'Não aprovado')+'</span></div>').join('')+'</div>':'<div class="empty"><p>Você ainda não solicitou uma recarga.</p></div>')+'</section>'+
+ '<section class="panel"><div class="heading"><div><h3>Meus pedidos de recarga</h3><p>Um pedido não é uma cobrança automática.</p></div><button class="secondary compact" data-action="refresh-credits">Atualizar</button></div>'+(requests.length?'<div class="orders-list">'+requests.slice(0,15).map(x=>'<div class="order-row"><div class="order-identity"><strong>'+Number(x.credits).toLocaleString('pt-BR')+' créditos · '+moneyFromCents(x.price_cents)+'</strong><small>'+stamp(x.created_at)+'</small></div><span class="tag '+(x.status==='APPROVED'?'green':'')+'">'+(x.status==='PENDING'?'Aguardando confirmação':x.status==='APPROVED'?'Créditos liberados':'Não aprovado')+'</span>'+(x.status==='PENDING'&&c.automaticBilling&&!c.demo?'<button type="button" class="secondary compact" data-action="request-credit-resume" data-request="'+esc(x.id)+'">Continuar pagamento</button>':'')+'</div>').join('')+'</div>':'<div class="empty"><p>Você ainda não solicitou uma recarga.</p></div>')+'</section>'+
  '<section class="panel"><h3>Histórico de créditos</h3>'+(c.items?.length?'<div class="table-wrap"><table class="result-table"><thead><tr><th>Data</th><th>Descrição</th><th>Créditos</th></tr></thead><tbody>'+c.items.map(x=>'<tr><td>'+stamp(x.created_at)+'</td><td>'+esc(x.reason)+'</td><td class="'+(x.amount>0?'credit-positive':'')+'">'+(x.amount>0?'+':'')+esc(x.amount)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty"><p>O extrato aparecerá depois da primeira recarga ou abordagem.</p></div>')+'</section>';
 }
 function voiceMime(){
@@ -688,6 +688,16 @@ async function platformAction(action,el){
   if(pack){billingDemoPackage=pack.id;billingDemoStep=1;render();}return true;
  }
  if(action==='billing-demo-back'){billingDemoStep=0;render();return true;}
+ if(action==='request-credit-resume'){
+  if(platformContext.demo||!creditState?.automaticBilling)throw Error('Checkout não disponível nesta conta');
+  const id=String(el.dataset.request||'');
+  const request=(creditState?.requests||[]).find(x=>x.id===id&&x.status==='PENDING');
+  if(!request)throw Error('Pedido pendente não encontrado. Atualize seus créditos.');
+  const order=await post('/api/platform/credit-requests/'+encodeURIComponent(id)+'/checkout',{});
+  if(!order.checkoutUrl)throw Error('Checkout temporariamente indisponível.');
+  try{sessionStorage.setItem('prospector-last-checkout-request',id);}catch{}
+  location.assign(order.checkoutUrl);return true;
+ }
  if(action==='request-credit-package'){
   if(!creditState?.automaticBilling){n('O checkout automático está sendo configurado. Nenhuma cobrança ou recarga foi efetuada.');return true;}
   const pack=creditState?.packages?.find(p=>p.id===el.dataset.package);
