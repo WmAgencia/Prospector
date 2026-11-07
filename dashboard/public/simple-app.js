@@ -472,10 +472,10 @@ function offerAbCard(){
  const s=offerAbState;
  if(!trainingState?.internalAccount)return '';
  const c=s?.config||{},counts=s?.metrics||[];
- const info='<div class="heading"><div><span class="kicker">TESTE A/B • CONSECOM</span><h3>Oferta por áudio ou texto, alternada entre os dois WhatsApps</h3><p>Primeira semana: WhatsApp 1 = áudio; WhatsApp 2 = texto. Na semana seguinte, inverte. A abordagem inicial e a apresentação do Wesley permanecem iguais.</p></div><span class="tag">'+(c.paused?'Prospecção pausada':c.enabled?'Teste habilitado':'Preparação')+'</span></div>';
+ const info='<div class="heading"><div><span class="kicker">TESTE A/B • CONSECOM</span><h3>Proposta em áudio e texto, alternada por contato</h3><p>Uma empresa recebe áudio, a próxima recebe texto, mantendo o mesmo roteiro comercial. A gravação deve ser atualizada quando o texto mudar. O envio permanece sujeito a autorização e prazo confirmado.</p></div><span class="tag">'+(c.paused?'Prospecção pausada':c.enabled?'Teste habilitado':'Preparação')+'</span></div>';
  const summary=counts.length?'<div class="training-addons-pair">'+counts.map(x=>'<div class="training-payment-row"><div><strong>'+esc(x.variant==='AUDIO'?'Áudio original':'Texto equivalente')+'</strong><small>'+x.sent+' propostas • '+x.humanReplies+' respostas humanas • '+x.closed+' fechamentos</small></div></div>').join('')+'</div>':'';
- const input='<form id="training-offer-ab-form" class="training-addons-form"><label>Áudio original da proposta (OGG / Opus; até 15 MB)<input name="audio" type="file" accept="audio/ogg,.ogg"></label><small class="training-muted">'+(c.assetReady?'Áudio original cadastrado.':'O áudio ainda precisa ser enviado nesta tela.')+'</small><div class="training-addons-pair"><label>Segunda-feira prometida no áudio<input name="deadlineMonday" type="date" required value="'+esc(c.deadlineMonday||'')+'"></label><label>Início previsto do teste<input name="startDate" type="date" required value="'+esc(c.startDate||new Date().toISOString().slice(0,10))+'"></label></div><p class="training-muted">O áudio menciona entrega de portfólio na segunda-feira; confirme a data real antes de reativar. O teste não começa sozinho. Sem consentimento para receber a proposta, não há envio.</p><button type="submit" class="primary">Salvar áudio e planejamento, sem ativar</button></form>';
- const activation=c.enabled?'<p class="training-muted">Experimento configurado. O envio segue os limites e permissões do Prospector.</p>':!c.paused&&c.assetReady&&c.deadlineReady&&c.availableSessions>=2?'<button type="button" class="secondary" data-action="offer-ab-activate">Ativar teste com os dois números</button>':'<p class="training-muted">A ativação exige prospecção autorizada, dois números conectados, áudio cadastrado e data confirmada.</p>';
+ const input='<form id="training-offer-ab-form" class="training-addons-form"><label>Nova gravação da proposta (OGG / Opus; até 15 MB)<input name="audio" type="file" accept="audio/ogg,.ogg"></label><small class="training-muted">'+(c.assetReady?'Novo áudio confirmado.':c.audioNeedsUpdate?'O áudio anterior está desatualizado e bloqueado. Regrave o roteiro.':'O novo áudio ainda não foi cadastrado.')+'</small><label><input name="audioUpdated" type="checkbox"> Confirmo que o arquivo enviado contém exatamente o roteiro atualizado.</label><div class="training-addons-pair"><label>Data real de entrega do portfólio<input name="portfolioDueDate" type="date" required value="'+esc(c.portfolioDueDate||'')+'"></label><label>Início previsto do teste<input name="startDate" type="date" required value="'+esc(c.startDate||new Date().toISOString().slice(0,10))+'"></label></div><p class="training-muted">Como a proposta diz "daqui a três dias" e pede resposta "hoje", só fica elegível no dia exato em que faltarem três dias corridos para a entrega. Depois a campanha bloqueia automaticamente esse roteiro. A entrega do site segue o prazo comercial separado de até três dias úteis após pagamento e materiais.</p><button type="submit" class="primary">Salvar gravação e planejamento, sem ativar</button></form>';
+ const activation=c.enabled?'<p class="training-muted">Experimento configurado. Os disparos ainda seguem as autorizações e limitações do Prospector.</p>':!c.paused&&c.assetReady&&c.deadlineReady&&c.availableSessions>=1?'<button type="button" class="secondary" data-action="offer-ab-activate">Ativar teste por contato</button>':'<p class="training-muted">A ativação exige prospecção autorizada, WhatsApp conectado, nova gravação cadastrada e data de portfólio confirmada a exatamente três dias.</p>';
  return '<section class="panel training-addons-card" style="margin-top:18px">'+info+summary+input+activation+'</section>';
 }
 function interviewView(){
@@ -588,7 +588,7 @@ async function platformAction(action,el){
  if(action==='training-chats'){const r=await api('/api/training/chats');trainingChats=r.items||[];render();if(r.failures?.length)n('Não foi possível ler '+r.failures.length+' canal(is). Os demais estão disponíveis.');return true;}
  if(action==='offer-ab-activate'){
   if(!offerAbState?.config||offerAbState.config.paused){n('Prospecção pausada; aguarde autorização explícita para retomar.');return true;}
-  try{offerAbState=await post('/api/prospecting/offer-ab',{action:'configure',deadlineMonday:offerAbState.config.deadlineMonday,startDate:offerAbState.config.startDate,enabled:true});render();n('Teste A/B habilitado para conversas elegíveis.');}catch(e){n(e.message);}
+  try{offerAbState=await post('/api/prospecting/offer-ab',{action:'configure',portfolioDueDate:offerAbState.config.portfolioDueDate,startDate:offerAbState.config.startDate,enabled:true});render();n('Teste A/B habilitado para conversas elegíveis.');}catch(e){n(e.message);}
   return true;
  }
  if(action==='training-proof-approve'||action==='training-proof-remove'){
@@ -616,15 +616,16 @@ async function platformSubmit(ev){
   ev.preventDefault();const fd=new FormData(ev.target),file=fd.get('audio');
   try{
    if(file?.size){
+    if(fd.get('audioUpdated')!=='on')throw Error('Confirme que o novo áudio contém exatamente o roteiro atualizado.');
     if(file.size>15*1024*1024)throw Error('Áudio maior que 15 MB.');
     const mime='audio/ogg';
     const r=await fetch('/api/media?kind=audio&name='+encodeURIComponent('Áudio original proposta Consecom'),{
      method:'POST',credentials:'same-origin',headers:{'Content-Type':mime},body:file});
     const uploaded=await r.json();if(!r.ok)throw Error(uploaded.error||'Falha no upload');
-    await post('/api/prospecting/offer-ab',{action:'register-audio',mediaId:uploaded.id});
+    await post('/api/prospecting/offer-ab',{action:'register-audio',mediaId:uploaded.id,confirmedScript:true});
    }
-   offerAbState=await post('/api/prospecting/offer-ab',{action:'configure',deadlineMonday:fd.get('deadlineMonday'),startDate:fd.get('startDate'),enabled:false});
-   render();n('Áudio e plano A/B registrados. Prospecção permanece pausada.');
+   offerAbState=await post('/api/prospecting/offer-ab',{action:'configure',portfolioDueDate:fd.get('portfolioDueDate'),startDate:fd.get('startDate'),enabled:false});
+   render();n('Roteiro e planejamento salvos sem ativar a prospecção.');
   }catch(e){n(e.message);}return true;
  }
 
