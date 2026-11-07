@@ -16,6 +16,7 @@ import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
+export const CNPJ_FOLLOWUP_INTRO='Sou da agência Consecom. Gostaria de apresentar uma proposta para sua empresa.';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
 // Network activity may have succeeded before a process restart. Never retry automatically.
@@ -29,7 +30,20 @@ export function asksAboutProposal(value=''){
 }
 export function greetingForProspect(lead={},at=new Date()){
  // The original master/Consecom two-step approach stays EXACTLY as configured.
- if(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')return friendlyGreeting(lead,at);
+ if(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true'){
+  // Only an address-verified CNPJ company line with a confirmed WhatsApp gets
+  // a request to speak with the QSA person (never claim they own the number).
+  if(lead?.id){
+   const route=one("SELECT status FROM lead_contact_selection WHERE lead_id=?",lead.id);
+   if(route?.status==='READY_CNPJ'){
+    const d=one('SELECT decision_maker FROM lead_decisor_enrichment WHERE lead_id=?',lead.id);
+    const first=String(d?.decision_maker||'').trim().split(/\s+/)[0];
+    if(first&&first.length<=32&&/^[\p{L}'-]+$/u.test(first))
+     return 'Oi, tudo bem? Me chamo Wesley, queria falar com '+first+'.';
+   }
+  }
+  return friendlyGreeting(lead,at);
+ }
  // A client may use only its approved tenant-specific first-message template.
  return tenantApproachGreeting(lead)||friendlyGreeting(lead,at);
 }
@@ -113,13 +127,16 @@ export async function tickIntroductions(deps={}){
   // Reserve before attempting transport; an uncertain result must not be resent.
   if(!run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND stage='WAITING' AND due_at<=?",
    new Date(at).toISOString(),now(),item.lead_id,new Date(at).toISOString()).changes)return {state:'BUSY'};
+  // The first CNPJ-routed greeting already introduces Wesley by name.
+  const route=one('SELECT status FROM lead_contact_selection WHERE lead_id=?',item.lead_id);
+  const introText=route?.status==='READY_CNPJ'?CNPJ_FOLLOWUP_INTRO:WESLEY_INTRO;
   try{
    const ack=await send('/api/messages/'+encodeURIComponent(item.session_id)+'/'+encodeURIComponent(item.phone+'@s.whatsapp.net')+'/send',
-     {method:'POST',data:{message:{text:WESLEY_INTRO}}});
+     {method:'POST',data:{message:{text:introText}}});
    if(ack.status!==true)throw Error('UNCONFIRMED');
    run("UPDATE prospecting_introductions SET stage='SENT',sent_at=?,updated_at=? WHERE lead_id=?",now(),now(),item.lead_id);
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
-   if(thread)addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:WESLEY_INTRO,status:'sent'});
+   if(thread)addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:introText,status:'sent'});
    audit('PROSPECT_INTRO_SENT',item.lead_id,{delaySeconds:30});
    return {state:'SENT',leadId:item.lead_id};
   }catch{
