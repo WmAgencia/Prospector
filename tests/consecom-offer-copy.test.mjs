@@ -8,12 +8,12 @@ test('nova proposta de áudio e texto usa exatamente o mesmo roteiro',()=>{
  assert.match(OFFER_AB_TEXT,/portfólio do seu nicho daqui a três dias/);
  assert.match(OFFER_AB_TEXT,/mais um site desse segmento pra concluir esse projeto/);
  assert.match(OFFER_AB_TEXT,/cerca de 80%/);
- assert.match(OFFER_AB_TEXT,/R\\$ 550/);
- assert.match(OFFER_AB_TEXT,/R\\$ 2\\.500 e R\\$ 3\\.000/);
+ assert.ok(OFFER_AB_TEXT.includes('R$ 550'));
+ assert.ok(OFFER_AB_TEXT.includes('R$ 2.500 e R$ 3.000'));
  assert.match(OFFER_AB_TEXT,/um ano de domínio sem custo extra/);
  assert.match(OFFER_AB_TEXT,/Instagram e no site da Consecom/);
  assert.match(OFFER_AB_TEXT,/resposta ainda hoje/);
- assert.doesNotMatch(OFFER_AB_TEXT,/segunda-feira|por áudio|entendeu\\?|primeiro lugar no Google|clientes garantidos/i);
+ assert.doesNotMatch(OFFER_AB_TEXT,/segunda-feira|por áudio|entendeu|primeiro lugar no Google|clientes garantidos/i);
 });
 
 test('promessa de três dias corridos fica elegível somente na data correta',()=>{
