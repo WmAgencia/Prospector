@@ -9,7 +9,7 @@ const original=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
 const realFetch=globalThis.fetch;
 const restore=()=>{for(const k of keys){if(original[k]===undefined)delete process.env[k];else process.env[k]=original[k];}globalThis.fetch=realFetch;};
 const configure=()=>{process.env.STRIPE_PROSPECTOR_WEBHOOK_SECRET='whsec_unit_test';
- process.env.STRIPE_PROSPECTOR_PAYMENT_LINKS=JSON.stringify(Object.fromEntries(CREDIT_PACKAGES.map(p=>[p.id,{id:'plink_test_'+p.id,url:'https://buy.stripe.com/test/'+p.id}])));
+ process.env.STRIPE_PROSPECTOR_PAYMENT_LINKS=JSON.stringify(Object.fromEntries(CREDIT_PACKAGES.map(p=>[p.id,{id:'plink_'+p.id,url:'https://buy.stripe.com/test/'+p.id}])));
  process.env.STRIPE_PUBLISHABLE_KEY='pk_live_unit_test';
  process.env.STRIPE_PROSPECTOR_RETURN_URL='https://prospector.consecom.com.br';
 };
