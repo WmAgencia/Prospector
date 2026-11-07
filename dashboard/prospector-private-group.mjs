@@ -59,7 +59,7 @@ function safeRecovery(entries,ownerNumber,managedNumbers){
  const safe=possible.filter(g=>{
   const membership=getMembership(g);
   if(!membership||membership.unknown||!membership.numbers.has(ownerNumber))return false;
-  return true;
+  return [...membership.numbers].every(n=>managedNumbers.has(n));
  });
  // A manual group with the same title could exist. Only recover an exact
  // matching group after our OWN previous creation attempt, and only if unique.
@@ -129,7 +129,8 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
     catch{return {state:'GROUP_METADATA_UNAVAILABLE'};}
     const memberSet=getMembership(metadata);
     if(metadata?.subject!==PROSPECTOR_GROUP_NAME||!memberSet||memberSet.unknown||
-      !memberSet.numbers.has(ownerNumber)){
+      !memberSet.numbers.has(ownerNumber)||
+      [...memberSet.numbers].some(n=>!ownedNumbers.has(n))){
      return {state:'GROUP_MATCH_AMBIGUOUS'};
     }
     saveGroup({ownerSession,ownerNumber,groupJid:jid,state:'READY',attemptedAt:at.toISOString()});
