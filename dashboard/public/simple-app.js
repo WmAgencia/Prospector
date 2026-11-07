@@ -31,6 +31,8 @@ let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
 let trainingReviewSearch='',trainingShowComposer=false,trainingSetupMinimized=false;
+try{trainingSetupMinimized=sessionStorage.getItem('prospector-setup-minimized')==='1';}catch{}
+let waAccountsLastCheck=0;
 let outreachHours={start:'08:00',end:'17:30'};
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
 let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
@@ -110,9 +112,26 @@ function activationModal(){
  if(!platformContext.needsPasswordSetup||platformContext.role==='master')return '';
  return '<div class="master-modal-backdrop" role="presentation"><section class="master-client-modal invite-activation-modal" role="dialog" aria-modal="true" aria-labelledby="invite-title"><span class="kicker">PRIMEIRO ACESSO / PROSPECTOR</span><h2 id="invite-title">Proteja sua conta</h2><p>Seu acesso foi criado. Defina uma senha para entrar normalmente por e-mail ou WhatsApp no futuro.</p><form id="activate-account" class="stack-form"><label>Nova senha<input type="password" name="password" minlength="10" maxlength="128" required autocomplete="new-password" placeholder="Ao menos 10 caracteres"></label><label>Repita a senha<input type="password" name="confirmPassword" minlength="10" maxlength="128" required autocomplete="new-password" placeholder="Confirme sua senha"></label><button class="primary" type="submit">Ativar meu login</button></form><p class="footnote">Por segurança, seu convite inicial será invalidado assim que a senha for definida.</p></section></div>';
 }
+function franciscaOnboarding(){
+ if(platformContext.role==='master')return '';
+ const w=waAccounts.length?waAccounts.every(item=>item.connected):!!wa?.connected;
+ const training=!!trainingState?.profile;
+ const analyzed=!!trainingState?.runs?.some(x=>x.status==='REVIEW'||x.status==='APPROVED');
+ const stages=[
+  {title:'Conectar todos os WhatsApps',sub:'Adicione e conecte todos os seus números.',done:w,tab:'connections',action:'Conectar'},
+  {title:'Treinar a Francisca',sub:'Explique suas regras e aprove o treinamento.',done:training,tab:'training',action:'Treinar'},
+  {title:'Analisar conversas',sub:'Ensine o jeito de atender a partir de históricos autorizados.',done:analyzed,tab:'training',action:'Analisar'}
+ ];
+ if(stages.every(x=>x.done))return '';
+ const done=stages.filter(x=>x.done).length;
+ return '<aside class="fr-setup-widget '+(trainingSetupMinimized?'is-minimized':'')+'" aria-label="Guia de configuração da Francisca">'+
+  '<div class="fr-setup-heading"><div><span class="fr-setup-emblem">✦</span><div><strong>Seu Prospector, passo a passo</strong><small>'+done+' de 3 etapas concluídas</small></div></div><button type="button" data-action="training-setup-toggle" aria-expanded="'+(!trainingSetupMinimized)+'" aria-label="'+(trainingSetupMinimized?'Expandir checklist':'Minimizar checklist')+'">'+(trainingSetupMinimized?'+':'−')+'</button></div>'+
+  (trainingSetupMinimized?'':'<div class="fr-setup-body"><div class="fr-setup-track"><span style="width:'+Math.round(done/3*100)+'%"></span></div>'+
+  stages.map((x,i)=>'<div class="fr-setup-row '+(x.done?'done':'')+'"><span class="fr-setup-step">'+(x.done?'✓':i+1)+'</span><div><strong>'+esc(x.title)+'</strong><small>'+esc(x.sub)+'</small></div>'+(x.done?'':'<button type="button" class="secondary compact" data-action="'+(i===2?'training-setup-analyze':'training-setup-go')+'" data-tab-target="'+x.tab+'">'+esc(x.action)+'</button>')+'</div>').join('')+'</div>')+'</aside>';
+}
 function shell(){
  const active=tabs[view]||tabs.overview,connected=!!wa?.connected;
- root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["dashboard","clients","credits","settings"].includes(key):!["dashboard","clients"].includes(key)).map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button sidebar-switch" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+'</div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div><div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'Desconectado')+'</span></span>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+(platformContext.role!=="master"&&!connected?'<button class="wa-inline-connect" type="button" data-action="reconnect-qr">'+glyph('connections')+' Conectar</button>':'')+'<button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>'+franciscaWidget()+activationModal();
+ root.innerHTML='<div class="shell"><div class="scrim" data-action="close-menu"></div><aside id="side" class="side" aria-label="Menu principal"><div class="brand"><span class="brand-mark">p<span>.</span></span><div><strong>prospector<span class="accent">.</span></strong><small>BY CONSECOM BRASIL</small></div><button class="side-close" data-action="close-menu" aria-label="Fechar menu">'+glyph('close')+'</button></div><div class="side-label">WORKSPACE</div><nav aria-label="Navegação principal">'+Object.entries(tabs).filter(([key])=>platformContext.role==="master"?["dashboard","clients","credits","settings"].includes(key):!["dashboard","clients"].includes(key)).map(([key,label])=>'<button type="button" class="nav '+(view===key?'active':'')+'" data-tab="'+key+'" title="'+esc(label)+'" aria-label="'+esc(label)+'" '+(view===key?'aria-current="page"':'')+'>'+glyph(key)+'<span>'+label+'</span>'+(view===key?'<span class="nav-indicator"></span>':'')+'</button>').join('')+'</nav><div class="side-spacer"></div><div class="side-panel"><span class="side-panel-label">STATUS DA OPERAÇÃO</span><div class="side-status"><span class="pulse '+(connected?'ok':'')+'"></span><div><strong>'+(platformContext.role==='master'?'Painel master':connected?'WhatsApp conectado':'WhatsApp pendente')+'</strong><small>'+(platformContext.role==='master'?'Gestão de clientes e acessos':connected?'Sessão sincronizada':'Confira em Conexões')+'</small></div></div><p>'+(platformContext.role==='master'?'Abra uma conta de cliente para acessar sua operação.':'Acompanhe conexões, conversas e oportunidades.')+'</p>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button sidebar-switch" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+'</div><div class="side-footer"><span class="brand-min">C.</span><div><strong>'+esc(platformContext.name)+'</strong><small>'+(platformContext.role==='master'?'Painel master':'Espaço do cliente')+'</small></div></div></aside><div class="body"><header class="top"><div class="top-left"><button class="hamburger icon-button" data-action="menu" aria-label="Abrir menu">'+glyph('menu')+'</button><div class="top-title"><span class="eyebrow">WORKSPACE / '+esc(active.toUpperCase())+'</span><h1>'+esc(active)+'</h1></div></div><div class="top-right"><span class="status-chip '+(connected?'online':'')+'"><span class="pulse '+(connected?'ok':'')+'"></span><span>'+(platformContext.role==='master'?'Administração':connected?'WhatsApp online':'Desconectado')+'</span></span>'+(platformContext.canSwitchWorkspace?'<button type="button" class="workspace-switch-button" data-action="switch-workspace">'+(platformContext.role==='master'?'Ir para Produção':'Ir para Master')+'</button>':'')+(platformContext.role!=="master"&&!connected?'<button class="wa-inline-connect" type="button" data-action="reconnect-qr">'+glyph('connections')+' Conectar</button>':'')+'<button class="account-logout" type="button" data-action="logout-client" aria-label="Sair da conta">Sair</button><span class="useravatar" aria-hidden="true">'+esc((platformContext.name||'P').trim().charAt(0).toUpperCase()||'P')+'</span></div></header><div class="main-wrap">'+whatsappNotice()+'<div id="notice" class="notice '+(notice?'':'hidden')+'" role="status">'+esc(notice)+'</div><main class="content" id="view" aria-label="'+esc(active)+'"></main><footer class="main-footer"><span>PROSPECTOR / CONSECOM BRASIL</span><span>Ambiente privado · Dados sob sua gestão</span></footer></div></div></div>'+franciscaWidget()+activationModal()+franciscaOnboarding();
 }
 
 
@@ -608,6 +627,13 @@ async function platformAction(action,el){
   const answer=await confirmInApp({title:suspend?'Suspender acesso?':'Reativar acesso?',description:suspend?'O gestor '+(client?.name||'selecionado')+' deixará de acessar o painel e seu processo de atendimento será interrompido.':'O cliente voltará a acessar seu ambiente privado.',danger:suspend,confirmLabel:suspend?'Suspender conta':'Reativar conta'});
   if(!answer)return true;await post('/api/platform/clients/'+el.dataset.client+'/status',{status:el.dataset.status});await loadClients();n('Acesso atualizado.');return true;
  }
+ if(action==='training-setup-toggle'){
+  trainingSetupMinimized=!trainingSetupMinimized;
+  try{sessionStorage.setItem('prospector-setup-minimized',trainingSetupMinimized?'1':'0');}catch{}
+  render();return true;
+ }
+ if(action==='training-setup-go'){nav(el.dataset.tabTarget||'training');return true;}
+ if(action==='training-setup-analyze'){nav('training');setTimeout(()=>q('.fr-analysis')?.scrollIntoView({behavior:'smooth',block:'start'}),80);return true;}
  if(action==='training-review-add'){trainingShowComposer=true;render();q('#training-input')?.focus();return true;}
  if(action==='training-review-close'){trainingShowComposer=false;render();return true;}
  if(action==='training-review-focus'){q('.francisca-review')?.scrollIntoView({behavior:'smooth',block:'start'});return true;}
@@ -782,7 +808,6 @@ function overview(){
  return '<div class="kanban-dashboard" id="overview-board">'+
   '<div class="kanban-overview-head"><div><span class="kicker">PIPELINE COMERCIAL</span><h2>Visão da operação</h2><p>Todos os contatos e oportunidades em uma única tela.</p></div><button class="secondary compact" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div>'+
   '<div class="kanban-metrics">'+stat('Empresas acompanhadas',total,'Com atividade registrada')+stat('Abordando',k.counts?.approaching||0,'Em contato')+stat('Interessados',k.counts?.interested||0,'Prioridade comercial')+stat('Conversando',k.counts?.conversing||0,'Atendimento humano')+'</div>'+
-  startupPanel+
   '<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>Acompanhe cada etapa e abra a conversa pelo cartão.</small></div>'+
   '<div class="kanban-columns" aria-label="Kanban comercial">'+definition.map(([key,label,description])=>
    '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items">'+
@@ -879,9 +904,9 @@ async function refreshWa(redraw=true){
  if(waRefreshing)return waRefreshing;
  waRefreshing=(async()=>{
   try{
-   if(view==='connections'){
-    const pool=await api('/api/whatsapp/sessions').catch(()=>({items:[]}));
-    waAccounts=Array.isArray(pool.items)?pool.items:[];
+   if(view==='connections'||Date.now()-waAccountsLastCheck>45000){
+    const pool=await api('/api/whatsapp/sessions').catch(()=>null);
+    if(pool?.items){waAccounts=Array.isArray(pool.items)?pool.items:[];waAccountsLastCheck=Date.now();}
     if(!connectionSession&&waAccounts.length)connectionSession=waAccounts[0].session_id;
    }
    const w=await api("/api/whatsapp/status"+(view==='connections'?waSessionQuery():''));
@@ -1035,6 +1060,7 @@ async function reload(){
  try{
   if(platformContext.role==="master"){await Promise.all([loadClients(),loadMasterMetrics()]);lastRefresh=Date.now();render();return;}
   state=await api("/api/state");lastRefresh=Date.now();
+  if(!trainingState)await loadTraining();
   if(view==="clients")await loadClients();else if(view==="training")await loadTraining();else if(view==="credits"){render();await loadCredits();}else if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else render();
  }catch(e){if(!state)root.innerHTML='<main class="load-error"><h2>Não foi possível abrir o Prospector</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';else n(e.message);}
 }
