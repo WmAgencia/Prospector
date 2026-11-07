@@ -3,7 +3,7 @@ const q=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
 const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
-let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="selected",trainingAllConfirmed=false,trainingBusy=false,clientAccess="";
+let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="all",trainingAllConfirmed=false,trainingBusy=false,clientAccess="";
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
 let preferredPackage='';
 try{preferredPackage=sessionStorage.getItem('prospector-preferred-package')||'';}catch{}
@@ -384,17 +384,21 @@ function trainingProfile(t){
  (!needsReview&&ready?'<p class="fr-review-hint">Treinamento aprovado e ativo. Novas edições só entram no atendimento depois da revisão do gestor.</p>':'')+'</section>';
 }
 function trainingAnalysis(t){
- const running=t.runs?.some(x=>x.status==='RUNNING');
- const connected=!!wa?.connected;
- return '<section class="panel training-analysis"><div class="heading"><div><span class="kicker">APRENDER COM O WHATSAPP</span><h3>Extrair contexto das conversas</h3><p>Identifique padrões e exemplos de atendimento para revisar com sua IA.</p></div></div>'+
- (!connected?'<div class="training-connect-notice"><span class="training-connection-icon">'+glyph('connections')+'</span><div><strong>Conecte seus WhatsApps primeiro</strong><p>Para analisar conversas comerciais, conecte os números na aba Conexões. Você pode continuar com treinamento manual enquanto isso.</p></div><button type="button" class="primary" data-tab="connections">Conectar números</button></div>':
- '<div class="training-chats-actions"><span class="tag green">WhatsApp conectado</span><button type="button" class="secondary compact" data-action="training-chats">Carregar conversas</button></div><div class="mode-options"><label><input type="radio" name="training-mode" value="selected" '+(trainingMode==='selected'?'checked':'')+'> Selecionar conversas</label><label><input type="radio" name="training-mode" value="all" '+(trainingMode==='all'?'checked':'')+'> Todas as disponíveis</label></div>'+
- (trainingMode==='all'?'<p class="analysis-note">A lista inclui apenas conversas com abordagem confirmada pelo Prospector. Confirme quais exemplos comerciais deseja usar.</p><label class="training-all-confirm"><input id="training-all-confirm" type="checkbox" '+(trainingAllConfirmed?'checked':'')+'> Confirmo que todas as conversas disponíveis podem ser utilizadas para este treinamento.</label>':'<div class="training-chat-list">'+(trainingChats.length?trainingChats.map(x=>'<label><input type="checkbox" data-training-chat="'+esc(x.key)+'" '+(trainingSelection.has(x.key)?'checked':'')+'><span><strong>'+esc(x.name)+'</strong><small>'+esc(x.channel)+'</small></span></label>').join(''):'<p>Carregue as conversas para escolher quais exemplos deseja analisar.</p>')+'</div>')+
- '<button type="button" class="primary" data-action="training-analyze" '+(running||trainingBusy?'disabled':'')+'>'+(running?'Análise em andamento…':'Analisar e gerar relatório')+'</button>')+
- '<p class="footnote">A análise não envia mensagens aos contatos e só examina amostras dos textos enviados pela empresa. O perfil gerado precisa ser revisado antes de entrar em uso.</p>'+
- (t.runs?.length?'<div class="training-history"><h4>Últimas análises</h4>'+t.runs.slice(0,3).map(x=>'<p><strong>'+esc(({RUNNING:'Analisando',REVIEW:'Pronta para revisão',FAILED:'Não concluída'})[x.status]||x.status)+'</strong> · '+stamp(x.created_at)+(x.details?.error?'<br>'+esc(x.details.error):'')+'</p>').join('')+'</div>':'')+'</section>';
+ const run=t.runs?.[0]||null,running=run?.status==='RUNNING';
+ const percent=Math.max(0,Math.min(100,Number(run?.details?.percent||0)));
+ const connected=waAccounts.length>0?waAccounts.every(x=>x.connected):!!wa?.connected;
+ const count=waAccounts.length?waAccounts.filter(x=>x.connected).length:(wa?.connected?1:0);
+ const ready=!!t.profile&&connected;
+ return '<section class="panel fr-analysis"><div class="heading"><div><span class="kicker">ÚLTIMA ETAPA · APRENDER COM SEUS ATENDIMENTOS</span><h3>Analisar conversas do WhatsApp</h3><p>Depois do treinamento, a Francisca identifica como sua equipe conversa, pergunta e responde. As sugestões ficam aguardando sua revisão.</p></div><span class="tag '+(run?.status==='REVIEW'?'green':'')+'">'+(running?'Analisando em segundo plano':run?.status==='REVIEW'?'Análise concluída':'Etapa final')+'</span></div>'+
+ (!t.profile?'<div class="fr-analysis-gate"><strong>Finalize e aprove o treinamento primeiro</strong><p>Conclua a conversa com a Francisca e revise as orientações acima para liberar a análise.</p></div>':'')+
+ (!connected?'<div class="training-connect-notice"><span class="training-connection-icon">'+glyph('connections')+'</span><div><strong>Conecte todos os seus WhatsApps</strong><p>Conectados: '+count+' de '+(waAccounts.length||1)+'. A análise só começa quando os números cadastrados estiverem online.</p></div><button type="button" class="primary" data-tab="connections">Conectar números</button></div>':
+ '<p class="fr-analysis-ready">✓ '+count+' número(s) conectado(s). Os dados serão analisados somente em conversas comerciais elegíveis e autorizadas.</p>')+
+ (running?'<div class="fr-analysis-progress" role="progressbar" aria-label="Andamento da análise de conversas" aria-valuenow="'+percent+'" aria-valuemin="0" aria-valuemax="100"><div><strong>Analisando mensagens...</strong><span>'+percent+'%</span></div><i><b style="width:'+percent+'%"></b></i><p>Pode continuar usando as outras telas. O processamento ocorre no servidor e o progresso é salvo.</p></div>':
+ run?.status==='REVIEW'?'<div class="fr-analysis-result"><strong>✓ Conversas analisadas</strong><p>'+Number(run.details?.conversations||0)+' conversa(s) incluída(s). A Francisca preparou sugestões de estilo e atendimento para o gestor revisar nos cards acima.</p><button type="button" class="secondary compact" data-action="training-review-focus">Revisar sugestões</button></div>':
+ run?.status==='FAILED'?'<p class="fr-analysis-warning">A análise anterior não terminou: '+esc(run.details?.error||'Tente novamente após verificar a conexão.')+'</p>':'')+
+ (!running?'<div class="fr-analysis-start"><label class="training-all-confirm"><input id="training-all-confirm" type="checkbox" '+(trainingAllConfirmed?'checked':'')+'> Confirmo que posso usar as conversas comerciais elegíveis e autorizadas para o treinamento da minha empresa.</label><button type="button" class="primary" data-action="training-analyze" '+(!ready||trainingBusy?'disabled':'')+'>Analisar conversas ↗</button></div>':'')+
+ '<p class="footnote">A análise não envia mensagens e não lê grupos ou conversas particulares. O que a Francisca aprender só entra em uso após aprovação do gestor.</p></section>';
 }
-
 let interviewVoice=false,interviewVoiceSession=null,interviewAudio=null,interviewAudioUrl=null,interviewAudioDone=null,interviewVoiceState='off',interviewSending=false,interviewInput='',interviewShowAnalysis=false;
 function interviewStopSpeech(){
  if(interviewAudio){try{interviewAudio.pause();interviewAudio.src='';}catch{}interviewAudio=null;}
@@ -516,9 +520,9 @@ function interviewView(){
  }
  const shownTraining=t.internalAccount&&t.profile&&t.draft?.source==='interview'?{...t,draft:null}:t;
  const profile=((t.internalAccount&&t.profile)||i?.completed||(!i&&(t.profile||t.draft)))?'<div class="interview-profile">'+trainingProfile(shownTraining)+'</div>':'';
- const advanced='<div class="interview-advanced"><button type="button" class="secondary compact" data-action="interview-analysis">'+(interviewShowAnalysis?'Ocultar análise':'Analisar conversas comerciais também')+'</button></div>'+(interviewShowAnalysis?trainingAnalysis(t):'');
+ const advanced='<div class="interview-final-stage">'+trainingAnalysis(t)+'</div>';
  const shared='<div class="training-markdown-info"><span><strong>Método global de vendas</strong> · compartilhado e somente leitura. O seu perfil de serviços, preços e tom é privado.</span><a href="/api/training/global.md" download="francisca-vendas-global.md" class="secondary compact">Baixar base global .md ↗</a></div>';
- return top+shared+'<div class="interview-layout">'+body+profile+'</div>'+trainingSalesExtras()+advanced;
+ return top+'<div class="interview-layout">'+body+profile+'</div>'+trainingSalesExtras()+advanced;
 }
 function trainingView(){return interviewView();}
 
