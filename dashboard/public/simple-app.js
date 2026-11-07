@@ -5,7 +5,7 @@ const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short"
 const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
 let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="all",trainingAllConfirmed=false,trainingBusy=false,clientAccess="";
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
-let billingReminderOpen=false,billingReminderDismissed=false,billingDemoExhausted=false,billingDemoStep=0,billingDemoPackage='';
+let billingReminderOpen=false,billingReminderDismissed=false,billingDemoExhausted=false,billingDemoStep=0,billingDemoPackage='',billingLastChecked=0;
 let preferredPackage='';
 try{preferredPackage=sessionStorage.getItem('prospector-preferred-package')||'';}catch{}
 let offerType='portfolio';
@@ -614,7 +614,7 @@ function trainingView(){return interviewView();}
 
 async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/analytics');if(platformContext.role==='master'&&view==='dashboard')render();}catch(e){n('Indicadores indisponíveis: '+e.message);}}
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
-async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');platformContext.available=creditState.available;if(view==='credits')render();maybeOpenBillingReminder();}catch(e){n(e.message);}}
+async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');billingLastChecked=Date.now();platformContext.available=creditState.available;if(view==='credits')render();maybeOpenBillingReminder();}catch(e){n(e.message);}}
 async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
 async function platformAction(action,el){
  if(action==='client-open'){await post('/api/platform/clients/'+el.dataset.client+'/open',{});location.assign('/');return true;}
@@ -1486,6 +1486,7 @@ setInterval(async()=>{
  await refreshWa();
  if(busy||q("input:focus,textarea:focus,select:focus"))return;
  if(trainingBusy)return;
+ if(platformContext.role!=='master'&&Date.now()-billingLastChecked>30000)await loadCredits();
  if(view!=="training"&&trainingState?.runs?.some(x=>x.status==='RUNNING'))await loadTraining();
  if(view==="training"){await loadTraining();return;}
  if(view==="conversations"&&Date.now()-lastRefresh>24000)await reload();
