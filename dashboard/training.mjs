@@ -105,12 +105,22 @@ if(isConsecomInternal()){
  catch(error){console.warn('[internal training]',String(error?.message||error).slice(0,100));}
 }
 
+const hiddenGlobalKey='training_review_hidden_shared_cards_v1';
+function hiddenGlobalCardIds(){
+ const saved=getSetting(hiddenGlobalKey,[]);
+ return new Set(Array.isArray(saved)?saved.filter(x=>typeof x==='string'&&x.length<=50):[]);
+}
+function sharedCardReview(){
+ const allCards=publicReviewCards(globalSalesMarkdown()).slice(0,40);
+ const hidden=hiddenGlobalCardIds();
+ return {globalCards:allCards.filter(c=>!hidden.has(c.id)),hiddenGlobalCount:allCards.filter(c=>hidden.has(c.id)).length};
+}
 export function trainingStatus(){
  const meta=getSetting('training_active',null),active=readActiveTrainingMarkdown();
  const profile=meta&&active?{...getSetting('training_active',meta),text:active,filename:trainingMarkdownName('active'),format:'markdown'}:null;
  const rawDraft=getSetting('training_draft',null);
  const draft=rawDraft?.source==='interview'?{...rawDraft,text:readTrainingMarkdown('draft')||''}:rawDraft;
- return {profile,draft,review:{...reviewTextState(active,draft),globalCards:publicReviewCards(globalSalesMarkdown()).slice(0,40)},salesEvidence:evidenceStatus(),closing:salesClosingStatus(),paymentQueue:salesPaymentQueue(),internalAccount:isConsecomInternal(),globalKnowledge:{filename:GLOBAL_SALES_FILENAME,version:GLOBAL_SALES_VERSION,readOnly:true,scope:'shared'},business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),
+ return {profile,draft,review:{...reviewTextState(active,draft),...sharedCardReview()},salesEvidence:evidenceStatus(),closing:salesClosingStatus(),paymentQueue:salesPaymentQueue(),internalAccount:isConsecomInternal(),globalKnowledge:{filename:GLOBAL_SALES_FILENAME,version:GLOBAL_SALES_VERSION,readOnly:true,scope:'shared'},business:getSetting('training_business',{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil',description:''}),
   chat:all('SELECT role,body,at FROM training_chat ORDER BY rowid DESC LIMIT 40').reverse(),interview:trainingInterviewStatus(),
   runs:all('SELECT id,status,report,details,created_at FROM training_runs ORDER BY rowid DESC LIMIT 10').map(r=>{const {selectionKeys,...details}=JSON.parse(r.details||'{}');return {...r,details};})};
 }
@@ -218,6 +228,24 @@ export async function handleTraining(req,res,url,{json,respond},deps={}){
  const p=url.pathname;if(!p.startsWith('/api/training'))return false;
  const model=deps.model||groqChat;
  if(req.method==='GET'&&p==='/api/training'){respond(res,200,trainingStatus());return true;}
+ if(req.method==='POST'&&p==='/api/training/global-cards'){
+  try{
+   const input=await json(req);
+   const action=String(input?.action||'');
+   const cards=publicReviewCards(globalSalesMarkdown()).slice(0,40);
+   if(action==='restore'){
+    setSetting(hiddenGlobalKey,[]);
+   }else if(action==='hide'){
+    if(!cards.some(c=>c.id===input.id))throw Error('Orientação compartilhada não encontrada. Atualize a página');
+    const next=hiddenGlobalCardIds();
+    next.add(input.id);
+    setSetting(hiddenGlobalKey,[...next]);
+   }else throw Error('Ação desconhecida');
+   // Only changes the per-company review visibility. Global safety rules remain intact.
+   respond(res,200,trainingStatus());
+  }catch(e){respond(res,422,{error:String(e.message).slice(0,180)});}
+  return true;
+ }
  if(req.method==='POST'&&p==='/api/training/cards'){
   try{const input=await json(req);createCardDraft(input,readActiveTrainingMarkdown());respond(res,200,trainingStatus());}
   catch(e){respond(res,422,{error:String(e.message).slice(0,180)});}return true;
