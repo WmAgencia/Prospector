@@ -208,6 +208,13 @@ export function stopLead(leadId,reason){
 if(!getSetting('discovery_05h_schedule_v2',false)){
  setSetting('discovery_start_hour',5);setSetting('discovery_05h_schedule_v2',true);
 }
+// Backend-only rollout: run discovery/enrichment at midnight São Paulo time.
+// Keep all outbound windows, pauses, credits and daily caps unchanged.
+if(!getSetting('backend_midnight_discovery_20261107_v1',false)){
+ setSetting('discovery_start_hour',0);
+ setSetting('backend_midnight_discovery_20261107_v1',true);
+}
+
 if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('tenant_initialized',false)){
  for(const [key,value] of Object.entries({paused:true,auto_initial:false,autonomous_outreach_enabled:false,discovery_auto_enabled:false,google_places_auto_enabled:false,owner_notifications_enabled:false,sales_daily_report_enabled:false,tenant_initialized:true}))setSetting(key,value);
 }

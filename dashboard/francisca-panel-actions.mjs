@@ -59,7 +59,7 @@ export function applyFranciscaAction(action){
 export function processProspectingSchedule(input=new Date()){
  const scheduled=getSetting('prospecting_schedule',null);
  if(!scheduled||scheduled.status!=='SCHEDULED')return {applied:false};
- if(daySP(input)<scheduled.startDay||hourSP(input)<5)return {applied:false,pending:scheduled.startDay};
+ if(daySP(input)<scheduled.startDay||hourSP(input)<Number(getSetting('discovery_start_hour',0)))return {applied:false,pending:scheduled.startDay};
  try{
   const scope=saveScope({mode:scheduled.mode,niche:scheduled.niche,city:scheduled.city,enabled:true});
   setSetting('prospecting_schedule',{...scheduled,status:'APPLIED',appliedAt:now()});

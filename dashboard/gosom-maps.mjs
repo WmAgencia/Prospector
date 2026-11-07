@@ -142,7 +142,12 @@ export async function importMapsScrape(jobId){
   try{
    // Never confer WhatsApp consent solely from a Maps business listing.
    const saved=addLead({business,phone:x.phone||undefined,city:listedCity||job.city,segment:job.niche,website:String(x.website||'').slice(0,400),maps_id:url,source:'maps_extension',contact_permission:false,notes:'Origem: Gosom Google Maps. Endereço: '+String(x.address||'').slice(0,250)+' | Google Maps: '+url});
-   recordOrigin(saved.lead.id,'maps_extension',{identity:url,provider:'gosom',jobId:job.id},false);
+   recordOrigin(saved.lead.id,'maps_extension',{identity:url,provider:'gosom',jobId:job.id,
+    address:String(x.address||x.full_address||'').slice(0,350),
+    city:listedCity||job.city,state:String(x.state||x.uf||'').slice(0,3),
+    postcode:String(x.postcode||x.zip||x.cep||'').slice(0,12),
+    phone:String(x.phone||'').slice(0,40),
+    cnpj:String(x.cnpj||'').slice(0,20)},false);
    if(saved.created)added++;
    known.add(fingerprint);
    processed++;
@@ -197,7 +202,7 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
  if(process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED!=='true')return {status:'DISABLED'};
  if(!configured())return {status:'NOT_CONFIGURED'};
  if(getSetting('discovery_auto_enabled',false)!==true)return {status:'DISABLED_BY_OPERATOR'};
- if(hourSP(at)<5)return {status:'BEFORE_START'};
+ if(hourSP(at)<Number(getSetting('discovery_start_hour',0)))return {status:'BEFORE_START'};
  autoMapsLocked=true;
  try{
   // Import only explicitly auto-researched data. Do not silently import a

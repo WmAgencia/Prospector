@@ -201,7 +201,13 @@ export async function discoverLocal(payload={},automatic=false){
    const result=addLead({business,name:tags['contact:person']||null,phone:p,instagram,osm_id:url,source:'osm',segment:segment.label,city:location.label,
     website:safeWebsite,website_status:safeWebsite?'HAS_WEBSITE':'UNCERTAIN',contact_permission:false,
     notes:'Fonte: © OpenStreetMap contributors (ODbL). Cadastro público não autoriza mensagens. '+url});
-   recordOrigin(result.lead.id,'osm',{url,city:location.label,segment:segment.label,phonePublished:!!p,hasWebsiteTag:!!safeWebsite});
+   recordOrigin(result.lead.id,'osm',{url,city:location.label,segment:segment.label,phonePublished:!!p,hasWebsiteTag:!!safeWebsite,
+    address:{street:String(tags['addr:street']||'').slice(0,150),
+     number:String(tags['addr:housenumber']||'').slice(0,30),
+     postcode:String(tags['addr:postcode']||'').slice(0,15),
+     city:String(tags['addr:city']||location.label).slice(0,100),
+     state:String(tags['addr:state']||'').slice(0,3)},
+    phone:p||null,cnpj:String(tags['ref:vat']||tags.cnpj||tags['contact:cnpj']||'').slice(0,24)});
    upsertBusinessMeta(result.lead.id,{businessType:segment.filter});
    if(result.created)added++;
   }
@@ -217,7 +223,7 @@ export async function discoverLocal(payload={},automatic=false){
  }finally{busy=false;}
 }
 let autoBusy=false;
-export const DISCOVERY_START_HOUR=5;
+export const DISCOVERY_START_HOUR=0;
 export const OSM_DAILY_MAX_SEARCHES=12;
 export const OSM_COOLDOWN_MS=45*60000;
 export function reconcileInterruptedSearches({at=new Date(),minAgeMs=90000}={}){
