@@ -204,6 +204,32 @@ test('disconnect/reconnect of owner does not lead to another group creation',asy
  assert.equal(disconnected.state,'WAITING_OWNER_WHATSAPP');
  assert.equal(create,1);
 });
+test('Consecom master recovers known real group even when group list is empty',async()=>{
+ const oldTenant=process.env.PROSPECTOR_TENANT_ID;
+ const oldImport=process.env.PROSPECTOR_GROUP_IMPORT_JID;
+ const oldInternal=process.env.PROSPECTOR_TENANT_INTERNAL;
+ delete process.env.PROSPECTOR_TENANT_ID;delete process.env.PROSPECTOR_TENANT_INTERNAL;
+ process.env.PROSPECTOR_GROUP_IMPORT_JID=jid;
+ let creates=0,reads=0;
+ try{
+  const r=await reconcilePrivateGroup({
+   getSessions:pool([...connected,session('prospector-second',second)]),
+   request:async(url,opts)=>{
+    if(opts?.method==='POST'){creates++;throw Error('Must not create duplicate');}
+    reads++;return url.endsWith(encodeURIComponent(jid))?group([owner,second]):{status:true,data:[]};
+   },at:date('12:00:00')
+  });
+  assert.equal(r.state,'RECOVERED');
+  assert.equal(r.members,2);
+  assert.equal(privateGroupState().group_jid,jid);
+  assert.equal(creates,0);
+  assert.equal(reads,1);
+ }finally{
+  if(oldTenant===undefined)delete process.env.PROSPECTOR_TENANT_ID;else process.env.PROSPECTOR_TENANT_ID=oldTenant;
+  if(oldImport===undefined)delete process.env.PROSPECTOR_GROUP_IMPORT_JID;else process.env.PROSPECTOR_GROUP_IMPORT_JID=oldImport;
+  if(oldInternal===undefined)delete process.env.PROSPECTOR_TENANT_INTERNAL;else process.env.PROSPECTOR_TENANT_INTERNAL=oldInternal;
+ }
+});
 test('each tenant must have an authenticated scope; master/demo do not create groups',async()=>{
  const previous=process.env.PROSPECTOR_TENANT_ID;
  delete process.env.PROSPECTOR_TENANT_ID;
