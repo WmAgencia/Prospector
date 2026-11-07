@@ -874,3 +874,19 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .fr-review-card-footer>.fr-delete-action:hover{color:#92323c;border-color:#e9b7bc;background:#fff6f6}
 .fr-review-stats .secondary{border:0;background:#f5f1ff;color:#583c99;font-size:11px;padding:6px 10px}
 .prospector-dialog [data-dialog-cancel]{cursor:pointer}
+
+
+/* Review findings independently of approved Francisca skills */
+.fr-analysis-suggestions{margin:20px 0 23px;padding:20px;border:1px solid #d9cef9;border-radius:17px;background:linear-gradient(135deg,#f7f3ff,#fdfcff)}
+.fr-analysis-suggestions-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}
+.fr-analysis-suggestions-head h4{font-size:19px;letter-spacing:-.35px;color:#251b45;margin:5px 0 7px}
+.fr-analysis-suggestions-head p{font-size:12px;line-height:1.5;color:#625a78;max-width:620px;margin:0}
+.fr-analysis-suggestions-head .tag{white-space:nowrap}
+.fr-analysis-suggestions>.fr-review-grid{margin-bottom:0}
+.fr-suggestion-card{background:#fff;border-color:#e0d5f4}
+.fr-suggestion-card .fr-review-symbol{background:#eadfff;color:#6944c0}
+.fr-suggestion-card.is-ignored{opacity:.72}
+.fr-suggestion-card .fr-review-card-footer{display:flex!important;align-items:center;gap:6px}
+.fr-suggestion-card .fr-review-card-footer button{flex:1}
+.fr-suggestion-added{font-size:11px;color:#277348;font-weight:700;line-height:1.5}
+@media(max-width:740px){.fr-analysis-suggestions{padding:14px}.fr-analysis-suggestions-head{flex-direction:column}}
