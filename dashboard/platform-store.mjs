@@ -202,7 +202,7 @@ export function openPlatformStore(root){
     db.prepare('UPDATE free_trial_claims SET status=?,reviewed_at=?,evidence_reference=?,verification_method=?,cpf_ciphertext=NULL WHERE client_id=? AND status=?')
      .run(status,at,ref,method,clientId,'PENDING');
     if(approved)db.prepare('INSERT OR IGNORE INTO credit_events(id,client_id,amount,reason,reference,created_at) VALUES(?,?,?,?,?,?)')
-     .run(crypto.randomUUID(),clientId,TRIAL_FREE_CREDITS,'Teste grátis verificado: 50 abordagens','free-trial:'+clientId,at);
+     .run(crypto.randomUUID(),clientId,TRIAL_FREE_CREDITS,'Teste grátis verificado: '+TRIAL_FREE_CREDITS+' abordagens','free-trial:'+clientId,at);
     db.exec('COMMIT');return {status,credits:approved?TRIAL_FREE_CREDITS:0,alreadyReviewed:false};
    }catch(e){db.exec('ROLLBACK');throw e;}
   },
