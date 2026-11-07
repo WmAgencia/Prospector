@@ -6,9 +6,10 @@ import path from 'node:path';
 import {openPlatformStore} from '../dashboard/platform-store.mjs';
 test('self-service signup stores a password hash and supports email or Brazilian phone without granting unlimited access',()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-signup-')),s=openPlatformStore(dir);
- const input={name:'Agência fictícia',email:'SIGNUP@example.test',phone:'11999990001',password:'synthetic-password-only',privacyAcknowledged:true,is_internal:1,unlimited:true};
- const c=s.signup(input);assert.equal(c.is_internal,0);assert.equal(s.publicClient(c).unlimited,false);assert.equal(s.balance(c.id),0);
- const auth=s.db.prepare('SELECT * FROM client_passwords WHERE client_id=?').get(c.id);assert.notEqual(auth.password_hash,input.password);assert.ok(auth.salt);assert.equal(auth.privacy_version,'2026-11-05');
+ process.env.PROSPECTOR_CPF_HMAC_SECRET='unit-test-secret-key-that-is-intentionally-nonproduction';
+ const input={name:'Maria Silva',cpf:'529.982.247-25',email:'SIGNUP@example.test',phone:'11999990001',password:'synthetic-password-only',privacyAcknowledged:true,is_internal:1,unlimited:true};
+ const c=s.signup(input);assert.equal(c.is_internal,0);assert.equal(s.publicClient(c).unlimited,false);assert.equal(s.balance(c.id),0);assert.equal(s.publicClient(c).trial.status,'PENDING');
+ const auth=s.db.prepare('SELECT * FROM client_passwords WHERE client_id=?').get(c.id);assert.notEqual(auth.password_hash,input.password);assert.ok(auth.salt);assert.equal(auth.privacy_version,'2026-11-07-free-trial-pending');
  assert.equal(s.signin({identifier:'signup@example.test',password:input.password}).id,c.id);
  assert.equal(s.signin({identifier:'(11) 99999-0001',password:input.password}).id,c.id);
  assert.equal(s.signin({identifier:'+55 11 99999-0001',password:input.password}).id,c.id);
@@ -21,4 +22,5 @@ test('self-service signup stores a password hash and supports email or Brazilian
  assert.equal(owner.unlimited,true);assert.equal(s.signin({identifier:'11999990002',password:'owner-test-password'}).is_internal,1);
  assert.throws(()=>s.configurePrimary({name:'Outra',email:'another-owner@example.test',phone:'11999990003',password:'owner-test-password'}));
  assert.equal(s.list().filter(x=>x.unlimited).length,1);s.db.close();fs.rmSync(dir,{recursive:true,force:true});
+ delete process.env.PROSPECTOR_CPF_HMAC_SECRET;
 });
