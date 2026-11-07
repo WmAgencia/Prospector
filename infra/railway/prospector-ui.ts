@@ -54,7 +54,10 @@ const accessPage="<!doctype html>\n<html lang=\"pt-BR\"><head>\n<meta charset=\"
 
 async function proxy(req:Request){
  const url=new URL(req.url);
- const clientCookie=(req.headers.get("cookie")||"").split(";").map(x=>x.trim()).find(x=>x.startsWith("ps_client="))||"";
+ const incomingCookies=(req.headers.get("cookie")||"").split(";").map(x=>x.trim());
+ const clientCookie=incomingCookies.find(x=>x.startsWith("ps_client="))||"";
+ // The backend, not the gateway, authenticates this signed workspace cookie.
+ const workspaceCookie=clientCookie?(incomingCookies.find(x=>x.startsWith("ps_primary_mode="))||""):"";
  const masterAuthorized=authorized(req);
  const publicClientAccess=new Set(["/","/conheca","/cadastro","/entrar","/landing.css","/landing.js","/product-theme.css","/product-icons.js","/client/access","/api/platform/login","/api/platform/logout","/api/platform/signup","/api/platform/signin"]).has(url.pathname);
  const oauthBrowser=url.pathname==="/oauth/authorize"||url.pathname==="/oauth/approve";
@@ -84,7 +87,7 @@ async function proxy(req:Request){
   // credentials for an unauthenticated client or retry it as the administrator.
   if(!publicMcp){
    const cookie=masterAuthorized?await getBackendCookie():"";
-   if(cookie||clientCookie)headers.set("Cookie",[cookie,clientCookie].filter(Boolean).join("; "));
+   if(cookie||clientCookie)headers.set("Cookie",[cookie,clientCookie,workspaceCookie].filter(Boolean).join("; "));
   }
   // Preserve only the short-lived OAuth approval cookie, never browser session cookies.
   if(oauthBrowser){const approval=(req.headers.get("cookie")||"").split(";").map(x=>x.trim()).find(x=>x.startsWith("ps_mcp_approval="));if(approval)headers.set("Cookie",headers.get("Cookie")+"; "+approval);}
@@ -124,7 +127,7 @@ Bun.serve({hostname:"0.0.0.0",port:Number(Bun.env.PORT||3000),async fetch(req:Re
  const url=new URL(req.url),path=url.pathname;
  if(path==="/health")return new Response("OK",{status:200,headers:baseHeaders("text/plain; charset=utf-8")});
  if(path==="/favicon.ico")return new Response(null,{status:204,headers:{"Cache-Control":"public, max-age=86400"}});
- if(path==="/master"&&req.method==="GET"&&!authorized(req))return new Response(null,{status:302,headers:{"Location":"/access","Cache-Control":"no-store"}});
+ if(path==="/master"&&req.method==="GET"&&!authorized(req)&&!(req.headers.get("cookie")||"").split(";").some(x=>x.trim().startsWith("ps_client=")))return new Response(null,{status:302,headers:{"Location":"/entrar","Cache-Control":"no-store"}});
  if(path==="/api/events")return new Response(null,{status:204,headers:{"Cache-Control":"no-store"}});
  if(path==="/access"&&req.method==="GET"){if(authorized(req))return new Response(null,{status:302,headers:{"Location":"/master","Cache-Control":"no-store"}});return new Response(accessPage,{status:200,headers:{...baseHeaders("text/html; charset=utf-8"),"Content-Security-Policy":"default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"}});}
  if(path==="/_access/exchange"&&req.method==="POST"){
