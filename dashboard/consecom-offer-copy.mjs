@@ -1,0 +1,7 @@
+// Cópia fiel da transcrição do áudio original de proposta da Consecom.
+// A variante escrita muda exclusivamente a frase que menciona o canal "áudio".
+export const ORIGINAL_OFFER_AUDIO_TRANSCRIPT="Vou te explicar aqui por áudio, que é mais fácil.\n\nEntão, minha agência precisa entregar um portfólio do seu nicho na segunda-feira. E aí, qual que é a questão? A gente precisa de mais um site desse nicho, entendeu? Pra essa empresa desse projeto que a gente está concluindo agora.\n\nE eu estou disposto a tirar a maior parte do valor do nosso site, que você pagaria de dois mil e quinhentos reais a três mil reais. Eu estou disposto a te oferecer ele por quinhentos e cinquenta reais, mais um domínio, tá? Por um ano aí, de graça.\n\nE a gente faz um Master SEO, né, que é pra você ficar escalado ali nas pesquisas do Google.\n\nE isso daí é pra você permitir que a gente divulgue o seu site. Então, além disso, você ainda vai receber a nossa divulgação ali no nosso Instagram, no portfólio, né, e também no nosso site, que a gente sempre coloca as pessoas que vão fazer parte do nosso portfólio, a gente coloca lá no nosso site, entendeu?\n\nE aí eu queria saber se faz sentido pra você, se a gente conseguiria trabalhar dessa forma. Tenho certeza que vai ajudar vocês, né? Nenhum cliente que faz site com a gente sai insatisfeito e, sem dúvidas nenhuma, também vai ajudar muito a gente aqui.";
+export const OFFER_AB_TEXT=ORIGINAL_OFFER_AUDIO_TRANSCRIPT.replace(
+ 'Vou te explicar aqui por áudio, que é mais fácil.',
+ 'Vou te explicar aqui, que é mais fácil.'
+);
