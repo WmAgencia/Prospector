@@ -854,10 +854,14 @@ if(process.env.WHATSAPP_TRANSPORT==='waakg'){
 // Registration alone cannot create it: the worker waits until the QR pairing
 // confirms at least one real number. This is not tied to outreach permissions.
 if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_DEMO_MODE!=='true'){
+ let lastPrivateGroupState='';
  const checkPrivateGroup=()=>{
   reconcilePrivateGroup().then(result=>{
-   if(['CREATED','RECOVERED','MEMBERSHIP_PENDING','UNEXPECTED_GROUP_MEMBER'].includes(result.state))
-    console.info('[private group]',JSON.stringify({state:result.state,members:result.members||null,missing:result.missing||0}));
+   if(result.state!==lastPrivateGroupState&&
+      ['CREATED','RECOVERED','MEMBERSHIP_PENDING','READY','GROUP_MATCH_AMBIGUOUS','UNEXPECTED_GROUP_MEMBER','CREATION_RETRY'].includes(result.state)){
+    console.info('[private group]',JSON.stringify({state:result.state,members:result.members||null,missing:result.missing||0,tenantScoped:true}));
+   }
+   lastPrivateGroupState=result.state;
   }).catch(error=>console.warn('[private group]',String(error?.message||error).slice(0,120)));
  };
  const privateGroupTimer=setInterval(checkPrivateGroup,60*1000);
