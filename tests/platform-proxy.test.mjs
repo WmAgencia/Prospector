@@ -33,6 +33,16 @@ test('public proxy forwards client sessions without borrowing or retrying with m
  assert.ok(signedCookies.some(x=>x.startsWith('ps_primary_mode=')),'Master workspace mode cookie must be forwarded');
  const login=await send('/api/platform/login',{method:'POST',body:{token:'client-token'}});assert.match(login.headers.get('set-cookie'),/^ps_client=/);assert.equal(calls[0].cookie,'');
  calls.length=0;assert.equal((await send('/api/platform/context',{cookie:'ps_client=forged'})).status,401);assert.equal(calls.length,1);assert.equal(calls[0].cookie,'ps_client=forged');
+ calls.length=0;
+ assert.equal((await send('/api/platform/context',{cookie:'ps_client=issued-owner; ps_primary_mode=owner-master'})).status,401);
+ assert.equal(calls[0].cookie,'ps_client=issued-owner; ps_primary_mode=owner-master','Signed Master mode must reach the backend');
+ calls.length=0;
+ assert.equal((await send('/master',{cookie:'ps_client=issued-owner; ps_primary_mode=owner-master'})).status,200);
+ assert.equal(calls[0].p,'/master','Signed-in primary owner must reach the backend /master route');
+ assert.equal((await send('/master')).status,302,'Non-authenticated browser must enter the login flow');
+ calls.length=0;
+ assert.equal((await send('/api/platform/workspace',{method:'POST',cookie:'ps_client=issued-owner; ps_primary_mode=owner-master',body:{mode:'production'}})).status,200);
+ assert.equal(calls[0].cookie,'ps_client=issued-owner; ps_primary_mode=owner-master','Workspace switching preserves both signed cookies');
  assert.equal((await send('/api/platform/login',{method:'POST',origin:'https://evil.example',body:{token:'x'}})).status,403);
  const masterLogin=await send('/_access/exchange',{method:'POST',body:{password:env.ACCESS_LOGIN_PASSWORD}});const cookie=masterLogin.headers.get('set-cookie').split(';')[0];calls.length=0;
  const opened=await send('/api/platform/clients/fictitious/open',{method:'POST',cookie,body:{}});assert.equal(opened.status,200);assert.match(opened.headers.get('set-cookie'),/^ps_client=opened-client/);assert.equal(calls[0].p,'/api/auth/exchange');assert.equal(calls.at(-1).cookie,'ps_session=internal-master');
