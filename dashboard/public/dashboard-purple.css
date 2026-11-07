@@ -864,3 +864,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  .fr-setup-widget{width:calc(100vw - 24px)!important;left:12px!important;bottom:10px!important}
  .fr-setup-widget.is-minimized{width:min(258px,calc(100vw - 24px))!important}
 }
+
+
+/* Short readable training summaries and consistent actions on every card. */
+.fr-review-card>p{line-height:1.55;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;line-clamp:4;overflow:hidden;max-height:6.2em;margin-bottom:4px}
+.fr-review-card-footer{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:auto;padding-top:10px}
+.fr-review-card-footer>button{width:100%;min-width:0;justify-content:center;border-radius:9px;padding:9px 11px;font-weight:650;font-size:11px;white-space:nowrap}
+.fr-review-card-footer>.fr-delete-action{border-color:#f0dfe0;background:#fff;color:#ab4a54}
+.fr-review-card-footer>.fr-delete-action:hover{color:#92323c;border-color:#e9b7bc;background:#fff6f6}
+.fr-review-stats .secondary{border:0;background:#f5f1ff;color:#583c99;font-size:11px;padding:6px 10px}
+.prospector-dialog [data-dialog-cancel]{cursor:pointer}
