@@ -197,7 +197,7 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
  if(process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED!=='true')return {status:'DISABLED'};
  if(!configured())return {status:'NOT_CONFIGURED'};
  if(getSetting('discovery_auto_enabled',false)!==true)return {status:'DISABLED_BY_OPERATOR'};
- if(hourSP(at)<5)return {status:'BEFORE_START'};
+ if(hourSP(at)<Number(getSetting('discovery_start_hour',0)))return {status:'BEFORE_START'};
  autoMapsLocked=true;
  try{
   // Import only explicitly auto-researched data. Do not silently import a
