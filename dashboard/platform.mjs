@@ -73,7 +73,17 @@ async function worker(client){
  if(starting.has(client.id))return starting.get(client.id);
  const pending=(async()=>{
   const port=await freePort();fs.mkdirSync(path.join(root,'clients',client.id),{recursive:true});
-  const child=spawn(process.execPath,[fileURLToPath(new URL('./server.mjs',import.meta.url))],{env:workerEnvironment(client,port),stdio:['ignore','ignore','ignore'],windowsHide:true});
+  const child=spawn(process.execPath,[fileURLToPath(new URL('./server.mjs',import.meta.url))],{env:workerEnvironment(client,port),stdio:['ignore','ignore','ignore','ipc'],windowsHide:true});
+  // Never forward arbitrary child output. Relay only sanitized status values
+  // from the WhatsApp group lifecycle for operational proof and troubleshooting.
+  child.on('message',value=>{
+   if(value?.type!=='PRIVATE_GROUP_STATUS'||typeof value.state!=='string')return;
+   const accepted=new Set(['CREATED','READY','RECOVERED','MEMBERSHIP_PENDING','GROUP_MATCH_AMBIGUOUS','UNEXPECTED_GROUP_MEMBER','CREATION_RETRY','GROUP_METADATA_UNAVAILABLE','WAITING_WHATSAPP']);
+   if(!accepted.has(value.state))return;
+   console.info('[tenant private group]',JSON.stringify({state:value.state,
+    members:Number.isInteger(value.members)?value.members:null,
+    missing:Number.isInteger(value.missing)?value.missing:0}));
+  });
   const entry={port,child};workers.set(client.id,entry);child.on('exit',()=>{if(workers.get(client.id)===entry)workers.delete(client.id);});child.on('error',()=>workers.delete(client.id));
   for(let i=0;i<100;i++){
    if(child.exitCode!==null)throw Error('Não foi possível iniciar este espaço de trabalho');
