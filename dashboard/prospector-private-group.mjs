@@ -97,6 +97,31 @@ export async function reconcilePrivateGroup({getSessions=waSessionList,request=w
    const reply=await request(path);
    return listEntries(reply);
   };
+  // Recover a group explicitly created by this account before this worker
+  // was enabled (or by a one-time authenticated activation). Never duplicate
+  // an already existing group with the exact managed title.
+  if(!saved){
+   try{entries=await fetchGroups();}
+   catch{return {state:'GROUP_LOOKUP_UNAVAILABLE'};}
+   const existing=entries.filter(x=>String(x?.subject||'')===PROSPECTOR_GROUP_NAME);
+   if(existing.length>1)return {state:'GROUP_MATCH_AMBIGUOUS'};
+   if(existing.length===1){
+    const jid=groupId(existing[0]?.jid||existing[0]?.id);
+    if(!jid)return {state:'GROUP_MATCH_AMBIGUOUS'};
+    let metadata;
+    try{metadata=await request(path+'/'+encodeURIComponent(jid));}
+    catch{return {state:'GROUP_METADATA_UNAVAILABLE'};}
+    const memberSet=getMembership(metadata);
+    if(metadata?.subject!==PROSPECTOR_GROUP_NAME||!memberSet||memberSet.unknown||
+      !memberSet.numbers.has(ownerNumber)||
+      [...memberSet.numbers].some(n=>!ownedNumbers.has(n))){
+     return {state:'GROUP_MATCH_AMBIGUOUS'};
+    }
+    saveGroup({ownerSession,ownerNumber,groupJid:jid,state:'READY',attemptedAt:at.toISOString()});
+    audit('PRIVATE_GROUP_EXISTING_RECOGNIZED',null,{groupOnlyOwnNumbers:true,members:memberSet.numbers.size});
+    return {state:'RECOVERED',groupCreated:true,members:memberSet.numbers.size};
+   }
+  }
   if(saved?.group_jid){
    if(!groupId(saved.group_jid))return {state:'INVALID_SAVED_GROUP'};
    // Live Baileys group metadata is authoritative: the WA-AKG database list
