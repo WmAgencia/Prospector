@@ -23,8 +23,10 @@ const PARTICIPANT=/^\d{10,15}@(s\.whatsapp\.net|lid)$/;
 const GROUP_ECHO_LOOKBACK=7*86400_000;
 // Canonicalize line endings / invisible Unicode / whitespace across devices.
 export const canonicalGroupText=value=>String(value??'').normalize('NFKC')
- .replace(/[\u200b-\u200f\u2060\ufeff]/g,'').replace(/\r\n?/g,'\n')
- .replace(/[ \t]+/g,' ').trim();
+ .replace(/[\u200b-\u200f\u2060\ufeff]/g,'')
+ // Cross-device formatting changes tabs/newlines/indentation in quoted text.
+ // Treat those as the same outbound reply for loop detection.
+ .replace(/\s+/g,' ').trim();
 export const groupTextHash=value=>crypto.createHash('sha256').update(canonicalGroupText(value)).digest('hex');
 export const looksLikeAutomatedReport=value=>{
  const x=canonicalGroupText(value);
