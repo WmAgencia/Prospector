@@ -30,8 +30,8 @@ const root=q("#app");
 let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
-let trainingReviewSearch='',trainingShowComposer=false,trainingSetupMinimized=false;
-try{trainingSetupMinimized=sessionStorage.getItem('prospector-setup-minimized')==='1';}catch{}
+let trainingReviewSearch='',trainingShowComposer=false,trainingSetupMinimized=true;
+try{trainingSetupMinimized=sessionStorage.getItem('prospector-setup-minimized')!=='0';}catch{}
 let waAccountsLastCheck=0;
 let outreachHours={start:'08:00',end:'17:30'};
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
@@ -114,13 +114,19 @@ function activationModal(){
 }
 function franciscaOnboarding(){
  if(platformContext.role==='master')return '';
- const w=waAccounts.length?waAccounts.every(item=>item.connected):!!wa?.connected;
+ const connectedIds=waAccounts.filter(item=>item.connected===true).map(item=>String(item.session_id||'')).filter(Boolean);
+ const connected=connectedIds.length>0||wa?.connected===true;
  const training=!!trainingState?.profile;
- const analyzed=!!trainingState?.runs?.some(x=>x.status==='REVIEW'||x.status==='APPROVED');
+ const recentCompleted=(trainingState?.runs||[]).find(x=>x.status==='REVIEW'||x.status==='APPROVED');
+ const analyzedIds=new Set(Array.isArray(recentCompleted?.details?.sessions)?recentCompleted.details.sessions:[]);
+ // Never count a new connected channel as analyzed until a later run includes it.
+ const needsFreshAnalysis=connectedIds.length>0&&connectedIds.some(id=>!analyzedIds.has(id));
+ const analyzed=!!recentCompleted&&!needsFreshAnalysis;
+ const hasNewChannel=!!recentCompleted&&needsFreshAnalysis;
  const stages=[
-  {title:'Conectar todos os WhatsApps',sub:'Adicione e conecte todos os seus números.',done:w,tab:'connections',action:'Conectar'},
+  {title:'Conectar WhatsApp',sub:connectedIds.length?connectedIds.length+' número(s) online. Pode adicionar mais quando quiser.':'Conecte pelo menos um número para começar.',done:connected,tab:'connections',action:'Conectar'},
   {title:'Treinar a Francisca',sub:'Explique suas regras e aprove o treinamento.',done:training,tab:'training',action:'Treinar'},
-  {title:'Analisar conversas',sub:'Ensine o jeito de atender a partir de históricos autorizados.',done:analyzed,tab:'training',action:'Analisar'}
+  {title:hasNewChannel?'Analisar novo WhatsApp':'Analisar conversas',sub:hasNewChannel?'Um novo número foi conectado. Atualize o treinamento com os atendimentos autorizados.':'Ensine o jeito de atender a partir de históricos autorizados.',done:analyzed,tab:'training',action:'Analisar'}
  ];
  if(stages.every(x=>x.done))return '';
  const done=stages.filter(x=>x.done).length;
@@ -407,13 +413,13 @@ function trainingProfile(t){
 function trainingAnalysis(t){
  const run=t.runs?.[0]||null,running=run?.status==='RUNNING';
  const percent=Math.max(0,Math.min(100,Number(run?.details?.percent||0)));
- const connected=waAccounts.length>0?waAccounts.every(x=>x.connected):!!wa?.connected;
- const count=waAccounts.length?waAccounts.filter(x=>x.connected).length:(wa?.connected?1:0);
+ const count=Math.max(waAccounts.filter(x=>x.connected===true).length,wa?.connected===true?1:0);
+ const connected=count>0;
  const ready=!!t.profile&&connected;
  return '<section class="panel fr-analysis"><div class="heading"><div><span class="kicker">ÚLTIMA ETAPA · APRENDER COM SEUS ATENDIMENTOS</span><h3>Analisar conversas do WhatsApp</h3><p>Depois do treinamento, a Francisca identifica como sua equipe conversa, pergunta e responde. As sugestões ficam aguardando sua revisão.</p></div><span class="tag '+(run?.status==='REVIEW'?'green':'')+'">'+(running?'Analisando em segundo plano':run?.status==='REVIEW'?'Análise concluída':'Etapa final')+'</span></div>'+
  (!t.profile?'<div class="fr-analysis-gate"><strong>Finalize e aprove o treinamento primeiro</strong><p>Conclua a conversa com a Francisca e revise as orientações acima para liberar a análise.</p></div>':'')+
- (!connected?'<div class="training-connect-notice"><span class="training-connection-icon">'+glyph('connections')+'</span><div><strong>Conecte todos os seus WhatsApps</strong><p>Conectados: '+count+' de '+(waAccounts.length||1)+'. A análise só começa quando os números cadastrados estiverem online.</p></div><button type="button" class="primary" data-tab="connections">Conectar números</button></div>':
- '<p class="fr-analysis-ready">✓ '+count+' número(s) conectado(s). Os dados serão analisados somente em conversas comerciais elegíveis e autorizadas.</p>')+
+ (!connected?'<div class="training-connect-notice"><span class="training-connection-icon">'+glyph('connections')+'</span><div><strong>Conecte pelo menos um WhatsApp</strong><p>Você escolhe quantos números deseja conectar. A análise fica disponível assim que ao menos um estiver online.</p></div><button type="button" class="primary" data-tab="connections">Conectar números</button></div>':
+ '<p class="fr-analysis-ready">✓ '+count+' número(s) conectado(s). É possível analisar agora; novos números poderão ser analisados depois.</p>')+
  (running?'<div class="fr-analysis-progress" role="progressbar" aria-label="Andamento da análise de conversas" aria-valuenow="'+percent+'" aria-valuemin="0" aria-valuemax="100"><div><strong>Analisando mensagens...</strong><span>'+percent+'%</span></div><i><b style="width:'+percent+'%"></b></i><p>Pode continuar usando as outras telas. O processamento ocorre no servidor e o progresso é salvo.</p></div>':
  run?.status==='REVIEW'?'<div class="fr-analysis-result"><strong>✓ Conversas analisadas</strong><p>'+Number(run.details?.conversations||0)+' conversa(s) incluída(s). A Francisca preparou sugestões de estilo e atendimento para o gestor revisar nos cards acima.</p><button type="button" class="secondary compact" data-action="training-review-focus">Revisar sugestões</button></div>':
  run?.status==='FAILED'?'<p class="fr-analysis-warning">A análise anterior não terminou: '+esc(run.details?.error||'Tente novamente após verificar a conexão.')+'</p>':'')+
