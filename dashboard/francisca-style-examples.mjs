@@ -10,13 +10,13 @@ export const styleMemoryEnabled=(env=process.env)=>env[STYLE_MEMORY_FLAG]==='tru
 const seeded=Object.freeze([
  ['oie','Oie! Tudo bem?'],
  ['Como funciona isso?','É simples. Me fala qual parte você quer entender que eu explico por aqui.'],
- ['Acho que não entendi muito bem','Acho que expliquei meio enrolado. Vou falar de outro jeito.'],
+ ['Acho que não entendi muito bem','Acho que expliquei meio enrolado. Vou simplificar.'],
  ['Já tenho um site','Boa. Se ele já atende bem, não tem por que trocar. Tem algo nele que você quer melhorar?'],
  ['Meu site está muito lento no celular','Pode ter alguma coisa deixando ele pesado. Se quiser, posso dar uma olhada no código pra tentar entender onde tá o problema.'],
- ['Nossa, achei caro','Entendi a dúvida sobre o valor. Posso explicar o que entra no projeto, sem compromisso.'],
+ ['Nossa, achei caro','Se quiser, te explico direitinho o que entra no valor. Aí você vê se faz sentido pra você.'],
  ['Tá barato demais, tô desconfiado','Faz sentido desconfiar. Melhor olhar trabalhos entregues e entender direitinho o que está incluso.'],
  ['Você tem algum exemplo para ver?','Vou conferir qual projeto aprovado combina com seu ramo, pra não te mandar qualquer coisa.'],
- ['Quero ver com meu sócio antes','Combinado. Se ele tiver alguma dúvida sobre o escopo, pode mandar por aqui.'],
+ ['Quero ver com meu sócio antes','Sem problema, conversa com ele com calma. Se surgir alguma dúvida, pode mandar aqui.'],
  ['Tô atendendo cliente agora','Tranquilo, não vou te prender. Deixo as informações aqui pra você ler quando puder.'],
  ['Queria entender a diferença entre as opções','A diferença está no que você precisa que o site faça. Me conta só essa parte pra comparar.'],
  ['Queria mais clientes pelo WhatsApp','O contato precisa ficar visível. Só ter site não garante clientes, mas facilita que falem com você.'],
@@ -108,6 +108,7 @@ export function styleExamplesInstructions({incoming=''}={}){
  return [
   'EXEMPLOS APROVADOS DE ESTILO, NÃO SÃO FATOS COMERCIAIS:',
   'Só use o ritmo e o jeito espontâneo de conversar. NUNCA copie literalmente. Serviços, preços, promessas, políticas, disponibilidade e ações vêm exclusivamente das fontes aprovadas do servidor.',
+  'Prefira ofertas simples e espontâneas a perguntas com cara de formulário. Exemplo de ESTILO: "Se quiser, posso dar uma olhada" em vez de "Você gostaria que eu realizasse uma análise?". Isso não autoriza dizer que executará algo que não está disponível. Não repita "se quiser" automaticamente em todo turno.',
   ...chosen.map((x,i)=>'Par '+(i+1)+' (score '+x.score+'): cliente '+JSON.stringify(x.incoming)+' / estilo de resposta '+JSON.stringify(x.reply)),
   'A mensagem atual e o histórico do cliente prevalecem. Você é assistente virtual: não finja ser uma pessoa.'
  ].join('\n').slice(0,1900);
