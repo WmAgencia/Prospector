@@ -79,7 +79,30 @@ export function reviewStyleExample({id:exampleId,action}={}){
  else run("UPDATE francisca_style_examples SET status='APPROVED',approved_at=? WHERE id=? AND status='PENDING'",now(),row.id);
  return {ok:true};
 }
-const stop=new Set(['a','as','o','os','e','de','da','do','das','dos','um','uma','pra','para','por','no','na','nos','nas','que','eu','voce','voces','vcs','vc','me','te','se','isso','aqui','esse','essa','este','esta','meu','minha','com','tem','ser','vai','como','mas','ja','so','to','ta','entao']);
+// Category compatibility prevents lexical overlap from cross-pollinating
+// unrelated customer intents (e.g. "não entendi" vs "não me contate").
+export function styleIntentCategory(text=''){
+ const t=norm(text);
+ if(/^(?:oi+|oie+|ola+|opa|bom dia|boa tarde|boa noite)[!?.\s]*$/.test(t))return 'greeting';
+ if(/\b(?:nao quero mais receber|pare de mandar|nao me mande|sem interesse|remova meu numero)\b/.test(t))return 'optout';
+ if(/\b(?:nao entendi|nao compreendi|confuso|explica mais simples|entendi nada|falar mais simples)\b/.test(t))return 'confusion';
+ if(/\b(?:barato demais|muito barato|desconfi|golpe|confiavel)\b/.test(t))return 'trust';
+ if(/\b(?:caro|desconto|fora do orcamento|valor alto|compensa pagar)\b/.test(t))return 'budget';
+ if(/\b(?:site|pagina|carregamento|celular)\b/.test(t)&&/\b(?:lento|lentidao|demora|travando|trava|pesado|carrega|abrir)\b/.test(t))return 'slow_site';
+ if(/\b(?:socio|socia|vou pensar|consultar|responsavel|vou avaliar)\b/.test(t))return 'decision';
+ if(/\b(?:ocupad|atendendo|sem tempo|correria)\b/.test(t))return 'busy';
+ if(/\b(?:chave pix|pix|qr code)\b/.test(t))return 'pix';
+ if(/\b(?:cartao|parcel|credito)\b/.test(t))return 'card';
+ if(/\b(?:sou humano|voce e uma pessoa|voce e um robo|inteligencia artificial)\b/.test(t))return 'identity';
+ if(/\b(?:quero fechar|quero contratar|quero comprar|pode iniciar)\b/.test(t))return 'closing';
+ if(/\b(?:portfolio|exemplo|trabalhos entregues|site que voces fizeram)\b/.test(t))return 'proof';
+ if(/\b(?:seo|google)\b/.test(t))return 'seo';
+ if(/\b(?:site|wix|wordpress)\b/.test(t)&&/\b(?:tenho|ja existe|atual|uso)\b/.test(t))return 'existing_site';
+ if(/\b(?:oficina|mecanica|servicos|catalogo|produtos)\b/.test(t))return 'showcase';
+ if(/\b(?:valor|preco|quanto custa|quanto fica)\b/.test(t))return 'price';
+ return 'other';
+}
+const stop=new Set(['a','as','o','os','e','de','da','do','das','dos','um','uma','pra','para','por','no','na','nos','nas','que','eu','voce','voces','vcs','vc','me','te','se','isso','aqui','esse','essa','este','esta','meu','minha','com','tem','ser','vai','como','mas','ja','so','to','ta','entao','nao','mais','nada']);
 const words=x=>norm(x).replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(x=>x.length>=2&&!stop.has(x));
 const grams=x=>{const n=norm(x).replace(/[^a-z0-9]/g,'');const g=new Set();for(let i=0;i<n.length-2;i++)g.add(n.slice(i,i+3));return g;};
 const jaccard=(a,b)=>{if(!a.size||!b.size)return 0;let intersection=0;for(const x of a)if(b.has(x))intersection++;return intersection/(a.size+b.size-intersection);};
@@ -88,6 +111,7 @@ export function findStyleExamples({incoming='',limit=3}={}){
  const external=all("SELECT id,incoming,reply,source FROM francisca_style_examples WHERE status='APPROVED' ORDER BY approved_at DESC LIMIT 100");
  const corpus=[...seeded.map(([incoming,reply],i)=>({id:'built-in-'+i,incoming,reply,source:'SYNTHETIC_BUILTIN'})),...external];
  const query=new Set(words(incoming));if(!query.size)return [];
+ const topic=styleIntentCategory(incoming);
  const documents=corpus.map(x=>new Set(words(x.incoming)));
  const frequency=new Map();for(const doc of documents)for(const token of doc)frequency.set(token,(frequency.get(token)||0)+1);
  const weight=t=>Math.log(1+(corpus.length+1)/(frequency.get(t)||1));
@@ -97,8 +121,9 @@ export function findStyleExamples({incoming='',limit=3}={}){
   const overlap=[...query].filter(t=>documents[i].has(t));
   const lexical=overlap.reduce((n,t)=>n+weight(t),0)/total;
   const chars=jaccard(queryGrams,grams(row.incoming));
-  return {...row,score:Number((0.8*lexical+0.2*chars).toFixed(3))};
- }).filter(row=>row.score>=0.14)
+  return {...row,score:Number((0.8*lexical+0.2*chars).toFixed(3)),
+   topic:styleIntentCategory(row.incoming),matchedTerms:overlap.length};
+ }).filter(row=>row.topic===topic && row.matchedTerms>0 && row.score>=(topic==='other'?0.34:0.24))
   .sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id))
   .slice(0,Math.max(1,Math.min(3,Number(limit)||3)));
 }
