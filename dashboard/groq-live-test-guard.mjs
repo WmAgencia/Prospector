@@ -1,3 +1,4 @@
+import {isUnverifiedPixAction} from './francisca-lab-safety.mjs';
 // Deterministic guardrails shared by simulated evaluation and live single-number QA.
 // This is NOT model fine-tuning; Groq drafts remain generative.
 const normalize=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -16,6 +17,7 @@ export function testGreeting(date=new Date()){
 export function reviewGroqReply({inbound='',draft='',allowAveragePrice=false}={}){
  const s=String(draft||'').trim(),n=normalize(s),inText=normalize(inbound);
  if(!s||s.length>650)return {ok:false,code:'LENGTH'};
+ if(isUnverifiedPixAction(s))return {ok:false,code:'UNVERIFIED_PAYMENT_ACTION'};
  if(/[\x00-\x08\x0e-\x1f]/.test(s)||/\x60\x60\x60/.test(s))return {ok:false,code:'FORMAT'};
  if(/^\s*(?:pare|parar|stop|remover|nao me contate|nao quero mensagem)/.test(inText))return {ok:false,code:'INBOUND_OPTOUT'};
  if(/https?:\/\/|www\.|\bwa\.me\//i.test(s))return {ok:false,code:'UNVERIFIED_LINK'};
