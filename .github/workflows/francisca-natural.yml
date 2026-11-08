@@ -1,0 +1,36 @@
+name: Francisca Natural conversational layer
+on:
+  push:
+    branches:
+      - feature/francisca-conversacional-natural-v1
+    paths:
+      - dashboard/francisca-natural-conversation.mjs
+      - dashboard/ai-groq.mjs
+      - tests/francisca-natural-conversation.test.mjs
+      - .github/workflows/francisca-natural.yml
+  pull_request:
+    paths:
+      - dashboard/francisca-natural-conversation.mjs
+      - dashboard/ai-groq.mjs
+      - tests/francisca-natural-conversation.test.mjs
+      - .github/workflows/francisca-natural.yml
+  workflow_dispatch:
+jobs:
+  verify-natural-chat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify conversation integration syntax
+        run: |
+          node --check dashboard/francisca-natural-conversation.mjs
+          node --check dashboard/ai-groq.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --check tests/francisca-natural-conversation.test.mjs
+      - name: Test synthetic dialogue and production prompt routing
+        run: node --test tests/francisca-natural-conversation.test.mjs
