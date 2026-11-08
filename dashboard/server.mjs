@@ -39,6 +39,7 @@ import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs'
 import {dailyReport,reportText,targetNumber,scheduleReport} from './notifications.mjs';
 import {salesOutcomes} from './sales-outcomes.mjs';
 import {salesConversionFunnel} from './sales-conversion-funnel.mjs';
+import {nextConversationState} from './francisca-conversation-state.mjs';
 import {SITE_AVERAGE_PRICE_BRL} from './sales-policy.mjs';
 import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
@@ -641,13 +642,17 @@ async function handler(req,res){
    ).map(item=>({role:item.role,text:item.text.slice(0,350)})):[];
    lastNaturalPreviewAt=Date.now();
    const hasAssistant=history.some(item=>item.role==='assistant');
+   const simulationMemory=nextConversationState({},[
+    ...history.map(item=>({direction:item.role==='user'?'in':'out',body:item.text})),
+    {direction:'in',body:phrase}
+   ]);
    const prior=history.map(item=>(item.role==='user'?'Cliente: ':'Consecom: ')+item.text.replace(/[\r\n]+/g,' ')).join('\n');
    const result=await aiDraft({text:phrase,
     context:'SIMULAÇÃO INTERNA DE CONVERSA COM CLIENTE FICTÍCIO. Não há WhatsApp, lead, pagamento ou envio.\n'+prior,
-    audience:'PROSPECT_APPROACHED',commercialMode:'SIMULATION',dialogueState:{hasAssistantReply:hasAssistant}});
+    audience:'PROSPECT_APPROACHED',commercialMode:'SIMULATION',dialogueState:{hasAssistantReply:hasAssistant,salesMemory:simulationMemory}});
    return respond(res,result.ok?200:result.httpStatus||502,
     {ok:result.ok,answer:result.ok?result.draft:null,model:result.model||null,
-     naturalConversation:result.naturalConversation===true,version:NATURAL_CONVERSATION_VERSION,
+     naturalConversation:result.naturalConversation===true,commercialStage:result.commercialStage||null,version:NATURAL_CONVERSATION_VERSION,
      noWhatsappSend:true,code:result.code||null});
   }
 
