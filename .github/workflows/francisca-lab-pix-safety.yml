@@ -1,0 +1,50 @@
+name: Francisca PIX lab and real-reply safety
+on:
+  push:
+    branches:
+      - fix/francisca-lab-pix-seo-hallucination
+    paths:
+      - dashboard/francisca-lab-safety.mjs
+      - dashboard/francisca-approved-replies.mjs
+      - dashboard/francisca-consecom-policy.mjs
+      - dashboard/groq-live-test-guard.mjs
+      - dashboard/groq-sales-automation.mjs
+      - dashboard/platform.mjs
+      - dashboard/server.mjs
+      - tests/francisca-lab-pix-safety.test.mjs
+      - .github/workflows/francisca-lab-pix-safety.yml
+  pull_request:
+    paths:
+      - dashboard/francisca-lab-safety.mjs
+      - dashboard/francisca-approved-replies.mjs
+      - dashboard/francisca-consecom-policy.mjs
+      - dashboard/groq-live-test-guard.mjs
+      - dashboard/groq-sales-automation.mjs
+      - dashboard/platform.mjs
+      - dashboard/server.mjs
+      - tests/francisca-lab-pix-safety.test.mjs
+      - .github/workflows/francisca-lab-pix-safety.yml
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Parse server and payment guard modules
+        run: |
+          node --check dashboard/francisca-lab-safety.mjs
+          node --check dashboard/francisca-approved-replies.mjs
+          node --check dashboard/francisca-consecom-policy.mjs
+          node --check dashboard/groq-live-test-guard.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/platform.mjs
+          node --check dashboard/server.mjs
+          node --check tests/francisca-lab-pix-safety.test.mjs
+      - name: Test all reported turns and existing financial controls
+        run: node --test tests/francisca-lab-pix-safety.test.mjs tests/francisca-commercial-brain-v2.test.mjs tests/francisca-natural-conversation.test.mjs tests/sales-owner-policy.test.mjs tests/francisca-payment-review.test.mjs tests/outreach-consent-control.test.mjs
