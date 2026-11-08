@@ -65,6 +65,7 @@ export function workerEnvironment(client,port){
   // Natural conversation is an internal Consecom rollout. Explicitly pass the
   // flag to the internal child worker; NEVER enable it for customer/demo tenants.
   FRANCISCA_NATURAL_V1_ENABLED:client.is_internal===1&&process.env.FRANCISCA_NATURAL_V1_ENABLED==='true'?'true':'false',
+  FRANCISCA_COMMERCIAL_BRAIN_V2_ENABLED:client.is_internal===1&&process.env.FRANCISCA_COMMERCIAL_BRAIN_V2_ENABLED==='true'?'true':'false',
   // The legacy Consecom master already owns its imported group. Do not attach
   // the same JID to the Consecom internal child worker: duplicated workers
   // would otherwise both answer messages and send 08h reports to one group.

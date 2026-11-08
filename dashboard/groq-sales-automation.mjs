@@ -23,7 +23,8 @@ import {approvedConsecomAnswer,extractProposalEmail} from './francisca-approved-
 import {classifyContact,prospectorChatEligible} from './whatsapp-roles.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {readActiveTrainingMarkdown} from './training.mjs';
-import {configuredClosing} from './training-sales-extras.mjs';
+import {configuredClosing,evidenceStatus} from './training-sales-extras.mjs';
+import {commercialBrainEnabled,analyzeCommercialTurn,selectApprovedProof,commercialHandoffSummary} from './francisca-commercial-brain.mjs';
 import {paymentProposalForIncoming,reservePaymentProposal,paymentProposalSent,paymentDeliveryUnknown,paymentIntentStatus} from './sales-payment-flow.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
 import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,acceptPart,partsFor} from './groq-reply-channels.mjs';
@@ -126,6 +127,17 @@ export async function handleSalesTurn(providerId,deps={}){
  const dialogue=analyzeChatTurn({text:r.body,history:recentTurns,role:identity.role});
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
+ // The strategy engine reads only this tenant's recent thread, labeled memory,
+ // and explicitly approved portfolio evidence. No new contact/send permissions.
+ const salesBrain=commercialBrainEnabled()&&identity.role==='PROSPECT_APPROACHED';
+ const commercialPlan=salesBrain?analyzeCommercialTurn({
+  incoming:r.body,history:recentTurns,memory:commercialMemory,offerApproved:portfolioAllowed
+ }):null;
+ const verifiedProof=salesBrain?selectApprovedProof({
+  incoming:r.body,segment:r.segment,approved:evidenceStatus().approved
+ }):null;
+ if(salesBrain)dialogue.salesMemory=commercialMemory;
+ dialogue.offerApproved=portfolioAllowed;
  const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
  const intent=commercialIntent(r.body);
  const approvedReply=portfolioAllowed?approvedConsecomAnswer(r.body):null;
@@ -148,7 +160,8 @@ export async function handleSalesTurn(providerId,deps={}){
     recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:interest.evidence||r.body,notify:false});
     run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
     queueNotice('groq-hot:'+r.lead_id,'GROQ_HOT_LEAD',
-     interestNotice(r,interest.evidence),r.lead_id);
+     interestNotice(r,interest.evidence)+
+     (commercialPlan?'\n\n'+commercialHandoffSummary({plan:commercialPlan,memory:commercialMemory,business:r.business}):''),r.lead_id);
     audit('GROQ_INTEREST_ALERT_QUEUED',r.lead_id,{model:'groq',confidence:interest.confidence});
    }
   });
@@ -191,7 +204,7 @@ export async function handleSalesTurn(providerId,deps={}){
 
  // A one-word hello never requires an external model call.
  const draft=fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:strictApprovedReply?{ok:true,draft:strictApprovedReply,model:'APPROVED_CONSECOM_FOLLOWUP'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
-   await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
+   await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,approvedProof:verifiedProof,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+memoryPrompt(commercialMemory)+'\n'+
