@@ -45,7 +45,7 @@ export function generate100FranciscaScenarios(){
   messages.map((incoming,index)=>({
    id:category+'-'+String(index+1).padStart(2,'0'),
    category,incoming,index,
-   hasAssistantReply:index%3!==0,
+   hasAssistantReply:category==='greeting'?false:index%3!==0,
    reference:humanReferences[category],
    robotic:roboticReferences[category],
    kind:'SYNTHETIC'
