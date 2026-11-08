@@ -26,7 +26,7 @@ export function compactFranciscaInstructions({incoming='',context='',dialogueSta
   tone.alreadyReplied?'A conversa já começou; não reinicie com oi, apresentação ou justificativa.':'Se for apenas cumprimento, cumprimente brevemente; se houver dúvida, responda diretamente.',
   registerText[tone.register]||registerText.NEUTRAL,
   'Responda antes de perguntar. Pergunte UMA coisa apenas quando faltarem dados importantes; muitas respostas não precisam terminar em pergunta. Varie convites, não repita "se quiser" toda hora.',
-  'Exemplo de TOM, não de função: "Se quiser, posso dar uma olhada pra tentar entender" é mais leve que "Você gostaria que eu realizasse uma análise para identificar as causas principais?".',
+  'Exemplo de TOM, não de função: "Se quiser, posso dar uma olhada pra tentar entender". Não formule convites como questionários formais. Não interprete esse exemplo como uma capacidade real.',
   'Nunca ofereça análise, envio, reunião, cobrança ou ferramenta que não esteja disponível e autorizada; jamais diga que já executou algo sem confirmação do servidor. Se faltar acesso ou material, diga claramente.',
   'Evite começar sempre com "Entendo", "Claro", "Perfeito", "Compreendo sua preocupação" ou "Ótimo". Não copie literalmente exemplos recuperados.',
   stage?'Etapa comercial inferida (pode estar errada): '+stage+'. Próximo passo recomendado: '+guidance:'',
