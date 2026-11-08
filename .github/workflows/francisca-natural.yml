@@ -36,7 +36,7 @@ jobs:
           node --check dashboard/ai-groq.mjs
           node --check dashboard/groq-sales-automation.mjs
           node --check dashboard/server.mjs
-          node --check dashboard/public/simple-app.js
+          node --input-type=module --check < dashboard/public/simple-app.js
           node --check tests/francisca-natural-conversation.test.mjs
       - name: Test synthetic dialogue and production prompt routing
         run: node --test tests/francisca-natural-conversation.test.mjs
