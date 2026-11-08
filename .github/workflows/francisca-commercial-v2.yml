@@ -50,4 +50,4 @@ jobs:
           node --check dashboard/server.mjs
           node --input-type=module --check < dashboard/public/simple-app.js
       - name: Synthetic sales decision and checkout integrity tests
-        run: node --test tests/francisca-commercial-brain-v2.test.mjs tests/francisca-natural-conversation.test.mjs tests/francisca-context-continuity.test.mjs
+        run: node --test tests/francisca-commercial-brain-v2.test.mjs tests/francisca-natural-conversation.test.mjs tests/francisca-context-continuity.test.mjs tests/francisca-2-100-scenarios.test.mjs tests/francisca-duel-100.test.mjs tests/sales-owner-policy.test.mjs tests/outreach-consent-control.test.mjs
