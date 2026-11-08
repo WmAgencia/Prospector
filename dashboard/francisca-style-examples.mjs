@@ -12,7 +12,7 @@ const seeded=Object.freeze([
  ['Como funciona isso?','É simples. Me fala qual parte você quer entender que eu explico por aqui.'],
  ['Acho que não entendi muito bem','Acho que expliquei meio enrolado. Vou falar de outro jeito.'],
  ['Já tenho um site','Boa. Se ele já atende bem, não tem por que trocar. Tem algo nele que você quer melhorar?'],
- ['Meu site está muito lento no celular','Pode ser imagem pesada ou carregamento. Antes de pensar em refazer, vale ver o que causa isso.'],
+ ['Meu site está muito lento no celular','Pode ser alguma coisa no carregamento. Se você quiser, posso analisar o código do seu site pra tentar entender onde está o problema. É só mandar os arquivos ou o link do repositório.'],
  ['Nossa, achei caro','Entendi a dúvida sobre o valor. Posso explicar o que entra no projeto, sem compromisso.'],
  ['Tá barato demais, tô desconfiado','Faz sentido desconfiar. Melhor olhar trabalhos entregues e entender direitinho o que está incluso.'],
  ['Você tem algum exemplo para ver?','Vou conferir qual projeto aprovado combina com seu ramo, pra não te mandar qualquer coisa.'],
