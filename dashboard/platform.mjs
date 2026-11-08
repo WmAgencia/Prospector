@@ -62,6 +62,9 @@ export function workerEnvironment(client,port){
  const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined&&(!demo||!['WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD'].includes(k))).map(k=>[k,process.env[k]]));
  return {...env,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
   PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_DEMO_MODE:client.is_demo===1?'true':'false',
+  // Natural conversation is an internal Consecom rollout. Explicitly pass the
+  // flag to the internal child worker; NEVER enable it for customer/demo tenants.
+  FRANCISCA_NATURAL_V1_ENABLED:client.is_internal===1&&process.env.FRANCISCA_NATURAL_V1_ENABLED==='true'?'true':'false',
   // The legacy Consecom master already owns its imported group. Do not attach
   // the same JID to the Consecom internal child worker: duplicated workers
   // would otherwise both answer messages and send 08h reports to one group.
