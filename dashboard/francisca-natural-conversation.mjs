@@ -78,7 +78,7 @@ export function planNaturalTurn({incoming='',context='',dialogueState={}}={}){
  const related=relevantPolicies(message);
  const intent=related[0]?.id||'GENERAL';
  const register=conversationRegister(message);
- const detailed=/\b(?:detalh|completo|passo a passo|tudo|explica melhor|quais sao|qual a diferenca)\b/.test(norm(message))||message.length>260;
+ const detailed=/\b(?:detalh\w*|completo|passo a passo|tudo|explica melhor|quais sao|qual a diferenca)\b/.test(norm(message))||message.length>260;
  const alreadyReplied=dialogueState?.hasAssistantReply===true;
  // Existing history is carried by the trusted workflow: don't extract facts
  // from or store private messages in a global memory service.
