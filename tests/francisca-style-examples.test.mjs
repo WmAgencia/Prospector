@@ -7,6 +7,7 @@ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'francisca-style-example-'));
 process.env.PROSPECTOR_DATA_DIR=dir;
 process.env.FRANCISCA_STYLE_EXAMPLES_V1_ENABLED='true';
 process.env.FRANCISCA_NATURAL_V1_ENABLED='true';
+process.env.FRANCISCA_COMMERCIAL_BRAIN_V2_ENABLED='true';
 process.env.GROQ_API_KEY='synthetic-offline-placeholder';
 delete process.env.PROSPECTOR_TENANT_ID;
 delete process.env.PROSPECTOR_TENANT_INTERNAL;
