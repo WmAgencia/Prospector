@@ -62,7 +62,9 @@ export function analyzeCommercialTurn({incoming='',history=[],memory={},offerApp
  else if(need){stage='NEED_IDENTIFIED';nextAction='Reconheça a necessidade concreta e conecte-a a uma solução comprovada, sem presumir que outro site seja necessário.';}
  if(concern==='time'){nextAction='A pessoa está ocupada. Resposta curta e útil; não proponha uma nova conversa agora.';question='NONE';}
  if(concern==='already_has_solution'&&intent!=='commitment'){
-  nextAction='Não tente vender outro site automaticamente. Entenda se o site atual resolve bem a necessidade. Se resolver, respeite.';
+  nextAction=need==='mobile_performance'?
+   'A pessoa já tem site e relatou lentidão. Ofereça ajuda condicional com linguagem natural: "Se você quiser, posso analisar o código do seu site pra tentar entender onde está o problema". Para análise de código serão necessários arquivos ou repositório autorizado. Não diga que já inspecionou ou identificou a causa. Evite pergunta robótica e não tente vender outro site automaticamente.':
+   'Não tente vender outro site automaticamente. Entenda se o site atual resolve bem a necessidade. Se resolver, respeite.';
  }
  const askedQuestions=inbound.reduce((n,x)=>n+(String(x.body).includes('?')?1:0),0);
  return Object.freeze({
