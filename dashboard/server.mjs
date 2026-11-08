@@ -79,6 +79,8 @@ import {conversationHandoffStatus,changeConversationHandoff} from './conversatio
 import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
+import {naturalConversationEnabled,NATURAL_CONVERSATION_VERSION} from './francisca-natural-conversation.mjs';
+let lastNaturalPreviewAt=0;
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
@@ -623,6 +625,28 @@ async function handler(req,res){
    const payload=await json(req);
    const result=await aiDraft({text:payload.text,context:payload.context});
    return respond(res,result.ok?200:result.httpStatus||502,result);
+  }
+  // Owner-only testing without any WhatsApp send, lead lookup, or state change.
+  // Uses the SAME drafting engine as sales conversations (with synthetic history).
+  if(req.method==='POST'&&pathname==='/api/ai/natural-preview'){
+   if(!naturalConversationEnabled())return respond(res,409,{ok:false,code:'NATURAL_PREVIEW_DISABLED'});
+   if(Date.now()-lastNaturalPreviewAt<1600)return respond(res,429,{ok:false,code:'PREVIEW_RATE_LIMIT'});
+   const payload=await json(req);
+   const phrase=typeof payload.text==='string'?payload.text.trim():'';
+   if(!phrase||phrase.length>1500)return respond(res,400,{ok:false,code:'INVALID_PREVIEW_TEXT'});
+   const history=Array.isArray(payload.history)?payload.history.slice(-10).filter(item=>
+    item&&['user','assistant'].includes(item.role)&&typeof item.text==='string'&&item.text.trim()
+   ).map(item=>({role:item.role,text:item.text.slice(0,350)})):[];
+   lastNaturalPreviewAt=Date.now();
+   const hasAssistant=history.some(item=>item.role==='assistant');
+   const prior=history.map(item=>(item.role==='user'?'Cliente: ':'Consecom: ')+item.text.replace(/[\r\n]+/g,' ')).join('\n');
+   const result=await aiDraft({text:phrase,
+    context:'SIMULAÇÃO INTERNA DE CONVERSA COM CLIENTE FICTÍCIO. Não há WhatsApp, lead, pagamento ou envio.\n'+prior,
+    audience:'PROSPECT_APPROACHED',dialogueState:{hasAssistantReply:hasAssistant}});
+   return respond(res,result.ok?200:result.httpStatus||502,
+    {ok:result.ok,answer:result.ok?result.draft:null,model:result.model||null,
+     naturalConversation:result.naturalConversation===true,version:NATURAL_CONVERSATION_VERSION,
+     noWhatsappSend:true,code:result.code||null});
   }
 
   if(req.method==='GET'&&pathname==='/api/agent-bridge/status')return respond(res,200,{...bridgeStatus(),privateMediaRestore:privateRestoreStatus()});

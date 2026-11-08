@@ -16,6 +16,7 @@ import {queueNotice} from './notifications.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
+import {conversationalToneSignals,NATURAL_CONVERSATION_VERSION} from './francisca-natural-conversation.mjs';
 import {commercialIntent,isSpecificCommercialFollowup,memoryPrompt} from './francisca-conversation-state.mjs';
 import {recallConversationMemory} from './francisca-conversation-memory.mjs';
 import {approvedConsecomAnswer,extractProposalEmail} from './francisca-approved-replies.mjs';
@@ -206,6 +207,16 @@ export async function handleSalesTurn(providerId,deps={}){
  }
  if(fixedOffer&&proposalRequestWhileBusy(r.body))draft.draft=fixedOfferPitch({business:r.business,segment:r.segment},new Date(),{busy:true});
  let replyText=refineChatReply(draft.draft,{state:dialogue,incoming:r.body});
+ // Only aggregate style signals; do not log customer content or the reply.
+ // Allows quality comparison without bypassing the existing sales safety gate.
+ if(draft.naturalConversation===true&&replyText){
+  const tone=conversationalToneSignals(replyText);
+  audit('FRANCISCA_NATURAL_TONE',r.lead_id,{
+   version:NATURAL_CONVERSATION_VERSION,corporate:tone.corporate,
+   genericOpening:tone.genericOpening,bulleted:tone.bulleted,
+   chars:tone.chars,hasQuestion:tone.hasQuestion
+  });
+ }
  if(!replyText){
   audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});
   return finish('REVIEW','REPEATED_OR_EMPTY_REPLY');
