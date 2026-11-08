@@ -24,7 +24,7 @@ const CONCERNS=Object.freeze([
  ['trust',/\b(?:golpe|fraude|confiar|confiavel|estranho|barato demais|muito barato|seguranca|garantia|como sei)\b/],
  ['budget',/\b(?:caro|salgado|nao tenho verba|sem dinheiro|fora do orcamento|desconto|faz por menos|or[cç]amento apertado)\b/],
  ['time',/\b(?:sem tempo|estou ocupado|to ocupado|t[oô] atendendo|correria|nao posso falar agora)\b/],
- ['already_has_solution',/\b(?:ja tenho site|uso wix|site atual|ja tenho fornecedor|uso wordpress)\b/],
+ ['already_has_solution',/\b(?:ja tenho (?:um )?site|tenho (?:um )?site(?: atual)?|uso wix|site atual|ja tenho fornecedor|uso wordpress)\b/],
  ['decision_maker',/\b(?:vou falar com (?:meu |minha |o |a )?(?:socio|socia|responsavel|chefe)|vou consultar|vou conversar com|vou pensar|preciso avaliar)\b/],
  ['delivery',/\b(?:prazo|quando entrega|quanto tempo|dias uteis|urgente)\b/],
  ['payment',/\b(?:parcelamento|pix|cartao|entrada|pagar|pagamento)\b/]
