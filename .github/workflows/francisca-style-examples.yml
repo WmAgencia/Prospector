@@ -1,0 +1,44 @@
+name: Francisca reviewed dialogue retrieval
+on:
+  push:
+    branches:
+      - feature/francisca-style-examples-retrieval
+    paths:
+      - dashboard/francisca-style-examples.mjs
+      - dashboard/ai-groq.mjs
+      - dashboard/platform.mjs
+      - dashboard/server.mjs
+      - dashboard/public/simple-app.js
+      - tests/francisca-style-examples.test.mjs
+      - .github/workflows/francisca-style-examples.yml
+  pull_request:
+    paths:
+      - dashboard/francisca-style-examples.mjs
+      - dashboard/ai-groq.mjs
+      - dashboard/platform.mjs
+      - dashboard/server.mjs
+      - dashboard/public/simple-app.js
+      - tests/francisca-style-examples.test.mjs
+      - .github/workflows/francisca-style-examples.yml
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Syntax of style module, prompt, frontend, routing and tenant workers
+        run: |
+          node --check dashboard/francisca-style-examples.mjs
+          node --check dashboard/ai-groq.mjs
+          node --check dashboard/platform.mjs
+          node --check dashboard/server.mjs
+          node --input-type=module --check < dashboard/public/simple-app.js
+      - name: Portuguese dialogue retrieval and commercial regression
+        run: |
+          node --test tests/francisca-style-examples.test.mjs tests/francisca-natural-conversation.test.mjs tests/francisca-commercial-brain-v2.test.mjs tests/francisca-lab-pix-safety.test.mjs tests/outreach-consent-control.test.mjs tests/sales-owner-policy.test.mjs

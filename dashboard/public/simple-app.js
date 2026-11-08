@@ -4,6 +4,7 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
 const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
 let naturalPreviewHistory=[],naturalPreviewBusy=false;
+let styleExampleData=null,styleExampleBusy=false;
 let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="all",trainingAllConfirmed=false,trainingBusy=false,clientAccess="",demoLoginCredentials=null;
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
 let billingReminderOpen=false,billingReminderDismissed=false,billingDemoExhausted=false,billingDemoStep=0,billingDemoPackage='',billingLastChecked=0;
@@ -655,12 +656,51 @@ function naturalPreviewView(){
  '<button type="submit" class="primary" '+(naturalPreviewBusy?'disabled':'')+'>'+(naturalPreviewBusy?'Respondendo…':'Enviar mensagem de teste')+'</button>'+
  '</div></form><p class="footnote">Somente simulação. Nenhuma mensagem será enviada ou salva no WhatsApp.</p></section>';
 }
-function trainingView(){return naturalPreviewView()+interviewView();}
+// Reviewed dialogue examples: no automatic import of customer messages.
+function styleExamplesView(){
+ if(!trainingState?.internalAccount)return '';
+ if(!styleExampleData?.enabled)return '';
+ const status=styleExampleData;
+ const item=x=>'<div class="kanban-lead" style="margin-top:9px">'+
+  '<div class="kanban-lead-top"><div><strong>'+esc(x.incoming)+'</strong>'+
+  '<small>'+(x.status==='APPROVED'?'Aprovado para orientar estilo':'Pendente de revisão')+' · '+
+  (x.source==='SYNTHETIC'?'Fictício':'Autorizado e anonimizado')+'</small></div></div>'+
+  '<p>'+esc(x.reply)+'</p><div class="training-compose-actions">'+
+  (x.status!=='APPROVED'?'<button type="button" class="primary compact" data-action="style-example-approve" data-style-id="'+esc(x.id)+'">Aprovar</button>':'')+
+  '<button type="button" class="secondary compact" data-action="style-example-delete" data-style-id="'+esc(x.id)+'">Excluir</button>'+
+  '</div></div>';
+ const items=status.items||[];
+ return '<section class="panel" style="margin-bottom:20px">'+
+  '<div class="heading"><div><span class="kicker">CONVERSA NATURAL • EXEMPLOS REVISADOS</span>'+
+  '<h3>Como a Francisca deve conversar</h3>'+
+  '<p>Os exemplos são usados como referência de linguagem, nunca como autorização para mudar ofertas ou pagamentos.</p></div></div>'+
+  '<div class="kanban-metrics" style="margin-bottom:14px">'+
+  '<div class="kanban-metric"><span>Exemplos fictícios prontos</span><strong>'+esc(status.seeded||0)+'</strong><small>Escritos em português brasileiro</small></div>'+
+  '<div class="kanban-metric"><span>Seus exemplos aprovados</span><strong>'+esc(status.approved||0)+'</strong><small>Ajudam a escolher o tom de cada resposta</small></div>'+
+  '<div class="kanban-metric"><span>Pendentes</span><strong>'+esc(status.pending||0)+'</strong><small>Só serão usados depois de aprovados</small></div></div>'+
+  '<details><summary>Adicionar uma pergunta e resposta natural</summary>'+
+  '<p>Use um exemplo fictício ou um diálogo com autorização explícita, já anonimizado. Não cole exportações completas do WhatsApp, nomes, telefones, valores ou links.</p>'+
+  '<form id="style-example-form" class="training-composer">'+
+  '<label for="style-example-incoming">O que o cliente diz</label>'+
+  '<textarea id="style-example-incoming" name="incoming" rows="2" maxlength="230" required placeholder="Ex.: Já tenho site, mas ele demora no celular"></textarea>'+
+  '<label for="style-example-reply">Como uma pessoa responderia</label>'+
+  '<textarea id="style-example-reply" name="reply" rows="3" maxlength="330" required placeholder="Ex.: Dá pra começar olhando o que está deixando lento."></textarea>'+
+  '<label for="style-example-source">Origem do exemplo</label>'+
+  '<select name="source" id="style-example-source" required>'+
+  '<option value="SYNTHETIC">Exemplo fictício, escrito por mim</option>'+
+  '<option value="CONSENTED_ANONYMIZED">Conversa autorizada e anonimizada</option></select>'+
+  '<label><input name="permissionConfirmed" type="checkbox" required /> Confirmo que tenho direito de usar este exemplo e removi todos os dados pessoais e comerciais específicos.</label>'+
+  '<button type="submit" class="primary" '+(styleExampleBusy?'disabled':'')+'>Enviar para revisão</button></form></details>'+
+  (items.length?'<details style="margin-top:16px"><summary>Revisar exemplos cadastrados ('+items.length+')</summary>'+
+    items.slice(0,30).map(item).join('')+'</details>':'')+
+  '<p class="footnote">Exemplos aprovados não substituem o treinamento comercial. É possível excluir qualquer exemplo cadastrado.</p></section>';
+}
+function trainingView(){return naturalPreviewView()+styleExamplesView()+interviewView();}
 
 async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/analytics');if(platformContext.role==='master'&&view==='dashboard')render();}catch(e){n('Indicadores indisponíveis: '+e.message);}}
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
 async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');billingLastChecked=Date.now();platformContext.available=creditState.available;if(view==='credits')render();maybeOpenBillingReminder();}catch(e){n(e.message);}}
-async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
+async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if(trainingState?.internalAccount){try{styleExampleData=await api('/api/ai/style-examples');}catch{styleExampleData=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
 
 let stripeEmbeddedInstance=null;
 async function openProspectorCheckout(order){
@@ -1351,6 +1391,14 @@ document.addEventListener("click",async ev=>{
  try{
   if(await platformAction(action,el))return;
   if(action==='natural-preview-clear'){naturalPreviewHistory=[];render();return;}
+  if(action==='style-example-approve'||action==='style-example-delete'){
+   if(styleExampleBusy)return;
+   const exampleId=el.dataset.styleId;if(!exampleId)return;
+   styleExampleBusy=true;
+   try{const data=await post('/api/ai/style-examples/review',{id:exampleId,action:action==='style-example-approve'?'APPROVE':'DELETE'});styleExampleData=data.status;render();}
+   finally{styleExampleBusy=false;}
+   return;
+  }
   if(action==="toggle-chat-handoff"){
    const chatId=selectedThread;
    const chosen=[...remoteChats,...(state?.threads||[])].find(x=>x.id===chatId);
@@ -1464,6 +1512,17 @@ document.addEventListener("keydown",ev=>{
 document.addEventListener("submit",async ev=>{
  ev.preventDefault();
  if(await platformSubmit(ev))return;
+ if(ev.target.id==='style-example-form'){
+  if(styleExampleBusy)return;
+  const data=new FormData(ev.target);
+  styleExampleBusy=true;
+  try{
+   const result=await post('/api/ai/style-examples',{incoming:data.get('incoming'),reply:data.get('reply'),source:data.get('source'),permissionConfirmed:data.get('permissionConfirmed')==='on'});
+   styleExampleData=result.status;render();n('Exemplo cadastrado para revisão.');
+  }catch(error){n(String(error.message||error));}
+  finally{styleExampleBusy=false;}
+  return;
+ }
  if(ev.target.id==='natural-preview-form'){
   if(naturalPreviewBusy||!trainingState?.internalAccount)return;
   const input=q('#natural-preview-text')?.value.trim()||'';

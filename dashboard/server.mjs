@@ -83,6 +83,7 @@ import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
 import {naturalConversationEnabled,NATURAL_CONVERSATION_VERSION} from './francisca-natural-conversation.mjs';
 import {approvedLabFactReply,labModelReplySafe,LAB_PAYMENT_SAFETY_VERSION} from './francisca-lab-safety.mjs';
+import {styleMemoryEnabled,styleExampleStatus,proposeStyleExample,reviewStyleExample} from './francisca-style-examples.mjs';
 let lastNaturalPreviewAt=0;
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
@@ -632,6 +633,28 @@ async function handler(req,res){
   }
   // Owner-only testing without any WhatsApp send, lead lookup, or state change.
   // Uses the SAME drafting engine as sales conversations (with synthetic history).
+  // Reviewed operator examples. No conversation export or auto-import.
+  // Access is already session-protected and write requests are same-origin;
+  // additionally limit all reads and writes to internal Consecom rollout.
+  if(pathname.startsWith('/api/ai/style-examples')){
+   if(!styleMemoryEnabled())return respond(res,403,{error:'Biblioteca de exemplos disponível apenas na conta interna autorizada.'});
+   if(req.method==='GET'&&pathname==='/api/ai/style-examples')return respond(res,200,styleExampleStatus());
+   if(req.method==='POST'&&pathname==='/api/ai/style-examples'){
+    try{
+     const body=await json(req);
+     const result=proposeStyleExample(body);
+     return respond(res,201,{...result,status:styleExampleStatus()});
+    }catch(error){return respond(res,422,{error:String(error.message||error).slice(0,240)});}
+   }
+   if(req.method==='POST'&&pathname==='/api/ai/style-examples/review'){
+    try{
+     const body=await json(req);
+     const result=reviewStyleExample(body);
+     return respond(res,200,{...result,status:styleExampleStatus()});
+    }catch(error){return respond(res,422,{error:String(error.message||error).slice(0,240)});}
+   }
+   return respond(res,405,{error:'Método indisponível.'});
+  }
   if(req.method==='POST'&&pathname==='/api/ai/natural-preview'){
    if(!naturalConversationEnabled())return respond(res,409,{ok:false,code:'NATURAL_PREVIEW_DISABLED'});
    if(Date.now()-lastNaturalPreviewAt<1600)return respond(res,429,{ok:false,code:'PREVIEW_RATE_LIMIT'});
