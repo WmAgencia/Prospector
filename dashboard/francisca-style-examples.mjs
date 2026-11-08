@@ -48,7 +48,7 @@ export function validateStylePair({incoming='',reply=''}={}){
   throw new Error('Use pergunta de 3–230 caracteres e resposta de 5–330 caracteres.');
  if(/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(a+b)||privatePatterns.some(re=>re.test(a)||re.test(b)))
   throw new Error('Remova telefones, e-mails, links, valores, chaves e dados pessoais.');
- if(/\b(?:ja enviei|já enviei|pagamento confirmado|pix enviado|reuniao marcada|reunião marcada)\b/i.test(b))
+ if(/\b(?:ja enviei|já enviei|pagamento (?:foi |est[aá] )?confirmado|pix enviado|reuniao marcada|reunião marcada)\b/i.test(b))
   throw new Error('O exemplo não pode afirmar ações ainda não confirmadas.');
  return {incoming:a,reply:b};
 }
