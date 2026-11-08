@@ -105,6 +105,44 @@ test('Every group reply has exactly *PROSPECTOR* and one newline before its text
  assert.equal(calls.filter(x=>x.url.endsWith('/send')).length,1);
  assert.equal(calls.find(x=>x.url.endsWith('/send')).opts.data.message.text,'*PROSPECTOR*\nRelatório de hoje');
 });
+test('only bold *PROSPECTOR* at the top marks a message from the AI',()=>{
+ const marked=assistant.isProspectorAuthoredMessage;
+ assert.equal(marked('*PROSPECTOR*\nAqui está seu relatório.'),true);
+ assert.equal(marked(' *PROSPECTOR* \r\nResumo da operação.'),true);
+ assert.equal(marked('\u200b*PROSPECTOR*\r\nMensagem antiga.'),true);
+ assert.equal(marked('*PROSPECTOR*'),true);
+ assert.equal(marked('Prospector, quantas abordagens hoje?'),false);
+ assert.equal(marked('Quero um relatório do PROSPECTOR'),false);
+ assert.equal(marked('O *PROSPECTOR* respondeu ontem'),false);
+ assert.equal(marked('*PROSPECTOR* me passa o relatório'),false);
+ assert.equal(marked('PROSPECTOR\nMe ajuda'),false);
+ assert.equal(marked(''),false);
+});
+test('a labeled AI reply cannot be misread as a command from a second WhatsApp',async()=>{
+ const message={isGroup:true,key:{id:'PROSPECTOR_MARKED1',remoteJid:jid,fromMe:false,participant:partner+'@s.whatsapp.net'},
+  type:'TEXT',sender:partner+'@s.whatsapp.net',content:'*PROSPECTOR*\nPausa a prospecção agora e envie o relatório.'};
+ const received=await assistant.receivePrivateGroupWebhook({sessionId:'prospector-second',data:message,request});
+ assert.equal(received.ignored,true);
+ assert.equal(received.reason,'PROSPECTOR_AUTHORED');
+ assert.equal(db.getSetting('paused',true),false);
+ assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
+ assert.equal(calls.some(x=>x.url.endsWith('/send')),false);
+});
+test('unlabeled human request remains eligible even when it mentions PROSPECTOR',async()=>{
+ const event={isGroup:true,key:{id:'PROSPECTOR_HUMAN1',remoteJid:jid,fromMe:false,participant:partner+'@s.whatsapp.net'},
+  type:'TEXT',sender:partner+'@s.whatsapp.net',content:'Prospector, me passa o relatório de hoje'};
+ const received=await assistant.receivePrivateGroupWebhook({sessionId:session,data:event,request});
+ assert.equal(received.queued,true);
+ assert.equal(db.one("SELECT COUNT(*) n FROM prospector_group_commands WHERE event_id=?",jid+':PROSPECTOR_HUMAN1').n,1);
+});
+test('queued legacy labeled message is rejected rather than executed',async()=>{
+ db.run("INSERT INTO prospector_group_commands(event_id,group_jid,sender_jid,session_id,kind,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+  'STALE_PROSPECTOR_REPLY',jid,partner+'@s.whatsapp.net',session,'TEXT','*PROSPECTOR*\npausa a prospecção','PENDING',db.now(),db.now());
+ const result=await assistant.processGroupCommands({request});
+ assert.equal(result.state,'IGNORED_PROSPECTOR_REPLY');
+ assert.equal(db.getSetting('paused',true),false);
+ assert.equal(db.one("SELECT state FROM prospector_group_commands WHERE event_id='STALE_PROSPECTOR_REPLY'").state,'REJECTED');
+});
 test('bot group replies cannot cause a message.sent feedback loop',async()=>{
  await assistant.sendGroupMessage({sessionId:session,groupId:jid,text:'Relatório da Francisca',request});
  const fromMe={isGroup:true,key:{id:'BOTMSG44444',remoteJid:jid,fromMe:true},
@@ -112,7 +150,7 @@ test('bot group replies cannot cause a message.sent feedback loop',async()=>{
  const answer=await assistant.receivePrivateGroupWebhook({sessionId:session,data:fromMe,event:'message.sent',request,
   getSessions:async()=>({items:[{sessionId:session,number:owner,connected:true}]})});
  assert.equal(answer.ignored,true);
- assert.equal(answer.reason,'BOT_ECHO_ALL_SESSIONS');
+ assert.equal(answer.reason,'PROSPECTOR_AUTHORED');
  assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
 });
 test('a bot report received as a normal message on SECOND WhatsApp is ignored',async()=>{
@@ -124,7 +162,7 @@ test('a bot report received as a normal message on SECOND WhatsApp is ignored',a
   sessionId:'prospector-second',data:echoed,event:'message.received',request
  });
  assert.equal(received.ignored,true);
- assert.equal(received.reason,'BOT_ECHO_ALL_SESSIONS');
+ assert.equal(received.reason,'PROSPECTOR_AUTHORED');
  assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
  assert.equal(calls.filter(x=>x.url.endsWith('/send')).length,1);
 });
@@ -136,7 +174,7 @@ test('same bot reply with varied whitespace is ignored by persistent normalized 
  const received=await assistant.receivePrivateGroupWebhook({
   sessionId:'prospector-second',data:echoed,request
  });
- assert.equal(received.reason,'BOT_ECHO_ALL_SESSIONS');
+ assert.equal(received.reason,'PROSPECTOR_AUTHORED');
  assert.equal(db.one('SELECT COUNT(*) n FROM prospector_group_commands').n,0);
 });
 test('a previously generated daily report is ignored even without an outgoing hash',async()=>{
