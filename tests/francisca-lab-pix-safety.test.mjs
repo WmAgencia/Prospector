@@ -25,6 +25,12 @@ const exampleHistory=[
  {role:'assistant',text:'Ótimo, você prefere Pix ou cartão?'}
 ];
 
+test('greeting oie avoids the generic how-can-I-help-your-company pitch',()=>{
+ const reply=lab.approvedLabFactReply({incoming:'oie'});
+ assert.equal(reply,'Oie! Tudo bem?');
+ assert.doesNotMatch(reply,/como posso ajudar sua empresa/i);
+});
+
 test('Master SEO is described by its approved name, not basic SEO',()=>{
  const input='Vocês fazem master seo?';
  const response=lab.approvedLabFactReply({incoming:input,history:exampleHistory.slice(0,4)});
