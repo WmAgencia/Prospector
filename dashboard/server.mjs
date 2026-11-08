@@ -83,6 +83,9 @@ import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
 import {naturalConversationEnabled,NATURAL_CONVERSATION_VERSION} from './francisca-natural-conversation.mjs';
 import {approvedLabFactReply,labModelReplySafe,LAB_PAYMENT_SAFETY_VERSION} from './francisca-lab-safety.mjs';
+import {compactPromptEnabled} from './francisca-compact-policy-v3.mjs';
+import {generate100FranciscaScenarios,evaluateFrancisca100,gradeFranciscaReply,EVALUATOR_VERSION} from './francisca-quality-evaluator.mjs';
+import {styleIntentCategory} from './francisca-style-examples.mjs';
 import {styleMemoryEnabled,styleExampleStatus,proposeStyleExample,reviewStyleExample} from './francisca-style-examples.mjs';
 let lastNaturalPreviewAt=0;
 import {ownerStatus} from './groq-owner.mjs';
@@ -655,6 +658,14 @@ async function handler(req,res){
    }
    return respond(res,405,{error:'Método indisponível.'});
   }
+  if(req.method==='GET'&&pathname==='/api/ai/evaluation-100'){
+   if(!compactPromptEnabled())return respond(res,403,{error:'Avaliador disponível somente na operação interna.'});
+   const quality=evaluateFrancisca100();
+   return respond(res,200,{ok:true,version:EVALUATOR_VERSION,syntheticCases:generate100FranciscaScenarios().length,
+    categories:10,kind:quality.kind,referenceCalibration:quality.passed,
+    note:'Calibração usando respostas fictícias revisadas, não mede desempenho real do Groq. A avaliação do chat aparece em cada resposta do laboratório.',
+    groqRealConversationsMeasured:0});
+  }
   if(req.method==='POST'&&pathname==='/api/ai/natural-preview'){
    if(!naturalConversationEnabled())return respond(res,409,{ok:false,code:'NATURAL_PREVIEW_DISABLED'});
    if(Date.now()-lastNaturalPreviewAt<1600)return respond(res,429,{ok:false,code:'PREVIEW_RATE_LIMIT'});
@@ -670,7 +681,7 @@ async function handler(req,res){
    // commercial facts use the same approved Consecom rules as production,
    // instead of letting a model invent payment steps or SEO package names.
    const fixed=approvedLabFactReply({incoming:phrase,history});
-   if(fixed)return respond(res,200,{ok:true,answer:fixed,model:'APPROVED_CONSECOM_SIMULATION',
+   if(fixed)return respond(res,200,{ok:true,answer:fixed,quality:gradeFranciscaReply({incoming:phrase,answer:fixed,category:styleIntentCategory(phrase),hasAssistantReply:hasAssistant}),model:'APPROVED_CONSECOM_SIMULATION',
     naturalConversation:true,commercialStage:'SIMULATION',version:LAB_PAYMENT_SAFETY_VERSION,
     noWhatsappSend:true,noPaymentCreated:true,reviewed:'APPROVED_TEST_FACT',code:null});
    const simulationMemory=nextConversationState({},[
@@ -683,7 +694,7 @@ async function handler(req,res){
     audience:'PROSPECT_APPROACHED',commercialMode:'SIMULATION',dialogueState:{hasAssistantReply:hasAssistant,salesMemory:simulationMemory}});
    const reviewed=result.ok?labModelReplySafe({incoming:phrase,history,draft:result.draft}):null;
    return respond(res,result.ok?200:result.httpStatus||502,
-    {ok:result.ok,answer:reviewed?.answer||null,model:result.model||null,
+    {ok:result.ok,answer:reviewed?.answer||null,quality:reviewed?.answer?gradeFranciscaReply({incoming:phrase,answer:reviewed.answer,category:styleIntentCategory(phrase),hasAssistantReply:hasAssistant}):null,model:result.model||null,
      naturalConversation:result.naturalConversation===true,commercialStage:result.commercialStage||null,
      version:NATURAL_CONVERSATION_VERSION,noWhatsappSend:true,noPaymentCreated:true,
      reviewed:reviewed?.source||null,code:result.code||null});
