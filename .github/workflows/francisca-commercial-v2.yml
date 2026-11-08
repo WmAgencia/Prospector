@@ -1,0 +1,53 @@
+name: Francisca Commercial Brain v2
+on:
+  push:
+    branches:
+      - feature/francisca-commercial-brain-v2
+    paths:
+      - dashboard/francisca-commercial-brain.mjs
+      - dashboard/francisca-conversation-state.mjs
+      - dashboard/francisca-conversation-memory.mjs
+      - dashboard/ai-groq.mjs
+      - dashboard/groq-sales-automation.mjs
+      - dashboard/sales-conversion-funnel.mjs
+      - dashboard/server.mjs
+      - dashboard/platform.mjs
+      - dashboard/public/simple-app.js
+      - tests/francisca-commercial-brain-v2.test.mjs
+      - .github/workflows/francisca-commercial-v2.yml
+  pull_request:
+    paths:
+      - dashboard/francisca-commercial-brain.mjs
+      - dashboard/francisca-conversation-state.mjs
+      - dashboard/ai-groq.mjs
+      - dashboard/groq-sales-automation.mjs
+      - dashboard/sales-conversion-funnel.mjs
+      - dashboard/server.mjs
+      - dashboard/platform.mjs
+      - dashboard/public/simple-app.js
+      - tests/francisca-commercial-brain-v2.test.mjs
+      - .github/workflows/francisca-commercial-v2.yml
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Syntax of all affected modules, frontend and API
+        run: |
+          node --check dashboard/francisca-commercial-brain.mjs
+          node --check dashboard/francisca-conversation-state.mjs
+          node --check dashboard/ai-groq.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/sales-conversion-funnel.mjs
+          node --check dashboard/platform.mjs
+          node --check dashboard/server.mjs
+          node --input-type=module --check < dashboard/public/simple-app.js
+      - name: Synthetic sales decision and checkout integrity tests
+        run: node --test tests/francisca-commercial-brain-v2.test.mjs tests/francisca-natural-conversation.test.mjs tests/francisca-context-continuity.test.mjs
