@@ -30,6 +30,9 @@ export function labPaymentAnswer({incoming='',history=[]}={}){
 }
 export function approvedLabFactReply({incoming='',history=[]}={}){
  const n=norm(incoming);
+ // Brief greeting should match the person, not launch a corporate script.
+ if(/^(?:oie+|oi+|ola+|opa)[!?.\s]*$/.test(n))
+  return /^oie/.test(n)?'Oie! Tudo bem?':'Oi! Tudo certo?';
  if(refersToPix({incoming,history}))return labPaymentAnswer({incoming,history});
  if(/\b(?:master seo|seo master)\b/.test(n))
   return 'Sim, fazemos Master SEO. O site já é preparado tecnicamente para melhorar a descoberta orgânica no Google, sem prometer uma posição específica nos resultados.';
