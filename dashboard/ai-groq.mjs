@@ -5,6 +5,7 @@ import {conversationGuide} from "./francisca-chat-coach.mjs";
 import {groqChat} from './groq-models.mjs';
 import {trainingPrompt,readActiveTrainingMarkdown} from './training.mjs';
 import {getSetting} from './db.mjs';
+import {STYLE_MEMORY_VERSION,styleMemoryEnabled,styleExamplesInstructions} from './francisca-style-examples.mjs';
 import {CONSECOM_SALES_POLICY} from './francisca-consecom-policy.mjs';
 import {COMMERCIAL_BRAIN_VERSION,commercialBrainEnabled,analyzeCommercialTurn,commercialBrainInstructions} from './francisca-commercial-brain.mjs';
 import {NATURAL_CONVERSATION_VERSION,naturalConversationEnabled,
@@ -22,6 +23,7 @@ export function aiStatus(){
   toneVersion:SALES_TONE_VERSION,
   reviewedExamples:SALES_FEW_SHOTS.length,
   conversationalProfiling:true,
+  styleMemory:{version:STYLE_MEMORY_VERSION,enabled:styleMemoryEnabled()},
   commercialBrain:{version:COMMERCIAL_BRAIN_VERSION,enabled:commercialBrainEnabled()},
   naturalConversation:{version:NATURAL_CONVERSATION_VERSION,enabled:naturalConversationEnabled()},
   integration:"draft_only",
@@ -64,6 +66,7 @@ export async function aiDraft({text,context="",audience="INBOUND_NEW",dialogueSt
   natural?naturalConversationInstructions({incoming:prompt,context:extra,dialogueState}):
    !process.env.PROSPECTOR_TENANT_ID&&dialogueState&&typeof dialogueState==='object'?conversationGuide(dialogueState):'Responda de forma contextual; não repita saudações ou apresentações no meio de uma conversa.',
   contextForGroq(profile),
+  natural&&styleMemoryEnabled()?styleExamplesInstructions({incoming:prompt}):'',
   salesBrain?commercialBrainInstructions({plan,proof:approvedProof,mode:commercialMode}):'',
   dialogueState?.hasAssistantReply?
    'PRIORIDADE SOBRE O CLASSIFICADOR COMERCIAL: este chat já teve mensagem da Consecom. Mesmo que o classificador sugira apresentação ou pedir permissão, NÃO volte a dizer oi, olá, bom dia, sou a Francisca ou explicar quem é a empresa; responda ao conteúdo concreto do último turno. Se alguém disser "sim", "pode" ou "e quanto?", retome o assunto anterior.':
@@ -90,7 +93,7 @@ export async function aiDraft({text,context="",audience="INBOUND_NEW",dialogueSt
   model=result.model;
   const draft=result.choice?.content;
   if(!draft||typeof draft!=='string')return {ok:false,code:'EMPTY_RESPONSE',provider:'groq',httpStatus:502,model};
-  return {ok:true,provider:'groq',model,toneVersion:natural?NATURAL_CONVERSATION_VERSION:SALES_TONE_VERSION,naturalConversation:natural,commercialBrain:salesBrain,commercialStage:plan?.stage||null,profile,draft:draft.trim().slice(0,1600),requiresApproval:true,autoSend:false,recovered:result.recovered||false};
+  return {ok:true,provider:'groq',model,toneVersion:natural?NATURAL_CONVERSATION_VERSION:SALES_TONE_VERSION,naturalConversation:natural,styleMemory:natural&&styleMemoryEnabled(),commercialBrain:salesBrain,commercialStage:plan?.stage||null,profile,draft:draft.trim().slice(0,1600),requiresApproval:true,autoSend:false,recovered:result.recovered||false};
  } catch(error) {
   return {ok:false,provider:'groq',code:String(error.message||'').startsWith('GROQ_HTTP_401')?'UNAUTHORIZED':String(error.message||'').includes('GROQ_RATE_LIMITED')?'RATE_LIMITED':'PROVIDER_UNAVAILABLE',httpStatus:502,model};
  }
