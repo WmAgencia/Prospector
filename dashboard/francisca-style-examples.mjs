@@ -31,7 +31,36 @@ const seeded=Object.freeze([
  ['Me explica esse SEO','É a preparação do site para facilitar a leitura pelos buscadores, sem prometer uma posição específica no Google.'],
  ['Sou de uma oficina, preciso mostrar os serviços','Dá pra organizar os serviços de um jeito fácil de visualizar e com contato bem claro.'],
  ['kkkk eu não entendi nada','Foi mal, expliquei complicado 😅 Me diz qual parte ficou confusa que eu simplifico.'],
- ['Tenho pressa mas não tenho as fotos ainda','Dá pra organizar os materiais e ver o que falta. A data de entrega preciso confirmar certinho.']
+ ['Tenho pressa mas não tenho as fotos ainda','Dá pra organizar os materiais e ver o que falta. A data de entrega preciso confirmar certinho.'],
+ ['oi, posso perguntar uma coisa?','Pode sim, manda.'],
+ ['bom dia','Bom dia! Tudo bem?'],
+ ['meu site demora no celular','Poxa, isso incomoda mesmo. Se tiver os arquivos, dá pra conferir o que pode estar pesando.'],
+ ['o site trava quando abre','Pode ser alguma coisa no carregamento. Melhor entender isso antes de pensar em refazer.'],
+ ['minha página tá lenta','Entendi. Se tiver mais detalhes do problema, dá pra investigar melhor.'],
+ ['uso Wix hoje','Ah, legal. Se o site funciona bem, não tem por que fazer outro só por fazer.'],
+ ['já tenho um site pronto','Boa! Então vamos ver se tem alguma coisa que ainda falta melhorar nele.'],
+ ['não preciso de outro site','Tudo bem. Se o atual já resolve, não faz sentido insistir em outro.'],
+ ['tem desconto?','Essa condição eu preciso conferir. Posso te explicar o que já está incluído.'],
+ ['fica fora do meu orçamento','Entendi. A gente pode olhar as condições aprovadas, sem inventar desconto.'],
+ ['não sei se compensa esse preço','Faz sentido querer entender o valor. Posso explicar o que está incluído pra você avaliar.'],
+ ['não saquei','Foi mal, acho que compliquei. Vou explicar mais simples.'],
+ ['pode explicar de outro jeito?','Dá sim. Vou falar de outro jeito, sem enrolar.'],
+ ['como assim?','Acho que não expliquei direito. Vou simplificar.'],
+ ['vou pensar e te aviso','Beleza, pode pensar com calma. Se pintar dúvida, me chama aqui.'],
+ ['preciso consultar a equipe','Tranquilo. Conversa com o pessoal e, se precisarem de mais alguma informação, me fala.'],
+ ['depois eu decido','Sem pressa. Pode olhar com calma.'],
+ ['como sei que posso confiar?','É bom conferir mesmo. Dá pra olhar os projetos que foram aprovados para divulgação.'],
+ ['é seguro contratar?','Entendo a dúvida. Podemos esclarecer as condições e mostrar referências aprovadas, sem pressa.'],
+ ['isso é golpe?','É certo conferir antes. A equipe pode mostrar os trabalhos aprovados e explicar como funciona.'],
+ ['posso pagar no pix?','Se esse pagamento estiver disponível e autorizado, os dados são enviados aqui mesmo pela cobrança do sistema.'],
+ ['onde fica a chave do pix?','Os dados vêm do sistema quando a cobrança é autorizada. Não precisa passar outro número pra isso.'],
+ ['preciso passar telefone pro pix?','Não precisa de outro telefone para gerar a chave. O envio depende da cobrança autorizada.'],
+ ['me tira da lista','Tudo bem, vamos respeitar seu pedido. Não vou insistir.'],
+ ['não quero contato','Pode deixar, respeito sua decisão.'],
+ ['pare de me contatar','Entendido, não vou insistir em contato.'],
+ ['tem algum exemplo do site?','Posso confirmar uma referência aprovada que combine com o seu negócio.'],
+ ['quero ver projetos reais','Dá pra mostrar os trabalhos que a equipe autorizou divulgar.'],
+ ['pode mostrar um site entregue?','A gente confere um projeto aprovado e te mostra por aqui.']
 ]);
 const norm=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const privatePatterns=[
@@ -84,18 +113,18 @@ export function reviewStyleExample({id:exampleId,action}={}){
 export function styleIntentCategory(text=''){
  const t=norm(text);
  if(/^(?:oi+|oie+|ola+|opa|bom dia|boa tarde|boa noite)[!?.\s]*$/.test(t))return 'greeting';
- if(/\b(?:nao quero mais receber|pare de mandar|nao me mande|sem interesse|remova meu numero)\b/.test(t))return 'optout';
- if(/\b(?:nao entendi|nao compreendi|confuso|explica mais simples|entendi nada|falar mais simples)\b/.test(t))return 'confusion';
- if(/\b(?:barato demais|muito barato|desconfi|golpe|confiavel)\b/.test(t))return 'trust';
+ if(/\b(?:nao quero mais receber|pare de mandar|nao me mande|sem interesse|remova meu numero|parar de falar|me tira da lista|nao quero contato|nao me chama|pare de me contatar|nao precisa me procurar)\b/.test(t))return 'optout';
+ if(/\b(?:nao entendi|nao compreendi|confuso|explica mais simples|entendi nada|falar mais simples|nao saquei|explicar de outro jeito|me perdi|como assim|pode resumir)\b/.test(t))return 'confusion';
+ if(/\b(?:barato demais|muito barato|desconfi|golpe|confiavel|confiar|seguro contratar|nao conheco voces|medo de pagar)\b/.test(t))return 'trust';
  if(/\b(?:caro|desconto|fora do orcamento|valor alto|compensa pagar)\b/.test(t))return 'budget';
- if(/\b(?:site|pagina|carregamento|celular)\b/.test(t)&&/\b(?:lento|lentidao|demora|travando|trava|pesado|carrega|abrir)\b/.test(t))return 'slow_site';
+ if(/\b(?:site|pagina|carregamento|celular|telefone|catalogo)\b/.test(t)&&/\b(?:lento|lentidao|demora|travando|trava|pesado|carrega|abrir)\b/.test(t))return 'slow_site';
  if(/\b(?:socio|socia|vou pensar|consultar|responsavel|vou avaliar)\b/.test(t))return 'decision';
  if(/\b(?:ocupad|atendendo|sem tempo|correria)\b/.test(t))return 'busy';
  if(/\b(?:chave pix|pix|qr code)\b/.test(t))return 'pix';
  if(/\b(?:cartao|parcel|credito)\b/.test(t))return 'card';
  if(/\b(?:sou humano|voce e uma pessoa|voce e um robo|inteligencia artificial)\b/.test(t))return 'identity';
  if(/\b(?:quero fechar|quero contratar|quero comprar|pode iniciar)\b/.test(t))return 'closing';
- if(/\b(?:portfolio|exemplo|trabalhos entregues|site que voces fizeram)\b/.test(t))return 'proof';
+ if(/\b(?:portfolio|exemplo|trabalho|projeto|depoimento|site entregue|site que voces fizeram|pode mostrar|quero ver projetos)\b/.test(t))return 'proof';
  if(/\b(?:seo|google)\b/.test(t))return 'seo';
  if(/\b(?:site|wix|wordpress)\b/.test(t)&&/\b(?:tenho|ja existe|atual|uso)\b/.test(t))return 'existing_site';
  if(/\b(?:oficina|mecanica|servicos|catalogo|produtos)\b/.test(t))return 'showcase';
