@@ -41,25 +41,40 @@ test('retrieval looks up the incoming customer message, not a random answer',()=
  assert.ok(r.every(x=>x.score>=0.14));
  assert.ok(r.every(x=>x.source==='SYNTHETIC_BUILTIN'));
 });
-test('a slow site triggers a conditional, human-sounding offer to inspect source code',()=>{
+test('a slow site can be answered as an optional, everyday-language offer',()=>{
  const examples=style.findStyleExamples({incoming:'Meu site está muito lento no celular',limit:3});
- assert.ok(examples.some(x=>/analisar o código do seu site/.test(x.reply)));
+ assert.ok(examples.some(x=>/Se quiser, posso dar uma olhada no código/.test(x.reply)));
  const prompt=style.styleExamplesInstructions({incoming:'Meu site está muito lento no celular'});
- assert.match(prompt,/Se você quiser, posso analisar o código/);
+ assert.match(prompt,/Se quiser, posso dar uma olhada/);
  assert.match(prompt,/NUNCA copie literalmente/);
+ assert.match(prompt,/Isso não autoriza dizer que executará algo que não está disponível/);
 });
 
-test('commercial planning respects website already owned and asks for authorized code before diagnosing',async()=>{
+test('natural tone examples cover price objections, clarification and a partner decision',()=>{
+ const cases=[
+  {incoming:'Nossa, achei caro',re:/te explico direitinho o que entra no valor/},
+  {incoming:'Quero ver com meu sócio antes',re:/conversa com ele com calma/},
+  {incoming:'Acho que não entendi muito bem',re:/Vou simplificar/}
+ ];
+ for(const sample of cases){
+  const items=style.findStyleExamples({incoming:sample.incoming,limit:3});
+  assert.ok(items.some(x=>sample.re.test(x.reply)),sample.incoming);
+ }
+});
+
+test('commercial planning stays about customer needs while voice instructions are general',async()=>{
  const {analyzeCommercialTurn}=await import('../dashboard/francisca-commercial-brain.mjs');
  const {naturalConversationInstructions}=await import('../dashboard/francisca-natural-conversation.mjs');
  const plan=analyzeCommercialTurn({incoming:'Já tenho um site, mas ele demora no celular'});
  assert.equal(plan.need,'mobile_performance');
  assert.equal(plan.concern,'already_has_solution');
- assert.match(plan.nextAction,/Se você quiser, posso analisar o código/);
- assert.match(plan.nextAction,/Não diga que já inspecionou/);
+ assert.match(plan.nextAction,/Não tente vender outro site automaticamente/);
+ assert.doesNotMatch(plan.nextAction,/código do seu site/);
  const natural=naturalConversationInstructions({incoming:'Meu site tá lento no celular'});
- assert.match(natural,/não peça senhas/);
- assert.match(natural,/não diga que já analisou/);
+ assert.match(natural,/Jeito de falar|JEITO DE FALAR/);
+ assert.match(natural,/não uma promessa de executar análise/);
+ assert.match(natural,/Só ofereça uma ação que a empresa realmente possa realizar ou encaminhar/);
+ assert.match(natural,/O mesmo estilo vale para preço, dúvidas e objeções/);
 });
 
 test('retrieval understands common colloquial questions, accents and short natural phrases',()=>{
