@@ -1,0 +1,32 @@
+name: Francisca natural voice — conversational phrasing
+on:
+  push:
+    branches:
+      - fix/francisca-offer-code-review-natural
+  pull_request:
+    paths:
+      - dashboard/francisca-natural-conversation.mjs
+      - dashboard/francisca-style-examples.mjs
+      - dashboard/francisca-commercial-brain.mjs
+      - tests/francisca-style-examples.test.mjs
+      - .github/workflows/francisca-natural-voice.yml
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check natural language modules
+        run: |
+          node --check dashboard/francisca-natural-conversation.mjs
+          node --check dashboard/francisca-style-examples.mjs
+          node --check dashboard/francisca-commercial-brain.mjs
+      - name: Test style, offer safety, consent and conversation continuity
+        run: |
+          node --test tests/francisca-style-examples.test.mjs tests/francisca-natural-conversation.test.mjs tests/francisca-commercial-brain-v2.test.mjs tests/francisca-lab-pix-safety.test.mjs tests/sales-owner-policy.test.mjs tests/francisca-context-continuity.test.mjs
