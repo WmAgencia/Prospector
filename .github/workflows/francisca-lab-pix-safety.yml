@@ -5,6 +5,7 @@ on:
       - fix/francisca-lab-pix-seo-hallucination
     paths:
       - dashboard/francisca-lab-safety.mjs
+      - dashboard/francisca-natural-conversation.mjs
       - dashboard/francisca-approved-replies.mjs
       - dashboard/francisca-consecom-policy.mjs
       - dashboard/groq-live-test-guard.mjs
@@ -16,6 +17,7 @@ on:
   pull_request:
     paths:
       - dashboard/francisca-lab-safety.mjs
+      - dashboard/francisca-natural-conversation.mjs
       - dashboard/francisca-approved-replies.mjs
       - dashboard/francisca-consecom-policy.mjs
       - dashboard/groq-live-test-guard.mjs
@@ -39,6 +41,7 @@ jobs:
       - name: Parse server and payment guard modules
         run: |
           node --check dashboard/francisca-lab-safety.mjs
+          node --check dashboard/francisca-natural-conversation.mjs
           node --check dashboard/francisca-approved-replies.mjs
           node --check dashboard/francisca-consecom-policy.mjs
           node --check dashboard/groq-live-test-guard.mjs
