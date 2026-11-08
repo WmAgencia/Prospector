@@ -644,7 +644,7 @@ async function handler(req,res){
    const prior=history.map(item=>(item.role==='user'?'Cliente: ':'Consecom: ')+item.text.replace(/[\r\n]+/g,' ')).join('\n');
    const result=await aiDraft({text:phrase,
     context:'SIMULAÇÃO INTERNA DE CONVERSA COM CLIENTE FICTÍCIO. Não há WhatsApp, lead, pagamento ou envio.\n'+prior,
-    audience:'PROSPECT_APPROACHED',dialogueState:{hasAssistantReply:hasAssistant}});
+    audience:'PROSPECT_APPROACHED',commercialMode:'SIMULATION',dialogueState:{hasAssistantReply:hasAssistant}});
    return respond(res,result.ok?200:result.httpStatus||502,
     {ok:result.ok,answer:result.ok?result.draft:null,model:result.model||null,
      naturalConversation:result.naturalConversation===true,version:NATURAL_CONVERSATION_VERSION,
