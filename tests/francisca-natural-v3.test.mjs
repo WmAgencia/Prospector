@@ -18,6 +18,18 @@ const {generate100FranciscaScenarios,evaluateFrancisca100,gradeFranciscaReply}=a
 const {findStyleExamples,styleIntentCategory}=await import('../dashboard/francisca-style-examples.mjs');
 const {trainingPrompt}=await import('../dashboard/training.mjs');
 const {db}=await import('../dashboard/db.mjs');
+test('production tenant flags keep v3 exclusive to Consecom',async()=>{
+ const {workerEnvironment}=await import('../dashboard/platform.mjs');
+ process.env.FRANCISCA_COMPACT_PROMPT_V3_ENABLED='true';
+ try{
+  const root=workerEnvironment({id:'internal',name:'Consecom',is_internal:1,is_demo:0},3010);
+  const external=workerEnvironment({id:'other',name:'Another company',is_internal:0,is_demo:0},3011);
+  const demo=workerEnvironment({id:'demo',name:'Demo',is_internal:0,is_demo:1},3012);
+  assert.equal(root.FRANCISCA_COMPACT_PROMPT_V3_ENABLED,'true');
+  assert.equal(external.FRANCISCA_COMPACT_PROMPT_V3_ENABLED,'false');
+  assert.equal(demo.FRANCISCA_COMPACT_PROMPT_V3_ENABLED,'false');
+ }finally{process.env.FRANCISCA_COMPACT_PROMPT_V3_ENABLED='true';}
+});
 test('compact conversational prompt requires explicit internal Consecom flag',()=>{
  assert.equal(compactPromptEnabled({FRANCISCA_COMPACT_PROMPT_V3_ENABLED:'false'}),false);
  assert.equal(compactPromptEnabled({FRANCISCA_COMPACT_PROMPT_V3_ENABLED:'true'}),true);
