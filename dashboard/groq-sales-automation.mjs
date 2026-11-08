@@ -238,9 +238,11 @@ export async function handleSalesTurn(providerId,deps={}){
  let review=(fixedOffer||strictApprovedReply)?{ok:true,code:'SERVER_APPROVED_CONSECOM_TEXT'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
  // If the model invented commercial terms or claimed an unperformed action,
  // replace it with deterministic, operator-safe information rather than falling silent.
- if(!review.ok&&portfolioAllowed&&['UNVERIFIED_PRICE','UNAPPROVED_TERMS','UNVERIFIED_ACTION'].includes(review.code)){
-  const fallback=approvedReply||safeGeneralReply(r.body,{business:r.business,segment:r.segment});
-  const verified=approvedReply?{ok:true,code:'SERVER_APPROVED_CONSECOM_FALLBACK'}:reviewGroqReply({inbound:r.body,draft:fallback,allowAveragePrice:false});
+ if(!review.ok&&portfolioAllowed&&['UNVERIFIED_PRICE','UNAPPROVED_TERMS','UNVERIFIED_ACTION','UNVERIFIED_PAYMENT_ACTION'].includes(review.code)){
+  const fallback=review.code==='UNVERIFIED_PAYMENT_ACTION'?
+   'O Pix é tratado por aqui mesmo. Os dados de pagamento só são enviados quando a cobrança está autorizada e habilitada no sistema; não precisa passar outro e-mail ou telefone para gerar chave.':
+   approvedReply||safeGeneralReply(r.body,{business:r.business,segment:r.segment});
+  const verified=approvedReply&&review.code!=='UNVERIFIED_PAYMENT_ACTION'?{ok:true,code:'SERVER_APPROVED_CONSECOM_FALLBACK'}:reviewGroqReply({inbound:r.body,draft:fallback,allowAveragePrice:false});
   if(verified.ok){audit('FRANCISCA_SAFE_FALLBACK',r.lead_id,{rejected:review.code});replyText=fallback;review=verified;}
  }
  if(!review.ok){

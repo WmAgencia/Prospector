@@ -109,6 +109,7 @@ export function naturalConversationInstructions({incoming='',context='',dialogue
   firstRule,
   toneByRegister[p.register],
   'Conversa, não telemarketing: evite slogans, bordões, bajulação, abertura com "Claro!", "Perfeito!", "Entendi!" em todo turno, sequência fixa de perguntas ou terminar tudo com "posso te ajudar?".',
+  'Se a pessoa disser apenas oi/oie, responda ao cumprimento de forma simples. Evite começar perguntando "Como posso ajudar sua empresa hoje?" como frase pronta. Se a pessoa fizer pergunta objetiva, responda sem puxar uma pergunta de volta automaticamente.',
   'Faça uma pergunta somente quando ela realmente avançar a compreensão ou uma decisão. Não transforme o atendimento em interrogatório.',
   'Não copie exemplos anteriores; retome os fatos já conversados e não repita uma proposta que a pessoa já ouviu.',
   ...selected,

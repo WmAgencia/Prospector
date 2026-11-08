@@ -82,6 +82,7 @@ import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mj
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
 import {naturalConversationEnabled,NATURAL_CONVERSATION_VERSION} from './francisca-natural-conversation.mjs';
+import {approvedLabFactReply,labModelReplySafe,LAB_PAYMENT_SAFETY_VERSION} from './francisca-lab-safety.mjs';
 let lastNaturalPreviewAt=0;
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
@@ -642,6 +643,13 @@ async function handler(req,res){
    ).map(item=>({role:item.role,text:item.text.slice(0,350)})):[];
    lastNaturalPreviewAt=Date.now();
    const hasAssistant=history.some(item=>item.role==='assistant');
+   // A simulation has no PIX generation or delivery tooling. For sensitive
+   // commercial facts use the same approved Consecom rules as production,
+   // instead of letting a model invent payment steps or SEO package names.
+   const fixed=approvedLabFactReply({incoming:phrase,history});
+   if(fixed)return respond(res,200,{ok:true,answer:fixed,model:'APPROVED_CONSECOM_SIMULATION',
+    naturalConversation:true,commercialStage:'SIMULATION',version:LAB_PAYMENT_SAFETY_VERSION,
+    noWhatsappSend:true,noPaymentCreated:true,reviewed:'APPROVED_TEST_FACT',code:null});
    const simulationMemory=nextConversationState({},[
     ...history.map(item=>({direction:item.role==='user'?'in':'out',body:item.text})),
     {direction:'in',body:phrase}
@@ -650,10 +658,12 @@ async function handler(req,res){
    const result=await aiDraft({text:phrase,
     context:'SIMULAÇÃO INTERNA DE CONVERSA COM CLIENTE FICTÍCIO. Não há WhatsApp, lead, pagamento ou envio.\n'+prior,
     audience:'PROSPECT_APPROACHED',commercialMode:'SIMULATION',dialogueState:{hasAssistantReply:hasAssistant,salesMemory:simulationMemory}});
+   const reviewed=result.ok?labModelReplySafe({incoming:phrase,history,draft:result.draft}):null;
    return respond(res,result.ok?200:result.httpStatus||502,
-    {ok:result.ok,answer:result.ok?result.draft:null,model:result.model||null,
-     naturalConversation:result.naturalConversation===true,commercialStage:result.commercialStage||null,version:NATURAL_CONVERSATION_VERSION,
-     noWhatsappSend:true,code:result.code||null});
+    {ok:result.ok,answer:reviewed?.answer||null,model:result.model||null,
+     naturalConversation:result.naturalConversation===true,commercialStage:result.commercialStage||null,
+     version:NATURAL_CONVERSATION_VERSION,noWhatsappSend:true,noPaymentCreated:true,
+     reviewed:reviewed?.source||null,code:result.code||null});
   }
 
   if(req.method==='GET'&&pathname==='/api/agent-bridge/status')return respond(res,200,{...bridgeStatus(),privateMediaRestore:privateRestoreStatus()});
