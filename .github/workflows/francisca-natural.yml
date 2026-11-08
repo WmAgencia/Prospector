@@ -6,12 +6,16 @@ on:
     paths:
       - dashboard/francisca-natural-conversation.mjs
       - dashboard/ai-groq.mjs
+      - dashboard/server.mjs
+      - dashboard/public/simple-app.js
       - tests/francisca-natural-conversation.test.mjs
       - .github/workflows/francisca-natural.yml
   pull_request:
     paths:
       - dashboard/francisca-natural-conversation.mjs
       - dashboard/ai-groq.mjs
+      - dashboard/server.mjs
+      - dashboard/public/simple-app.js
       - tests/francisca-natural-conversation.test.mjs
       - .github/workflows/francisca-natural.yml
   workflow_dispatch:
@@ -31,6 +35,8 @@ jobs:
           node --check dashboard/francisca-natural-conversation.mjs
           node --check dashboard/ai-groq.mjs
           node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/server.mjs
+          node --check dashboard/public/simple-app.js
           node --check tests/francisca-natural-conversation.test.mjs
       - name: Test synthetic dialogue and production prompt routing
         run: node --test tests/francisca-natural-conversation.test.mjs
