@@ -118,4 +118,4 @@ test('tone evaluator identifies robotic language but never blocks factually safe
  assert.equal(simple.genericOpening,false);
  assert.equal(simple.corporate,false);
 });
-test.after(()=>{try{(await import('../dashboard/db.mjs')).db.close();}catch{}fs.rmSync(temp,{recursive:true,force:true});});
+test.after(async()=>{try{(await import('../dashboard/db.mjs')).db.close();}catch{}fs.rmSync(temp,{recursive:true,force:true});});
