@@ -8,6 +8,7 @@ on:
       - dashboard/ai-groq.mjs
       - dashboard/groq-sales-automation.mjs
       - dashboard/server.mjs
+      - dashboard/platform.mjs
       - dashboard/public/simple-app.js
       - tests/francisca-natural-conversation.test.mjs
       - .github/workflows/francisca-natural.yml
@@ -17,6 +18,7 @@ on:
       - dashboard/ai-groq.mjs
       - dashboard/groq-sales-automation.mjs
       - dashboard/server.mjs
+      - dashboard/platform.mjs
       - dashboard/public/simple-app.js
       - tests/francisca-natural-conversation.test.mjs
       - .github/workflows/francisca-natural.yml
@@ -38,6 +40,7 @@ jobs:
           node --check dashboard/ai-groq.mjs
           node --check dashboard/groq-sales-automation.mjs
           node --check dashboard/server.mjs
+          node --check dashboard/platform.mjs
           node --input-type=module --check < dashboard/public/simple-app.js
           node --check tests/francisca-natural-conversation.test.mjs
       - name: Test synthetic dialogue and production prompt routing
