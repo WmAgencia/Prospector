@@ -74,6 +74,7 @@ export function workerEnvironment(client,port){
   FRANCISCA_NATURAL_V1_ENABLED:client.is_internal===1&&process.env.FRANCISCA_NATURAL_V1_ENABLED==='true'?'true':'false',
   FRANCISCA_COMMERCIAL_BRAIN_V2_ENABLED:client.is_internal===1&&process.env.FRANCISCA_COMMERCIAL_BRAIN_V2_ENABLED==='true'?'true':'false',
   FRANCISCA_STYLE_EXAMPLES_V1_ENABLED:client.is_internal===1&&process.env.FRANCISCA_STYLE_EXAMPLES_V1_ENABLED==='true'?'true':'false',
+  FRANCISCA_COMPACT_PROMPT_V3_ENABLED:client.is_internal===1&&process.env.FRANCISCA_COMPACT_PROMPT_V3_ENABLED==='true'?'true':'false',
   // The legacy Consecom master already owns its imported group. Do not attach
   // the same JID to the Consecom internal child worker: duplicated workers
   // would otherwise both answer messages and send 08h reports to one group.
