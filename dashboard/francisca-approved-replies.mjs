@@ -6,6 +6,8 @@ export function extractProposalEmail(text=''){
 }
 export function approvedConsecomAnswer(message=''){
  const s=norm(message);
+ if(/\b(?:master\s*seo|seo\s*master)\b/.test(s))
+  return 'Sim, fazemos Master SEO. O site é preparado com otimizações técnicas para facilitar a descoberta orgânica no Google, sem prometer posição específica ou vendas garantidas.';
  if(/\b(?:contrato|gov\.?br|assinatura digital)\b/.test(s))
   return 'Fazemos contrato, sim! Nesse pacote normalmente não é necessário, mas, se você preferir, a equipe prepara um contrato de prestação de serviço pra assinatura digital de ambas as partes pelo Gov.br.';
  if(/(?:nao (?:quero|podem?|pode|gostaria).{0,45}(?:portfolio|credito|rodape|feito por consecom)|sem (?:portfolio|credito)|codigo (?:vai ser|e) meu|direitos do codigo)/.test(s))
