@@ -41,6 +41,27 @@ test('retrieval looks up the incoming customer message, not a random answer',()=
  assert.ok(r.every(x=>x.score>=0.14));
  assert.ok(r.every(x=>x.source==='SYNTHETIC_BUILTIN'));
 });
+test('a slow site triggers a conditional, human-sounding offer to inspect source code',()=>{
+ const examples=style.findStyleExamples({incoming:'Meu site está muito lento no celular',limit:3});
+ assert.ok(examples.some(x=>/analisar o código do seu site/.test(x.reply)));
+ const prompt=style.styleExamplesInstructions({incoming:'Meu site está muito lento no celular'});
+ assert.match(prompt,/Se você quiser, posso analisar o código/);
+ assert.match(prompt,/NUNCA copie literalmente/);
+});
+
+test('commercial planning respects website already owned and asks for authorized code before diagnosing',async()=>{
+ const {analyzeCommercialTurn}=await import('../dashboard/francisca-commercial-brain.mjs');
+ const {naturalConversationInstructions}=await import('../dashboard/francisca-natural-conversation.mjs');
+ const plan=analyzeCommercialTurn({incoming:'Já tenho um site, mas ele demora no celular'});
+ assert.equal(plan.need,'mobile_performance');
+ assert.equal(plan.concern,'already_has_solution');
+ assert.match(plan.nextAction,/Se você quiser, posso analisar o código/);
+ assert.match(plan.nextAction,/Não diga que já inspecionou/);
+ const natural=naturalConversationInstructions({incoming:'Meu site tá lento no celular'});
+ assert.match(natural,/não peça senhas/);
+ assert.match(natural,/não diga que já analisou/);
+});
+
 test('retrieval understands common colloquial questions, accents and short natural phrases',()=>{
  const r=style.findStyleExamples({incoming:'vou falar com meu socio antes'});
  assert.ok(r.some(x=>/sócio antes/.test(x.incoming)));
