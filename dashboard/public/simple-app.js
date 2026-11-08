@@ -3,6 +3,7 @@ const q=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
 const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
+let naturalPreviewHistory=[],naturalPreviewBusy=false;
 let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="all",trainingAllConfirmed=false,trainingBusy=false,clientAccess="",demoLoginCredentials=null;
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
 let billingReminderOpen=false,billingReminderDismissed=false,billingDemoExhausted=false,billingDemoStep=0,billingDemoPackage='',billingLastChecked=0;
@@ -635,7 +636,26 @@ function interviewView(){
  const shared='<div class="training-markdown-info"><span><strong>Método global de vendas</strong> · compartilhado e somente leitura. O seu perfil de serviços, preços e tom é privado.</span><a href="/api/training/global.md" download="francisca-vendas-global.md" class="secondary compact">Baixar base global .md ↗</a></div>';
  return top+'<div class="interview-layout">'+body+'</div>'+profile+trainingSalesExtras()+advanced;
 }
-function trainingView(){return interviewView();}
+// Private roleplay sandbox: no real clients, WhatsApp sends or production leads.
+function naturalPreviewView(){
+ if(!trainingState?.internalAccount)return '';
+ const transcript=naturalPreviewHistory.length?naturalPreviewHistory.map(item=>
+  '<div class="training-message '+(item.role==='user'?'sent':'received')+'"><small>'+
+  (item.role==='user'?'Cliente fictício':'Francisca Natural')+'</small><p>'+esc(item.text)+'</p></div>'
+ ).join(''):'<div class="training-welcome"><strong>Teste como a Francisca responde.</strong><p>Experimente: “Já tenho site”, “achei caro”, “vou falar com meu sócio” ou simule uma conversa inteira.</p></div>';
+ return '<section class="panel" style="margin-bottom:20px"><div class="heading"><div>'+
+ '<span class="kicker">LABORATÓRIO • SEM ENVIOS</span><h3>Testar conversa natural</h3>'+
+ '<p>Converse com a nova Francisca como se fosse um cliente. Este teste não envia WhatsApp nem acessa leads.</p>'+
+ '</div></div><div class="training-messages" role="log" aria-label="Simulação da conversa natural" style="min-height:130px;max-height:390px;overflow:auto">'+transcript+'</div>'+
+ '<form class="training-composer" id="natural-preview-form">'+
+ '<label for="natural-preview-text" class="sr-only">Mensagem do cliente fictício</label>'+
+ '<textarea id="natural-preview-text" name="text" maxlength="1500" rows="2" required placeholder="Escreva aqui como se fosse um cliente..." '+(naturalPreviewBusy?'disabled':'')+'></textarea>'+
+ '<div class="training-compose-actions">'+
+ '<button type="button" class="secondary" data-action="natural-preview-clear" '+(naturalPreviewBusy?'disabled':'')+'>Reiniciar conversa</button>'+
+ '<button type="submit" class="primary" '+(naturalPreviewBusy?'disabled':'')+'>'+(naturalPreviewBusy?'Respondendo…':'Enviar mensagem de teste')+'</button>'+
+ '</div></form><p class="footnote">Somente simulação. Nenhuma mensagem será enviada ou salva no WhatsApp.</p></section>';
+}
+function trainingView(){return naturalPreviewView()+interviewView();}
 
 async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/analytics');if(platformContext.role==='master'&&view==='dashboard')render();}catch(e){n('Indicadores indisponíveis: '+e.message);}}
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
@@ -1312,6 +1332,7 @@ document.addEventListener("click",async ev=>{
  const action=el.dataset.action;
  try{
   if(await platformAction(action,el))return;
+  if(action==='natural-preview-clear'){naturalPreviewHistory=[];render();return;}
   if(action==="toggle-chat-handoff"){
    const chatId=selectedThread;
    const chosen=[...remoteChats,...(state?.threads||[])].find(x=>x.id===chatId);
@@ -1425,7 +1446,28 @@ document.addEventListener("keydown",ev=>{
 document.addEventListener("submit",async ev=>{
  ev.preventDefault();
  if(await platformSubmit(ev))return;
-
+ if(ev.target.id==='natural-preview-form'){
+  if(naturalPreviewBusy||!trainingState?.internalAccount)return;
+  const input=q('#natural-preview-text')?.value.trim()||'';
+  if(!input)return;
+  const prior=naturalPreviewHistory.slice(-10);
+  naturalPreviewHistory.push({role:'user',text:input});
+  naturalPreviewBusy=true;render();
+  try{
+   const reply=await post('/api/ai/natural-preview',{text:input,history:prior});
+   if(!reply.ok||!reply.answer)throw Error(reply.code||'A Francisca não respondeu.');
+   naturalPreviewHistory.push({role:'assistant',text:String(reply.answer).slice(0,1600)});
+  }catch(error){
+   naturalPreviewHistory.push({role:'assistant',text:'Não consegui responder neste teste: '+String(error.message||'erro').slice(0,120)});
+  }finally{
+   naturalPreviewHistory=naturalPreviewHistory.slice(-20);
+   naturalPreviewBusy=false;render();
+   const feed=q('[aria-label="Simulação da conversa natural"]');
+   if(feed)feed.scrollTop=feed.scrollHeight;
+  }
+  return;
+ }
+ 
  if(ev.target.id==='activate-account'){
   const input=Object.fromEntries(new FormData(ev.target));
   if(input.password!==input.confirmPassword){n('As senhas não são iguais.');return;}
