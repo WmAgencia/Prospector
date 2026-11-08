@@ -43,7 +43,7 @@ export function approvedLabFactReply({incoming='',history=[]}={}){
   return 'Legal! Para começar, precisamos confirmar a entrada de R$ 275 e receber os materiais do site. Você prefere organizar essa entrada por Pix?';
  return null;
 }
-const unsafeAction=/(?:\b(?:vou|vamos|posso|consigo)\s+(?:te\s+)?(?:gerar|liberar|enviar|mandar|passar)\s+(?:a\s+|uma\s+)?chave\s+pix\b|\b(?:sistema|plataforma)\s+(?:vai|ira)\s+(?:gerar|liberar|enviar)\s+(?:a\s+)?chave\s+pix\b|\b(?:informe|preciso|me\s+(?:passa|informa|diga))\b.{0,110}\b(?:email|e-mail|telefone|celular)\b.{0,110}\b(?:pix|chave)\b|\b(?:pix|chave)\b.{0,110}\b(?:email|e-mail|telefone)\b.{0,80}\b(?:gerar|enviar|liberar)\b)/i;
+const unsafeAction=/(?:\b(?:a gente|nos|nosso sistema|a plataforma)\s+(?:gera|geramos|geraemos|libera|envia)\s+(?:a\s+)?chave\s+pix\b|\b(?:qual|informe|me passa|me informa|me diga)\b.{0,100}\b(?:email|e-mail|telefone|celular)\b.{0,100}\b(?:pix|chave)\b|\b(?:vou|vamos|posso|consigo)\s+(?:te\s+)?(?:gerar|liberar|enviar|mandar|passar)\s+(?:a\s+|uma\s+)?chave\s+pix\b|\b(?:sistema|plataforma)\s+(?:vai|ira)\s+(?:gerar|liberar|enviar)\s+(?:a\s+)?chave\s+pix\b|\b(?:informe|preciso|me\s+(?:passa|informa|diga))\b.{0,110}\b(?:email|e-mail|telefone|celular)\b.{0,110}\b(?:pix|chave)\b|\b(?:pix|chave)\b.{0,110}\b(?:email|e-mail|telefone)\b.{0,80}\b(?:gerar|enviar|liberar)\b)/i;
 export function labModelReplySafe({incoming='',history=[],draft=''}={}){
  const approved=approvedLabFactReply({incoming,history});
  if(approved)return {answer:approved,source:'APPROVED_TEST_FACT'};
