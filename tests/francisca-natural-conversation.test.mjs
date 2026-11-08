@@ -94,7 +94,7 @@ test('draft adapter really uses natural instructions in Consecom without invokin
  assert.equal(called.messages.at(-1).content,text);
  assert.match(called.messages[0].content,/FRANCISCA NATURAL/);
  assert.match(called.messages[0].content,/Não ofereça automaticamente outro site/);
- assert.match(called.messages[0].content,/Não invente preços, promessas/);
+ assert.match(called.messages[0].content,/não invente preços, promessas/i);
  assert.equal(called.task,'conversation');
  assert.equal(ans.autoSend,false);
 });
