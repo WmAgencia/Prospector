@@ -128,7 +128,7 @@ test('funnel has true unique contacted cohort, excludes bot replies and unconfir
  db.run("UPDATE leads SET stage='CLOSED_WON' WHERE id=?",a.lead.id);
  db.run('INSERT INTO sales_outcomes(lead_id,status,source,provider_id,summary,updated_at) VALUES(?,?,?,?,?,?)',a.lead.id,'CLOSED_WON','TEST','','Venda fictícia confirmada',db.now());
  db.run('CREATE TABLE IF NOT EXISTS sales_payment_intents(lead_id TEXT PRIMARY KEY,status TEXT NOT NULL)');
- db.run('INSERT INTO sales_payment_intents(lead_id,status) VALUES(?,?)',a.lead.id,'PAYMENT_VERIFIED');
+ db.run('INSERT INTO sales_payment_intents(lead_id,provider_id,session_id,amount_cents,entry_cents,remaining_cents,method,status,requested_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',a.lead.id,'intent-test-1','session-test',55000,27500,27500,'pix','PAYMENT_VERIFIED',db.now(),db.now());
  const f=salesConversionFunnel();
  assert.equal(f.delivered,3);
  assert.equal(f.replied,2);
