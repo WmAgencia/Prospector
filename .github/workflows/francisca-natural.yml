@@ -6,6 +6,7 @@ on:
     paths:
       - dashboard/francisca-natural-conversation.mjs
       - dashboard/ai-groq.mjs
+      - dashboard/groq-sales-automation.mjs
       - dashboard/server.mjs
       - dashboard/public/simple-app.js
       - tests/francisca-natural-conversation.test.mjs
@@ -14,6 +15,7 @@ on:
     paths:
       - dashboard/francisca-natural-conversation.mjs
       - dashboard/ai-groq.mjs
+      - dashboard/groq-sales-automation.mjs
       - dashboard/server.mjs
       - dashboard/public/simple-app.js
       - tests/francisca-natural-conversation.test.mjs
