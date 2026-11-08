@@ -5,6 +5,7 @@ const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short"
 const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
 let naturalPreviewHistory=[],naturalPreviewBusy=false;
 let styleExampleData=null,styleExampleBusy=false;
+let franciscaEvaluation=null;
 let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="all",trainingAllConfirmed=false,trainingBusy=false,clientAccess="",demoLoginCredentials=null;
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
 let billingReminderOpen=false,billingReminderDismissed=false,billingDemoExhausted=false,billingDemoStep=0,billingDemoPackage='',billingLastChecked=0;
@@ -642,7 +643,8 @@ function naturalPreviewView(){
  if(!trainingState?.internalAccount)return '';
  const transcript=naturalPreviewHistory.length?naturalPreviewHistory.map(item=>
   '<div class="training-message '+(item.role==='user'?'sent':'received')+'"><small>'+
-  (item.role==='user'?'Cliente fictício':'Francisca Natural')+'</small><p>'+esc(item.text)+'</p></div>'
+  (item.role==='user'?'Cliente fictício':'Francisca Natural')+'</small><p>'+esc(item.text)+'</p>'+
+  (item.role==='assistant'&&item.quality?'<small>Naturalidade estimada: '+esc(item.quality.score)+'/100 · avaliação automática de estilo, não de fatos nem de vendas'+(item.quality.flags?.length?' · '+esc(item.quality.flags.join(', ')):'')+'</small>':'')+'</div>'
  ).join(''):'<div class="training-welcome"><strong>Teste como a Francisca responde.</strong><p>Experimente: “Já tenho site”, “achei caro”, “vou falar com meu sócio” ou simule uma conversa inteira.</p></div>';
  return '<section class="panel" style="margin-bottom:20px"><div class="heading"><div>'+
  '<span class="kicker">LABORATÓRIO • SEM ENVIOS</span><h3>Testar conversa natural</h3>'+
@@ -695,12 +697,22 @@ function styleExamplesView(){
     items.slice(0,30).map(item).join('')+'</details>':'')+
   '<p class="footnote">Exemplos aprovados não substituem o treinamento comercial. É possível excluir qualquer exemplo cadastrado.</p></section>';
 }
-function trainingView(){return naturalPreviewView()+styleExamplesView()+interviewView();}
+function franciscaEvaluationView(){
+ if(!trainingState?.internalAccount||!franciscaEvaluation?.ok)return '';
+ const e=franciscaEvaluation;
+ return '<section class="panel" style="margin-bottom:20px">'+
+  '<div class="heading"><div><span class="kicker">AVALIAÇÃO • 100 SITUAÇÕES FICTÍCIAS</span>'+
+  '<h3>Como estamos medindo a naturalidade</h3>'+
+  '<p>Uma bateria de '+esc(e.syntheticCases)+' situações em '+esc(e.categories)+' categorias de conversas, sem disparar WhatsApp ou fazer pagamentos.</p></div></div>'+
+  '<p>A calibração usa respostas fictícias revisadas para verificar se o avaliador reconhece frases formais, perguntas burocráticas e promessas sem confirmação. <strong>Não é uma nota do Groq nem prova de aumento de conversão.</strong></p>'+
+  '<p>Durante o teste de conversa acima, cada resposta pode receber uma estimativa automática de naturalidade. É um sinal para revisão humana, não uma aprovação comercial.</p></section>';
+}
+function trainingView(){return naturalPreviewView()+franciscaEvaluationView()+styleExamplesView()+interviewView();}
 
 async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/analytics');if(platformContext.role==='master'&&view==='dashboard')render();}catch(e){n('Indicadores indisponíveis: '+e.message);}}
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
 async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');billingLastChecked=Date.now();platformContext.available=creditState.available;if(view==='credits')render();maybeOpenBillingReminder();}catch(e){n(e.message);}}
-async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if(trainingState?.internalAccount){try{styleExampleData=await api('/api/ai/style-examples');}catch{styleExampleData=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
+async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if(trainingState?.internalAccount){try{styleExampleData=await api('/api/ai/style-examples');}catch{styleExampleData=null;}}if(trainingState?.internalAccount){try{franciscaEvaluation=await api('/api/ai/evaluation-100');}catch{franciscaEvaluation=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
 
 let stripeEmbeddedInstance=null;
 async function openProspectorCheckout(order){
@@ -1533,7 +1545,7 @@ document.addEventListener("submit",async ev=>{
   try{
    const reply=await post('/api/ai/natural-preview',{text:input,history:prior});
    if(!reply.ok||!reply.answer)throw Error(reply.code||'A Francisca não respondeu.');
-   naturalPreviewHistory.push({role:'assistant',text:String(reply.answer).slice(0,1600)});
+   naturalPreviewHistory.push({role:'assistant',text:String(reply.answer).slice(0,1600),quality:reply.quality||null});
   }catch(error){
    naturalPreviewHistory.push({role:'assistant',text:'Não consegui responder neste teste: '+String(error.message||'erro').slice(0,120)});
   }finally{
