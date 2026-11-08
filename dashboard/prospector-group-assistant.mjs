@@ -27,6 +27,14 @@ export const canonicalGroupText=value=>String(value??'').normalize('NFKC')
  // Cross-device formatting changes tabs/newlines/indentation in quoted text.
  // Treat those as the same outbound reply for loop detection.
  .replace(/\s+/g,' ').trim();
+// Only the dedicated bold header on the FIRST line marks an AI-authored
+// message. Mentioning "Prospector" elsewhere must remain a human request.
+export function isProspectorAuthoredMessage(value){
+ const firstLine=String(value??'').normalize('NFKC')
+  .replace(/[\u200b-\u200f\u2060\ufeff]/g,'')
+  .replace(/\r\n?/g,'\n').trimStart().split('\n',1)[0].trim();
+ return firstLine==='*PROSPECTOR*';
+}
 export const groupTextHash=value=>crypto.createHash('sha256').update(canonicalGroupText(value)).digest('hex');
 export const looksLikeAutomatedReport=value=>{
  const x=canonicalGroupText(value);
@@ -197,6 +205,11 @@ export async function receivePrivateGroupWebhook({sessionId,data={},request=waRe
  // fromMe/message.sent, BEFORE authorizing or queueing a new command.
  const body=typeof data.content==='string'?data.content:String(data.content?.text||data.content?.body||data.content?.caption||'');
  if(body){
+  // Source-of-truth rule for the shared command room: bot replies always
+  // start with *PROSPECTOR* on their own line. Never interpret them as
+  // incoming requests, even on another WhatsApp session or after a restart.
+  if(isProspectorAuthoredMessage(body))
+   return {handled:true,accepted:true,ignored:true,reason:'PROSPECTOR_AUTHORED'};
   const echo=groupTextHash(body);
   if(one('SELECT 1 FROM prospector_group_outgoing_guard WHERE group_jid=? AND hash=? AND at>? LIMIT 1',
     groupId,echo,new Date(Date.now()-GROUP_ECHO_LOOKBACK).toISOString()))
@@ -243,6 +256,7 @@ export async function receivePrivateGroupWebhook({sessionId,data={},request=waRe
 }
 export async function queueGroupCommand({unique,sessionId,groupId,sender,text,request=waRequest}={}){
  if(process.env.PROSPECTOR_AUTO_GROUP_ENABLED==='false')return {handled:true,accepted:false,reason:'GROUP_DISABLED'};
+ if(isProspectorAuthoredMessage(text))return {handled:true,accepted:true,ignored:true,reason:'PROSPECTOR_AUTHORED'};
  const clean=canonicalGroupText(text);
  if(looksLikeAutomatedReport(clean))return {handled:true,accepted:true,ignored:true,reason:'GENERATED_REPORT'};
  const recentMinute=one('SELECT COUNT(*) AS n FROM prospector_group_commands WHERE group_jid=? AND received_at>=?',
@@ -266,6 +280,10 @@ export async function processGroupCommands({ask=groqChat,request=waRequest}={}){
   // Persisted queues survive restarts; a failed uncertain send is never resent.
   const item=one("SELECT * FROM prospector_group_commands WHERE state='PENDING' ORDER BY received_at LIMIT 1");
   if(!item)return {state:'IDLE'};
+  if(isProspectorAuthoredMessage(item.body)){
+   run("UPDATE prospector_group_commands SET state='REJECTED',updated_at=? WHERE event_id=?",now(),item.event_id);
+   return {state:'IGNORED_PROSPECTOR_REPLY'};
+  }
   const permitted=await verifyGroupMember({sessionId:item.session_id,groupId:item.group_jid,sender:[item.sender_jid],request});
   if(!permitted.ok){
    run("UPDATE prospector_group_commands SET state='REJECTED',updated_at=? WHERE event_id=?",now(),item.event_id);
