@@ -9,7 +9,7 @@ import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {classifyInboundAutomation} from './inbound-automation.mjs';
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
 import {routeIntroductionReply,introductionStatus} from "./prospecting-introduction.mjs";
-import {explicitlyAcceptsProposal} from "./proposal-acceptance.mjs";
+import {explicitlyAcceptsProposal,explicitlyDeclinesProposal} from "./proposal-acceptance.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {configuredClosing} from "./training-sales-extras.mjs";
@@ -149,6 +149,12 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
   }
  }
  if(identity.role==='PROSPECT_APPROACHED'){
+  // A plain "não" or "não obrigado" is a decline, even if the classifier for
+  // generic sales endings did not identify it. Never start AI or scheduled pitch.
+  if(state==='REVIEW'&&explicitlyDeclinesProposal(content)){
+   stage(lead.id,'NO_INTEREST','PROPOSAL_DECLINED');
+   state='NO_INTEREST';
+  }
   const intro=introductionStatus(lead.id);
   const firstAcceptance=intro?.stage==='GREETING_SENT'&&explicitlyAcceptsProposal(content);
   // A real affirmative inbound answer is recorded as evidence to CONTINUE the
