@@ -8,6 +8,7 @@ import {reserveApproachCredit,settleApproachCredit,availableApproachCredits} fro
 import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt} from './approach-cadence.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
+import {coldFirstApproachEnabled as tenantColdFirstApproachEnabled} from './tenant-prospecting-controls.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
 import {insideApproachWindow} from './outreach-window.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
@@ -72,7 +73,7 @@ function closeStaleBatch(at=new Date()){
 }
 // Operador liberou a abordagem fria (2026-11-04). O opt-in por contato continua
 // valendo para o Groq: a primeira resposta da pessoa é o que libera a conversa.
-export const coldFirstApproachEnabled=()=>process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
+export const coldFirstApproachEnabled=()=>tenantColdFirstApproachEnabled();
 // Read-only inventory using the sender's eligibility checks. Consent statistics
 // from legacy workflows do not describe the autonomous first-greeting queue.
 export function autonomousReadyCount(at=new Date()){
