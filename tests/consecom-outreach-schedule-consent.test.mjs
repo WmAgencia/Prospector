@@ -1,14 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {explicitlyAcceptsProposal} from '../dashboard/proposal-acceptance.mjs';
+import {explicitlyAcceptsProposal,explicitlyDeclinesProposal} from '../dashboard/proposal-acceptance.mjs';
 import {APPROACH_CADENCE,chooseApproachInterval} from '../dashboard/approach-cadence.mjs';
 
 test('first proposal permission must be explicit; vague greetings never trigger pitch',()=>{
- const agreed=['Sim, pode mandar!','Olá, tudo bem? Pode enviar a proposta.','Pode falar','Claro!','Quanto custa?'];
- const refused=['Oi, tudo bem?','Tudo bem!','Não, obrigado','Sim, mas não quero proposta','Mensagem automática','Ok','Legal'];
+ const agreed=['Sim, pode mandar!','Olá, tudo bem? Pode enviar a proposta.','Pode falar','Pode explicar','Hum, queria saber mais','Claro!','Quanto custa?'];
+ const refused=['Oi, tudo bem?','Tudo bem!','Não','Não, obrigado','Sem interesse','Sim, mas não quero proposta','Mensagem automática','Ok','Legal'];
  for(const text of agreed)assert.equal(explicitlyAcceptsProposal(text),true,'accepted: '+text);
  for(const text of refused)assert.equal(explicitlyAcceptsProposal(text),false,'refused/unclear: '+text);
+});
+test('negative answers terminate the pending proposal; vague replies do not authorize',()=>{
+ for(const msg of ['Não','não, obrigado','Sem interesse','Agora não','prefiro não','não estou interessado'])
+  assert.equal(explicitlyDeclinesProposal(msg),true,msg);
+ for(const msg of ['Olá, tudo bem?','Tudo bem','Sim, pode enviar','Hum, queria saber mais'])
+  assert.equal(explicitlyDeclinesProposal(msg),false,msg);
+ const introduction=fs.readFileSync(new URL('../dashboard/prospecting-introduction.mjs',import.meta.url),'utf8');
+ const bridge=fs.readFileSync(new URL('../dashboard/waakg-bridge.mjs',import.meta.url),'utf8');
+ assert.match(introduction,/if\(explicitlyDeclinesProposal\(body\)\)/);
+ assert.match(bridge,/state='NO_INTEREST'/);
+ assert.match(bridge,/grantAutonomousFirstReply\(lead\.id,content,intro\.greeting_id\)/);
+ assert.doesNotMatch(bridge,/PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true'/);
 });
 test('every randomized interval remains 90–110 seconds and differs by 5 seconds',()=>{
  assert.equal(APPROACH_CADENCE.minSeconds,90);
