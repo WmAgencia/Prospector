@@ -9,7 +9,7 @@ process.env.PROSPECTOR_OWNER_VOICE_DEMO_ENABLED='true';
 const {db}=await import('../dashboard/db.mjs');
 const {runOwnerVoiceDemo}=await import('../dashboard/owner-voice-demo.mjs');
 const {sendVoiceWithRecording}=await import('../dashboard/waakg-voice-presence.mjs');
-const from='5515981817336',to='5515981732994';
+const from='5511988877336',to='5511988882994'; // synthetic test fixtures, never real recipients
 const sourceSession='sender-7336-test';
 const matchingSession=()=>({items:[
  {session_id:sourceSession,connected:true,number:from,numberSuffix:'7336'},
