@@ -12,7 +12,7 @@ import {detectAutomaticReply,friendlyGreeting,portfolioQuestion} from './portfol
 import {tenantApproachGreeting} from './tenant-approach.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
-import {sendVoiceMedia} from './waakg-media.mjs';
+import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
 import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
 
 export const INTRO_DELAY_MS=30_000;
@@ -101,7 +101,7 @@ let busy=false;
 export async function tickIntroductions(deps={}){
  if(busy)return {state:'BUSY'};
  const {currentTime=()=>Date.now(),status=waControlStatus,session=selectedWaSession,
-  send=waRequest,sendAudio=sendVoiceMedia,loadAudio=readPortfolioPitchAudio}=deps;
+  send=waRequest,sendAudio=sendVoiceWithRecording,loadAudio=readPortfolioPitchAudio}=deps;
  busy=true;
  try{
   const at=currentTime();
