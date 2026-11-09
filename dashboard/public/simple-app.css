@@ -195,3 +195,14 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
 @media(min-width:1600px){.kanban-column-items{min-height:420px}.panel{padding:28px}}
 @media(max-width:1100px){.management-grid{grid-template-columns:minmax(0,1fr)}.management-aside{position:static;grid-row:1}.training-grid{grid-template-columns:minmax(0,1fr)}.training-steps{grid-template-columns:1fr}.credit-grid{grid-template-columns:1fr}.training-messages{max-height:420px}}
 @media(max-width:700px){.workspace-head{align-items:flex-start;flex-direction:column;gap:12px}.workspace-head h2{font-size:25px}.workspace-head p{font-size:12px}.add-account{align-items:stretch;flex-direction:column}.add-account input{max-width:none}.account-grid{grid-template-columns:1fr}.client-card{padding:15px}.client-identity{flex-wrap:wrap}.client-identity>.tag{margin-left:52px}.management-grid{gap:16px}.panel{border-radius:14px}.heading>.secondary{width:100%;justify-content:center}.credit-balance>strong{font-size:56px}.training-grid{gap:16px}.training-steps{gap:7px}.qr-frame{min-height:250px}.account-card{min-height:76px}.training-message{max-width:100%}.main-footer{font-size:9px}}
+
+/* Independent, per-workspace prospecting controls. */
+.tenant-prospecting-controls{margin-top:18px;padding:24px 27px}
+.tenant-prospecting-controls .heading{margin-bottom:10px}
+.tenant-prospecting-controls .setting-line{min-height:88px;padding:19px 0;gap:24px}
+.tenant-prospecting-controls .setting-line:last-of-type{border-bottom:0}
+.tenant-control-copy{min-width:0;max-width:720px}
+.tenant-control-copy strong{font-size:14px;font-weight:750;line-height:1.35}
+.tenant-control-copy small{font-size:12px;line-height:1.55;margin-top:6px;color:var(--muted)}
+.tenant-controls-footnote{border-top:1px solid var(--line);padding-top:13px;margin-top:8px}
+@media(max-width:700px){.tenant-prospecting-controls{padding:20px 18px}.tenant-prospecting-controls .setting-line{align-items:flex-start;gap:14px}.tenant-prospecting-controls .switch{margin-top:4px}}
