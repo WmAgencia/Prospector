@@ -10,6 +10,7 @@ import {requestPriceApproval,approvedPriceForLead} from './owner-price-approvals
 import {prospectSalesContext,priceQuestion,salesEnding} from './sales-policy.mjs';
 import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,proposalRequestWhileBusy,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup,safeGeneralReply} from './portfolio-offer-550.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
+import {portfolioAudioSentFor} from './portfolio-pitch-audio.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
@@ -76,6 +77,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const salesFollowup=approvedProspectFollowup(identity,r.jid);
  const portfolioAllowed=(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
  const intro=introductionStatus(r.lead_id);
+ const audioOffer350=portfolioAudioSentFor(intro);
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))return finish('SKIPPED','INTRO_NOT_COMPLETE');
  if(!prospectorChatEligible({jid:r.jid,sessionId:r.session_id}))return finish('SKIPPED','NOT_PROSPECTOR_APPROACHED');
  if(identity.role==='OWNER'&&!allowTest)return finish('HANDOFF','OWNER_PRIVILEGED_CHANNEL');
@@ -85,7 +87,7 @@ export async function handleSalesTurn(providerId,deps={}){
  if(optedOut(r.body)||['OPT_OUT','NO_INTEREST'].includes(salesEnding(r.body))||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return finish('SKIPPED','OPTOUT_OR_REFUSAL');
  if(detectAutomaticReply(r.body))return finish('SKIPPED','AUTOMATIC_RESPONSE');
  const closer=configuredClosing();
- if(closer?.mode==='complete'){
+ if(closer?.mode==='complete'&&!audioOffer350){
   if(['AWAITING_RECEIPT','RECEIPT_RECEIVED','PAYMENT_VERIFIED'].includes(paymentIntentStatus(r.lead_id)?.status))
    return finish('SKIPPED','PAYMENT_ALREADY_IN_PROGRESS');
   const plan=paymentProposalForIncoming({leadId:r.lead_id,jid:r.jid,sessionId:r.session_id,providerId,text:r.body});
@@ -126,12 +128,22 @@ export async function handleSalesTurn(providerId,deps={}){
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
  const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
+ if(audioOffer350&&buyerCommitment){
+  run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
+  stage(r.lead_id,'INTERESTED','PITCH_AUDIO_350_INTEREST');
+  recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:r.body,notify:false});
+  queueNotice('pitch-audio350:'+r.lead_id,'GROQ_HOT_LEAD',
+   interestNotice(r,'Interesse na oferta de R$ 350 enviada por áudio. Confirmar escopo e pagamento.'),r.lead_id);
+  return finish('HOT','AUDIO_350_CLOSING_TO_OWNER');
+ }
+ const audioPriceQuestion=audioOffer350&&/(?:quanto|pre[cç]o|valor|custa|r\$ ?350)/i.test(r.body)&&
+  !/(?:parcel|pix|cart[aã]o|entrada|pagamento)/i.test(r.body);
  const intent=commercialIntent(r.body);
- const approvedReply=portfolioAllowed?approvedConsecomAnswer(r.body):null;
+ const approvedReply=portfolioAllowed&&!audioOffer350?approvedConsecomAnswer(r.body):null;
  const special=isSpecificCommercialFollowup(r.body);
- const fixedOffer=portfolioAllowed&&!buyerCommitment&&((!special&&isBaseOfferQuestion(r.body))||(isPortfolioFAQ(r.body)&&(!special||['deadline','seo'].includes(intent))));
+ const fixedOffer=portfolioAllowed&&!audioOffer350&&!buyerCommitment&&((!special&&isBaseOfferQuestion(r.body))||(isPortfolioFAQ(r.body)&&(!special||['deadline','seo'].includes(intent))));
  const strictApprovedReply=approvedReply||null; // All answers here are server-authored and Consecom-only; never use for other tenants.
- const financial=priceQuestion(r.body)&&!fixedOffer&&!approvedReply&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
+ const financial=priceQuestion(r.body)&&!fixedOffer&&!approvedReply&&!audioPriceQuestion&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
  const approval=financial?(deps.requestPriceApproval||requestPriceApproval)({leadId:r.lead_id,providerId,question:r.body,sessionId:r.session_id}):null;
  if(financial&&!approval?.ok)return finish('REVIEW','PRICE_APPROVAL_UNAVAILABLE');
  const qualify=deps.qualify||qualifyWithGroq;
@@ -177,7 +189,7 @@ export async function handleSalesTurn(providerId,deps={}){
  }
   // An eligible prospect must explicitly ask to hear the proposal. An
   // automated receptionist's questions never trigger the offer A/B send.
-  if(portfolioAllowed&&!buyerCommitment&&!offerAlreadyExplained&&portfolioQuestion(r.body)){
+  if(portfolioAllowed&&!audioOffer350&&!buyerCommitment&&!offerAlreadyExplained&&portfolioQuestion(r.body)){
    if(stale())return finish(stale());
    // Do not send a different text pitch while the new matching recorded audio is pending.
    if(!offerAbConfig().enabled)return finish('REVIEW','OFFER_AB_AWAITING_NEW_AUDIO_AND_APPROVAL');
@@ -189,12 +201,14 @@ export async function handleSalesTurn(providerId,deps={}){
   }
 
  // A one-word hello never requires an external model call.
- const draft=fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:strictApprovedReply?{ok:true,draft:strictApprovedReply,model:'APPROVED_CONSECOM_FOLLOWUP'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+ const draft=audioPriceQuestion?{ok:true,
+  draft:'A proposta especial que te enviei em áudio fica em R$ 350 para esse site de portfólio. Antes de começar, a gente alinha direitinho o escopo e o pagamento. Faz sentido pra vocês?',
+  model:'APPROVED_PITCH_AUDIO_350'}:fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:strictApprovedReply?{ok:true,draft:strictApprovedReply,model:'APPROVED_CONSECOM_FOLLOWUP'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+memoryPrompt(commercialMemory)+'\n'+
-     (!process.env.PROSPECTOR_TENANT_ID&&salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(portfolioAllowed?'Para a oferta interna, use EXATAMENTE a política aprovada: R$ 550, domínio por um ano e até 3 dias ÚTEIS após pagamento confirmado e todos os materiais; alternativas e condições só as explicitamente autorizadas. Não invente descontos, resultados ou pagamento confirmado.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
+     (!process.env.PROSPECTOR_TENANT_ID&&salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(audioOffer350?'Este contato recebeu o áudio ORIGINAL da proposta de portfólio de R$ 350. ESSA é a condição para este contato, não use o preço padrão de R$ 550, nem invente desconto, prazo ou pagamento. Caso queira contratar, o Wesley confirma escopo e pagamento.':portfolioAllowed?'Para a oferta interna, use EXATAMENTE a política aprovada: R$ 550, domínio por um ano e até 3 dias ÚTEIS após pagamento confirmado e todos os materiais; alternativas e condições só as explicitamente autorizadas. Não invente descontos, resultados ou pagamento confirmado.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
  if(stale())return finish(stale());
  if(!draft.ok&&draft.code==='RATE_LIMITED'){
   run("UPDATE groq_auto_events SET state='PENDING',at=?,error='GROQ_RATE_LIMITED' WHERE provider_id=? AND state='PROCESSING'",new Date(Date.now()+90000).toISOString(),providerId);
@@ -211,7 +225,7 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('REVIEW','REPEATED_OR_EMPTY_REPLY');
  }
  // Only a server-authored fixed portfolio template bypasses the generic price filter.
- let review=(fixedOffer||strictApprovedReply)?{ok:true,code:'SERVER_APPROVED_CONSECOM_TEXT'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
+ let review=(fixedOffer||strictApprovedReply||audioPriceQuestion)?{ok:true,code:audioPriceQuestion?'APPROVED_PITCH_AUDIO_350':'SERVER_APPROVED_CONSECOM_TEXT'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
  // If the model invented commercial terms or claimed an unperformed action,
  // replace it with deterministic, operator-safe information rather than falling silent.
  if(!review.ok&&portfolioAllowed&&['UNVERIFIED_PRICE','UNAPPROVED_TERMS','UNVERIFIED_ACTION'].includes(review.code)){
