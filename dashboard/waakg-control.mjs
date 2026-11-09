@@ -203,9 +203,9 @@ export async function selectApproachSender(){
  return {connected:!!sessionId,sessionId,cursor,reason:sessionId?null:'OFFLINE'};
 }
 export async function waOperationalStatus(){
- if(managedSessions().length<=1){const status=await waControlStatus();return {...status,approachReady:status.connected};}
- const pool=await waSessionList();
  const internal=!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
+ if(!internal&&managedSessions().length<=1){const status=await waControlStatus();return {...status,approachReady:status.connected};}
+ const pool=await waSessionList();
  const pair=internal?consecomPairStatus(pool.items,selectedWaSession()):null;
  return {ok:pool.items.some(x=>x.ok),connected:pool.connected,
   approachReady:internal?pair.ready:pool.connected,
