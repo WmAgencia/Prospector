@@ -2,6 +2,7 @@
 // This module never sends WhatsApp messages, changes the outreach pause, or grants
 // permission merely because a lead came from a public directory.
 import {all,one,run,tx,id,audit} from './db.mjs';
+import {verifiedOwnerPhone} from './whatsapp-roles.mjs';
 
 const CHANNELS=new Set(['PERSONAL_WHATSAPP','PHONE_CALL','OTHER']);
 const PROOF_SQL="EXISTS(SELECT 1 FROM audit a WHERE a.lead_id=l.id AND a.action='CONSENT_UPDATED' AND json_extract(a.detail,'$.permitted')=1 AND COALESCE(json_extract(a.detail,'$.evidence'),'')<>'')";
@@ -63,6 +64,7 @@ export function approveLeadBatch(input={}){
   for(const item of approved){
    const lead=one('SELECT id,phone,contact_permission FROM leads WHERE id=?',item.leadId);
    if(!lead?.phone)throw Error('Um dos contatos não existe ou não possui WhatsApp');
+   if(lead.phone===verifiedOwnerPhone())throw Error('O número do proprietário não é um lead elegível');
    if(one('SELECT phone FROM suppressions WHERE phone=?',lead.phone))throw Error('Contato bloqueado para novas mensagens');
    if(one("SELECT phone FROM contact_relationships WHERE phone=? AND kind='EXISTING_CLIENT'",lead.phone))throw Error('Cliente existente não pode ser aprovado como prospecção');
    if(lead.contact_permission===1&&one("SELECT id FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' LIMIT 1",lead.id))throw Error('Um dos contatos já está autorizado. Atualize a lista');
