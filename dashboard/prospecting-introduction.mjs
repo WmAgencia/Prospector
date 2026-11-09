@@ -65,7 +65,8 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  const item=introductionStatus(leadId);
  // Automated menus are not human permission to proceed; keep introduction pending.
  if(inboxState==='AUTO_REPLY'||detectAutomaticReply(body))return {managed:true,queueAi:false,state:'AUTO_REPLY'};
- if(!item)return {managed:false,queueAi:true};
+ // Never trigger sales AI if no recorded first contact and affirmative acceptance.
+ if(!item)return {managed:true,queueAi:false,state:'UNTRACKED_GREETING'};
  if(explicitlyDeclinesProposal(body)){
   cancelIntroduction(leadId,'PROPOSAL_DECLINED');
   audit('PROSPECT_PROPOSAL_DECLINED',leadId,{followUp:false});
