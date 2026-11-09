@@ -70,6 +70,7 @@ import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospec
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {coldOutreachSwitchEnabled} from './cold-outreach-switch.mjs';
 import {resumeOwnerApprovedProspecting} from './prospection-resume.mjs';
 import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} from './consecom-offer-ab.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
@@ -1033,7 +1034,7 @@ const customerAiTimer=setInterval(()=>{
  tickSalesAgent().then(async()=>{const prices=await flushPriceApprovals();return Number(prices.sent||0)+await flushInterestAlerts()+await flushPersonalNotices();}).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
 },6000);
 const autonomousQueueTimer=setInterval(()=>{
-  if(ownerProspectionPaused())return;
+  if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;
  try{
   // Cold first approach: monta a fila das 07:00 à primeira abordagem das 08:00.
   const cold=process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
@@ -1044,18 +1045,18 @@ const autonomousQueueTimer=setInterval(()=>{
   if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',cadence:approachQueueStatus().cadence,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
  }catch(error){console.warn('[automatic approach]',String(error?.message||error).slice(0,140));}
 },5000);
-const prospectQueueTimer=setInterval(()=>{if(ownerProspectionPaused())return;tickApproachQueue().then(result=>{
+const prospectQueueTimer=setInterval(()=>{if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
 }).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160)));},1000);
-const prospectIntroductionTimer=setInterval(()=>{if(ownerProspectionPaused())return;tickIntroductions().then(result=>{
+const prospectIntroductionTimer=setInterval(()=>{if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;tickIntroductions().then(result=>{
  if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160)));},1000);
 // Seven-part price-free proposal after Wesley introduction: typing presence
 // is refreshed during human-paced waits and each transport is persisted.
 const consecomProposalTimer=setInterval(()=>{
- if(ownerProspectionPaused())return;
+ if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;
  tickConsecomProposalSequence().then(result=>{
   if(['SENT','DONE','CANCELLED','UNKNOWN'].includes(result.state))notify();
   if(result.state==='UNKNOWN')console.warn('[consecom proposal] delivery uncertain; manual review required');
@@ -1064,7 +1065,7 @@ const consecomProposalTimer=setInterval(()=>{
 // Persistent 25-second follow-up with portfolio references, after the approved
 // offer is acknowledged. The owner pause applies to both campaign steps.
 const offerReferencesTimer=setInterval(()=>{
- if(ownerProspectionPaused())return;
+ if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;
  tickOfferReferences().then(r=>{if(['SENT','CANCELLED','UNKNOWN'].includes(r.state))notify();if(r.state==='UNKNOWN')console.warn('[offer references] delivery uncertain; manual review required');})
  .catch(e=>console.error('[offer references]',String(e.message||e).slice(0,160)));
 },1000);
