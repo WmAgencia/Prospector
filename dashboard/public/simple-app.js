@@ -2,7 +2,7 @@
 const q=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
-const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
+const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",approvals:"Aprovações",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
 let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="selected",trainingAllConfirmed=false,trainingBusy=false,clientAccess="";
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
 let preferredPackage='';
@@ -31,6 +31,7 @@ let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
 let outreachHours={start:'08:00',end:'17:30'};
+let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalDrafts=new Map(),approvalOperatorPhone='',approvalBusy=false;
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
 let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
 let noticeTimer=null,noticeToken=0;
@@ -85,7 +86,7 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
  });
 }
 
-function nav(viewName){if(view==='training'&&viewName!=='training')interviewStopVoice();n('');if(platformContext.role==="master"&&!["dashboard","clients","credits","settings"].includes(viewName))viewName="overview";if((viewName==="clients"||viewName==="dashboard")&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName=platformContext.role==="master"?"dashboard":"overview";if(viewName==="overview"&&platformContext.role==="master")viewName="dashboard";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients")loadClients();if(view==="dashboard")loadMasterMetrics();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();}
+function nav(viewName){if(view==='training'&&viewName!=='training')interviewStopVoice();n('');if(platformContext.role==="master"&&!["dashboard","clients","credits","settings"].includes(viewName))viewName="overview";if((viewName==="clients"||viewName==="dashboard")&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName=platformContext.role==="master"?"dashboard":"overview";if(viewName==="overview"&&platformContext.role==="master")viewName="dashboard";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients")loadClients();if(view==="dashboard")loadMasterMetrics();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();if(view==='approvals')loadApprovals();}
 
 function glyph(key){
  if(globalThis.ProspectorIcons)return globalThis.ProspectorIcons.svg(key);
@@ -94,6 +95,7 @@ function glyph(key){
  prospects:'<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5M8 11h6M11 8v6"/>',
  conversations:'<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-4-.9L3 21l1.9-5.5A9 9 0 1 1 21 11.5Z"/><path d="M8 11.5h9M8 14.5h5"/>',
  connections:'<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 8h.01M12 8h4M8 12h8M8 16h8"/>',
+ approvals:'<path d="m9 12 2 2 4-4"/><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8"/>',
  clients:'<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5"/>',training:'<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/>',credits:'<rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 9h18M15 14h3"/>',settings:'<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.2 1.7-2 2-1.7-1.2a8 8 0 0 1-2 .8l-.4 2.1h-2.8l-.4-2.1a8 8 0 0 1-2-.8L7.7 18.8l-2-2L6.9 15a8 8 0 0 1-.8-2l-2.1-.4V9.8l2.1-.4a8 8 0 0 1 .8-2L5.7 5.7l2-2 1.7 1.2a8 8 0 0 1 2-.8l.4-2.1h2.8l.4 2.1a8 8 0 0 1 2 .8l1.7-1.2 2 2-1.2 1.7a8 8 0 0 1 .8 2l2.1.4v2.8l-2.1.4a8 8 0 0 1-.9 2Z"/>',
  refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.8 9a7 7 0 0 1 12-2L20 12M4 12l2.2 5a7 7 0 0 0 12-2"/>',
  arrow:'<path d="M4 12h16m-6-6 6 6-6 6"/>',
@@ -744,6 +746,83 @@ function connections(){
  const item=waAccounts.find(x=>x.session_id===connectionSession);
  return whatsappAccountsPanel()+(waModalOpen?'<div class="wa-modal-backdrop" role="presentation"><section class="wa-modal" role="dialog" aria-modal="true" aria-labelledby="wa-modal-title"><button type="button" class="wa-modal-close" data-action="close-wa-modal" aria-label="Fechar">'+glyph('close')+'</button><span class="kicker">CONEXÃO WHATSAPP</span><h2 id="wa-modal-title">'+esc(item?.label||'Novo número')+'</h2><p>No celular, abra WhatsApp → <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong>. Depois escaneie o código.</p><div class="wa-modal-qr">'+(wa?.connected?'<div class="wa-connected-success"><span>✓</span><h3>Conectado!</h3><p>Seu WhatsApp está pronto. Esta janela fecha automaticamente.</p></div>':qrResult?.qr?'<img class="qr-image" src="'+esc(qrResult.qr)+'" alt="QR Code para conectar este WhatsApp"><small>Escaneie com o seu WhatsApp</small>':'<div class="wa-qr-loading"><span class="wa-qr-skeleton">▦</span><strong>Aguardando QR Code</strong><small>'+esc(qrResult?.message||'Preparando o pareamento')+'</small></div>')+'</div><div class="wa-modal-actions">'+(wa?.connected?'<button type="button" class="secondary" data-action="disconnect">Desconectar número</button>':'<button type="button" class="secondary" data-action="connect">Atualizar QR Code</button>')+'<button type="button" class="primary" data-action="close-wa-modal">Fechar</button></div></section></div>':'');
 }
+
+const approvalDateInput=(value)=>{
+ const d=value?new Date(value):new Date();
+ if(Number.isNaN(d.getTime()))return '';
+ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+};
+const approvalDraft=(id)=>{
+ if(!approvalDrafts.has(id))approvalDrafts.set(id,{evidence:'',channel:'PERSONAL_WHATSAPP',consentAt:approvalDateInput()});
+ return approvalDrafts.get(id);
+};
+async function loadApprovals(){
+ if(platformContext.role==='master')return;
+ try{
+  const uri='/api/approvals?status='+encodeURIComponent(approvalStatus)+'&limit=40&offset='+approvalOffset;
+  approvalData=await api(uri);
+  if(view==='approvals')render();
+ }catch(e){n('Aprovações: '+e.message);}
+}
+function approvalsView(){
+ const data=approvalData||{items:[],totals:{pending:0,authorized:0,blocked:0},total:0};
+ const totals=data.totals||{pending:0,authorized:0,blocked:0};
+ const button=(status,text,count)=>'<button type="button" class="approval-filter '+(approvalStatus===status?'active':'')+'" data-action="approval-filter" data-status="'+status+'" aria-pressed="'+(approvalStatus===status)+'">'+text+' <strong>'+count+'</strong></button>';
+ const items=data.items||[],pendingHere=items.filter(x=>x.approval_status==='PENDING');
+ const selectedHere=pendingHere.filter(x=>approvalSelection.has(x.id));
+ const allHere=pendingHere.length>0&&selectedHere.length===pendingHere.length;
+ const cards=items.map(lead=>{
+  const chosen=approvalSelection.has(lead.id),draft=approvalDraft(lead.id);
+  const record=lead.consentRecord;
+  const statusText=lead.approval_status==='AUTHORIZED'?'Autorizado':lead.approval_status==='BLOCKED'?'Bloqueado':'Pendente';
+  const selectable=lead.approval_status==='PENDING';
+  return '<article class="approval-contact '+(chosen?'chosen':'')+'">'+
+   '<div class="approval-contact-heading">'+(selectable?'<label class="approval-pick"><input type="checkbox" data-approval-check="'+esc(lead.id)+'" '+(chosen?'checked':'')+' aria-label="Selecionar '+esc(lead.business)+'"></label>':'<span class="approval-spacer" aria-hidden="true"></span>')+
+   '<div class="approval-person"><strong>'+esc(lead.business)+'</strong><span>'+esc(lead.name||lead.city||'Empresa')+' · '+esc(lead.phone||'')+'</span><small>Origem: '+esc(lead.source||'Não informada')+'</small></div>'+
+   '<span class="approval-status '+(lead.approval_status==='AUTHORIZED'?'ok':lead.approval_status==='BLOCKED'?'blocked':'')+'">'+statusText+'</span></div>'+
+   (chosen?'<div class="approval-evidence-fields"><label>Resposta ou evidência da autorização<textarea data-approval-evidence="'+esc(lead.id)+'" maxlength="1000" rows="2" placeholder="Ex.: Cliente respondeu: Sim, pode me enviar a apresentação" required>'+esc(draft.evidence)+'</textarea></label>'+
+    '<div class="approval-evidence-row"><label>Canal<select data-approval-channel="'+esc(lead.id)+'"><option value="PERSONAL_WHATSAPP" '+(draft.channel==='PERSONAL_WHATSAPP'?'selected':'')+'>WhatsApp pessoal</option><option value="PHONE_CALL" '+(draft.channel==='PHONE_CALL'?'selected':'')+'>Ligação</option><option value="OTHER" '+(draft.channel==='OTHER'?'selected':'')+'>Outro canal</option></select></label>'+
+    '<label>Data e hora da autorização<input type="datetime-local" data-approval-date="'+esc(lead.id)+'" value="'+esc(draft.consentAt)+'" required></label></div></div>':'')+
+   (record?'<div class="approval-audit"><strong>Autorização registrada</strong><p>'+esc(record.evidence)+'</p><small>Data da autorização: '+stamp(record.consentAt)+' · Registro: '+stamp(record.recordedAt)+' · '+esc(record.channel)+' · Contato pelo número '+esc(record.sourcePhone||'não informado')+'</small>'+(record.batchId?'<small>Lote: '+esc(record.batchId)+'</small>':'')+'</div>':'')+
+   '</article>';
+ }).join('');
+ const prev=Math.max(0,approvalOffset-40),next=approvalOffset+40;
+ return '<div class="workspace-head"><div><span class="kicker">CURADORIA / WHATSAPP</span><h2>Aprovações</h2><p>Registre a autorização individual dos contatos selecionados e libere apenas quem aceitou receber mensagens.</p></div></div>'+
+  '<section class="approval-stat-grid"><div><small>Pendentes</small><strong>'+totals.pending+'</strong></div><div><small>Autorizados</small><strong>'+totals.authorized+'</strong></div><div><small>Bloqueados</small><strong>'+totals.blocked+'</strong></div></section>'+
+  '<section class="panel approvals-panel"><div class="approval-toolbar"><div class="approval-filters">'+button('PENDING','Pendentes',totals.pending)+button('AUTHORIZED','Autorizados',totals.authorized)+button('BLOCKED','Bloqueados',totals.blocked)+'</div><button type="button" class="secondary compact" data-action="approval-refresh">Atualizar</button></div>'+
+  (approvalStatus==='PENDING'?'<div class="approval-select-bar"><label class="approval-all"><input type="checkbox" data-approval-all="true" '+(allHere?'checked':'')+' '+(!pendingHere.length?'disabled':'')+'> Selecionar contatos desta página</label><span>'+approvalSelection.size+' selecionado(s) · limite de 50 por lote</span></div>':'')+
+  '<div class="approval-contacts">'+(cards||'<div class="empty"><h3>Nenhum contato nesta categoria</h3><p>Os contatos aparecerão conforme forem encontrados ou autorizados.</p></div>')+'</div>'+
+  '<div class="approval-pagination"><span>Exibindo '+(items.length?approvalOffset+1:0)+'–'+(approvalOffset+items.length)+' de '+data.total+'</span><div><button type="button" class="secondary compact" data-action="approval-prev" '+(!approvalOffset?'disabled':'')+'>Anterior</button><button type="button" class="secondary compact" data-action="approval-next" '+(next>=data.total?'disabled':'')+'>Próxima</button></div></div></section>'+
+  (approvalStatus==='PENDING'?'<section class="panel approval-submit-panel"><span class="kicker">REGISTRO EM LOTE</span><h3>Confirmar autorizações selecionadas</h3><p>Preencha uma evidência para cada empresa marcada acima. O sistema salvará os registros separadamente, sem autorizar outros contatos.</p>'+
+  '<label class="approval-source-phone">Seu número utilizado na curadoria (com DDD)<input id="approval-operator-phone" type="tel" autocomplete="tel" placeholder="(15) 99999-9999" value="'+esc(approvalOperatorPhone)+'"></label>'+
+  '<label class="approval-affirmation"><input id="approval-affirmation" type="checkbox"> Confirmo que cada contato selecionado autorizou receber as mensagens e que as evidências informadas correspondem a essas autorizações.</label>'+
+  '<div class="approval-submit-actions"><span>'+approvalSelection.size+' contato(s) selecionado(s)</span><button type="button" class="primary" data-action="approval-submit" '+(!approvalSelection.size||approvalBusy?'disabled':'')+'>'+ (approvalBusy?'Registrando...':'Registrar '+approvalSelection.size+' autorização(ões)')+'</button></div></section>':'')+
+  '<p class="settings-small-note">Aprovações são auditadas por contato no banco exclusivo desta conta. Os envios continuam sujeitos à fila, à pausa, aos limites e às exclusões de contatos.</p>';
+}
+async function submitApprovals(){
+ if(approvalBusy||!approvalSelection.size)return;
+ const phoneDigits=approvalOperatorPhone.replace(/\D/g,'');
+ const operatorPhone=phoneDigits.length===10||phoneDigits.length===11?'55'+phoneDigits:phoneDigits;
+ if(!/^55\d{10,11}$/.test(operatorPhone)){n('Informe o número pessoal utilizado para obter as autorizações.');return;}
+ if(!q('#approval-affirmation')?.checked){n('Confirme que cada contato selecionado autorizou as mensagens.');return;}
+ const items=[];
+ for(const leadId of approvalSelection){
+  const draft=approvalDraft(leadId);
+  if(draft.evidence.trim().length<3){n('Informe a resposta individual de todas as empresas selecionadas.');return;}
+  const date=new Date(draft.consentAt);
+  if(Number.isNaN(date.getTime())){n('Informe a data correta de cada autorização.');return;}
+  items.push({leadId,evidence:draft.evidence.trim(),channel:draft.channel,consentAt:date.toISOString(),operatorPhone});
+ }
+ approvalBusy=true;
+ const button=q('[data-action="approval-submit"]');if(button)button.disabled=true;
+ try{
+  const result=await post('/api/approvals/batch',{items,confirmedByOperator:true});
+  approvalSelection.clear();approvalDrafts.clear();
+  await loadApprovals();n(result.approved+' autorizações individuais registradas. Lote auditado.');
+ }catch(e){n(e.message);}
+ finally{approvalBusy=false;if(view==='approvals')render();}
+}
+
 function settings(){
  if(platformContext.role==='master')return masterSettings();
  const hours=outreachHours||{start:'08:00',end:'17:30'};
@@ -769,7 +848,7 @@ async function loadOutreachHours(){
 function render(){
  shell();
  const el=q("#view");
- el.innerHTML={dashboard:masterDashboard,clients:clientsView,overview,conversations,prospects:prospecting,connections,training:trainingView,credits:creditsView,settings}[view]();
+ el.innerHTML={dashboard:masterDashboard,clients:clientsView,overview,conversations,prospects:prospecting,approvals:approvalsView,connections,training:trainingView,credits:creditsView,settings}[view]();
  if(view==='training'){const feed=q('.training-interview-feed');if(feed)feed.scrollTop=feed.scrollHeight;}
  if(view==="conversations"&&selectedThread)loadMessages(selectedThread);
  if(view==="connections"&&!wa)refreshWa(false);
@@ -935,7 +1014,7 @@ async function reload(){
  try{
   if(platformContext.role==="master"){await Promise.all([loadClients(),loadMasterMetrics()]);lastRefresh=Date.now();render();return;}
   state=await api("/api/state");lastRefresh=Date.now();
-  if(view==="clients")await loadClients();else if(view==="training")await loadTraining();else if(view==="credits"){render();await loadCredits();}else if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else render();
+  if(view==="clients")await loadClients();else if(view==="training")await loadTraining();else if(view==="credits"){render();await loadCredits();}else if(view==="prospects")await loadProspects();else if(view==='approvals')await loadApprovals();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else render();
  }catch(e){if(!state)root.innerHTML='<main class="load-error"><h2>Não foi possível abrir o Prospector</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';else n(e.message);}
 }
 document.addEventListener("click",async ev=>{
@@ -974,6 +1053,14 @@ document.addEventListener("click",async ev=>{
    finally{handoffPending=false;render();}
    return;
   }
+
+  if(action==='approval-filter'){
+   approvalStatus=el.dataset.status||'PENDING';approvalOffset=0;approvalSelection.clear();approvalDrafts.clear();await loadApprovals();return;
+  }
+  if(action==='approval-refresh'){await loadApprovals();n('Lista de aprovações atualizada.');return;}
+  if(action==='approval-prev'){approvalOffset=Math.max(0,approvalOffset-40);await loadApprovals();return;}
+  if(action==='approval-next'){approvalOffset+=40;await loadApprovals();return;}
+  if(action==='approval-submit'){await submitApprovals();return;}
   if(action==='switch-workspace'){
     const mode=platformContext.role==='master'?'production':'master';
     const response=await post('/api/platform/workspace',{mode});
@@ -1151,6 +1238,23 @@ document.addEventListener("submit",async ev=>{
  }
 });
 document.addEventListener("change",async e=>{
+ if(e.target.dataset.approvalCheck){
+  const id=e.target.dataset.approvalCheck;
+  if(e.target.checked){
+   if(approvalSelection.size>=50){e.target.checked=false;n('O máximo por lote é 50 contatos.');return;}
+   approvalSelection.add(id);approvalDraft(id);
+  }else approvalSelection.delete(id);
+  render();return;
+ }
+ if(e.target.dataset.approvalAll){
+  const visible=(approvalData?.items||[]).filter(x=>x.approval_status==='PENDING');
+  if(e.target.checked){
+   for(const lead of visible){if(approvalSelection.size>=50)break;approvalSelection.add(lead.id);approvalDraft(lead.id);}
+  }else for(const lead of visible)approvalSelection.delete(lead.id);
+  render();return;
+ }
+ if(e.target.dataset.approvalChannel){approvalDraft(e.target.dataset.approvalChannel).channel=e.target.value;return;}
+ if(e.target.dataset.approvalDate){approvalDraft(e.target.dataset.approvalDate).consentAt=e.target.value;return;}
  if(e.target.dataset.trainingChat){if(e.target.checked)trainingSelection.add(e.target.dataset.trainingChat);else trainingSelection.delete(e.target.dataset.trainingChat);return;}
  if(e.target.name==="training-mode"){trainingMode=e.target.value;trainingAllConfirmed=false;render();return;}
  if(e.target.id==='training-all-confirm'){trainingAllConfirmed=e.target.checked;return;}
@@ -1190,6 +1294,8 @@ document.addEventListener("change",async e=>{
  }
 });
 document.addEventListener("input",e=>{
+ if(e.target.id==='approval-operator-phone'){approvalOperatorPhone=e.target.value;return;}
+ if(e.target.dataset.approvalEvidence){approvalDraft(e.target.dataset.approvalEvidence).evidence=e.target.value;return;}
  if(e.target.id==='scope-niche'){scopeNicheInput=e.target.value;return;}
  if(e.target.id==='scope-city'){scopeCityInput=e.target.value;return;}
 
