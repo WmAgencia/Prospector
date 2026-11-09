@@ -75,6 +75,7 @@ import {resumeOwnerApprovedProspecting} from './prospection-resume.mjs';
 import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} from './consecom-offer-ab.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
+import {productionConsentPreview,consentPreviewHtml} from './consent-production-preview.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
 import {tickConsecomProposalSequence} from './consecom-proposal-sequence.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
@@ -410,7 +411,7 @@ function snapshot(){
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
  const stats={profiles_analyzed:all('SELECT details FROM discoveries').reduce((total,row)=>{try{return total+(JSON.parse(row.details||'{}').examined||0);}catch{return total;}},0),qualified:leads.filter(l=>l.website_status==='NO_WEBSITE'&&l.phone).length,meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:one('SELECT COUNT(*) AS total FROM leads')?.total||0,contacted:one("SELECT COUNT(*) AS total FROM initial_contacts WHERE status='SENT'")?.total||0,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
- return {radar:radarSnapshot(),catalog:catalogSummary(),googleIndex:googleIndexStatus(),outreachQueue:outreachQueueSnapshot(),activeCampaign:selectedCampaign(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:gatewayConnectionView(connection()),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
+ return {radar:radarSnapshot(),catalog:catalogSummary(),googleIndex:googleIndexStatus(),outreachQueue:outreachQueueSnapshot(),consentPreview:productionConsentPreview(),activeCampaign:selectedCampaign(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:gatewayConnectionView(connection()),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
 }
 async function upload(req,url,res){
  const kind=url.searchParams.get('kind'),name=String(url.searchParams.get('name')||'mídia').slice(0,100);
@@ -509,6 +510,12 @@ async function handler(req,res){
   }
   if(!protectedAccess(req,res,url.pathname))return;
   const pathname=decodeURIComponent(url.pathname);
+  // Signed-in operator preview on REAL production leads. No transport, no DB mutation.
+  if(req.method==='GET'&&pathname==='/consent-preview'){
+   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+   res.end(consentPreviewHtml());return;
+  }
+  if(req.method==='GET'&&pathname==='/api/outreach/consent-preview')return respond(res,200,productionConsentPreview());
   if(await handleFranciscaPanel(req,res,url,{json,respond},{masterAuthorized:authorized(req)||isPrimaryClient(req)}))return;
   if(await handleTraining(req,res,url,{json,respond}))return;
   if(pathname==='/api/events'){
