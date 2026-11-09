@@ -38,7 +38,7 @@ let view=Object.keys(tabs).includes(location.hash.split("/")[1])?location.hash.s
 let naturalPreviewHistory=[],naturalPreviewBusy=false;
 let styleExampleData=null,styleExampleBusy=false;
 let franciscaEvaluation=null;
-let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false,consentPolicy=null,consentPolicyBusy=false;
+let salesResults=null,salesFunnel=null,state=null,wa=null,ai=null,voiceMetrics=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false,consentPolicy=null,consentPolicyBusy=false;
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
 function newProspectSession(){
  const token=crypto.randomUUID();
@@ -1078,6 +1078,23 @@ function pipelineGraphic(k){
  const stages=[['approaching','Em abordagem'],['interested','Interessados'],['conversing','Em atendimento']],values=stages.map(([key])=>Math.max(0,Number(k.counts?.[key])||0)),max=Math.max(1,...values);
  return '<section class="pipeline-graphic" aria-label="Resumo visual do funil"><div><span class="kicker">MOVIMENTO DA OPERAÇÃO</span><h3>Da conversa à oportunidade.</h3></div><div class="pipeline-bars">'+stages.map(([key,label],i)=>'<div><span>'+label+'</span><div class="pipeline-track"><i style="width:'+Math.round(values[i]/max*100)+'%"></i></div><strong>'+values[i]+'</strong></div>').join('')+'</div></section>';
 }
+function commercialFunnelCard(){
+ if(!salesFunnel)return '';
+ const f=salesFunnel;
+ const percent=x=>x===null||x===undefined?'—':Number(x).toLocaleString('pt-BR',{maximumFractionDigits:2})+'%';
+ const steps=[['Abordagens confirmadas',f.delivered],['Conversas iniciadas',f.replied],['Oportunidades qualificadas',f.qualified],['Propostas de pagamento',f.proposed],['Vendas registradas',f.won]];
+ const max=Math.max(1,Number(f.delivered)||0);
+ return '<section class="panel" aria-label="Funil de conversão da Francisca" style="margin-top:20px">'+
+  '<div class="heading"><div><span class="kicker">FRANCISCA • CONVERSÃO</span><h3>Da abordagem à venda</h3><p>Contatos únicos registrados. Nenhuma intenção de compra é contada como pagamento.</p></div></div>'+
+  '<div class="pipeline-list">'+steps.map(([label,value])=>'<div class="pipeline-row"><span>'+esc(label)+'</span><div class="pipeline-track"><i style="width:'+Math.max(value?3:0,Math.round(Number(value||0)/max*100))+'%"></i></div><strong>'+esc(value||0)+'</strong></div>').join('')+'</div>'+
+  '<div class="kanban-metrics" style="margin-top:14px">'+
+   '<div class="kanban-metric"><span>Responderam</span><strong>'+percent(f.ratios?.replyPct)+'</strong><small>Das abordagens confirmadas</small></div>'+
+   '<div class="kanban-metric"><span>Qualificados</span><strong>'+percent(f.ratios?.qualifiedFromRepliedPct)+'</strong><small>Dos que responderam</small></div>'+
+   '<div class="kanban-metric"><span>Vendas</span><strong>'+percent(f.ratios?.wonFromDeliveredPct)+'</strong><small>Das abordagens confirmadas</small></div>'+
+   '<div class="kanban-metric"><span>Não contatar</span><strong>'+esc(f.optout||0)+'</strong><small>Recusas registradas</small></div></div>'+
+  '<details style="margin-top:12px"><summary>Como são medidos esses números?</summary><p>Histórico registrado desde o início da operação. Propostas de pagamento não significam propostas aceitas, e vendas dependem de registro confirmado.</p><p>'+esc((f.caveats||[]).join(' '))+'</p></details>'+
+  (f.recommendations?.length?'<div style="margin-top:12px"><strong>Próxima análise sugerida</strong><p>'+esc(f.recommendations[0])+'</p></div>':'')+'</section>';
+}
 function overview(){
  if(platformContext.role==="master")return masterDashboard();
  const k=kanban||{columns:{approaching:[],no_interest:[],interested:[],conversing:[]},counts:{}};
@@ -1110,6 +1127,7 @@ function overview(){
    '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items">'+
    ((k.columns?.[key]||[]).length?k.columns[key].map(x=>item(x,key)).join(''):'<div class="kanban-empty">Nenhuma empresa nesta etapa.</div>')+'</div></section>').join('')+
   '</div>'+
+  commercialFunnelCard()+
   '<section class="panel" style="margin-top:20px"><div class="heading"><div><h3>Desfechos comerciais</h3><p>Referência média por site: R$ '+esc(salesResults?.priceReferenceBrl||550)+' · Proposta final depende do escopo.</p></div></div>'+
    (salesResults?.items?.length?salesResults.items.slice(0,8).map(x=>
     '<div class="kanban-lead" style="margin-bottom:8px"><div class="kanban-lead-top"><div><strong>'+esc(x.business)+'</strong><small>'+esc(({INTERESTED:'Interessado',NO_INTEREST:'Sem interesse',OPT_OUT:'Não contatar',HUMAN_REVIEW:'Revisão humana',CLOSED_WON:'Venda confirmada'})[x.status]||x.status)+'</small></div></div><p>'+esc(x.summary)+'</p>'+
@@ -1345,7 +1363,7 @@ async function loadMessages(id){
   if(!id.startsWith("wa:"))await post("/api/threads/"+encodeURIComponent(id)+"/read",{}).catch(()=>{});
  }catch(e){const feed=q("#messages");if(feed)feed.textContent="Não foi possível carregar a conversa.";}
 }
-async function loadKanban(){try{kanban=await api('/api/kanban');salesResults=await api('/api/sales/outcomes').catch(()=>null);if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
+async function loadKanban(){try{kanban=await api('/api/kanban');[salesResults,salesFunnel]=await Promise.all([api('/api/sales/outcomes').catch(()=>null),api('/api/sales/funnel').catch(()=>null)]);if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
 async function reload(){
  if(!workspaceInitialized){
   workspaceInitialized=true;
