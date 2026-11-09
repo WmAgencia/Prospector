@@ -3,7 +3,7 @@
 import {all,one,getSetting} from './db.mjs';
 import {insideApproachWindow} from './outreach-window.mjs';
 const ZONE='America/Sao_Paulo';
-export const MAX_APPROACHES=150;
+export const MAX_APPROACHES=250;
 export const WINDOW_START=8;
 export const WINDOW_END=18;
 export const TARGET_INTERVAL_SECONDS=240;
@@ -19,7 +19,7 @@ export function budgetConfig(input=new Date()){
  const start=override?.day===daySP(input)?Math.max(configuredStart,Number(override.hour)||0):configuredStart;
  // A daily maximum is a cap, not a requirement to spread every attempt over
  // the full business window. The operator's fixed 90-second cadence must not
- // be silently overridden to 240 seconds by the 150/day budget.
+ // be silently overridden to 240 seconds by the daily budget.
  const normalSeconds=Math.max(90,Number(getSetting('initial_interval_seconds',TARGET_INTERVAL_SECONDS))||TARGET_INTERVAL_SECONDS);
  return {limit,start,end,intervalSeconds:normalSeconds};
 }

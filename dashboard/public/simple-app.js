@@ -59,7 +59,7 @@ let trainingReviewSearch='',trainingShowComposer=false,trainingSetupMinimized=tr
 try{trainingSetupMinimized=sessionStorage.getItem('prospector-setup-compact-v2')!=='0';}catch{}
 let waAccountsLastCheck=0;
 let outreachHours={start:'08:00',end:'17:30'};
-let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalSelectAll=false,approvalExcludedIds=new Set(),approvalSelectionCutoff='',approvalBusy=false;
+let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalSelectAll=false,approvalExcludedIds=new Set(),approvalSelectionCutoff='',approvalBusy=false,approvalFeedback='';
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
 let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
 let noticeTimer=null,noticeToken=0;
@@ -1141,6 +1141,7 @@ function approvalsView(){
   '<div class="approval-pagination"><span>Exibindo '+(items.length?approvalOffset+1:0)+'–'+(approvalOffset+items.length)+' de '+data.total+'</span><div><button type="button" class="secondary compact" data-action="approval-prev" '+(!approvalOffset?'disabled':'')+'>Anterior</button><button type="button" class="secondary compact" data-action="approval-next" '+(next>=data.total?'disabled':'')+'>Próxima</button></div></div></section>'+
   (approvalStatus==='PENDING'?'<section class="panel approval-submit-panel"><span class="kicker">APROVAÇÃO RÁPIDA</span><h3>Confirmar os selecionados</h3><p>Ao clicar em Aprovar, você declara que cada contato selecionado já aceitou receber mensagens. O registro fica individual por contato, sem inventar comprovantes.</p>'+
   '<div class="approval-submit-actions"><span>'+count+' contato(s) selecionado(s)</span><button type="button" class="primary" data-action="approval-submit" '+(!count||approvalBusy?'disabled':'')+'>'+(approvalBusy?'Aprovando...':'Aprovar '+count+' contato(s)')+'</button></div></section>':'')+
+  '<p class="approval-result" role="status" aria-live="polite">'+esc(approvalFeedback)+'</p>'+
   '<p class="settings-small-note">A declaração do operador não equivale a uma prova independente de opt-in. A confirmação não envia mensagens nem altera pausas, horários e exclusões.</p>';
 }
 async function submitApprovals(){
@@ -1156,8 +1157,10 @@ async function submitApprovals(){
   const result=await post('/api/approvals/batch',payload);
   approvalSelection.clear();approvalExcludedIds.clear();approvalSelectAll=false;approvalSelectionCutoff='';
   await loadApprovals();
-  n(result.approved+' contato(s) aprovado(s) com declaração individual registrada.');
- }catch(e){n(e.message);}
+  approvalFeedback=result.approved+' contato(s) aprovado(s) com declaração individual registrada.'+
+   (result.skipped?' '+result.skipped+' ignorado(s): '+Object.entries(result.skippedReasons||{}).map(([reason,count])=>reason+': '+count).join(', ')+'.':'');
+  n(approvalFeedback);
+ }catch(e){approvalFeedback='Aprovação não concluída: '+e.message;n(approvalFeedback);}
  finally{approvalBusy=false;if(view==='approvals')render();}
 }
 
@@ -1591,10 +1594,18 @@ document.addEventListener("change",async e=>{
   render();return;
  }
  if(e.target.dataset.approvalAll){
-  approvalSelectAll=e.target.checked;
-  approvalSelection.clear();approvalExcludedIds.clear();
-  approvalSelectionCutoff=approvalSelectAll?String(approvalData?.snapshotAt||''):'';
-  render();return;
+  approvalFeedback='';
+  if(e.target.checked){
+   try{
+    // The operator may have curated contacts for hours; refresh the snapshot
+    // before selecting all so newly discovered leads are included safely.
+    const latest=await api('/api/approvals?status=PENDING&limit=40&offset=0');
+    if(!latest.snapshotAt)throw Error('O servidor não informou a data da seleção');
+    approvalData=latest;approvalOffset=0;
+    approvalSelectAll=true;approvalSelectionCutoff=latest.snapshotAt;
+   }catch(err){approvalSelectAll=false;approvalSelectionCutoff='';approvalFeedback='Falha ao selecionar todos: '+err.message;n(approvalFeedback);}
+  }else{approvalSelectAll=false;approvalSelectionCutoff='';}
+  approvalSelection.clear();approvalExcludedIds.clear();render();return;
  }
  if(e.target.dataset.trainingChat){if(e.target.checked)trainingSelection.add(e.target.dataset.trainingChat);else trainingSelection.delete(e.target.dataset.trainingChat);return;}
  if(e.target.name==="training-mode"){trainingMode=e.target.value;trainingAllConfirmed=false;render();return;}

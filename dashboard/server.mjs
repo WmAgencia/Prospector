@@ -66,6 +66,7 @@ import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
 import {resumeOwnerApprovedProspecting} from './prospection-resume.mjs';
+import {apply250DailyLimit} from './daily-approach-rollout.mjs';
 import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} from './consecom-offer-ab.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
@@ -292,6 +293,8 @@ if(ownerProspectionPaused()){
  console.warn('[owner pause] Consecom prospecting PAUSED until owner explicitly resumes');
 }
 
+const dailyCap250Result=apply250DailyLimit();
+console.info('[daily 250 limit]',JSON.stringify(dailyCap250Result));
 const ownerResumeResult=resumeOwnerApprovedProspecting();
 if(ownerResumeResult.status==='RESUMED_WITH_CONSENT_GATES')
  console.info('[owner resume]',JSON.stringify(ownerResumeResult));
@@ -512,7 +515,7 @@ async function handler(req,res){
   }
   if(req.method==='POST'&&pathname==='/api/approvals/batch'){
    try{const result=approveLeadBatch(await json(req));notify();return respond(res,200,result);}
-   catch(e){return respond(res,422,{error:String(e.message).slice(0,220)});}
+   catch(e){console.warn('[approvals batch] validation rejected:',String(e.message).slice(0,180));return respond(res,422,{error:String(e.message).slice(0,220)});}
   }
   if(pathname==='/api/prospecting/calendar'&&req.method==='GET'){
    const month=url.searchParams.get('month')||new Date().toISOString().slice(0,7);
@@ -769,7 +772,7 @@ async function handler(req,res){
     if(process.env.PROSPECTOR_TENANT_ID&&!['paused','autonomous_outreach_enabled','discovery_auto_enabled'].includes(k))return respond(res,403,{error:'Esta configuração é administrada pela plataforma'});
     if(!allowedSettings.has(k))throw Error('Configuração desconhecida: '+k);
     if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
-    if(k==='daily_limit'&&Number(value)>150)throw Error('O teto diário é 150 primeiras abordagens');
+    if(k==='daily_limit'&&Number(value)>250)throw Error('O teto diário é 250 primeiras abordagens');
      // Controles do motor de decisão são booleanos (sem alterar campanha/horários).
      if(['decision_engine_enabled','decision_learning_enabled'].includes(k)&&typeof value!=='boolean')throw Error('Use verdadeiro ou falso para o motor de decisão');
     if(k==='discovery_target_daily'&&(Number(value)<1||Number(value)>150))throw Error('A meta de descoberta deve ser de 1 a 150');
