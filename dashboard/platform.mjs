@@ -93,7 +93,7 @@ async function proxy(req,res,client){
 export async function handlePlatform(req,res,url,{authorized,json,respond}){
  if(isWorker){
   if(url.pathname==='/api/platform/context'&&authorized(req)){respond(res,200,{role:'client',name:process.env.PROSPECTOR_TENANT_NAME});return true;}
-  const allowed=/^\/api\/(?:training(?:\/|$)|state$|events$|kanban$|sales\/(?:status|outcomes)$|whatsapp\/(?:sessions|status|qr|connect|disconnect|chats|chat-messages|handoff|reply|reply-remote)$|prospecting(?:\/|$)|outreach\/consent-policy$|ai\/(?:status|francisca-turn|francisca-speak)$|settings(?:\/|$)|maps(?:\/|$)|import$|threads\/[^/]+\/(?:messages|read)$|wa-akg\/webhook$)/;
+  const allowed=/^\/api\/(?:training(?:\/|$)|state$|events$|kanban$|sales\/(?:status|outcomes)$|whatsapp\/(?:sessions|status|qr|connect|disconnect|chats|chat-messages|handoff|reply|reply-remote)$|prospecting(?:\/|$)|outreach\/consent-policy$|approvals(?:\/|$)|ai\/(?:status|francisca-turn|francisca-speak)$|settings(?:\/|$)|maps(?:\/|$)|import$|threads\/[^/]+\/(?:messages|read)$|wa-akg\/webhook$)/;
   if(url.pathname.startsWith('/api/')&&!allowed.test(url.pathname)&&url.pathname!=='/api/auth/exchange'){respond(res,403,{error:'Recurso indisponível neste espaço de trabalho'});return true;}
   return false;
  }
