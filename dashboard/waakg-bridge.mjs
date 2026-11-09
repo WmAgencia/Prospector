@@ -8,7 +8,8 @@ import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {classifyInboundAutomation} from './inbound-automation.mjs';
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
-import {routeIntroductionReply} from "./prospecting-introduction.mjs";
+import {routeIntroductionReply,introductionStatus} from "./prospecting-introduction.mjs";
+import {explicitlyAcceptsProposal} from "./proposal-acceptance.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {configuredClosing} from "./training-sales-extras.mjs";
@@ -148,10 +149,12 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
   }
  }
  if(identity.role==='PROSPECT_APPROACHED'){
-  if(state==='REVIEW'&&lead.stage!=='CONVERSING')stage(lead.id,'CONVERSING','PROSPECT_REPLIED');
+  const intro=introductionStatus(lead.id);
+  const accepted=intro?.stage!=='GREETING_SENT'||explicitlyAcceptsProposal(content);
+  if(state==='REVIEW'&&accepted&&lead.stage!=='CONVERSING')stage(lead.id,'CONVERSING','PROSPECT_REPLIED_WITH_PERMISSION');
   const outcome=state==='OPT_OUT'?'OPT_OUT':state==='HUMAN'?'HUMAN_REVIEW':state==='NO_INTEREST'?'NO_INTEREST':null;
   if(outcome)recordSalesOutcome({leadId:lead.id,status:outcome,providerId:unique,evidence:content});
-  if(state==='REVIEW'&&process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true')grantAutonomousFirstReply(lead.id,content);
+  if(state==='REVIEW'&&accepted&&process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true')grantAutonomousFirstReply(lead.id,content);
  }
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
