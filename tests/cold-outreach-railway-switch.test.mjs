@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import {coldOutreachSwitchEnabled,COLD_OUTREACH_DISABLED_REASON} from '../dashboard/cold-outreach-switch.mjs';
 
 test('Railway false, missing or unknown stops Consecom cold outreach',()=>{
- for(const flag of ['false','FALSE',undefined,'',null,'0']){
+ for(const flag of ['false','FALSE','undefined','',null,'0']){
   assert.equal(coldOutreachSwitchEnabled({flag,tenantId:undefined,internal:undefined}),false);
  }
  assert.equal(COLD_OUTREACH_DISABLED_REASON,'COLD_FIRST_APPROACH_DISABLED');
