@@ -36,14 +36,17 @@ test('the four WhatsApp messages preserve the operator exact words',()=>{
  ]);
 });
 
-test('date-relative proposal is not reused on future days',()=>{
+test('proposal is not blocked solely due to calendar date',()=>{
  assert.equal(proposalCopyIsCurrent(new Date('2026-11-09T15:00:00Z')),true);
- assert.equal(proposalCopyIsCurrent(new Date('2026-11-10T15:00:00Z')),false);
+ assert.equal(proposalCopyIsCurrent(new Date('2026-11-10T15:00:00Z')),true);
+ assert.equal(proposalCopyIsCurrent(new Date('2027-01-10T15:00:00Z')),true);
+ const worker=fs.readFileSync(new URL('../dashboard/consecom-proposal-sequence.mjs',import.meta.url),'utf8');
+ assert.doesNotMatch(worker,/DATE_DEPENDENT_COPY_EXPIRED|proposalCopyIsCurrent/);
 });
 
 test('outbox prevents duplicate, stale, unauthorized and uncertain sends',()=>{
  const code=fs.readFileSync(new URL('../dashboard/consecom-proposal-sequence.mjs',import.meta.url),'utf8');
- for(const marker of ['ownerProspectionPaused','documentedOptIn','conversationAuthorized','manual_takeover','CUSTOMER_REPLIED',"state='SENDING'","state='UNKNOWN'","presence:'composing'","presence:'paused'",'PROPOSAL_MESSAGES[row.next_index]','proposalTypingDelayMs(row.next_index)','typing_started_at','signal?.status!==true','proposalCopyIsCurrent'])
+ for(const marker of ['ownerProspectionPaused','documentedOptIn','conversationAuthorized','manual_takeover','CUSTOMER_REPLIED',"state='SENDING'","state='UNKNOWN'","presence:'composing'","presence:'paused'",'PROPOSAL_MESSAGES[row.next_index]','proposalTypingDelayMs(row.next_index)','typing_started_at','signal?.status!==true'])
   assert.ok(code.includes(marker),marker);
 });
 
