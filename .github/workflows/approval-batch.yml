@@ -1,0 +1,42 @@
+name: Approval batch focused checks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - dashboard/lead-approvals.mjs
+      - dashboard/server.mjs
+      - dashboard/platform.mjs
+      - dashboard/public/simple-app.js
+      - dashboard/public/simple-app.css
+      - tests/tenant-bulk-approvals.test.mjs
+      - .github/workflows/approval-batch.yml
+  push:
+    branches: [main]
+    paths:
+      - dashboard/lead-approvals.mjs
+      - dashboard/server.mjs
+      - dashboard/platform.mjs
+      - dashboard/public/simple-app.js
+      - dashboard/public/simple-app.css
+      - tests/tenant-bulk-approvals.test.mjs
+      - .github/workflows/approval-batch.yml
+  workflow_dispatch:
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate approval modules and UI syntax
+        run: |
+          node --check dashboard/lead-approvals.mjs
+          node --check dashboard/server.mjs
+          node --check dashboard/platform.mjs
+          node --input-type=module --check < dashboard/public/simple-app.js
+      - name: Validate batch, audit and consent regression behavior
+        run: node --test tests/tenant-bulk-approvals.test.mjs tests/outreach-consent-control.test.mjs tests/authorized-auto-queue.test.mjs
