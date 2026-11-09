@@ -9,8 +9,8 @@ process.env.PROSPECTOR_DATA_DIR=testDataDir;
 const {daySP,initialBudget,MAX_APPROACHES,TARGET_INTERVAL_SECONDS}=await import('../dashboard/radar.mjs');
 const {parseCSV}=await import('../dashboard/official-import.mjs');
 const {safePublicWebsite}=await import('../dashboard/site-audit.mjs');
-test('pacing target 200 in six hours and quota exact',()=>{
- assert.equal(MAX_APPROACHES,150);assert.equal(TARGET_INTERVAL_SECONDS,240);
+test('daily cap 250 and historical configured 150 budget stay consistent',()=>{
+ assert.equal(MAX_APPROACHES,250);assert.equal(TARGET_INTERVAL_SECONDS,240);
  assert.equal(150*TARGET_INTERVAL_SECONDS,10*3600);
  const events=[{updated_at:'2026-10-15T15:00:00.000Z',status:'SENT'},{updated_at:'2026-10-15T15:04:00.000Z',status:'UNKNOWN'}];
  const config={limit:150,start:8,end:18,intervalSeconds:240};
