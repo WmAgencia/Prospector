@@ -119,7 +119,7 @@ export async function handleSalesTurn(providerId,deps={}){
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
  const recentTurns=all("SELECT direction,body,at FROM messages WHERE thread_id=? ORDER BY at DESC,rowid DESC LIMIT 22",r.thread_id).reverse();
  const commercialMemory=recallConversationMemory(r.thread_id);
- const offerAlreadyExplained=commercialMemory.offerExplained||recentTurns.some(m=>m.direction==='out'&&/R\$\s*550/i.test(String(m.body||'')));
+ const offerAlreadyExplained=commercialMemory.offerExplained||recentTurns.some(m=>m.direction==='out'&&/R\$\s*550/i.test(String(m.body||'')))||!!one("SELECT 1 FROM consecom_offer_ab WHERE lead_id=? AND status='SENT' LIMIT 1",r.lead_id);
  const history=recentTurns.slice(-8).map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
  // A chat is a continuous exchange. Read the real server-side thread rather
  // than asking the model to infer whether it has greeted the contact before.
