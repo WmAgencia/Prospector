@@ -834,6 +834,10 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/settings'){
    const v=await json(req);
    for(const [k,value] of Object.entries(v)){
+    if((!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&
+       ['paused','autonomous_outreach_enabled'].includes(k))
+      return respond(res,409,{error:'Na Consecom, o liga/desliga das novas abordagens é controlado exclusivamente pela variável PROSPECTOR_COLD_FIRST_APPROACH no Railway. Autorizações dos destinatários continuam individuais.',
+        control:'PROSPECTOR_COLD_FIRST_APPROACH',coldApproachEnabled:coldOutreachSwitchEnabled()});
     if(process.env.PROSPECTOR_TENANT_ID&&!['paused','autonomous_outreach_enabled','discovery_auto_enabled'].includes(k))return respond(res,403,{error:'Esta configuração é administrada pela plataforma'});
     if(!allowedSettings.has(k))throw Error('Configuração desconhecida: '+k);
     if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
