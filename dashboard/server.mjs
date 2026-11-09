@@ -72,6 +72,7 @@ import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
+import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
@@ -295,6 +296,7 @@ if(ownerProspectionPaused()){
 
 const dailyCap250Result=apply250DailyLimit();
 console.info('[daily 250 limit]',JSON.stringify(dailyCap250Result));
+console.info('[proposal voice asset]',JSON.stringify(portfolioPitchAudioHealth()));
 const ownerResumeResult=resumeOwnerApprovedProspecting();
 if(ownerResumeResult.status==='RESUMED_WITH_CONSENT_GATES')
  console.info('[owner resume]',JSON.stringify(ownerResumeResult));
@@ -930,7 +932,7 @@ const prospectQueueTimer=setInterval(()=>{if(ownerProspectionPaused())return;tic
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
 }).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160)));},1000);
 const prospectIntroductionTimer=setInterval(()=>{if(ownerProspectionPaused())return;tickIntroductions().then(result=>{
- if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
+ if(['SENT','VOICE_SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160)));},1000);
 // Persistent 25-second follow-up with portfolio references, after the approved
