@@ -3,12 +3,13 @@
 import {all,one} from './db.mjs';
 import {invitationEnabled} from './permission-invitation.mjs';
 import {verifiedOwnerPhone,hasExistingClientRelationship} from './whatsapp-roles.mjs';
+import {excludedTestPhoneSql,isExcludedTestContact} from './test-contact-exclusion.mjs';
 const OWNER=verifiedOwnerPhone();
 const OWNER_EXCLUSION=OWNER?" AND l.phone<>'"+OWNER+"'":'';
 const BASE=`l.stage='DISCOVERED'
  AND NOT EXISTS (SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id OR (l.phone IS NOT NULL AND ic.phone=l.phone))
  AND NOT EXISTS (SELECT 1 FROM executions ex WHERE ex.lead_id=l.id)
- AND NOT EXISTS (SELECT 1 FROM contact_relationships cr WHERE cr.phone=l.phone AND cr.kind='EXISTING_CLIENT')${OWNER_EXCLUSION}`;
+ AND NOT EXISTS (SELECT 1 FROM contact_relationships cr WHERE cr.phone=l.phone AND cr.kind='EXISTING_CLIENT')${OWNER_EXCLUSION}${excludedTestPhoneSql('l')}`;
 const proof=`EXISTS(SELECT 1 FROM audit a WHERE a.lead_id=l.id AND a.action='CONSENT_UPDATED' AND json_extract(a.detail,'$.permitted')=1 AND COALESCE(json_extract(a.detail,'$.evidence'),'')<>'')`;
 export const autoOutreachCandidateSql=`SELECT l.id FROM leads l WHERE ${BASE}
  AND l.contact_permission=1 AND l.phone IS NOT NULL
@@ -20,7 +21,7 @@ export function automaticCandidateSql(){
 }
 export function documentedOptIn(leadId){
  const lead=one('SELECT id,phone,contact_permission FROM leads WHERE id=?',leadId);
- if(!lead||lead.contact_permission!==1||!lead.phone||lead.phone===verifiedOwnerPhone()||hasExistingClientRelationship(lead.phone))return false;
+ if(!lead||lead.contact_permission!==1||!lead.phone||lead.phone===verifiedOwnerPhone()||isExcludedTestContact(lead.phone)||hasExistingClientRelationship(lead.phone))return false;
  return !!one("SELECT id FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' ORDER BY at DESC LIMIT 1",leadId);
 }
 export function outreachQueueSnapshot(){
