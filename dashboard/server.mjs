@@ -38,6 +38,7 @@ import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} 
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
 import {dailyReport,reportText,targetNumber,scheduleReport} from './notifications.mjs';
 import {salesOutcomes} from './sales-outcomes.mjs';
+import {nextConversationState} from './francisca-conversation-state.mjs';
 import {SITE_AVERAGE_PRICE_BRL} from './sales-policy.mjs';
 import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
@@ -76,6 +77,13 @@ import {conversationHandoffStatus,changeConversationHandoff} from './conversatio
 import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
+import {naturalConversationEnabled,NATURAL_CONVERSATION_VERSION} from './francisca-natural-conversation.mjs';
+import {approvedLabFactReply,labModelReplySafe,LAB_PAYMENT_SAFETY_VERSION} from './francisca-lab-safety.mjs';
+import {compactPromptEnabled} from './francisca-compact-policy-v3.mjs';
+import {generate100FranciscaScenarios,evaluateFrancisca100,gradeFranciscaReply,EVALUATOR_VERSION} from './francisca-quality-evaluator.mjs';
+import {styleIntentCategory} from './francisca-style-examples.mjs';
+import {styleMemoryEnabled,styleExampleStatus,proposeStyleExample,reviewStyleExample} from './francisca-style-examples.mjs';
+let lastNaturalPreviewAt=0;
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
@@ -620,6 +628,72 @@ async function handler(req,res){
    const payload=await json(req);
    const result=await aiDraft({text:payload.text,context:payload.context});
    return respond(res,result.ok?200:result.httpStatus||502,result);
+  }
+
+  // Owner-only testing without any WhatsApp send, lead lookup, or state change.
+  // Uses the SAME drafting engine as sales conversations (with synthetic history).
+  // Reviewed operator examples. No conversation export or auto-import.
+  // Access is already session-protected and write requests are same-origin;
+  // additionally limit all reads and writes to internal Consecom rollout.
+  if(pathname.startsWith('/api/ai/style-examples')){
+   if(!styleMemoryEnabled())return respond(res,403,{error:'Biblioteca de exemplos disponível apenas na conta interna autorizada.'});
+   if(req.method==='GET'&&pathname==='/api/ai/style-examples')return respond(res,200,styleExampleStatus());
+   if(req.method==='POST'&&pathname==='/api/ai/style-examples'){
+    try{
+     const body=await json(req);
+     const result=proposeStyleExample(body);
+     return respond(res,201,{...result,status:styleExampleStatus()});
+    }catch(error){return respond(res,422,{error:String(error.message||error).slice(0,240)});}
+   }
+   if(req.method==='POST'&&pathname==='/api/ai/style-examples/review'){
+    try{
+     const body=await json(req);
+     const result=reviewStyleExample(body);
+     return respond(res,200,{...result,status:styleExampleStatus()});
+    }catch(error){return respond(res,422,{error:String(error.message||error).slice(0,240)});}
+   }
+   return respond(res,405,{error:'Método indisponível.'});
+  }
+  if(req.method==='GET'&&pathname==='/api/ai/evaluation-100'){
+   if(!compactPromptEnabled())return respond(res,403,{error:'Avaliador disponível somente na operação interna.'});
+   const quality=evaluateFrancisca100();
+   return respond(res,200,{ok:true,version:EVALUATOR_VERSION,syntheticCases:generate100FranciscaScenarios().length,
+    categories:10,kind:quality.kind,referenceCalibration:quality.passed,
+    note:'Calibração usando respostas fictícias revisadas, não mede desempenho real do Groq. A avaliação do chat aparece em cada resposta do laboratório.',
+    groqRealConversationsMeasured:0});
+  }
+  if(req.method==='POST'&&pathname==='/api/ai/natural-preview'){
+   if(!naturalConversationEnabled())return respond(res,409,{ok:false,code:'NATURAL_PREVIEW_DISABLED'});
+   if(Date.now()-lastNaturalPreviewAt<1600)return respond(res,429,{ok:false,code:'PREVIEW_RATE_LIMIT'});
+   const payload=await json(req);
+   const phrase=typeof payload.text==='string'?payload.text.trim():'';
+   if(!phrase||phrase.length>1500)return respond(res,400,{ok:false,code:'INVALID_PREVIEW_TEXT'});
+   const history=Array.isArray(payload.history)?payload.history.slice(-10).filter(item=>
+    item&&['user','assistant'].includes(item.role)&&typeof item.text==='string'&&item.text.trim()
+   ).map(item=>({role:item.role,text:item.text.slice(0,350)})):[];
+   lastNaturalPreviewAt=Date.now();
+   const hasAssistant=history.some(item=>item.role==='assistant');
+   // A simulation has no PIX generation or delivery tooling. For sensitive
+   // commercial facts use the same approved Consecom rules as production,
+   // instead of letting a model invent payment steps or SEO package names.
+   const fixed=approvedLabFactReply({incoming:phrase,history});
+   if(fixed)return respond(res,200,{ok:true,answer:fixed,quality:gradeFranciscaReply({incoming:phrase,answer:fixed,category:styleIntentCategory(phrase),hasAssistantReply:hasAssistant}),model:'APPROVED_CONSECOM_SIMULATION',
+    naturalConversation:true,commercialStage:'SIMULATION',version:LAB_PAYMENT_SAFETY_VERSION,
+    noWhatsappSend:true,noPaymentCreated:true,reviewed:'APPROVED_TEST_FACT',code:null});
+   const simulationMemory=nextConversationState({},[
+    ...history.map(item=>({direction:item.role==='user'?'in':'out',body:item.text})),
+    {direction:'in',body:phrase}
+   ]);
+   const prior=history.map(item=>(item.role==='user'?'Cliente: ':'Consecom: ')+item.text.replace(/[\r\n]+/g,' ')).join('\n');
+   const result=await aiDraft({text:phrase,
+    context:'SIMULAÇÃO INTERNA DE CONVERSA COM CLIENTE FICTÍCIO. Não há WhatsApp, lead, pagamento ou envio.\n'+prior,
+    audience:'PROSPECT_APPROACHED',commercialMode:'SIMULATION',dialogueState:{hasAssistantReply:hasAssistant,salesMemory:simulationMemory}});
+   const reviewed=result.ok?labModelReplySafe({incoming:phrase,history,draft:result.draft}):null;
+   return respond(res,result.ok?200:result.httpStatus||502,
+    {ok:result.ok,answer:reviewed?.answer||null,quality:reviewed?.answer?gradeFranciscaReply({incoming:phrase,answer:reviewed.answer,category:styleIntentCategory(phrase),hasAssistantReply:hasAssistant}):null,model:result.model||null,
+     naturalConversation:result.naturalConversation===true,commercialStage:result.commercialStage||null,
+     version:NATURAL_CONVERSATION_VERSION,noWhatsappSend:true,noPaymentCreated:true,
+     reviewed:reviewed?.source||null,code:result.code||null});
   }
 
   if(req.method==='GET'&&pathname==='/api/agent-bridge/status')return respond(res,200,{...bridgeStatus(),privateMediaRestore:privateRestoreStatus()});
