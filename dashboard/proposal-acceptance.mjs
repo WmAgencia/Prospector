@@ -2,6 +2,13 @@
 // A greeting, auto-reply or ambiguous acknowledgement is NOT permission.
 const norm=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[!?.,;:]+/g,' ').replace(/\s+/g,' ').trim();
 
+// A refusal ends this proposal conversation, including during the 30s delay.
+// A soft "not now" is not automatically treated as permanent WhatsApp opt-out.
+export function explicitlyDeclinesProposal(text=''){
+ const s=norm(text);
+ return /^(?:nao|nao obrigado|nao obrigada|nao quero|nao tenho interesse|sem interesse|agora nao|melhor nao|prefiro nao|nao precisa|nao envie|nao manda|nao mande|pare|pode parar)(?:\\b|$)/.test(s)
+  || /\\b(?:nao estou interessado|nao estou interessada|nao quero proposta|nao quero receber proposta|dispenso a proposta|pode encerrar)\\b/.test(s);
+}
 export function explicitlyAcceptsProposal(text=''){
  const s=norm(text);
  if(!s||/(?:^|\b)(?:nao|nunca|pare|parar|sem interesse|nao quero|nao pode|nao manda|nao envie|agora nao|nao obrigado)(?:\b|$)/.test(s))return false;
