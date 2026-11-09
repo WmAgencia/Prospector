@@ -59,7 +59,7 @@ let trainingReviewSearch='',trainingShowComposer=false,trainingSetupMinimized=tr
 try{trainingSetupMinimized=sessionStorage.getItem('prospector-setup-compact-v2')!=='0';}catch{}
 let waAccountsLastCheck=0;
 let outreachHours={start:'08:00',end:'17:30'};
-let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalDrafts=new Map(),approvalOperatorPhone='',approvalBusy=false;
+let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalSelectAll=false,approvalExcludedIds=new Set(),approvalSelectionCutoff='',approvalBusy=false;
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
 let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
 let noticeTimer=null,noticeToken=0;
@@ -1105,15 +1105,6 @@ function connections(){
  const item=waAccounts.find(x=>x.session_id===connectionSession);
  return whatsappAccountsPanel()+(waModalOpen?'<div class="wa-modal-backdrop" role="presentation"><section class="wa-modal" role="dialog" aria-modal="true" aria-labelledby="wa-modal-title"><button type="button" class="wa-modal-close" data-action="close-wa-modal" aria-label="Fechar">'+glyph('close')+'</button><span class="kicker">CONEXÃO WHATSAPP</span><h2 id="wa-modal-title">'+esc(item?.label||'Novo número')+'</h2><p>No celular, abra WhatsApp → <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong>. Depois escaneie o código.</p><div class="wa-modal-qr">'+(wa?.connected?'<div class="wa-connected-success"><span>✓</span><h3>Conectado!</h3><p>Seu WhatsApp está pronto. Esta janela fecha automaticamente.</p></div>':qrResult?.qr?'<img class="qr-image" src="'+esc(qrResult.qr)+'" alt="QR Code para conectar este WhatsApp"><small>Escaneie com o seu WhatsApp</small>':'<div class="wa-qr-loading"><span class="wa-qr-skeleton">▦</span><strong>Aguardando QR Code</strong><small>'+esc(qrResult?.message||'Preparando o pareamento')+'</small></div>')+'</div><div class="wa-modal-actions">'+(wa?.connected?'<button type="button" class="secondary" data-action="disconnect">Desconectar número</button>':'<button type="button" class="secondary" data-action="connect">Atualizar QR Code</button>')+'<button type="button" class="primary" data-action="close-wa-modal">Fechar</button></div></section></div>':'');
 }
-const approvalDateInput=(value)=>{
- const d=value?new Date(value):new Date();
- if(Number.isNaN(d.getTime()))return '';
- return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
-};
-const approvalDraft=(id)=>{
- if(!approvalDrafts.has(id))approvalDrafts.set(id,{evidence:'',evidenceReference:'',channel:'PERSONAL_WHATSAPP',consentAt:approvalDateInput()});
- return approvalDrafts.get(id);
-};
 async function loadApprovals(){
  if(platformContext.role==='master')return;
  try{
@@ -1126,58 +1117,46 @@ function approvalsView(){
  const data=approvalData||{items:[],totals:{pending:0,authorized:0,blocked:0},total:0};
  const totals=data.totals||{pending:0,authorized:0,blocked:0};
  const button=(status,text,count)=>'<button type="button" class="approval-filter '+(approvalStatus===status?'active':'')+'" data-action="approval-filter" data-status="'+status+'" aria-pressed="'+(approvalStatus===status)+'">'+text+' <strong>'+count+'</strong></button>';
- const items=data.items||[],pendingHere=items.filter(x=>x.approval_status==='PENDING');
- const selectedHere=pendingHere.filter(x=>approvalSelection.has(x.id));
- const allHere=pendingHere.length>0&&selectedHere.length===pendingHere.length;
+ const items=data.items||[],count=approvalSelectAll?Math.max(0,totals.pending-approvalExcludedIds.size):approvalSelection.size;
  const cards=items.map(lead=>{
-  const chosen=approvalSelection.has(lead.id),draft=approvalDraft(lead.id);
+  const selectable=lead.approval_status==='PENDING';
+  const chosen=selectable&&(approvalSelectAll?!approvalExcludedIds.has(lead.id):approvalSelection.has(lead.id));
   const record=lead.consentRecord;
   const statusText=lead.approval_status==='AUTHORIZED'?'Autorizado':lead.approval_status==='BLOCKED'?'Bloqueado':'Pendente';
-  const selectable=lead.approval_status==='PENDING';
+  const proof=record?(record.evidenceType==='OPERATOR_ATTESTATION'
+   ?'<div class="approval-audit"><strong>Confirmação pelo operador</strong><p>O responsável declarou que este contato aceitou receber mensagens. Não foi anexado comprovante da conversa.</p><small>Registrado: '+stamp(record.recordedAt)+' · Lote: '+esc(record.batchId||'individual')+'</small></div>'
+   :'<div class="approval-audit"><strong>Autorização registrada</strong><p>'+esc(record.evidence)+'</p><small>Autorização: '+stamp(record.consentAt)+' · Registro: '+stamp(record.recordedAt)+'</small>'+(record.batchId?'<small>Lote: '+esc(record.batchId)+'</small>':'')+'</div>'):'';
   return '<article class="approval-contact '+(chosen?'chosen':'')+'">'+
    '<div class="approval-contact-heading">'+(selectable?'<label class="approval-pick"><input type="checkbox" data-approval-check="'+esc(lead.id)+'" '+(chosen?'checked':'')+' aria-label="Selecionar '+esc(lead.business)+'"></label>':'<span class="approval-spacer" aria-hidden="true"></span>')+
    '<div class="approval-person"><strong>'+esc(lead.business)+'</strong><span>'+esc(lead.name||lead.city||'Empresa')+' · '+esc(lead.phone||'')+'</span><small>Origem: '+esc(lead.source||'Não informada')+'</small></div>'+
    '<span class="approval-status '+(lead.approval_status==='AUTHORIZED'?'ok':lead.approval_status==='BLOCKED'?'blocked':'')+'">'+statusText+'</span></div>'+
-   (chosen?'<div class="approval-evidence-fields"><label>Resposta ou evidência da autorização<textarea data-approval-evidence="'+esc(lead.id)+'" maxlength="1000" rows="2" placeholder="Ex.: Cliente respondeu: Sim, pode me enviar a apresentação" required>'+esc(draft.evidence)+'</textarea></label>'+
-    '<label>Referência opcional da prova (ID da mensagem, link ou protocolo)<input data-approval-reference="'+esc(lead.id)+'" maxlength="500" placeholder="Ex.: mensagem 1234 ou protocolo CRM" value="'+esc(draft.evidenceReference||'')+'"></label>'+ 
-    '<div class="approval-evidence-row"><label>Canal<select data-approval-channel="'+esc(lead.id)+'"><option value="PERSONAL_WHATSAPP" '+(draft.channel==='PERSONAL_WHATSAPP'?'selected':'')+'>WhatsApp pessoal</option><option value="PHONE_CALL" '+(draft.channel==='PHONE_CALL'?'selected':'')+'>Ligação</option><option value="OTHER" '+(draft.channel==='OTHER'?'selected':'')+'>Outro canal</option></select></label>'+
-    '<label>Data e hora da autorização<input type="datetime-local" data-approval-date="'+esc(lead.id)+'" value="'+esc(draft.consentAt)+'" required></label></div></div>':'')+
-   (record?'<div class="approval-audit"><strong>Autorização registrada</strong><p>'+esc(record.evidence)+'</p>'+(record.evidenceReference?'<small>Referência: '+esc(record.evidenceReference)+'</small>':'')+'<small>Data da autorização: '+stamp(record.consentAt)+' · Registro: '+stamp(record.recordedAt)+' · '+esc(record.channel)+' · Contato pelo número '+esc(record.sourcePhone||'não informado')+'</small>'+(record.batchId?'<small>Lote: '+esc(record.batchId)+'</small>':'')+'</div>':'')+
-   '</article>';
+   proof+'</article>';
  }).join('');
- const prev=Math.max(0,approvalOffset-40),next=approvalOffset+40;
- return '<div class="workspace-head"><div><span class="kicker">CURADORIA / WHATSAPP</span><h2>Aprovações</h2><p>Registre a autorização individual dos contatos selecionados e libere apenas quem aceitou receber mensagens.</p></div></div>'+
+ const next=approvalOffset+40;
+ return '<div class="workspace-head"><div><span class="kicker">CURADORIA / WHATSAPP</span><h2>Aprovações</h2><p>Confira pelo seu celular quem aceitou receber mensagens. Depois selecione os contatos e aprove em um único clique.</p></div></div>'+
   '<section class="approval-stat-grid"><div><small>Pendentes</small><strong>'+totals.pending+'</strong></div><div><small>Autorizados</small><strong>'+totals.authorized+'</strong></div><div><small>Bloqueados</small><strong>'+totals.blocked+'</strong></div></section>'+
   '<section class="panel approvals-panel"><div class="approval-toolbar"><div class="approval-filters">'+button('PENDING','Pendentes',totals.pending)+button('AUTHORIZED','Autorizados',totals.authorized)+button('BLOCKED','Bloqueados',totals.blocked)+'</div><button type="button" class="secondary compact" data-action="approval-refresh">Atualizar</button></div>'+
-  (approvalStatus==='PENDING'?'<div class="approval-select-bar"><label class="approval-all"><input type="checkbox" data-approval-all="true" '+(allHere?'checked':'')+' '+(!pendingHere.length?'disabled':'')+'> Selecionar contatos desta página</label><span>'+approvalSelection.size+' selecionado(s) · limite de 50 por lote</span></div>':'')+
+  (approvalStatus==='PENDING'?'<div class="approval-select-bar"><label class="approval-all"><input type="checkbox" data-approval-all="true" '+(approvalSelectAll&&approvalExcludedIds.size===0?'checked':'')+' '+(!totals.pending?'disabled':'')+'> Selecionar todos os '+totals.pending+' pendentes (todas as páginas)</label><span>'+count+' selecionado(s)</span></div>':'')+
   '<div class="approval-contacts">'+(cards||'<div class="empty"><h3>Nenhum contato nesta categoria</h3><p>Os contatos aparecerão conforme forem encontrados ou autorizados.</p></div>')+'</div>'+
   '<div class="approval-pagination"><span>Exibindo '+(items.length?approvalOffset+1:0)+'–'+(approvalOffset+items.length)+' de '+data.total+'</span><div><button type="button" class="secondary compact" data-action="approval-prev" '+(!approvalOffset?'disabled':'')+'>Anterior</button><button type="button" class="secondary compact" data-action="approval-next" '+(next>=data.total?'disabled':'')+'>Próxima</button></div></div></section>'+
-  (approvalStatus==='PENDING'?'<section class="panel approval-submit-panel"><span class="kicker">REGISTRO EM LOTE</span><h3>Confirmar autorizações selecionadas</h3><p>Preencha uma evidência para cada empresa marcada acima. O sistema salvará os registros separadamente, sem autorizar outros contatos.</p>'+
-  '<label class="approval-source-phone">Seu número utilizado na curadoria (com DDD)<input id="approval-operator-phone" type="tel" autocomplete="tel" placeholder="(15) 99999-9999" value="'+esc(approvalOperatorPhone)+'"></label>'+
-  '<label class="approval-affirmation"><input id="approval-affirmation" type="checkbox"> Confirmo que cada contato selecionado autorizou receber as mensagens e que as evidências informadas correspondem a essas autorizações.</label>'+
-  '<div class="approval-submit-actions"><span>'+approvalSelection.size+' contato(s) selecionado(s)</span><button type="button" class="primary" data-action="approval-submit" '+(!approvalSelection.size||approvalBusy?'disabled':'')+'>'+ (approvalBusy?'Registrando...':'Registrar '+approvalSelection.size+' autorização(ões)')+'</button></div></section>':'')+
-  '<p class="settings-small-note">Aprovações são auditadas por contato no banco exclusivo desta conta. Os envios continuam sujeitos à fila, à pausa, aos limites e às exclusões de contatos.</p>';
+  (approvalStatus==='PENDING'?'<section class="panel approval-submit-panel"><span class="kicker">APROVAÇÃO RÁPIDA</span><h3>Confirmar os selecionados</h3><p>Ao clicar em Aprovar, você declara que cada contato selecionado já aceitou receber mensagens. O registro fica individual por contato, sem inventar comprovantes.</p>'+
+  '<div class="approval-submit-actions"><span>'+count+' contato(s) selecionado(s)</span><button type="button" class="primary" data-action="approval-submit" '+(!count||approvalBusy?'disabled':'')+'>'+(approvalBusy?'Aprovando...':'Aprovar '+count+' contato(s)')+'</button></div></section>':'')+
+  '<p class="settings-small-note">A declaração do operador não equivale a uma prova independente de opt-in. A confirmação não envia mensagens nem altera pausas, horários e exclusões.</p>';
 }
 async function submitApprovals(){
- if(approvalBusy||!approvalSelection.size)return;
- const phoneDigits=approvalOperatorPhone.replace(/\D/g,'');
- const operatorPhone=phoneDigits.length===10||phoneDigits.length===11?'55'+phoneDigits:phoneDigits;
- if(!/^55\d{10,11}$/.test(operatorPhone)){n('Informe o número pessoal utilizado para obter as autorizações.');return;}
- if(!q('#approval-affirmation')?.checked){n('Confirme que cada contato selecionado autorizou as mensagens.');return;}
- const items=[];
- for(const leadId of approvalSelection){
-  const draft=approvalDraft(leadId);
-  if(draft.evidence.trim().length<3){n('Informe a resposta individual de todas as empresas selecionadas.');return;}
-  const date=new Date(draft.consentAt);
-  if(Number.isNaN(date.getTime())){n('Informe a data correta de cada autorização.');return;}
-  items.push({leadId,evidence:draft.evidence.trim(),evidenceReference:draft.evidenceReference||'',channel:draft.channel,consentAt:date.toISOString(),operatorPhone});
- }
+ if(approvalBusy)return;
+ const count=approvalSelectAll?Math.max(0,Number(approvalData?.totals?.pending||0)-approvalExcludedIds.size):approvalSelection.size;
+ if(!count)return;
  approvalBusy=true;
  const button=q('[data-action="approval-submit"]');if(button)button.disabled=true;
  try{
-  const result=await post('/api/approvals/batch',{items,confirmedByOperator:true});
-  approvalSelection.clear();approvalDrafts.clear();
-  await loadApprovals();n(result.approved+' autorizações individuais registradas. Lote auditado.');
+  const payload=approvalSelectAll
+   ?{quick:true,allPending:true,selectionCutoff:approvalSelectionCutoff,excludedLeadIds:[...approvalExcludedIds],confirmedByOperator:true}
+   :{quick:true,allPending:false,leadIds:[...approvalSelection],confirmedByOperator:true};
+  const result=await post('/api/approvals/batch',payload);
+  approvalSelection.clear();approvalExcludedIds.clear();approvalSelectAll=false;approvalSelectionCutoff='';
+  await loadApprovals();
+  n(result.approved+' contato(s) aprovado(s) com declaração individual registrada.');
  }catch(e){n(e.message);}
  finally{approvalBusy=false;if(view==='approvals')render();}
 }
@@ -1409,9 +1388,9 @@ document.addEventListener("click",async ev=>{
    return;
   }
   if(action==='approval-filter'){
-   approvalStatus=el.dataset.status||'PENDING';approvalOffset=0;approvalSelection.clear();approvalDrafts.clear();await loadApprovals();return;
+   approvalStatus=el.dataset.status||'PENDING';approvalOffset=0;approvalSelection.clear();approvalExcludedIds.clear();approvalSelectAll=false;approvalSelectionCutoff='';await loadApprovals();return;
   }
-  if(action==='approval-refresh'){await loadApprovals();n('Lista de aprovações atualizada.');return;}
+  if(action==='approval-refresh'){approvalSelection.clear();approvalExcludedIds.clear();approvalSelectAll=false;approvalSelectionCutoff='';await loadApprovals();n('Lista de aprovações atualizada.');return;}
   if(action==='approval-prev'){approvalOffset=Math.max(0,approvalOffset-40);await loadApprovals();return;}
   if(action==='approval-next'){approvalOffset+=40;await loadApprovals();return;}
   if(action==='approval-submit'){await submitApprovals();return;}
@@ -1604,22 +1583,19 @@ document.addEventListener("submit",async ev=>{
 document.addEventListener("change",async e=>{
  if(e.target.dataset.approvalCheck){
   const id=e.target.dataset.approvalCheck;
-  if(e.target.checked){
-   if(approvalSelection.size>=50){e.target.checked=false;n('O máximo por lote é 50 contatos.');return;}
-   approvalSelection.add(id);approvalDraft(id);
-  }else approvalSelection.delete(id);
+  if(approvalSelectAll){
+   if(e.target.checked)approvalExcludedIds.delete(id);else approvalExcludedIds.add(id);
+  }else{
+   if(e.target.checked)approvalSelection.add(id);else approvalSelection.delete(id);
+  }
   render();return;
  }
  if(e.target.dataset.approvalAll){
-  const visible=(approvalData?.items||[]).filter(x=>x.approval_status==='PENDING');
-  if(e.target.checked){
-   for(const lead of visible){if(approvalSelection.size>=50)break;approvalSelection.add(lead.id);approvalDraft(lead.id);}
-  }else for(const lead of visible)approvalSelection.delete(lead.id);
+  approvalSelectAll=e.target.checked;
+  approvalSelection.clear();approvalExcludedIds.clear();
+  approvalSelectionCutoff=approvalSelectAll?String(approvalData?.snapshotAt||''):'';
   render();return;
  }
- if(e.target.dataset.approvalChannel){approvalDraft(e.target.dataset.approvalChannel).channel=e.target.value;return;}
- if(e.target.dataset.approvalDate){approvalDraft(e.target.dataset.approvalDate).consentAt=e.target.value;return;}
-
  if(e.target.dataset.trainingChat){if(e.target.checked)trainingSelection.add(e.target.dataset.trainingChat);else trainingSelection.delete(e.target.dataset.trainingChat);return;}
  if(e.target.name==="training-mode"){trainingMode=e.target.value;trainingAllConfirmed=false;render();return;}
  if(e.target.id==='training-all-confirm'){trainingAllConfirmed=e.target.checked;return;}
@@ -1652,9 +1628,6 @@ document.addEventListener("change",async e=>{
  }
 });
 document.addEventListener("input",e=>{
- if(e.target.id==='approval-operator-phone'){approvalOperatorPhone=e.target.value;return;}
- if(e.target.dataset.approvalEvidence){approvalDraft(e.target.dataset.approvalEvidence).evidence=e.target.value;return;}
- if(e.target.dataset.approvalReference){approvalDraft(e.target.dataset.approvalReference).evidenceReference=e.target.value;return;}
 
  if(e.target.id==='scope-niche'){scopeNicheInput=e.target.value;return;}
  if(e.target.id==='scope-city'){scopeCityInput=e.target.value;return;}

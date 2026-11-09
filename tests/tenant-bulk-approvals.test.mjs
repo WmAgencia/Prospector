@@ -20,6 +20,14 @@ try{
    addLead({business:'Empresa B',phone:'5515999005678',source:'maps_extension'}).lead
   ].map(x=>({id:x.id,phone:x.phone}));
  }
+ if(input.action==='seedMany'){
+  data.leads=Array.from({length:input.count},(_,i)=>addLead({
+   business:'Empresa em lote '+(i+Number(input.start||0)),
+   phone:'55159'+String(10000000+i+Number(input.start||0)),
+   source:'maps_extension'
+  }).lead).map(x=>({id:x.id,phone:x.phone}));
+ }
+ if(input.action==='listing')data.list=listLeadApprovals({status:'PENDING',limit:40,offset:0});
  if(input.action==='approve')data.result=approveLeadBatch(input.payload);
  if(input.action==='suppress')run('INSERT OR IGNORE INTO suppressions(phone,reason,created_at) VALUES(?,?,?)',input.phone,'Do not contact',new Date().toISOString());
  if(input.action==='inspect'){
@@ -98,8 +106,80 @@ test('dashboard, server and per-tenant proxy expose approval workflow',()=>{
  assert.match(server,/listLeadApprovals\(/);
  assert.match(platform,/approvals/);
  assert.match(page,/function approvalsView\(/);
- assert.match(page,/data-approval-evidence/);
+ assert.match(page,/data-approval-all/);
+ assert.match(page,/approvalSelectAll/);
+ assert.doesNotMatch(page,/data-approval-evidence/);
  assert.match(page,/approvalSelection/);
- assert.match(page,/approval-affirmation/);
+ assert.doesNotMatch(page,/id="approval-affirmation"/);
+ assert.match(page,/Aprovar /);
 });
+
+test('quick selection approves more than 50 contacts without entering repetitive evidence fields',()=>{
+ const dir=path.join(tmp,'quick-many');
+ const ids=run(dir,{action:'seedMany',count:123}).leads;
+ const result=run(dir,{action:'approve',payload:{
+  quick:true,confirmedByOperator:true,allPending:false,leadIds:ids.map(x=>x.id)
+ }});
+ assert.equal(result.result?.approved,123,JSON.stringify(result));
+ const state=run(dir,{action:'inspect'});
+ assert.equal(state.list.totals.authorized,123);
+ const approvals=state.audits.filter(x=>x.action==='CONSENT_UPDATED');
+ assert.equal(approvals.length,123);
+ const batches=state.audits.filter(x=>x.action==='CONSENT_BATCH_APPROVED');
+ assert.equal(batches.length,1);
+ for(const row of approvals){
+  const detail=JSON.parse(row.detail);
+  assert.equal(detail.evidenceType,'OPERATOR_ATTESTATION');
+  assert.equal(detail.evidenceVerified,false);
+  assert.equal(detail.method,'manual_quick_approval');
+  assert.ok(detail.evidence.includes('Comprovante da conversa não anexado'));
+  assert.equal(detail.batchId,JSON.parse(batches[0].detail).batchId);
+ }
+});
+test('select all covers all pending pages, supports exclusions and does not include leads created after selection',()=>{
+ const dir=path.join(tmp,'quick-all');
+ run(dir,{action:'seedMany',count:97});
+ const snapshot=run(dir,{action:'listing'}).list.snapshotAt;
+ const pending=run(dir,{action:'inspect'}).permissions;
+ assert.equal(pending.length,97);
+ const excluded=pending[0].id;
+ run(dir,{action:'seedMany',count:2,start:200});
+ const result=run(dir,{action:'approve',payload:{
+  quick:true,confirmedByOperator:true,allPending:true,selectionCutoff:snapshot,
+  excludedLeadIds:[excluded]
+ }});
+ assert.equal(result.result?.approved,96,JSON.stringify(result));
+ const state=run(dir,{action:'inspect'});
+ assert.equal(state.list.totals.authorized,96);
+ assert.equal(state.list.totals.pending,3);
+ assert.equal(state.permissions.find(x=>x.id===excluded).contact_permission,0);
+});
+test('quick approval refuses missing operator confirmation and blocked contacts atomically',()=>{
+ const dir=path.join(tmp,'quick-block');
+ const ids=run(dir,{action:'seed'}).leads;
+ const noConfirm=run(dir,{action:'approve',payload:{
+  quick:true,confirmedByOperator:false,leadIds:ids.map(x=>x.id)
+ }});
+ assert.match(noConfirm.error,/Confirme/);
+ run(dir,{action:'suppress',phone:ids[1].phone});
+ const blocked=run(dir,{action:'approve',payload:{
+  quick:true,confirmedByOperator:true,leadIds:ids.map(x=>x.id)
+ }});
+ assert.match(blocked.error,/bloqueado/);
+ const state=run(dir,{action:'inspect'});
+ assert.equal(state.list.totals.authorized,0);
+ assert.equal(state.audits.length,0);
+});
+test('quick approvals remain isolated to the authenticated workspace database',()=>{
+ const left=path.join(tmp,'quick-tenant-1'),right=path.join(tmp,'quick-tenant-2');
+ run(left,{action:'seed'});run(right,{action:'seed'});
+ const snapshot=run(left,{action:'listing'}).list.snapshotAt;
+ const result=run(left,{action:'approve',payload:{
+  quick:true,confirmedByOperator:true,allPending:true,selectionCutoff:snapshot
+ }});
+ assert.equal(result.result?.approved,2,JSON.stringify(result));
+ assert.equal(run(left,{action:'inspect'}).list.totals.authorized,2);
+ assert.equal(run(right,{action:'inspect'}).list.totals.authorized,0);
+});
+
 test.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));

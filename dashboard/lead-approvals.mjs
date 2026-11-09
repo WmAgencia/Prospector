@@ -17,30 +17,91 @@ const BASE_SQL="SELECT l.id,l.business,l.name,l.phone,l.source,l.city,l.stage,l.
 export function listLeadApprovals({status='PENDING',limit=40,offset=0}={}){
  if(!['PENDING','AUTHORIZED','BLOCKED','ALL'].includes(status))throw Error('Filtro de aprovações inválido');
  const size=Number(limit),skip=Number(offset);
- if(!Number.isInteger(size)||size<1||size>50||!Number.isInteger(skip)||skip<0||skip>100000)throw Error('Paginação inválida');
- const allRows=all(BASE_SQL+" ORDER BY l.created_at DESC LIMIT 20000");
+ if(!Number.isInteger(size)||size<1||size>100||!Number.isInteger(skip)||skip<0)throw Error('Paginação inválida');
+ const summary=all("SELECT approval_status,COUNT(*) AS quantity FROM ("+BASE_SQL+") GROUP BY approval_status");
  const totals={pending:0,authorized:0,blocked:0};
- for(const r of allRows){
-  if(r.approval_status==='AUTHORIZED')totals.authorized++;
-  else if(r.approval_status==='BLOCKED')totals.blocked++;
-  else totals.pending++;
- }
- const filtered=status==='ALL'?allRows:allRows.filter(r=>r.approval_status===status);
- return {totals,total:filtered.length,status,limit:size,offset:skip,
-  items:filtered.slice(skip,skip+size).map(({contact_permission,...lead})=>{
+ for(const row of summary)totals[row.approval_status.toLowerCase()]=row.quantity;
+ const total=status==='ALL'?totals.pending+totals.authorized+totals.blocked:totals[status.toLowerCase()];
+ const rows=status==='ALL'
+  ?all(BASE_SQL+" ORDER BY l.created_at DESC LIMIT ? OFFSET ?",size,skip)
+  :all("SELECT * FROM ("+BASE_SQL+") WHERE approval_status=? ORDER BY created_at DESC LIMIT ? OFFSET ?",status,size,skip);
+ return {totals,total,status,limit:size,offset:skip,snapshotAt:new Date().toISOString(),
+  items:rows.map(({contact_permission,...lead})=>{
    if(lead.approval_status!=='AUTHORIZED')return lead;
    const last=one("SELECT at,detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' ORDER BY at DESC LIMIT 1",lead.id);
    if(!last)return lead;
    let details={};try{details=JSON.parse(last.detail);}catch{}
-   return {...lead,consentRecord:{recordedAt:last.at,consentAt:details.consentAt||last.at,
+   return {...lead,consentRecord:{recordedAt:last.at,consentAt:details.consentAt||null,
     channel:details.channel||'OTHER',sourcePhone:details.sourcePhone||'',evidence:details.evidence||'',
-    batchId:details.batchId||null,evidenceReference:details.evidenceReference||''}};
+    batchId:details.batchId||null,evidenceReference:details.evidenceReference||'',
+    evidenceType:details.evidenceType||'DOCUMENTED',method:details.method||'manual_batch_curation'}};
   })};
 }
 
+
+// Fast curation: the button is an authenticated operator's declaration, NOT an
+// independently verified WhatsApp opt-in. Every selected lead gets a distinct audit
+// record. No message is sent and no queue/consent-policy switch is altered.
+function quickConsentBatch(input){
+ if(input.confirmedByOperator!==true)throw Error('Confirme que os contatos selecionados aceitaram receber mensagens');
+ const allPending=input.allPending===true;
+ const raw=allPending?input.excludedLeadIds||[]:input.leadIds;
+ if(!Array.isArray(raw))throw Error('Seleção de contatos inválida');
+ if(allPending&&typeof input.selectionCutoff!=='string')throw Error('Atualize a lista antes de selecionar todos');
+ const timestamp=Date.parse(input.selectionCutoff||'');
+ const receivedAt=Date.now();
+ if(allPending&&(!Number.isFinite(timestamp)||timestamp>receivedAt+300000||timestamp<receivedAt-366*86400000))
+  throw Error('Seleção desatualizada. Atualize a lista de aprovações');
+ const selected=new Set();
+ for(const rawId of raw){
+  const leadId=String(rawId||'').trim();
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadId)||selected.has(leadId))
+   throw Error('Seleção contém contato inválido ou duplicado');
+  selected.add(leadId);
+ }
+ const selectionCutoff=allPending?new Date(timestamp).toISOString():null;
+ const batchId=id(),recordedAt=new Date().toISOString();
+ return tx(()=>{
+  const candidates=allPending
+   ?all("SELECT id FROM ("+BASE_SQL+") WHERE approval_status='PENDING' AND created_at<=?",selectionCutoff)
+   :[...selected].map(leadId=>({id:leadId}));
+  const leadIds=candidates.map(x=>x.id).filter(leadId=>!allPending||!selected.has(leadId));
+  if(!leadIds.length)throw Error('Nenhum contato elegível foi selecionado');
+  for(const leadId of leadIds){
+   const lead=one('SELECT id,phone,contact_permission FROM leads WHERE id=?',leadId);
+   if(!lead?.phone)throw Error('Contato não encontrado ou sem WhatsApp');
+   if(lead.phone===verifiedOwnerPhone())throw Error('O número do proprietário não é elegível');
+   if(one('SELECT phone FROM suppressions WHERE phone=?',lead.phone))throw Error('Contato bloqueado para mensagens');
+   if(one("SELECT phone FROM contact_relationships WHERE phone=? AND kind='EXISTING_CLIENT'",lead.phone))
+    throw Error('Cliente existente não pode ser aprovado como prospecção');
+   if(lead.contact_permission===1&&one("SELECT id FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' LIMIT 1",lead.id))
+    throw Error('Um dos contatos já está autorizado. Atualize a lista');
+  }
+  for(const leadId of leadIds){
+   run('UPDATE leads SET contact_permission=1 WHERE id=?',leadId);
+   audit('CONSENT_UPDATED',leadId,{
+    permitted:true,
+    evidence:'Declaração do operador autenticado: este contato aceitou receber mensagens. Comprovante da conversa não anexado.',
+    evidenceType:'OPERATOR_ATTESTATION',evidenceVerified:false,method:'manual_quick_approval',
+    channel:'PERSONAL_WHATSAPP_REPORTED',sourcePhone:'',consentAt:null,recordedAt,
+    actor:'AUTHENTICATED_WORKSPACE_OPERATOR',batchId,
+    workspace:process.env.PROSPECTOR_TENANT_ID||'PRIMARY'
+   });
+  }
+  audit('CONSENT_BATCH_APPROVED',null,{
+   batchId,quantity:leadIds.length,selection:allPending?'ALL_PENDING':'SELECTED',
+   selectionCutoff,excludedCount:allPending?selected.size:0,
+   evidenceType:'OPERATOR_ATTESTATION',actor:'AUTHENTICATED_WORKSPACE_OPERATOR',
+   method:'manual_quick_approval',workspace:process.env.PROSPECTOR_TENANT_ID||'PRIMARY'
+  });
+  return {ok:true,batchId,approved:leadIds.length,selection:allPending?'ALL_PENDING':'SELECTED'};
+ });
+}
+
 export function approveLeadBatch(input={}){
+ if(input.quick===true)return quickConsentBatch(input);
  const entries=input.items;
- if(!Array.isArray(entries)||entries.length===0||entries.length>50)throw Error('Selecione de 1 a 50 contatos');
+ if(!Array.isArray(entries)||entries.length===0)throw Error('Selecione ao menos um contato');
  if(input.confirmedByOperator!==true)throw Error('Confirme que cada contato selecionado autorizou a abordagem');
  const ids=new Set(),approved=[];
  const submittedAt=Date.now(),batchId=id();
