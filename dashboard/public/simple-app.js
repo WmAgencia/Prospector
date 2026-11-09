@@ -747,10 +747,19 @@ function connections(){
 function settings(){
  if(platformContext.role==='master')return masterSettings();
  const hours=outreachHours||{start:'08:00',end:'17:30'};
+ const prefs=state?.settings||{};
+ const operationalToggle=(switchId,title,description,checked)=>{
+  return '<div class="setting-line tenant-control-line"><div class="tenant-control-copy"><strong>'+esc(title)+'</strong><small>'+esc(description)+'</small></div>'+
+   '<label class="switch" aria-label="'+esc(title)+'"><input id="'+switchId+'" type="checkbox" '+(checked?'checked':'')+'><span></span></label></div>';
+ };
  return '<div class="workspace-head"><div><span class="kicker">PREFERÊNCIAS DA CONTA</span><h2>Configurações</h2><p>O essencial para sua operação, com segurança e sem ferramentas técnicas desnecessárias.</p></div></div>'+
  '<div class="account-settings-grid"><section class="panel"><div class="heading"><div><span class="kicker">HORÁRIO DE ABORDAGENS</span><h3>Quando abordar empresas?</h3><p>Defina quando sua operação pode iniciar novas conversas.</p></div></div><form id="outreach-hours-form" class="stack-form"><div class="setting-hour-fields"><label>Início das abordagens<input name="start" type="time" step="60" min="08:00" max="17:29" value="'+esc(hours.start)+'" required></label><label>Fim das abordagens<input name="end" type="time" step="60" min="08:01" max="17:30" value="'+esc(hours.end)+'" required></label></div><p class="footnote">A descoberta continua a partir das 5h. Os horários configurados devem ficar dentro da janela de segurança das 8h às 17h30, e os envios continuam sujeitos à autorização do destinatário e às regras do canal.</p><button class="primary" type="submit">Salvar horário</button></form></section>'+
  '<section class="panel"><div class="heading"><div><span class="kicker">ACESSO E SEGURANÇA</span><h3>E-mail e senha</h3><p>Para qualquer alteração, confirme a senha atual.</p></div></div><form id="account-credentials" class="stack-form"><label>Novo e-mail<input type="email" name="newEmail" autocomplete="email" value="'+esc(platformContext.email||'')+'" required></label><label>Senha atual<input type="password" name="currentPassword" autocomplete="current-password" minlength="1" maxlength="128" required></label><label>Nova senha (opcional)<input type="password" name="newPassword" autocomplete="new-password" minlength="10" maxlength="128" placeholder="Mínimo de 10 caracteres"></label><p class="footnote">Alterar o e-mail ou a senha encerra outras sessões conectadas. Você permanece conectado neste navegador.</p><button class="primary" type="submit">Salvar dados de acesso</button></form></section></div>'+
- '<section class="panel settings-simple-control"><div><span class="kicker">CONTROLE RÁPIDO</span><h3>Pausar novas abordagens</h3><p>Pause imediatamente a fila automática sem interromper conversas recebidas.</p></div><label class="switch" aria-label="Pausar abordagem automática"><input id="s-paused" type="checkbox" '+(state?.settings?.paused?'checked':'')+'><span></span></label></section>'+
+ '<section class="panel tenant-prospecting-controls"><div class="heading"><div><span class="kicker">PROSPECÇÃO / SUA CONTA</span><h3>Controle da prospecção</h3><p>Ative ou pause sua operação de forma independente. Estas opções são exclusivas deste espaço de trabalho.</p></div></div>'+
+ operationalToggle('s-autonomous','Prospecção autônoma','Permite que o sistema pesquise e prepare abordagens para contatos elegíveis.',prefs.autonomous_outreach_enabled===true)+
+ operationalToggle('s-paused','Pausar a prospecção','Quando ativado, interrompe novas abordagens automáticas desta conta.',prefs.paused!==false)+
+ operationalToggle('s-cold-first','Primeira abordagem automática','Ativa a preparação da primeira saudação, respeitando autorização dos contatos, horários e limites.',prefs.cold_first_approach_enabled===true)+
+ '<p class="footnote tenant-controls-footnote">Os controles não substituem a autorização dos destinatários nem as regras do WhatsApp. Pausar um cliente não pausa os demais.</p></section>'+
  '<p class="settings-small-note">Seus dados e conversas ficam vinculados ao seu espaço. Treinamento com históricos exige autorização. A Francisca está disponível na bolinha lateral, em todas as áreas do painel.</p>';
 }
 async function loadOutreachHours(){
@@ -1167,10 +1176,17 @@ document.addEventListener("change",async e=>{
   finally{consentPolicyBusy=false;if(view==='settings')render();}
   return;
  }
- if(t.id==="s-paused"||t.id==="s-discovery"||t.id==="s-autonomous"){
-  const key=t.id==="s-paused"?"paused":t.id==="s-autonomous"?"autonomous_outreach_enabled":"discovery_auto_enabled";
-  try{await post("/api/settings",{[key]:t.checked});n("Configuração salva.");await reload();}
-  catch(err){t.checked=!t.checked;n(err.message);}
+ if(["s-paused","s-discovery","s-autonomous","s-cold-first"].includes(t.id)){
+  const keys={"s-paused":"paused","s-discovery":"discovery_auto_enabled","s-autonomous":"autonomous_outreach_enabled","s-cold-first":"cold_first_approach_enabled"};
+  const key=keys[t.id],desired=t.checked;
+  t.disabled=true;
+  try{
+   const saved=await post("/api/settings",{[key]:desired});
+   if(saved.prospectingControls&&state?.settings)Object.assign(state.settings,saved.prospectingControls);
+   n("Preferência salva somente nesta conta.");
+   await reload();
+  }catch(err){t.checked=!desired;n(err.message);}
+  finally{t.disabled=false;}
  }
 });
 document.addEventListener("input",e=>{
