@@ -34,6 +34,17 @@ try{
    source:'maps_extension'
   }).lead).map(x=>({id:x.id,phone:x.phone}));
  }
+ if(input.action==='seedOldApproved'){
+  const approved=addLead({business:'Contato autorizado antigo',phone:'5515980012345',source:'maps_extension'}).lead;
+  run('UPDATE leads SET created_at=? WHERE id=?','2026-10-01T12:00:00.000Z',approved.id);
+  for(let i=0;i<130;i++)addLead({business:'Contato sem autorização '+i,phone:'55159'+String(10000000+i),source:'maps_extension'});
+  data.approvedId=approved.id;
+ }
+ if(input.action==='enroll'){
+  const {enrollAutonomousApproaches}=await import('./dashboard/prospecting-queue.mjs');
+  data.result=enrollAutonomousApproaches({at:new Date('2026-11-10T14:00:00.000Z'),maxBatch:80});
+  data.queued=all("SELECT lead_id FROM prospecting_batch_items WHERE status='QUEUED'");
+ }
  if(input.action==='listing')data.list=listLeadApprovals({status:'PENDING',limit:40,offset:0});
  if(input.action==='approve')data.result=approveLeadBatch(input.payload);
  if(input.action==='suppress')run('INSERT OR IGNORE INTO suppressions(phone,reason,created_at) VALUES(?,?,?)',input.phone,'Do not contact',new Date().toISOString());
@@ -50,7 +61,7 @@ function run(folder,payload){
  const out=execFileSync(process.execPath,['--input-type=module','-e',fixture,JSON.stringify(payload)],{
   cwd:path.resolve('.'),
   env:{...process.env,PROSPECTOR_DATA_DIR:folder,PROSPECTOR_TENANT_ID:path.basename(folder),
-   PROSPECTOR_TENANT_INTERNAL:payload?.primary?'true':'false',PROSPECTOR_FORCE_OUTREACH_PAUSE:'false',PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false'},
+   PROSPECTOR_TENANT_INTERNAL:payload?.primary?'true':'false',PROSPECTOR_FORCE_OUTREACH_PAUSE:'false',PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false',PROSPECTOR_COLD_FIRST_APPROACH:'false',PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN:'true'},
   encoding:'utf8',timeout:25000
  });
  return JSON.parse(out.trim().split('\n').at(-1));
@@ -214,5 +225,17 @@ test('one-time owner activation arms only consent-gated prospecting, keeps legac
  assert.equal(isolated.result.status,'OTHER_TENANT_UNCHANGED');
  assert.equal(isolated.controls.paused,true);
  assert.equal(isolated.activationAudits.length,0);
+});
+test('automatic queue reaches older approved contact behind 130 newer unapproved leads',()=>{
+ const dir=path.join(tmp,'many-pending-before-approval');
+ const oldest=run(dir,{action:'seedOldApproved'}).approvedId;
+ const arm=run(dir,{action:'arm',primary:true});
+ assert.equal(arm.result?.status,'READY_FOR_APPROVED_LEADS');
+ const approved=run(dir,{action:'approve',payload:{quick:true,leadIds:[oldest],confirmedByOperator:true}});
+ assert.equal(approved.result?.approved,1);
+ const enrolled=run(dir,{action:'enroll'});
+ assert.equal(enrolled.result?.status,'QUEUED',JSON.stringify(enrolled));
+ assert.equal(enrolled.result?.queued,1);
+ assert.deepEqual(enrolled.queued.map(x=>x.lead_id),[oldest]);
 });
 test.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));

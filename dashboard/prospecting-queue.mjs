@@ -150,7 +150,12 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
  if(currentBatch())return {status:'ACTIVE'};
  if(!insideApproachWindow(at))return {status:'OUTSIDE_WINDOW'};
  const atMs=at.getTime();
- const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL ORDER BY created_at DESC LIMIT 6000");
+ // Filter documented consent at SQL level before applying maxBatch. Otherwise
+ // dozens of newer unapproved leads can starve an older approved one forever.
+ const optInFilter=requiresDocumentedOptIn()
+  ? " AND l.contact_permission=1 AND EXISTS(SELECT 1 FROM audit a WHERE a.lead_id=l.id AND a.action='CONSENT_UPDATED' AND json_extract(a.detail,'$.permitted')=1 AND COALESCE(json_extract(a.detail,'$.evidence'),'')<>'')"
+  : "";
+ const rows=all("SELECT l.id,l.business,l.city,l.phone,l.stage,l.contact_permission FROM leads l WHERE l.phone IS NOT NULL"+optInFilter+" ORDER BY l.created_at DESC LIMIT 6000");
  const byIdentity=new Map();
  for(const lead of rows){const key=businessIdentity(lead);if(key){if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(lead);}}
  const selected=[],keys=new Set();
@@ -158,6 +163,7 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
   if(selected.length>=Math.max(1,Math.min(100,Number(maxBatch)||80)))break;
   if(!['DISCOVERED','NO_INTEREST'].includes(lead.stage))continue;
   if(!recontactDecision(lead,atMs).eligible)continue;
+  if(!eligibleLead(lead.id,'',false,true))continue;
   const key=businessIdentity(lead);
   if(key&&(keys.has(key)||(byIdentity.get(key)||[]).some(other=>other.id!==lead.id&&unsafeSister(other,atMs))))continue;
   selected.push(lead);if(key)keys.add(key);
