@@ -6,8 +6,8 @@ const norm=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''
 // A soft "not now" is not automatically treated as permanent WhatsApp opt-out.
 export function explicitlyDeclinesProposal(text=''){
  const s=norm(text);
- return /^(?:nao|nao obrigado|nao obrigada|nao quero|nao tenho interesse|sem interesse|agora nao|melhor nao|prefiro nao|nao precisa|nao envie|nao manda|nao mande|pare|pode parar)(?:\\b|$)/.test(s)
-  || /\\b(?:nao estou interessado|nao estou interessada|nao quero proposta|nao quero receber proposta|dispenso a proposta|pode encerrar)\\b/.test(s);
+ return /^(?:nao|nao obrigado|nao obrigada|nao quero|nao tenho interesse|sem interesse|agora nao|melhor nao|prefiro nao|nao precisa|nao envie|nao manda|nao mande|pare|pode parar)(?:\b|$)/.test(s)
+  || /\b(?:nao estou interessado|nao estou interessada|nao quero proposta|nao quero receber proposta|dispenso a proposta|pode encerrar)\b/.test(s);
 }
 export function explicitlyAcceptsProposal(text=''){
  const s=norm(text);
