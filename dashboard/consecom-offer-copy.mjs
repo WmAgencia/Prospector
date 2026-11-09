@@ -1,13 +1,13 @@
 // Roteiro da oferta atual e referências enviadas 25 segundos depois da proposta.
-// O áudio deve ser regravado com o roteiro desta versão antes de habilitar a campanha.
-export const OFFER_AB_COPY_VERSION='consecom-portfolio-2026-11-07-v4-audio-ogg';
+// Áudio anterior com preços fica bloqueado até a nova gravação ser aprovada e validada.
+export const OFFER_AB_COPY_VERSION='consecom-portfolio-2026-11-09-v5-no-price-audio';
 // Versão escrita equivalente à gravação PROPOSTA.ogg fornecida pelo proprietário.
 // As afirmações comerciais são de autoria da Consecom; nenhuma posição no Google é garantida.
-export const OFFER_AB_TEXT="Então, vamos lá. A minha agência precisa entregar um portfólio do seu nicho pra uma empresa que tá fechando aqui com a gente daqui a três dias.\n\nE aí, qual é a questão? A gente precisa de mais um site desse segmento pra concluir o projeto.\n\nA proposta é a seguinte: a gente vai criar pra vocês um site profissional, totalmente personalizado, com SEO Master, que só a Consecom faz hoje em dia, pra ajudar o negócio de vocês a crescer no Google de forma orgânica. Ou seja, você não vai precisar fazer tráfego pago no Google pra ter o site trabalhando sua presença nas buscas. Logicamente, quem faz tráfego pago pode aparecer acima nos espaços de anúncios.\n\nE eu quero te entregar em três dias, que é exatamente quando a gente precisa entregar esse portfólio.\n\nPra vocês permitirem que a gente use o site no nosso portfólio, eu tô disposto a reduzir cerca de 80% do preço normal. Ou seja, vocês vão levar por R$ 550 um site que normalmente custa entre R$ 2.500 e R$ 3.000.\n\nAlém disso, eu quero incluir um ano de domínio sem custo e divulgar o trabalho de vocês no nosso Instagram e no site da agência, onde também fica o portfólio dos clientes.\n\nPessoalmente, eu tenho certeza de que esse site vai ajudar muito vocês a se destacarem dos concorrentes, principalmente pelo valor que eu tô oferecendo. E, sem dúvidas, também vai ajudar muito a gente na conclusão desse projeto.\n\nComo eu preciso entregar esse portfólio daqui a três dias, eu precisaria de uma resposta ainda hoje, se você puder. Eu fico no aguardo.";
+export const OFFER_AB_TEXT="Então, vou te explicar melhor.\n\nA ideia é criar um site profissional pra empresa de vocês, totalmente personalizado, mostrando os serviços, fotos e tudo que o cliente precisa saber pra entrar em contato.\n\nA gente também trabalha a parte de SEO, pra melhorar a presença da empresa nas pesquisas do Google, de forma orgânica.\n\nE como a gente pode usar esse projeto no nosso portfólio, com a autorização de vocês, conseguimos oferecer uma condição promocional.\n\nAlém disso, o site já vai com um ano de domínio incluso.\n\nVou te mandar alguns exemplos de trabalhos que a gente já entregou, pra você conhecer melhor o que fazemos.\n\nE aí, queria saber se uma proposta assim faria sentido pra vocês.";
 export const OFFER_AB_AUDIO_SCRIPT=OFFER_AB_TEXT;
-export const OFFER_AB_AUDIO_SHA256='17220b17fdf4faa140093dcf9dc633f8fee835f24e4c91f19909987aebfa9e70';
-export const OFFER_AB_AUDIO_BYTES=258788;
-export const OFFER_AB_AUDIO_DURATION_SECONDS=104.8265;
+export const OFFER_AB_AUDIO_SHA256=null; // Awaiting freshly recorded and operator-verified OGG.
+export const OFFER_AB_AUDIO_BYTES=0;
+export const OFFER_AB_AUDIO_DURATION_SECONDS=0;
 export const OFFER_AB_REFERENCES_TEXT="Vou te enviar aqui algumas referências do nosso trabalho 👇\nhttps://consecom.com.br/\nhttps://tweco.com.br/\nhttps://quimerasite.vercel.app/\nhttps://oficinasc.com/";
 export const OFFER_AB_REFERENCES_DELAY_MS=25_000;
 
