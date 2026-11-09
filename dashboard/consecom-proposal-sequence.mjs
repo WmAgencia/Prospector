@@ -1,4 +1,4 @@
-// Consecom: one WhatsApp message per nonempty line of the approved proposal.
+// Consecom: one WhatsApp message per approved block; internal newlines are preserved.
 // The prospecting pause, consent, opt-outs and manual handoff take precedence.
 // Network sends are reserved before transport; uncertain results are NEVER retried.
 import {db,one,run,now,addMessage,audit} from './db.mjs';
@@ -7,7 +7,7 @@ import {documentedOptIn} from './outreach-queue.mjs';
 import {operatorOffer,conversationAuthorized} from './operator-outreach.mjs';
 import {leadSession,isManagedSession} from './waakg-session-registry.mjs';
 import {waControlStatus,waRequest} from './waakg-control.mjs';
-import {PROPOSAL_TEXT_VERSION,PROPOSAL_MESSAGES,proposalTypingDelayMs} from './consecom-proposal-copy.mjs';
+import {PROPOSAL_TEXT_VERSION,PROPOSAL_MESSAGES,proposalTypingDelayMs,proposalCopyIsCurrent} from './consecom-proposal-copy.mjs';
 
 export const proposalSequenceEnabled=()=>!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
 const halted=()=>ownerProspectionPaused()||requirePaused();
@@ -23,6 +23,7 @@ run("UPDATE consecom_proposal_sequences SET state='UNKNOWN',reason='PROCESS_INTE
 
 export function scheduleConsecomProposalAfterIntro({leadId,sessionId,phone,threadId,firstReplyId}={}){
  if(!proposalSequenceEnabled()||halted())return {state:'DISABLED_OR_PAUSED'};
+ if(!proposalCopyIsCurrent())return {state:'DATE_DEPENDENT_COPY_EXPIRED'};
  if(!leadId||!sessionId||!phone||!threadId||!firstReplyId)return {state:'MISSING_CONTEXT'};
  if(!documentedOptIn(leadId)||operatorOffer(leadId)!=='portfolio'||!conversationAuthorized(leadId))return {state:'NO_AUTHORIZATION'};
  const intro=one('SELECT stage,session_id,phone,first_reply_id,sent_at FROM prospecting_introductions WHERE lead_id=?',leadId);
@@ -40,6 +41,7 @@ function currentSequence(row){
  if(halted())return {ok:false,reason:'PAUSED'};
  if(!proposalSequenceEnabled())return {ok:false,reason:'TENANT_NOT_ALLOWED'};
  if(row.version!==PROPOSAL_TEXT_VERSION)return {ok:false,reason:'OUTDATED_VERSION'};
+ if(!proposalCopyIsCurrent())return {ok:false,reason:'DATE_DEPENDENT_COPY_EXPIRED'};
  const intro=one('SELECT stage,session_id,phone,first_reply_id,sent_at FROM prospecting_introductions WHERE lead_id=?',row.lead_id);
  if(!intro||intro.stage!=='SENT'||intro.sent_at!==row.intro_sent_at||
     intro.first_reply_id!==row.intro_provider_id||intro.session_id!==row.session_id||
