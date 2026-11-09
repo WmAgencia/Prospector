@@ -1,7 +1,7 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
 // Two-step introduction on an APPROVED WA-AKG prospect campaign.
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
-// After the introduction, send the approved no-price recording if ready; then continue replies.
+// After the introduction, schedule four separate text messages (links together in the third) with visible typing.
 // No public listing is ever treated as documented WhatsApp opt-in.
 import {db,one,run,now,audit,addMessage} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
@@ -122,7 +122,7 @@ export async function tickIntroductions(deps={}){
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
    if(thread)addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:WESLEY_INTRO,status:'sent'});
    audit('PROSPECT_INTRO_SENT',item.lead_id,{delaySeconds:30});
-   // Enqueue seven separate messages, each with its own typing delay.
+   // Enqueue four separate messages, each with its own typing delay.
    // This does NOT send synchronously and respects the owner's pause.
    let proposal={state:'NOT_SCHEDULED'};
    try{
