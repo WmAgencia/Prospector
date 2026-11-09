@@ -235,6 +235,16 @@ export async function tickApproachQueue(deps={}){
   if(!wa.connected||!session)return {status:wa.reason||'OFFLINE'};
   if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('training_active',null))return {status:'TRAINING_REVIEW_REQUIRED'};
   if(!reserveApproachCredit(next.id))return {status:'NO_CREDITS'};
+  // Show WhatsApp's composing indicator before an authorized first approach.
+  // If presence cannot be confirmed, do not send the greeting.
+  const presencePath='/api/chat/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/presence';
+  try{
+   const typing=await send(presencePath,{method:'POST',data:{presence:'composing'}}).catch(()=>null);
+   if(typing?.status!==true){settleApproachCredit(next.id,false);return {status:'PRESENCE_UNAVAILABLE'};}
+   await new Promise(resolve=>setTimeout(resolve,2600));
+   if(!coldOutreachSwitchEnabled()||ownerProspectionPaused()){
+    settleApproachCredit(next.id,false);return {status:'PAUSED'};
+   }
   // Transaction reserves the global clock *before* invoking the provider.
   // Timestamp can only move forward. The interval is enforced after restarts.
   const reserved=tx(()=>{
@@ -293,6 +303,9 @@ export async function tickApproachQueue(deps={}){
     console.warn('[automatic approach] paused: uncertain gateway delivery');
    }
    return {status:'UNKNOWN',batchId:batch.id};
+  }
+  }finally{
+   try{await send(presencePath,{method:'POST',data:{presence:'paused'}});}catch{}
   }
  }finally{locked=false;}
 }
