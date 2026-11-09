@@ -11,9 +11,16 @@ const operatorPhone='5515988887336';
 const fixture=String.raw`
 const {addLead,one,run,all,db}=await import('./dashboard/db.mjs');
 const {approveLeadBatch,listLeadApprovals}=await import('./dashboard/lead-approvals.mjs');
+const {armApprovedOutreach}=await import('./dashboard/approval-ready-activation.mjs');
 const input=JSON.parse(process.argv[1]);
 const data={};
 try{
+ if(input.action==='arm'){
+  data.result=armApprovedOutreach();
+  data.controls=Object.fromEntries(['paused','autonomous_outreach_enabled','discovery_auto_enabled','cold_first_approach_enabled','auto_initial','automation_enabled'].map(k=>[k,(await import('./dashboard/db.mjs')).getSetting(k)]));
+  data.activationAudits=all("SELECT action,detail FROM audit WHERE action='APPROVAL_READY_OUTREACH_ARMED'");
+ }
+ if(input.action==='setControl')(await import('./dashboard/db.mjs')).setSetting(input.key,input.value);
  if(input.action==='seed'){
   data.leads=[
    addLead({business:'Empresa A',phone:'5515999001234',source:'maps_extension'}).lead,
@@ -43,7 +50,7 @@ function run(folder,payload){
  const out=execFileSync(process.execPath,['--input-type=module','-e',fixture,JSON.stringify(payload)],{
   cwd:path.resolve('.'),
   env:{...process.env,PROSPECTOR_DATA_DIR:folder,PROSPECTOR_TENANT_ID:path.basename(folder),
-   PROSPECTOR_TENANT_INTERNAL:'false',PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false'},
+   PROSPECTOR_TENANT_INTERNAL:payload?.primary?'true':'false',PROSPECTOR_FORCE_OUTREACH_PAUSE:'false',PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false'},
   encoding:'utf8',timeout:25000
  });
  return JSON.parse(out.trim().split('\n').at(-1));
@@ -182,4 +189,30 @@ test('quick approvals remain isolated to the authenticated workspace database',(
  assert.equal(run(right,{action:'inspect'}).list.totals.authorized,0);
 });
 
+test('one-time owner activation arms only consent-gated prospecting, keeps legacy sends off and is auditable',()=>{
+ const dir=path.join(tmp,'ready-primary');
+ const first=run(dir,{action:'arm',primary:true});
+ assert.equal(first.result?.status,'READY_FOR_APPROVED_LEADS',JSON.stringify(first));
+ assert.deepEqual(first.controls,{
+  paused:false,
+  autonomous_outreach_enabled:true,
+  discovery_auto_enabled:true,
+  cold_first_approach_enabled:false,
+  auto_initial:false,
+  automation_enabled:false
+ });
+ assert.equal(first.activationAudits.length,1);
+ const entry=JSON.parse(first.activationAudits[0].detail);
+ assert.equal(entry.requiresRecordedConsent,true);
+ assert.equal(entry.unsolicitedColdApproach,false);
+ run(dir,{action:'setControl',primary:true,key:'paused',value:true});
+ const second=run(dir,{action:'arm',primary:true});
+ assert.equal(second.result.status,'ALREADY_APPLIED');
+ assert.equal(second.controls.paused,true,'manual pause must survive a restart');
+ assert.equal(second.activationAudits.length,1);
+ const isolated=run(path.join(tmp,'ready-other-tenant'),{action:'arm'});
+ assert.equal(isolated.result.status,'OTHER_TENANT_UNCHANGED');
+ assert.equal(isolated.controls.paused,true);
+ assert.equal(isolated.activationAudits.length,0);
+});
 test.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));

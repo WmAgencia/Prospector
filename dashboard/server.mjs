@@ -65,6 +65,7 @@ import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospec
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROSPECTING_CONTROL_KEYS} from './tenant-prospecting-controls.mjs';
+import {armApprovedOutreach} from './approval-ready-activation.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
@@ -274,6 +275,9 @@ if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('auto
  setSetting('autonomous_outreach_nov04_rollout_v1',true);
  audit('AUTONOMOUS_OUTREACH_ENABLED',null,{window:'08:00-17:30 America/Sao_Paulo',minSeconds:90,threeCalendarMonths:true,autoResearch:true,coldFirstApproach:coldFirstApproachEnabled()});
 }
+
+const approvalReady=armApprovedOutreach();
+console.info('[approval ready]',JSON.stringify(approvalReady));
 
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
 
