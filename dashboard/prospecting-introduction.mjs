@@ -7,6 +7,7 @@ import {coldOutreachSwitchEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-ou
 import {db,one,run,now,audit,addMessage} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
+import {explicitlyAcceptsProposal} from './proposal-acceptance.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
 import {threeMonthsAfter} from './prospecting-recontact.mjs';
 import {priceQuestion} from './sales-policy.mjs';
@@ -38,13 +39,7 @@ export function greetingForProspect(lead={},at=new Date()){
 }
 // Only an affirmative reply or an explicit request for proposal details opts into
 // the commercial follow-up. Polite greetings and ambiguous replies are not approval.
-export function explicitlyAcceptsProposal(text=''){
- const s=clean(text).replace(/[!?.,;:]+/g,' ').replace(/\s+/g,' ').trim();
- if(!s||/(?:^|\b)(?:nao|nunca|pare|parar|sem interesse|nao quero|nao pode|nao manda|nao envie)(?:\b|$)/.test(s))return false;
- if(asksAboutProposal(s))return true;
- return /^(?:sim|claro|pode|ok|okay|beleza|com certeza|pode ser|tudo bem|tenho interesse|gostaria|quero saber|quero ver|pode enviar|pode mandar|manda|mande|envia|envie|me manda|me envie|me explica|me conte)(?:\b|$)/.test(s)
-   && !/^(?:tudo bem|ok|beleza)$/.test(s);
-}
+export {explicitlyAcceptsProposal} from './proposal-acceptance.mjs';
 export function introductionStatus(leadId){return one('SELECT * FROM prospecting_introductions WHERE lead_id=?',String(leadId||''))||null;}
 export function registerGreeting({leadId,greetingId,sessionId}={}){
  if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')return false; // other tenants never use Wesley's introduction
