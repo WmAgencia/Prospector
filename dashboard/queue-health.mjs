@@ -4,7 +4,7 @@ import {all,one,run,audit,now,getSetting} from './db.mjs';
 import {initialBudget,hourSP,radarSnapshot} from './radar.mjs';
 import {automaticCandidateSql,outreachQueueSnapshot} from './outreach-queue.mjs';
 import {insideApproachWindow} from './outreach-window.mjs';
-import {coldFirstApproachEnabled,autonomousReadyCount,approachQueueStatus} from './prospecting-queue.mjs';
+import {coldFirstApproachEnabled,requiresDocumentedOptIn,autonomousReadyCount,approachQueueStatus} from './prospecting-queue.mjs';
 
 export const INITIAL_PENDING_MAX_AGE_MINUTES=8;
 export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,senderReady=true}={}){
@@ -30,7 +30,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  let invitationQueue=outreachQueueSnapshot();
  const discovery=radarSnapshot(at);
  const autonomous=getSetting('autonomous_outreach_enabled',false)===true;
- if(autonomous&&coldFirstApproachEnabled()){
+ if(autonomous&&coldFirstApproachEnabled()&&!requiresDocumentedOptIn()){
   const queue=approachQueueStatus(),ready=autonomousReadyCount(at)+queue.waiting;
   invitationQueue={total:ready,ready,awaitingConsent:0,missingWhatsapp:0,suppressed:inventory.suppressed};
   eligible=ready>0;
