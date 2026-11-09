@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'five-approved-dryrun-'));
+process.env.PROSPECTOR_DATA_DIR=dir;
+process.env.PROSPECTOR_TEST_CONTACT_PHONE='5515981817336';
+process.env.PROSPECTOR_COLD_FIRST_APPROACH='false';
+process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN='true';
+process.env.PROSPECTOR_APPROACH_START_DATE='2026-11-10';
+const {db,addLead,run,audit,setSetting,all}=await import('../dashboard/db.mjs');
+const {runFiveApprovedPreflight}=await import('../dashboard/five-approved-preflight.mjs');
+test('five authorized real-DB fixtures pass outbound eligibility and 90-180s timings without sending',async()=>{
+ setSetting('paused',false);setSetting('autonomous_outreach_enabled',true);
+ let ids=[];
+ for(let i=0;i<5;i++){
+  const lead=addLead({business:'Empresa Autorizada '+i,city:'Sorocaba',phone:'55159'+String(10000000+i),source:'maps_extension'}).lead;
+  ids.push(lead.id);
+  run('UPDATE leads SET contact_permission=1 WHERE id=?',lead.id);
+  audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Aceite declarado pelo operador, sem comprovante anexado'});
+ }
+ const qa=addLead({business:'Contato WhatsApp 7336',phone:'5515981817336',source:'WHATSAPP_INBOUND'}).lead;
+ run('UPDATE leads SET contact_permission=1 WHERE id=?',qa.id);
+ audit('CONSENT_UPDATED',qa.id,{permitted:true,evidence:'QA apenas'});
+ addLead({business:'Sem autorização',phone:'5515991110000',source:'maps_extension'});
+ let gatewayCalls=0;
+ const result=await runFiveApprovedPreflight({waStatus:async()=>{gatewayCalls++;return {connected:true,approachReady:true};}});
+ assert.equal(result.ready,true,JSON.stringify(result));
+ assert.equal(result.selected,5);
+ assert.equal(result.realMessagesSent,0);
+ assert.equal(result.waSendEndpointCalled,false);
+ assert.equal(result.contactsModified,0);
+ assert.equal(gatewayCalls,1);
+ assert.equal(result.checks.beforeWindowBlocked,true);
+ assert.equal(result.checks.startWindowOpen,true);
+ assert.ok(result.planned.every(x=>x.messageGenerated&&x.eligible));
+ assert.ok(result.planned.every(x=>x.recipientSuffix!=='7336'));
+ const times=result.planned.map(x=>x.clock);
+ assert.equal(times[0],'08:00:00');
+ assert.equal(new Set(times).size,5);
+ assert.equal(all("SELECT 1 FROM initial_contacts").length,0);
+});
+test.after(()=>{db.close();fs.rmSync(dir,{recursive:true,force:true});});
