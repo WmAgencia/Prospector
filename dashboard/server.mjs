@@ -38,6 +38,7 @@ import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} 
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
 import {dailyReport,reportText,targetNumber,scheduleReport} from './notifications.mjs';
 import {salesOutcomes} from './sales-outcomes.mjs';
+import {salesConversionFunnel} from './sales-conversion-funnel.mjs';
 import {nextConversationState} from './francisca-conversation-state.mjs';
 import {SITE_AVERAGE_PRICE_BRL} from './sales-policy.mjs';
 import {syncPublishedSamples} from './studio-sync.mjs';
@@ -551,6 +552,7 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:1000}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
+  if(req.method==='GET'&&pathname==='/api/sales/funnel')return respond(res,200,salesConversionFunnel());
   if(req.method==='GET'&&pathname==='/api/sales/outcomes')return respond(res,200,salesOutcomes({limit:80}));
   if(req.method==='GET'&&pathname==='/api/sales/status')return respond(res,200,{priceReferenceBrl:SITE_AVERAGE_PRICE_BRL,agent:agentStatus(),queue:approachQueueStatus()});
   if(req.method==='GET'&&pathname==='/api/whatsapp/contact-role'){
