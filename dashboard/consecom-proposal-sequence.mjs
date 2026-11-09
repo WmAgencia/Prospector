@@ -19,6 +19,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS consecom_proposal_sequences(
  state TEXT NOT NULL CHECK(state IN ('WAITING','SENDING','DONE','UNKNOWN','CANCELLED')),
  due_at TEXT NOT NULL,last_presence_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL
 )`);
+if(!db.prepare('PRAGMA table_info(consecom_proposal_sequences)').all().some(c=>c.name==='typing_started_at'))
+ db.exec('ALTER TABLE consecom_proposal_sequences ADD COLUMN typing_started_at TEXT');
 run("UPDATE consecom_proposal_sequences SET state='UNKNOWN',reason='PROCESS_INTERRUPTED_CHECK_WHATSAPP',updated_at=? WHERE state='SENDING'",now());
 
 export function scheduleConsecomProposalAfterIntro({leadId,sessionId,phone,threadId,firstReplyId}={}){
@@ -29,7 +31,7 @@ export function scheduleConsecomProposalAfterIntro({leadId,sessionId,phone,threa
  const intro=one('SELECT stage,session_id,phone,first_reply_id,sent_at FROM prospecting_introductions WHERE lead_id=?',leadId);
  if(intro?.stage!=='SENT'||intro.session_id!==sessionId||intro.phone!==phone||
     intro.first_reply_id!==firstReplyId||!intro.sent_at)return {state:'INTRO_NOT_CONFIRMED'};
- const at=now(),due=new Date(Date.now()+proposalTypingDelayMs(PROPOSAL_MESSAGES[0])).toISOString();
+ const at=now(),due=at; // The fixed delay starts only after WhatsApp accepts 'composing'.
  const result=run("INSERT OR IGNORE INTO consecom_proposal_sequences(lead_id,session_id,phone,thread_id,intro_provider_id,intro_sent_at,version,next_index,state,due_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,0,'WAITING',?,?,?)",
   leadId,sessionId,phone,threadId,firstReplyId,intro.sent_at,PROPOSAL_TEXT_VERSION,due,at,at);
  if(!result.changes)return {state:'ALREADY_QUEUED'};
@@ -77,14 +79,39 @@ export async function tickConsecomProposalSequence({clock=Date.now,presence=waRe
   }
   const text=PROPOSAL_MESSAGES[row.next_index];
   if(!text)return {state:'INVALID_INDEX'};
-  const time=clock(),due=Date.parse(row.due_at);
+  const time=clock();
   const presencePath='/api/chat/'+encodeURIComponent(row.session_id)+'/'+encodeURIComponent(current.jid)+'/presence';
-  if(time<due){
-   if(!row.last_presence_at||time-Date.parse(row.last_presence_at)>=4000){
-    try{await presence(presencePath,{method:'POST',data:{presence:'composing'}});}
-    catch{audit('CONSECOM_PROPOSAL_PRESENCE_UNAVAILABLE',row.lead_id,{index:row.next_index});}
+  const firstAt=Date.parse(row.typing_started_at||'');
+  const lastPing=Date.parse(row.last_presence_at||'');
+  // Start (or restart after an outage/pause) a FULL fixed-duration typing window.
+  // The recipient sees 'digitando...' for the entire 13/25/11/9 seconds.
+  if(!Number.isFinite(firstAt)||!Number.isFinite(lastPing)||time-lastPing>8500){
+   try{
+    const signal=await presence(presencePath,{method:'POST',data:{presence:'composing'}});
+    if(signal?.status!==true)return {state:'PRESENCE_UNAVAILABLE'};
+   }catch{
+    audit('CONSECOM_PROPOSAL_PRESENCE_UNAVAILABLE',row.lead_id,{index:row.next_index});
+    return {state:'PRESENCE_UNAVAILABLE'};
+   }
+   if(!currentSequence(row).ok)return {state:'CANCELLED_PENDING'};
+   const started=clock(),startedIso=new Date(started).toISOString();
+   const dueAt=new Date(started+proposalTypingDelayMs(row.next_index)).toISOString();
+   run("UPDATE consecom_proposal_sequences SET typing_started_at=?,due_at=?,last_presence_at=?,updated_at=? WHERE lead_id=? AND state='WAITING'",
+    startedIso,dueAt,startedIso,now(),row.lead_id);
+   return {state:'TYPING',part:row.next_index+1,dueAt};
+  }
+  if(time<Date.parse(row.due_at)){
+   // Reaffirm composing periodically, never issue 'paused' between the pings.
+   if(time-lastPing>=3500){
+    try{
+     const signal=await presence(presencePath,{method:'POST',data:{presence:'composing'}});
+     if(signal?.status!==true)return {state:'PRESENCE_UNAVAILABLE'};
+    }catch{
+     audit('CONSECOM_PROPOSAL_PRESENCE_UNAVAILABLE',row.lead_id,{index:row.next_index});
+     return {state:'PRESENCE_UNAVAILABLE'};
+    }
     run("UPDATE consecom_proposal_sequences SET last_presence_at=?,updated_at=? WHERE lead_id=? AND state='WAITING'",
-     new Date(time).toISOString(),now(),row.lead_id);
+     new Date(clock()).toISOString(),now(),row.lead_id);
    }
    return {state:'TYPING',part:row.next_index+1,dueAt:row.due_at};
   }
@@ -104,8 +131,8 @@ export async function tickConsecomProposalSequence({clock=Date.now,presence=waRe
    addMessage({threadId:row.thread_id,providerId:'consecom-proposal-text:'+row.lead_id+':'+row.next_index,
      direction:'out',body:text,status:'sent'});
    const nextIndex=row.next_index+1,done=nextIndex===PROPOSAL_MESSAGES.length;
-   const nextAt=done?now():new Date(clock()+proposalTypingDelayMs(PROPOSAL_MESSAGES[nextIndex])).toISOString();
-   run("UPDATE consecom_proposal_sequences SET state=?,next_index=?,due_at=?,last_presence_at=NULL,updated_at=? WHERE lead_id=? AND state='SENDING'",
+   const nextAt=now(); // Each next typing window starts from its own first composing ACK.
+   run("UPDATE consecom_proposal_sequences SET state=?,next_index=?,due_at=?,typing_started_at=NULL,last_presence_at=NULL,updated_at=? WHERE lead_id=? AND state='SENDING'",
      done?'DONE':'WAITING',nextIndex,nextAt,now(),row.lead_id);
    audit('CONSECOM_PROPOSAL_PART_SENT',row.lead_id,{version:PROPOSAL_TEXT_VERSION,part:nextIndex,total:PROPOSAL_MESSAGES.length});
    return {state:done?'DONE':'SENT',part:nextIndex,total:PROPOSAL_MESSAGES.length};
