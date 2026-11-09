@@ -34,7 +34,7 @@ export function listLeadApprovals({status='PENDING',limit=40,offset=0}={}){
    let details={};try{details=JSON.parse(last.detail);}catch{}
    return {...lead,consentRecord:{recordedAt:last.at,consentAt:details.consentAt||last.at,
     channel:details.channel||'OTHER',sourcePhone:details.sourcePhone||'',evidence:details.evidence||'',
-    batchId:details.batchId||null}};
+    batchId:details.batchId||null,evidenceReference:details.evidenceReference||''}};
   })};
 }
 
@@ -50,6 +50,8 @@ export function approveLeadBatch(input={}){
   const channel=String(item?.channel||'').trim();
   const sourcePhone=String(item?.operatorPhone||'').replace(/\D/g,'');
   const consentAt=String(item?.consentAt||'');
+  const evidenceReference=String(item?.evidenceReference||'').trim();
+  if(evidenceReference.length>500)throw Error('Referência de evidência muito longa');
   const consentTime=Date.parse(consentAt);
   if(!/^[\da-f-]{36}$/i.test(leadId)||ids.has(leadId))throw Error('Contato inválido ou duplicado no lote');
   ids.add(leadId);
@@ -57,7 +59,7 @@ export function approveLeadBatch(input={}){
   if(!CHANNELS.has(channel))throw Error('Informe o canal da autorização de cada contato');
   if(!/^55\d{10,11}$/.test(sourcePhone))throw Error('Informe o número brasileiro usado para obter a autorização, com DDD');
   if(!Number.isFinite(consentTime)||consentTime>submittedAt+5*60*1000||consentTime<submittedAt-366*24*3600*1000)throw Error('Informe uma data de autorização válida (últimos 366 dias)');
-  approved.push({leadId,evidence,channel,sourcePhone,consentAt:new Date(consentTime).toISOString()});
+  approved.push({leadId,evidence,evidenceReference,channel,sourcePhone,consentAt:new Date(consentTime).toISOString()});
  }
  return tx(()=>{
   // Prevalidate all rows: no partial approval if one contact is missing or blocked.
@@ -72,7 +74,7 @@ export function approveLeadBatch(input={}){
   for(const item of approved){
    run('UPDATE leads SET contact_permission=1 WHERE id=?',item.leadId);
    audit('CONSENT_UPDATED',item.leadId,{
-    permitted:true,evidence:item.evidence,method:'manual_batch_curation',
+    permitted:true,evidence:item.evidence,evidenceReference:item.evidenceReference,method:'manual_batch_curation',
     channel:item.channel,sourcePhone:item.sourcePhone,consentAt:item.consentAt,batchId,
     workspace:process.env.PROSPECTOR_TENANT_ID||'PRIMARY'
    });

@@ -753,7 +753,7 @@ const approvalDateInput=(value)=>{
  return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
 };
 const approvalDraft=(id)=>{
- if(!approvalDrafts.has(id))approvalDrafts.set(id,{evidence:'',channel:'PERSONAL_WHATSAPP',consentAt:approvalDateInput()});
+ if(!approvalDrafts.has(id))approvalDrafts.set(id,{evidence:'',evidenceReference:'',channel:'PERSONAL_WHATSAPP',consentAt:approvalDateInput()});
  return approvalDrafts.get(id);
 };
 async function loadApprovals(){
@@ -781,9 +781,10 @@ function approvalsView(){
    '<div class="approval-person"><strong>'+esc(lead.business)+'</strong><span>'+esc(lead.name||lead.city||'Empresa')+' · '+esc(lead.phone||'')+'</span><small>Origem: '+esc(lead.source||'Não informada')+'</small></div>'+
    '<span class="approval-status '+(lead.approval_status==='AUTHORIZED'?'ok':lead.approval_status==='BLOCKED'?'blocked':'')+'">'+statusText+'</span></div>'+
    (chosen?'<div class="approval-evidence-fields"><label>Resposta ou evidência da autorização<textarea data-approval-evidence="'+esc(lead.id)+'" maxlength="1000" rows="2" placeholder="Ex.: Cliente respondeu: Sim, pode me enviar a apresentação" required>'+esc(draft.evidence)+'</textarea></label>'+
+    '<label>Referência opcional da prova (ID da mensagem, link ou protocolo)<input data-approval-reference="'+esc(lead.id)+'" maxlength="500" placeholder="Ex.: mensagem 1234 ou protocolo CRM" value="'+esc(draft.evidenceReference||'')+'"></label>'+ 
     '<div class="approval-evidence-row"><label>Canal<select data-approval-channel="'+esc(lead.id)+'"><option value="PERSONAL_WHATSAPP" '+(draft.channel==='PERSONAL_WHATSAPP'?'selected':'')+'>WhatsApp pessoal</option><option value="PHONE_CALL" '+(draft.channel==='PHONE_CALL'?'selected':'')+'>Ligação</option><option value="OTHER" '+(draft.channel==='OTHER'?'selected':'')+'>Outro canal</option></select></label>'+
     '<label>Data e hora da autorização<input type="datetime-local" data-approval-date="'+esc(lead.id)+'" value="'+esc(draft.consentAt)+'" required></label></div></div>':'')+
-   (record?'<div class="approval-audit"><strong>Autorização registrada</strong><p>'+esc(record.evidence)+'</p><small>Data da autorização: '+stamp(record.consentAt)+' · Registro: '+stamp(record.recordedAt)+' · '+esc(record.channel)+' · Contato pelo número '+esc(record.sourcePhone||'não informado')+'</small>'+(record.batchId?'<small>Lote: '+esc(record.batchId)+'</small>':'')+'</div>':'')+
+   (record?'<div class="approval-audit"><strong>Autorização registrada</strong><p>'+esc(record.evidence)+'</p>'+(record.evidenceReference?'<small>Referência: '+esc(record.evidenceReference)+'</small>':'')+'<small>Data da autorização: '+stamp(record.consentAt)+' · Registro: '+stamp(record.recordedAt)+' · '+esc(record.channel)+' · Contato pelo número '+esc(record.sourcePhone||'não informado')+'</small>'+(record.batchId?'<small>Lote: '+esc(record.batchId)+'</small>':'')+'</div>':'')+
    '</article>';
  }).join('');
  const prev=Math.max(0,approvalOffset-40),next=approvalOffset+40;
@@ -811,7 +812,7 @@ async function submitApprovals(){
   if(draft.evidence.trim().length<3){n('Informe a resposta individual de todas as empresas selecionadas.');return;}
   const date=new Date(draft.consentAt);
   if(Number.isNaN(date.getTime())){n('Informe a data correta de cada autorização.');return;}
-  items.push({leadId,evidence:draft.evidence.trim(),channel:draft.channel,consentAt:date.toISOString(),operatorPhone});
+  items.push({leadId,evidence:draft.evidence.trim(),evidenceReference:draft.evidenceReference||'',channel:draft.channel,consentAt:date.toISOString(),operatorPhone});
  }
  approvalBusy=true;
  const button=q('[data-action="approval-submit"]');if(button)button.disabled=true;
@@ -1296,6 +1297,7 @@ document.addEventListener("change",async e=>{
 document.addEventListener("input",e=>{
  if(e.target.id==='approval-operator-phone'){approvalOperatorPhone=e.target.value;return;}
  if(e.target.dataset.approvalEvidence){approvalDraft(e.target.dataset.approvalEvidence).evidence=e.target.value;return;}
+ if(e.target.dataset.approvalReference){approvalDraft(e.target.dataset.approvalReference).evidenceReference=e.target.value;return;}
  if(e.target.id==='scope-niche'){scopeNicheInput=e.target.value;return;}
  if(e.target.id==='scope-city'){scopeCityInput=e.target.value;return;}
 

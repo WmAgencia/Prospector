@@ -41,7 +41,7 @@ function run(folder,payload){
  return JSON.parse(out.trim().split('\n').at(-1));
 }
 const entry=(leadId,evidence='Sim, autorizo contato pelo WhatsApp.')=>({
- leadId,evidence,channel:'PERSONAL_WHATSAPP',operatorPhone,
+ leadId,evidence,evidenceReference:'mensagem-id-'+leadId,channel:'PERSONAL_WHATSAPP',operatorPhone,
  consentAt:new Date().toISOString()
 });
 test('two-client isolation and each approved lead receives its own evidence',()=>{
@@ -62,6 +62,7 @@ test('two-client isolation and each approved lead receives its own evidence',()=
   assert.equal(detail.permitted,true);
   assert.ok(detail.evidence.length>=3);
   assert.equal(detail.method,'manual_batch_curation');
+  assert.match(detail.evidenceReference,/^mensagem-id-/);
   assert.equal(detail.sourcePhone,operatorPhone);
   assert.equal(detail.workspace,'tenant-a');
   assert.ok(detail.batchId);
