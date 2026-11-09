@@ -17,7 +17,8 @@ import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 import {scheduleConsecomProposalAfterIntro} from './consecom-proposal-sequence.mjs';
 
 export const INTRO_DELAY_MS=30_000;
-export const WESLEY_INTRO='Eu me chamo Wesley, sou o dono da Agência Consecom. Eu estou entrando em contato pra fazer uma proposta para vocês!';
+export const WESLEY_INTRO='Perfeito, obrigado por responder! Vou te explicar a proposta.';
+export const CONSECOM_FIRST_APPROACH='Olá, tudo bem? Me chamo Wesley, sou dono da Consecom. Estou entrando em contato porque queria fazer uma proposta pra vocês.';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
 // Network activity may have succeeded before a process restart. Never retry automatically.
@@ -31,9 +32,18 @@ export function asksAboutProposal(value=''){
 }
 export function greetingForProspect(lead={},at=new Date()){
  // The original master/Consecom two-step approach stays EXACTLY as configured.
- if(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')return friendlyGreeting(lead,at);
+ if(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')return CONSECOM_FIRST_APPROACH;
  // A client may use only its approved tenant-specific first-message template.
  return tenantApproachGreeting(lead)||friendlyGreeting(lead,at);
+}
+// Only an affirmative reply or an explicit request for proposal details opts into
+// the commercial follow-up. Polite greetings and ambiguous replies are not approval.
+export function explicitlyAcceptsProposal(text=''){
+ const s=clean(text).replace(/[!?.,;:]+/g,' ').replace(/\s+/g,' ').trim();
+ if(!s||/(?:^|\b)(?:nao|nunca|pare|parar|sem interesse|nao quero|nao pode|nao manda|nao envie)(?:\b|$)/.test(s))return false;
+ if(asksAboutProposal(s))return true;
+ return /^(?:sim|claro|pode|ok|okay|beleza|com certeza|pode ser|tudo bem|tenho interesse|gostaria|quero saber|quero ver|pode enviar|pode mandar|manda|mande|envia|envie|me manda|me envie|me explica|me conte)(?:\b|$)/.test(s)
+   && !/^(?:tudo bem|ok|beleza)$/.test(s);
 }
 export function introductionStatus(leadId){return one('SELECT * FROM prospecting_introductions WHERE lead_id=?',String(leadId||''))||null;}
 export function registerGreeting({leadId,greetingId,sessionId}={}){
@@ -66,12 +76,16 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   return {managed:true,queueAi:false,state:'CANCELLED'};
  }
  if(item.stage==='GREETING_SENT'){
+  if(!explicitlyAcceptsProposal(body)){
+   audit('PROSPECT_PROPOSAL_CONSENT_NOT_CONFIRMED',leadId,{manualReview:true});
+   return {managed:true,queueAi:false,state:'AWAITING_EXPLICIT_ACCEPTANCE'};
+  }
   const received=new Date(receivedAt);
   const timestamp=Number.isFinite(received.getTime())?received: new Date();
   const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
   run("UPDATE prospecting_introductions SET stage='WAITING',first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
    String(providerId||'').slice(0,180),timestamp.toISOString(),due,now(),leadId);
-  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due});
+  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,proposalAccepted:true});
   return {managed:true,queueAi:false,state:'WAITING'};
  }
  if(item.stage==='WAITING')return {managed:true,queueAi:false,state:'WAITING'};
