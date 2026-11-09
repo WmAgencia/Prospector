@@ -60,6 +60,13 @@ export function workerEnvironment(client,port){
  const allowed=['PATH','Path','SystemRoot','TEMP','TMP','HOME','NODE_ENV','GROQ_API_KEY','GROQ_MODEL','WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD','FRANCISCA_PYTHON','EDGE_TTS_PYTHON','FRANCISCA_TTS_ENABLED','PUBLIC_BASE_URL'];
  const demo=client.is_demo===1;
  const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined&&(!demo||!['WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD'].includes(k))).map(k=>[k,process.env[k]]));
+ // Pix configuration may be forwarded only to the verified internal Consecom
+ // workspace, never to external customer or demo workers.
+ if(client.is_internal===1){
+  for(const key of ['CONSECOM_PIX_KEY','CONSECOM_PIX_HOLDER']){
+   if(process.env[key]!==undefined)env[key]=process.env[key];
+  }
+ }
  return {...env,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
   PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_DEMO_MODE:client.is_demo===1?'true':'false',
   // Only internal Consecom child workers inherit natural conversation features;
