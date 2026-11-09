@@ -1,5 +1,6 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
 import {offerAbConfig,sendOfferAb} from './consecom-offer-ab.mjs';
+import {proposalSequenceEnabled} from './consecom-proposal-sequence.mjs';
 // Groq assistant for inbound 1:1 conversations only. Hot leads silently
 // transfer to the operator; never sends an extra response on handoff.
 import {db,one,all,run,id,tx,now,stage,addMessage,audit} from './db.mjs';
@@ -119,7 +120,7 @@ export async function handleSalesTurn(providerId,deps={}){
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
  const recentTurns=all("SELECT direction,body,at FROM messages WHERE thread_id=? ORDER BY at DESC,rowid DESC LIMIT 22",r.thread_id).reverse();
  const commercialMemory=recallConversationMemory(r.thread_id);
- const offerAlreadyExplained=commercialMemory.offerExplained||recentTurns.some(m=>m.direction==='out'&&/R\$\s*550/i.test(String(m.body||'')));
+ const offerAlreadyExplained=commercialMemory.offerExplained||recentTurns.some(m=>m.direction==='out'&&/R\$\s*550/i.test(String(m.body||'')))||!!one("SELECT 1 FROM consecom_offer_ab WHERE lead_id=? AND status='SENT' LIMIT 1",r.lead_id);
  const history=recentTurns.slice(-8).map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
  // A chat is a continuous exchange. Read the real server-side thread rather
  // than asking the model to infer whether it has greeted the contact before.
@@ -191,7 +192,7 @@ export async function handleSalesTurn(providerId,deps={}){
  }
   // An eligible prospect must explicitly ask to hear the proposal. An
   // automated receptionist's questions never trigger the offer A/B send.
-  if(portfolioAllowed&&!buyerCommitment&&!offerAlreadyExplained&&portfolioQuestion(r.body)){
+  if(portfolioAllowed&&!proposalSequenceEnabled()&&!buyerCommitment&&!offerAlreadyExplained&&portfolioQuestion(r.body)){
    if(stale())return finish(stale());
    // Do not send a different text pitch while the new matching recorded audio is pending.
    if(!offerAbConfig().enabled)return finish('REVIEW','OFFER_AB_AWAITING_NEW_AUDIO_AND_APPROVAL');
@@ -203,7 +204,7 @@ export async function handleSalesTurn(providerId,deps={}){
   }
 
  // A one-word hello never requires an external model call.
- const draft=fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:strictApprovedReply?{ok:true,draft:strictApprovedReply,model:'APPROVED_CONSECOM_FOLLOWUP'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+ const draft=fixedOffer&&proposalSequenceEnabled()&&!priceQuestion(r.body)?{ok:true,draft:'A proposta é criar um site profissional pra vocês, com domínio por um ano e melhorias de SEO para ajudar na presença orgânica. A ideia é também apresentar o projeto no nosso portfólio, com a autorização de vocês. Se quiser, posso explicar como seria a produção.',model:'CONSECOM_PRICE_FREE_FOLLOWUP'}:fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:strictApprovedReply?{ok:true,draft:strictApprovedReply,model:'APPROVED_CONSECOM_FOLLOWUP'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,approvedProof:verifiedProof,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+

@@ -13,6 +13,21 @@ const TASKS=Object.freeze({
 const TIMEOUTS={voice:9500,quick:11000,summarization:13000,conversation:16000,actions:16000,complex:21000};
 let cache={ids:new Set(),until:0,lastError:null};
 let orgCooldownUntil=0;
+let inFlight=0;
+const usage={requested:0,completed:0,rateLimited:0,busy:0,failed:0,failovers:0};
+export function groqHealth(){
+ return {cooldownSeconds:Math.max(0,Math.ceil((orgCooldownUntil-Date.now())/1000)),inFlight,
+  maxInFlight:Math.max(1,Math.min(5,Number(process.env.GROQ_MAX_IN_FLIGHT)||2)),
+  ...usage,policy:'No 429 failover; server retry must wait for quota recovery.'};
+}
+function waitFromHeaders(headers){
+ const raw=String(headers?.get?.('retry-after')||'').trim();
+ if(!raw)return 60000;
+ const seconds=Number(raw);
+ if(Number.isFinite(seconds)&&seconds>=0)return Math.ceil(seconds*1000);
+ const date=Date.parse(raw);
+ return Number.isFinite(date)?Math.max(0,date-Date.now()):60000;
+}
 export function groqConfigured(){return Boolean(process.env.GROQ_API_KEY);}
 export async function availableGroqModels(force=false){
  if(!groqConfigured())return {ids:[],error:'NOT_CONFIGURED'};
@@ -34,20 +49,24 @@ export async function selectGroq(task='conversation'){
  if(!model)throw Error('GROQ_NO_COMPATIBLE_MODELS'+(a.error?'_'+a.error:''));
  return model;
 }
-export async function groqChat({task='conversation',messages,tools,maxTokens=700,fetchFn=fetch}={}){
+export async function groqChat({task='conversation',messages,tools,maxTokens=700,fetchFn=fetch,catalogOverride=null}={}){
  if(!groqConfigured())throw Error('GROQ_NOT_CONFIGURED');
  if(Date.now()<orgCooldownUntil)throw Error('GROQ_RATE_LIMITED');
+ const capacity=Math.max(1,Math.min(5,Number(process.env.GROQ_MAX_IN_FLIGHT)||2));
+ if(inFlight>=capacity){usage.busy++;throw Error('GROQ_BUSY');}
  if(!Array.isArray(messages)||!messages.length)throw Error('GROQ_MESSAGES_REQUIRED');
  const preferred=TASKS[task]||TASKS.conversation;
- const catalog=await availableGroqModels();
+ const catalog=catalogOverride||await availableGroqModels();
  // When the /models endpoint fails transiently, try documented production
  // models anyway. Model IDs rejected by the provider are failed over safely.
  const active=catalog.ids.length?preferred.filter(x=>catalog.ids.includes(x)):preferred;
  const selected=process.env.GROQ_MODEL;
- const order=(selected&&active.includes(selected)?[selected,...active.filter(x=>x!==selected)]:active).slice(0,3);
+ const order=(selected&&active.includes(selected)?[selected,...active.filter(x=>x!==selected)]:active).slice(0,2);
  if(!order.length)throw Error('GROQ_NO_COMPATIBLE_MODELS');
  const timeLimit=TIMEOUTS[task]||TIMEOUTS.conversation,allowedTools=Array.isArray(tools)&&tools.length?tools:undefined;
  const attempts=[];
+ usage.requested++;inFlight++;
+ try{
  for(const model of order){
   const payload={model,messages,temperature:task==='actions'?0.12:task==='voice'?0.45:0.48,
    max_completion_tokens:Math.max(100,Math.min(4500,Number(maxTokens)||700))};
@@ -59,7 +78,15 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
     Authorization:'Bearer '+process.env.GROQ_API_KEY,'Content-Type':'application/json'
    },body:JSON.stringify(payload),signal:AbortSignal.timeout(timeLimit)});
    if(!response.ok){
-    attempts.push({model,http:response.status,retryAfter:response.status===429?Math.min(120,Math.max(0,Number(response.headers?.get?.('retry-after')||0))):0});
+    attempts.push({model,http:response.status});
+    if(response.status===429){
+     usage.rateLimited++;
+     const cooldown=Math.min(120000,Math.max(20000,waitFromHeaders(response.headers)));
+     orgCooldownUntil=Math.max(orgCooldownUntil,Date.now()+cooldown);
+     // A 429 can reflect a shared account limit: do not multiply it across models.
+     console.warn('[groq-rate-limit]',JSON.stringify({task,model,cooldownSeconds:Math.ceil(cooldown/1000)}));
+     throw Error('GROQ_RATE_LIMITED');
+    }
     // Account/key errors and unsafe content rejection must never be masked by failover.
     if([401,403,422].includes(response.status))throw Error('GROQ_HTTP_'+response.status);
     // Fail over on rate limiting, missing/deprecated model, transient server errors
@@ -72,20 +99,18 @@ export async function groqChat({task='conversation',messages,tools,maxTokens=700
    if(!choice||(typeof choice.content!=='string'||!choice.content.trim())&&!choice.tool_calls?.length){
     attempts.push({model,error:'EMPTY'});continue;
    }
-   if(attempts.length)console.info('[groq-model-recovered]',JSON.stringify({task,model,attempted:attempts.map(a=>a.model)}));
+   if(attempts.length){usage.failovers++;console.info('[groq-model-recovered]',JSON.stringify({task,model,attempted:attempts.map(a=>a.model)}));}
+   usage.completed++;
    return {model,choice,usage:data.usage||null,recovered:attempts.length>0,attempts:attempts.length+1};
   }catch(e){
-   if(/^GROQ_HTTP_(401|403|422)$/.test(String(e.message)))throw e;
+   if(/^GROQ_HTTP_(401|403|422)$/.test(String(e.message))||String(e.message)==='GROQ_RATE_LIMITED')throw e;
    attempts.push({model,error:e?.name==='TimeoutError'||e?.name==='AbortError'?'TIMEOUT':'NETWORK_OR_INVALID_JSON'});
   }
  }
  console.warn('[groq-failover-exhausted]',JSON.stringify({task,attempts:attempts.map(x=>({model:x.model,http:x.http,error:x.error}))}));
- if(attempts.length&&attempts.every(x=>x.http===429)){
-  const suggested=Math.max(0,...attempts.map(x=>x.retryAfter||0));
-  orgCooldownUntil=Date.now()+Math.max(20000,Math.min(120000,(suggested||75)*1000));
-  throw Error('GROQ_RATE_LIMITED');
- }
+ usage.failed++;
  throw Error('GROQ_ALL_MODELS_UNAVAILABLE');
+ }finally{inFlight=Math.max(0,inFlight-1);}
 }
 export async function groqCatalog(){
  const catalog=await availableGroqModels();

@@ -1,11 +1,13 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {coldOutreachSwitchEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-outreach-switch.mjs';
 // Two-step introduction on an APPROVED WA-AKG prospect campaign.
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
-// After the introduction, every incoming reply can continue the sales conversation.
+// After the introduction, schedule four separate text messages (links together in the third) with visible typing.
 // No public listing is ever treated as documented WhatsApp opt-in.
 import {db,one,run,now,audit,addMessage} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
+import {explicitlyAcceptsProposal,explicitlyDeclinesProposal} from './proposal-acceptance.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
 import {threeMonthsAfter} from './prospecting-recontact.mjs';
 import {priceQuestion} from './sales-policy.mjs';
@@ -13,9 +15,11 @@ import {detectAutomaticReply,friendlyGreeting,portfolioQuestion} from './portfol
 import {tenantApproachGreeting} from './tenant-approach.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
+import {scheduleConsecomProposalAfterIntro} from './consecom-proposal-sequence.mjs';
 
 export const INTRO_DELAY_MS=30_000;
-export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
+export const WESLEY_INTRO='Perfeito, obrigado por responder! Vou te explicar a proposta.';
+export const CONSECOM_FIRST_APPROACH='Olá, tudo bem? Me chamo Wesley, sou dono da Consecom. Estou entrando em contato porque queria fazer uma proposta pra vocês.';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
 // Network activity may have succeeded before a process restart. Never retry automatically.
@@ -29,10 +33,13 @@ export function asksAboutProposal(value=''){
 }
 export function greetingForProspect(lead={},at=new Date()){
  // The original master/Consecom two-step approach stays EXACTLY as configured.
- if(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')return friendlyGreeting(lead,at);
+ if(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')return CONSECOM_FIRST_APPROACH;
  // A client may use only its approved tenant-specific first-message template.
  return tenantApproachGreeting(lead)||friendlyGreeting(lead,at);
 }
+// Only an affirmative reply or an explicit request for proposal details opts into
+// the commercial follow-up. Polite greetings and ambiguous replies are not approval.
+export {explicitlyAcceptsProposal,explicitlyDeclinesProposal} from './proposal-acceptance.mjs';
 export function introductionStatus(leadId){return one('SELECT * FROM prospecting_introductions WHERE lead_id=?',String(leadId||''))||null;}
 export function registerGreeting({leadId,greetingId,sessionId}={}){
  if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')return false; // other tenants never use Wesley's introduction
@@ -58,18 +65,28 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  const item=introductionStatus(leadId);
  // Automated menus are not human permission to proceed; keep introduction pending.
  if(inboxState==='AUTO_REPLY'||detectAutomaticReply(body))return {managed:true,queueAi:false,state:'AUTO_REPLY'};
- if(!item)return {managed:false,queueAi:true};
+ // Never trigger sales AI if no recorded first contact and affirmative acceptance.
+ if(!item)return {managed:true,queueAi:false,state:'UNTRACKED_GREETING'};
+ if(explicitlyDeclinesProposal(body)){
+  cancelIntroduction(leadId,'PROPOSAL_DECLINED');
+  audit('PROSPECT_PROPOSAL_DECLINED',leadId,{followUp:false});
+  return {managed:true,queueAi:false,state:'DECLINED'};
+ }
  if(inboxState!=='REVIEW'){
   cancelIntroduction(leadId,'INBOX_'+inboxState);
   return {managed:true,queueAi:false,state:'CANCELLED'};
  }
  if(item.stage==='GREETING_SENT'){
+  if(!explicitlyAcceptsProposal(body)){
+   audit('PROSPECT_PROPOSAL_CONSENT_NOT_CONFIRMED',leadId,{manualReview:true});
+   return {managed:true,queueAi:false,state:'AWAITING_EXPLICIT_ACCEPTANCE'};
+  }
   const received=new Date(receivedAt);
   const timestamp=Number.isFinite(received.getTime())?received: new Date();
   const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
   run("UPDATE prospecting_introductions SET stage='WAITING',first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
    String(providerId||'').slice(0,180),timestamp.toISOString(),due,now(),leadId);
-  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due});
+  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,proposalAccepted:true});
   return {managed:true,queueAi:false,state:'WAITING'};
  }
  if(item.stage==='WAITING')return {managed:true,queueAi:false,state:'WAITING'};
@@ -82,6 +99,7 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
 }
 let busy=false;
 export async function tickIntroductions(deps={}){
+ if(!coldOutreachSwitchEnabled())return {state:COLD_OUTREACH_DISABLED_REASON};
  if(ownerProspectionPaused())return {state:'PAUSED_BY_OWNER'};
  if(busy)return {state:'BUSY'};
  const {currentTime=()=>Date.now(),status=waControlStatus,session=selectedWaSession,send=waRequest}=deps;
@@ -121,7 +139,19 @@ export async function tickIntroductions(deps={}){
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
    if(thread)addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:WESLEY_INTRO,status:'sent'});
    audit('PROSPECT_INTRO_SENT',item.lead_id,{delaySeconds:30});
-   return {state:'SENT',leadId:item.lead_id};
+   // Enqueue four separate messages, each with its own typing delay.
+   // This does NOT send synchronously and respects the owner's pause.
+   let proposal={state:'NOT_SCHEDULED'};
+   try{
+    proposal=scheduleConsecomProposalAfterIntro({
+     leadId:item.lead_id,sessionId:item.session_id,phone:item.phone,
+     firstReplyId:item.first_reply_id,threadId:thread?.id
+    });
+   }catch(error){
+    audit('CONSECOM_PROPOSAL_SCHEDULE_ERROR',item.lead_id,{reason:String(error?.message||'UNKNOWN').slice(0,100)});
+    proposal={state:'ERROR'};
+   }
+   return {state:'SENT',leadId:item.lead_id,proposalState:proposal.state};
   }catch{
    run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Uncertain delivery; verify WhatsApp',updated_at=? WHERE lead_id=?",now(),item.lead_id);
    audit('PROSPECT_INTRO_UNKNOWN',item.lead_id,{manualReview:true});

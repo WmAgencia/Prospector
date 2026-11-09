@@ -49,7 +49,7 @@ async function request(path,{method='GET',payload=null,expect='json'}={}){
  return response;
 }
 function row(idValue){return one('SELECT * FROM maps_scraper_jobs WHERE id=?',idValue);}
-export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:'Render',async:true,automaticSend:false,autoResearchEnabled:process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED==='true',privateAPI:true,source:'Google Maps (termos aplicáveis)',intelligence:researchIntelligenceStatus(),maxAutoJobsPerDay:AUTO_MAPS_MAX_JOBS_PER_DAY,jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error,auto_discovery FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
+export function scraperStatus(){return {provider:'gosom/google-maps-scraper',configured:configured(),hosting:'Render',async:true,automaticSend:false,autoResearchEnabled:process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED==='true',privateAPI:true,source:'Google Maps (termos aplicáveis)',intelligence:researchIntelligenceStatus(),maxAutoJobsPerDay:AUTO_MAPS_MAX_JOBS_PER_DAY,researchStartHourSP:AUTO_MAPS_RESEARCH_START_HOUR_SP,jobs:all('SELECT id,niche,city,status,added,processed,created_at,updated_at,error,auto_discovery FROM maps_scraper_jobs ORDER BY created_at DESC LIMIT 10')};}
 
 if(process.env.RUN_MAPS_CREATE_SMOKE==='true'){
  setTimeout(async()=>{
@@ -189,6 +189,7 @@ export async function refreshActiveMapsScrapes({limit=2,maxAgeHours=6}={}){
 // Bound research to protect Hobby resources while replenishing in the morning
 // and through the business day. Never auto-send messages.
 export const AUTO_MAPS_MAX_JOBS_PER_DAY=12;
+export const AUTO_MAPS_RESEARCH_START_HOUR_SP=0; // Start as midnight passes in São Paulo, not at 05:00.
 export const AUTO_MAPS_COOLDOWN_MS=25*60_000;
 export const AUTO_MAPS_NICHES=RESEARCH_NICHES.map(x=>x.name);
 let autoMapsLocked=false;
@@ -196,8 +197,11 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
  if(autoMapsLocked)return {status:'BUSY'};
  if(process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED!=='true')return {status:'DISABLED'};
  if(!configured())return {status:'NOT_CONFIGURED'};
- if(getSetting('discovery_auto_enabled',false)!==true)return {status:'DISABLED_BY_OPERATOR'};
- if(hourSP(at)<5)return {status:'BEFORE_START'};
+ // Consecom is controlled by the explicit Railway Maps flag. Other tenants keep
+ // their separate discovery preference. Neither path grants WhatsApp consent.
+ const internal=!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
+ if(!internal&&getSetting('discovery_auto_enabled',false)!==true)return {status:'DISABLED_BY_OPERATOR'};
+ if(hourSP(at)<AUTO_MAPS_RESEARCH_START_HOUR_SP)return {status:'BEFORE_START'};
  autoMapsLocked=true;
  try{
   // Import only explicitly auto-researched data. Do not silently import a

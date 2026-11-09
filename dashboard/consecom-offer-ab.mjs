@@ -10,7 +10,8 @@ import {ownerProspectionPaused} from './prospection-pause.mjs';
 import {waRequest,waControlStatus} from './waakg-control.mjs';
 import {sendRecordedOfferVoiceMedia} from './waakg-media.mjs';
 import {prospectorChatEligible} from './whatsapp-roles.mjs';
-import {conversationAuthorized} from './operator-outreach.mjs';
+import {conversationAuthorized,operatorOffer} from './operator-outreach.mjs';
+import {documentedOptIn} from './outreach-queue.mjs';
 import {offerVariantForOrdinal} from './consecom-offer-rotation.mjs';
 
 const KEY='consecom_offer_ab_2026_v1';
@@ -28,7 +29,7 @@ run("UPDATE consecom_offer_ab SET status='UNKNOWN',reason='Send interrupted; do 
 db.exec("CREATE TABLE IF NOT EXISTS consecom_offer_references(lead_id TEXT PRIMARY KEY REFERENCES leads(id),session_id TEXT NOT NULL,jid TEXT NOT NULL,source_provider_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('HELD','WAITING','SENDING','SENT','UNKNOWN','CANCELLED')),due_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,sent_at TEXT,reason TEXT)");
 db.exec("CREATE INDEX IF NOT EXISTS ix_consecom_offer_references_due ON consecom_offer_references(state,due_at)");
 run("UPDATE consecom_offer_references SET state='UNKNOWN',reason='Process interrupted during reference send; manual review required',updated_at=? WHERE state='SENDING'",now());
-const baseConfig={enabled:false,audioMediaId:null,audioCopyVersion:null,portfolioDueDate:null,confirmedAt:null,startDate:null,rotationDays:7};
+const baseConfig={enabled:false,audioMediaId:null,audioCopyVersion:null,portfolioDueDate:null,confirmedAt:null,startDate:null,rotationDays:7,deliveryMode:'POST_INTRO_AUDIO'};
 const config=()=>({...baseConfig,...(getSetting(KEY,null)||{})});
 const mediaRecord=c=>{
  if(!c.audioMediaId)return null;
@@ -47,11 +48,12 @@ const mediaRecord=c=>{
  }catch{return null;}
  return {...item,file};
 };
-const deadlineReady=(c,at=new Date())=>offerDeadlineMatchesScript(c,at);
+// The revised recording makes no deadline claim; no artificial three-day urgency is needed.
+const deadlineReady=()=>true;
 export function offerAbConfig(){
  const c=config(),asset=mediaRecord(c),sessions=managedSessions();
  const audioCurrent=!!asset&&c.audioCopyVersion===OFFER_AB_COPY_VERSION;
- return {enabled:c.enabled,paused:outreachPaused(),assetReady:audioCurrent,audioNeedsUpdate:!!asset&&!audioCurrent,
+ return {enabled:c.enabled,deliveryMode:c.deliveryMode,paused:outreachPaused(),assetReady:audioCurrent,audioNeedsUpdate:!!asset&&!audioCurrent,
   audioMediaId:audioCurrent?c.audioMediaId:null,copyVersion:OFFER_AB_COPY_VERSION,
   portfolioDueDate:c.portfolioDueDate,deadlineReady:deadlineReady(c),startDate:c.startDate,
   rotationDays:c.rotationDays,sessionA:sessions[0]?.label||null,sessionB:sessions[1]?.label||null,
@@ -68,7 +70,7 @@ export function offerAbStatus(){
   const conversions=one("SELECT COUNT(DISTINCT a.lead_id) n FROM consecom_offer_ab a JOIN leads l ON l.id=a.lead_id WHERE a.variant=? AND a.status='SENT' AND l.stage='CLOSED_WON'",variant)?.n||0;
   metrics.push({variant,sent,humanReplies:replies,closed:conversions,replyRate:sent?Math.round(replies/sent*1000)/10:null,closeRate:sent?Math.round(conversions/sent*1000)/10:null});
  }
- return {available:true,config:c,counts:totals,metrics,proposalPreview:OFFER_AB_TEXT,referencesPreview:OFFER_AB_REFERENCES_TEXT,referenceFollowups:all('SELECT state,COUNT(*) n FROM consecom_offer_references GROUP BY state'),referenceDelaySeconds:OFFER_AB_REFERENCES_DELAY_MS/1000,design:'alternating eligible leads in chronological assignment order, AUDIO then TEXT, independent of WhatsApp session',note:'No spam-evasion guarantees; measure only permission-based conversations'};
+ return {available:true,config:c,counts:totals,metrics,proposalPreview:OFFER_AB_TEXT,referencesPreview:OFFER_AB_REFERENCES_TEXT,referenceFollowups:all('SELECT state,COUNT(*) n FROM consecom_offer_references GROUP BY state'),referenceDelaySeconds:OFFER_AB_REFERENCES_DELAY_MS/1000,design:'the approved no-price recorded audio is sent once, immediately after confirmed Wesley introduction',note:'No spam-evasion guarantees; measure only permission-based conversations'};
 }
 export function attachOriginalAbAudio(mediaId,{confirmedScript=false}={}){
  if(!allowed())throw Error('CONSECOM_ONLY');
@@ -83,12 +85,12 @@ export function attachOriginalAbAudio(mediaId,{confirmedScript=false}={}){
 export function setOfferAbPlan({portfolioDueDate,startDate,enabled=false}={}){
  if(!allowed())throw Error('CONSECOM_ONLY');
  const delivery=String(portfolioDueDate||'').trim(),start=String(startDate||daySP(new Date())).trim();
- if(!datePattern.test(delivery)||!Number.isFinite(Date.parse(delivery+'T12:00:00Z'))||new Date(delivery+'T12:00:00Z').toISOString().slice(0,10)!==delivery)
-  throw Error('Informe a data real de entrega do portfólio.');
+ if(delivery&&(!datePattern.test(delivery)||!Number.isFinite(Date.parse(delivery+'T12:00:00Z'))||new Date(delivery+'T12:00:00Z').toISOString().slice(0,10)!==delivery))
+  throw Error('Data do portfólio inválida.');
  if(!datePattern.test(start))throw Error('Informe a data inicial AAAA-MM-DD.');
- const next={...config(),portfolioDueDate:delivery,confirmedAt:now(),startDate:start,enabled:enabled===true};
+ const next={...config(),deliveryMode:'POST_INTRO_AUDIO',portfolioDueDate:delivery||null,confirmedAt:now(),startDate:start,enabled:enabled===true};
  if(next.enabled&&(!mediaRecord(next)||next.audioCopyVersion!==OFFER_AB_COPY_VERSION||outreachPaused()||!deadlineReady(next)))
-  throw Error('Ativação indisponível: envie o novo áudio, confirme o prazo de três dias e libere a prospecção.');
+  throw Error('Ativação indisponível: cadastre e aprove o novo áudio sem valores antes de liberar a campanha.');
  setSetting(KEY,next);
  audit('OFFER_AB_PLAN_SAVED',null,{enabled:next.enabled,portfolioDueDate:delivery,startDate:start,copyVersion:OFFER_AB_COPY_VERSION});
  return offerAbStatus();
@@ -107,7 +109,7 @@ export function offerAbDecision({leadId,sessionId,at=new Date()}={}){
  const elapsed=Math.floor((Date.parse(daySP(at))-Date.parse(c.startDate))/86400000);
  const phase=Math.floor(elapsed/7);
  const nextOrdinal=Number(one('SELECT COUNT(*) n FROM consecom_offer_ab')?.n||0);
- const variant=offerVariantForOrdinal(nextOrdinal);
+ const variant='AUDIO';
  return {eligible:true,leadId,sessionId,variant,phase,body:OFFER_AB_TEXT};
 }
 export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=new Date(),sendText=waRequest,sendAudio=sendRecordedOfferVoiceMedia,connected=waControlStatus}={}){
@@ -124,7 +126,7 @@ export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=n
  const status=await connected(sessionId);
  if(!status?.connected)return {state:'NOT_SENT',reason:'WA_OFFLINE'};
  if(outreachPaused())return {state:'NOT_SENT',reason:'OWNER_PAUSED'};
- if(!deadlineReady(config(),new Date())||config().audioCopyVersion!==OFFER_AB_COPY_VERSION)return {state:'NOT_SENT',reason:'OUTDATED_SCRIPT_OR_DEADLINE'};
+ if(config().audioCopyVersion!==OFFER_AB_COPY_VERSION)return {state:'NOT_SENT',reason:'OUTDATED_SCRIPT'};
  const current=one("SELECT provider_id,state FROM waakg_inbox WHERE jid=? ORDER BY rowid DESC LIMIT 1",jid);
  if(!current||current.provider_id!==providerId||current.state!=='REVIEW'||!prospectorChatEligible({jid,sessionId})||
     one("SELECT phone FROM suppressions WHERE phone=?",String(jid).split('@')[0]))
@@ -133,7 +135,7 @@ export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=n
  const reserved=tx(()=>{if(outreachPaused()||one('SELECT 1 FROM consecom_offer_ab WHERE lead_id=?',leadId))return null;
   // Assign the next slot inside the transaction, so concurrent replies do not get the same channel.
   const nextOrdinal=Number(one('SELECT COUNT(*) n FROM consecom_offer_ab')?.n||0);
-  const variant=offerVariantForOrdinal(nextOrdinal);
+  const variant='AUDIO';
   const saved=run("INSERT OR IGNORE INTO consecom_offer_ab(lead_id,session_id,variant,phase,provider_id,status,created_at,updated_at) VALUES(?,?,?,?,?,'SENDING',?,?)",
    leadId,sessionId,variant,plan.phase,recordId,stamp,stamp).changes===1;
   if(saved)run("INSERT OR IGNORE INTO consecom_offer_references(lead_id,session_id,jid,source_provider_id,state,created_at,updated_at) VALUES(?,?,?,?,'HELD',?,?)",leadId,sessionId,jid,recordId,stamp,stamp);
@@ -172,6 +174,24 @@ export async function sendOfferAb({leadId,sessionId,jid,providerId,threadId,at=n
   audit('OFFER_AB_SEND_UNKNOWN',leadId,{variant:plan.variant,needsReview:true});
   return {state:'UNKNOWN',variant:plan.variant,reason:'TRANSPORT_UNCERTAIN_NO_RETRY'};
  }
+}
+
+
+/**
+ * A real reply to the initial greeting triggers the Wesley introduction.
+ * Only after that introduction has been acknowledged may the *new* approved
+ * no-price recording follow. Never replay to existing conversations or retry
+ * uncertain delivery. The original A/B campaign is intentionally superseded.
+ */
+export async function sendOfferAbAfterIntro({leadId,sessionId,phone,providerId,threadId}={}){
+ const setting=offerAbConfig();
+ if(!setting.ready||setting.deliveryMode!=='POST_INTRO_AUDIO')return {state:'NOT_SENT',reason:'NEW_AUDIO_NOT_READY'};
+ if(operatorOffer(leadId)!=='portfolio'||!documentedOptIn(leadId))
+  return {state:'NOT_SENT',reason:'PORTFOLIO_OR_DOCUMENTED_OPT_IN_REQUIRED'};
+ const intro=one('SELECT stage,session_id,first_reply_id,sent_at FROM prospecting_introductions WHERE lead_id=?',leadId);
+ if(!intro||intro.stage!=='SENT'||intro.session_id!==sessionId||intro.first_reply_id!==providerId||!intro.sent_at)
+  return {state:'NOT_SENT',reason:'INTRO_NOT_CONFIRMED'};
+ return sendOfferAb({leadId,sessionId,jid:String(phone)+'@s.whatsapp.net',providerId,threadId});
 }
 
 let referencesTicking=false;

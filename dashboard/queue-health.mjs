@@ -4,7 +4,8 @@ import {all,one,run,audit,now,getSetting} from './db.mjs';
 import {initialBudget,hourSP,radarSnapshot} from './radar.mjs';
 import {automaticCandidateSql,outreachQueueSnapshot} from './outreach-queue.mjs';
 import {insideApproachWindow} from './outreach-window.mjs';
-import {coldFirstApproachEnabled,autonomousReadyCount,approachQueueStatus} from './prospecting-queue.mjs';
+import {coldFirstApproachEnabled,autonomousReadyCount,approachQueueStatus,requiresDocumentedOptIn} from './prospecting-queue.mjs';
+import {coldOutreachSwitchEnabled,autonomousOutreachOperationalEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-outreach-switch.mjs';
 
 export const INITIAL_PENDING_MAX_AGE_MINUTES=8;
 export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,senderReady=true}={}){
@@ -29,8 +30,8 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  FROM leads l`);
  let invitationQueue=outreachQueueSnapshot();
  const discovery=radarSnapshot(at);
- const autonomous=getSetting('autonomous_outreach_enabled',false)===true;
- if(autonomous&&coldFirstApproachEnabled()){
+ const autonomous=autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false));
+ if(autonomous&&coldFirstApproachEnabled()&&!requiresDocumentedOptIn()){
   const queue=approachQueueStatus(),ready=autonomousReadyCount(at)+queue.waiting;
   invitationQueue={total:ready,ready,awaitingConsent:0,missingWhatsapp:0,suppressed:inventory.suppressed};
   eligible=ready>0;
@@ -48,7 +49,8 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  const lastConfirmedInitialAt=last?.at||null;
  const lastConfirmedMinutes=lastConfirmedInitialAt?Math.max(0,Math.floor((at.getTime()-Date.parse(lastConfirmedInitialAt))/60000)):null;
  let reason='READY';
- if(getSetting('paused',true))reason='PAUSED';
+ if(!coldOutreachSwitchEnabled())reason=COLD_OUTREACH_DISABLED_REASON;
+ else if(getSetting('paused',true))reason='PAUSED';
  else if(waStatus!=='CONNECTED')reason='WHATSAPP_OFFLINE';
  else if(!senderReady)reason='SESSION_COOLDOWN';
  else if(autonomous){
@@ -66,7 +68,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  const dormant=reason==='INITIAL_JOB_PENDING'&&pendingAge>=INITIAL_PENDING_MAX_AGE_MINUTES;
  const invalidPending=initial.filter(x=>x.status==='PENDING'&&(x.execution_state!=='SENDING'||x.manual_takeover===1));
  return {
-  at:at.toISOString(),reason,autonomousMode:autonomous,alert:dormant?'STALE_INITIAL_PENDING':null,
+  at:at.toISOString(),reason,coldApproachRailwayEnabled:coldOutreachSwitchEnabled(),autonomousMode:autonomous,alert:dormant?'STALE_INITIAL_PENDING':null,
   allowedNow:reason==='READY',campaignSelected:!!campaign?.enabled,waConnected:waStatus==='CONNECTED',
   paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false),
   initialToday:{sent:b.confirmed,uncertain:b.uncertain,inFlight:b.sending,counted:b.counted,limit:b.limit,nextAt:b.nextAt},

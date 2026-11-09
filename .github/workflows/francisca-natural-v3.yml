@@ -1,0 +1,65 @@
+name: Francisca Natural 3 — 100 synthetic dialogue evaluation
+on:
+  push:
+    branches:
+      - feature/francisca-natural-3-consolidated
+    paths:
+      - dashboard/francisca-compact-policy-v3.mjs
+      - dashboard/francisca-quality-evaluator.mjs
+      - dashboard/francisca-style-examples.mjs
+      - dashboard/ai-groq.mjs
+      - dashboard/groq-models.mjs
+      - dashboard/training.mjs
+      - dashboard/server.mjs
+      - dashboard/public/simple-app.js
+      - tests/francisca-natural-v3.test.mjs
+      - tests/groq-rate-control-v3.test.mjs
+      - scripts/francisca-evaluate-100.mjs
+      - .github/workflows/francisca-natural-v3.yml
+  pull_request:
+    paths:
+      - dashboard/francisca-compact-policy-v3.mjs
+      - dashboard/francisca-quality-evaluator.mjs
+      - dashboard/francisca-style-examples.mjs
+      - dashboard/ai-groq.mjs
+      - dashboard/groq-models.mjs
+      - dashboard/training.mjs
+      - dashboard/server.mjs
+      - dashboard/public/simple-app.js
+      - tests/francisca-natural-v3.test.mjs
+      - tests/groq-rate-control-v3.test.mjs
+      - scripts/francisca-evaluate-100.mjs
+      - .github/workflows/francisca-natural-v3.yml
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Syntax of all changed modules, backend and frontend
+        run: |
+          node --check dashboard/francisca-compact-policy-v3.mjs
+          node --check dashboard/francisca-quality-evaluator.mjs
+          node --check dashboard/francisca-style-examples.mjs
+          node --check dashboard/groq-models.mjs
+          node --check dashboard/ai-groq.mjs
+          node --check dashboard/training.mjs
+          node --check dashboard/server.mjs
+          node --input-type=module --check < dashboard/public/simple-app.js
+      - name: 100-scenario benchmark, calibrated offline
+        run: node scripts/francisca-evaluate-100.mjs
+      - name: Groq cooldown, 100 synthetic drafts, conversation regressions
+        run: |
+          node --test tests/groq-rate-control-v3.test.mjs tests/francisca-natural-v3.test.mjs tests/francisca-style-examples.test.mjs tests/francisca-natural-conversation.test.mjs tests/francisca-commercial-brain-v2.test.mjs tests/francisca-lab-pix-safety.test.mjs tests/outreach-consent-control.test.mjs tests/sales-owner-policy.test.mjs tests/francisca-context-continuity.test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: francisca-natural-v3-100-cases
+          path: artifacts/francisca-eval-100.*
+          if-no-files-found: ignore

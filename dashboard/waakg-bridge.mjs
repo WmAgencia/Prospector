@@ -8,7 +8,8 @@ import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {classifyInboundAutomation} from './inbound-automation.mjs';
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
-import {routeIntroductionReply} from "./prospecting-introduction.mjs";
+import {routeIntroductionReply,introductionStatus} from "./prospecting-introduction.mjs";
+import {explicitlyAcceptsProposal,explicitlyDeclinesProposal} from "./proposal-acceptance.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {configuredClosing} from "./training-sales-extras.mjs";
@@ -148,10 +149,21 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
   }
  }
  if(identity.role==='PROSPECT_APPROACHED'){
-  if(state==='REVIEW'&&lead.stage!=='CONVERSING')stage(lead.id,'CONVERSING','PROSPECT_REPLIED');
+  // A plain "não" or "não obrigado" is a decline, even if the classifier for
+  // generic sales endings did not identify it. Never start AI or scheduled pitch.
+  if(state==='REVIEW'&&explicitlyDeclinesProposal(content)){
+   stage(lead.id,'NO_INTEREST','PROPOSAL_DECLINED');
+   state='NO_INTEREST';
+  }
+  const intro=introductionStatus(lead.id);
+  const firstAcceptance=intro?.stage==='GREETING_SENT'&&explicitlyAcceptsProposal(content);
+  // A real affirmative inbound answer is recorded as evidence to CONTINUE the
+  // existing conversation; the first WhatsApp approach still requires opt-in.
+  if(state==='REVIEW'&&firstAcceptance)grantAutonomousFirstReply(lead.id,content,intro.greeting_id);
+  const accepted=firstAcceptance||['WAITING','SENT','CONVERSING'].includes(intro?.stage);
+  if(state==='REVIEW'&&accepted&&lead.stage!=='CONVERSING')stage(lead.id,'CONVERSING','PROSPECT_REPLIED_WITH_PERMISSION');
   const outcome=state==='OPT_OUT'?'OPT_OUT':state==='HUMAN'?'HUMAN_REVIEW':state==='NO_INTEREST'?'NO_INTEREST':null;
   if(outcome)recordSalesOutcome({leadId:lead.id,status:outcome,providerId:unique,evidence:content});
-  if(state==='REVIEW'&&process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true')grantAutonomousFirstReply(lead.id,content);
  }
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
@@ -163,18 +175,22 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid,sessionId:sid});
  return {status:200,body:{accepted:true,processed:true}};
 }
-// Decisão do operador (2026-11-04): a primeira mensagem é fria e genérica, então
-// a resposta real a ela é o opt-in para o Groq continuar a conversa. Recusas,
-// opt-out e respostas automáticas nunca chegam aqui.
-function grantAutonomousFirstReply(leadId,text){
+// Consent to receive the requested proposal is recorded only from a genuine,
+// affirmative inbound reply to THIS lead's persisted greeting. Never infer
+// authorization from a public Google Maps listing or an automated response.
+function grantAutonomousFirstReply(leadId,text,greetingId){
+ if(!greetingId||!explicitlyAcceptsProposal(text))return false;
  const current=one('SELECT contact_permission FROM leads WHERE id=?',leadId);
  if(!current)return false;
- if(!one("SELECT id FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 ORDER BY at DESC LIMIT 1",leadId)){
+ const greeting=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id=? LIMIT 1",
+   leadId,'prospect-queue:'+greetingId);
+ if(!greeting)return false;
+ if(one('SELECT 1 FROM suppressions WHERE phone=(SELECT phone FROM leads WHERE id=?)',leadId))return false;
+ if(!one("SELECT id FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' ORDER BY at DESC LIMIT 1",leadId)){
   run('UPDATE leads SET contact_permission=1 WHERE id=?',leadId);
-  audit('CONSENT_UPDATED',leadId,{permitted:true,method:'first_greeting_reply',evidence:String(text||'').slice(0,1000)});
+  audit('CONSENT_UPDATED',leadId,{permitted:true,method:'explicit_proposal_acceptance',evidence:String(text||'').slice(0,1000)});
  }
- // Só continua quem recebeu a saudação da fila; demais conversas ficam em revisão.
- return !!one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id LIKE 'prospect-queue:%' LIMIT 1",leadId);
+ return true;
 }
 export async function draftInbox(input){
  const row=one("SELECT * FROM waakg_inbox WHERE id=?",String(input.id||""));

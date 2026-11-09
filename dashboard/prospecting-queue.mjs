@@ -1,4 +1,5 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {coldOutreachSwitchEnabled,autonomousOutreachOperationalEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-outreach-switch.mjs';
 // One explicitly approved list, persisted in the Prospector volume.
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
@@ -7,6 +8,7 @@ import {daySP} from './radar.mjs';
 import {dailyApproachBudget} from './daily-approach-limit.mjs';
 import {reserveApproachCredit,settleApproachCredit,availableApproachCredits} from './tenant-credits.mjs';
 import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt} from './approach-cadence.mjs';
+import {evaluateDeliveryGate} from './delivery-gate.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
@@ -16,8 +18,8 @@ import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from '
 import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
 
 export const APPROACH_INTERVAL_MS=90_000;
-// Railway production always requires documented permission; tests may opt in explicitly.
-export const requiresDocumentedOptIn=()=>process.env.PROSPECTOR_COLD_FIRST_APPROACH!=='true'&&(process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true'||process.env.NODE_ENV==='production'||!!process.env.RAILWAY_ENVIRONMENT);
+// Railway production always requires documented permission, including cold-first approaches.
+export const requiresDocumentedOptIn=()=>process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true'||process.env.NODE_ENV==='production'||!!process.env.RAILWAY_ENVIRONMENT;
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batches(id TEXT PRIMARY KEY,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batch_items(id TEXT PRIMARY KEY,batch_id TEXT NOT NULL REFERENCES prospecting_batches(id),lead_id TEXT NOT NULL REFERENCES leads(id),phone TEXT NOT NULL,status TEXT NOT NULL,attempt_at TEXT,error TEXT,created_at TEXT NOT NULL,UNIQUE(batch_id,lead_id))");
 db.exec("CREATE INDEX IF NOT EXISTS idx_prospecting_batch_items ON prospecting_batch_items(status,batch_id,created_at)");
@@ -29,6 +31,12 @@ if(!db.prepare('PRAGMA table_info(prospecting_send_clock)').all().some(c=>c.name
  run('UPDATE prospecting_send_clock SET interval_ms=?',chooseApproachInterval(90000));
 }
 run('INSERT OR IGNORE INTO prospecting_send_clock(id,last_attempt_ms,interval_ms) VALUES(1,0,?)',chooseApproachInterval());
+const priorInterval=one('SELECT interval_ms FROM prospecting_send_clock WHERE id=1')?.interval_ms;
+if(priorInterval<APPROACH_CADENCE.minSeconds*1000||priorInterval>APPROACH_CADENCE.maxSeconds*1000){
+ // Honor a conservative 110s wait after migrations from the old 180s cadence.
+ run('UPDATE prospecting_send_clock SET interval_ms=? WHERE id=1',APPROACH_CADENCE.maxSeconds*1000);
+}
+
 if(!db.prepare('PRAGMA table_info(prospecting_send_clock)').all().some(c=>c.name==='last_finished_ms'))db.exec('ALTER TABLE prospecting_send_clock ADD COLUMN last_finished_ms INTEGER NOT NULL DEFAULT 0');
 // Crash safety: an interrupted network send may have been delivered.
 run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interrompido; conferir no WhatsApp' WHERE status='SENDING'");
@@ -73,7 +81,7 @@ function closeStaleBatch(at=new Date()){
 }
 // Operador liberou a abordagem fria (2026-11-04). O opt-in por contato continua
 // valendo para o Groq: a primeira resposta da pessoa é o que libera a conversa.
-export const coldFirstApproachEnabled=()=>process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
+export const coldFirstApproachEnabled=()=>coldOutreachSwitchEnabled();
 // Read-only inventory using the sender's eligibility checks. Consent statistics
 // from legacy workflows do not describe the autonomous first-greeting queue.
 export function autonomousReadyCount(at=new Date()){
@@ -95,7 +103,7 @@ export function approachQueueStatus(){
  const waiting=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='QUEUED'")?.n||0;
  const unknown=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='UNKNOWN'")?.n||0;
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
- return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:prospectingWindowLabel(),waiting,sent,unknown,
+ return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false)),startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:prospectingWindowLabel(),waiting,sent,unknown,
   intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,senderRotation:{mode:'round_robin',sessions:managedSessions().length,lastSession:rotationCursor()},nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),approachDueAt(clock))).toISOString():null,
   status:b?.status||'IDLE',dailyBudget:dailyApproachBudget(),availableCredits:availableApproachCredits(),repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
@@ -144,8 +152,9 @@ function unsafeSister(sibling,at){
  return !!due&&Date.parse(due)>at;
 }
 export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
+ if(!coldOutreachSwitchEnabled())return {status:COLD_OUTREACH_DISABLED_REASON};
  if(ownerProspectionPaused())return {status:'PAUSED_BY_OWNER'};
- if(getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
+ if(!autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false)))return {status:'DISABLED'};
  if(getSetting('paused',true))return {status:'PAUSED'};
  closeStaleBatch(at);
  if(currentBatch())return {status:'ACTIVE'};
@@ -186,6 +195,7 @@ function createAutonomousBatch(selected){
 // Pré-aquecimento 07:00–08:00: a pesquisa do dia já virou leads no CRM, então a
 // fila nasce antes da janela e o trabalhador envia a partir das 08:00, 90s cada.
 export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
+ if(!coldOutreachSwitchEnabled())return {status:COLD_OUTREACH_DISABLED_REASON};
  if(getSetting('paused',true))return {status:'PAUSED'};
  if(!isOutboundBusinessDay(at))return {status:'OUTSIDE_WINDOW'};
  closeStaleBatch(at);
@@ -205,6 +215,7 @@ export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
 
 let locked=false;
 export async function tickApproachQueue(deps={}){
+ if(!coldOutreachSwitchEnabled())return {status:COLD_OUTREACH_DISABLED_REASON};
  if(ownerProspectionPaused())return {status:'PAUSED_BY_OWNER'};
  if(locked)return {status:'BUSY'};
  const {currentTime=()=>Date.now(),getWaStatus=waControlStatus,getSession=selectedWaSession,send=waRequest}=deps;
@@ -213,7 +224,7 @@ export async function tickApproachQueue(deps={}){
   const time=currentTime(),batch=currentBatch();
   if(!batch)return {status:'IDLE'};
   if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return {status:'PAUSED'};
-  if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
+  if(batch.origin==='AUTONOMOUS'&&!autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false)))return {status:'DISABLED'};
   const expired=closeStaleBatch(new Date(time));
   if(expired)return expired;
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
@@ -221,7 +232,17 @@ export async function tickApproachQueue(deps={}){
   const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
   if(!next){run("UPDATE prospecting_batches SET status='COMPLETED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);return {status:'COMPLETED'};}
-  if(time<approachDueAt(clock))return {status:'WAITING',remainingMs:approachDueAt(clock)-time};
+  const gate=evaluateDeliveryGate(clock,time);
+  if(gate.status==='WAITING')return {status:'WAITING',remainingMs:gate.remainingMs};
+  if(gate.status!=='READY'){
+   // Never force an overdue WhatsApp send to meet a timing target.
+   // Freeze this batch for operator review; no retry or silent clock reset.
+   if(gate.status==='WINDOW_MISSED'){
+    run("UPDATE prospecting_batches SET status='TIMING_REVIEW',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);
+    audit('PROSPECTING_DISPATCH_WINDOW_MISSED',null,{batchId:batch.id,lateByMs:gate.lateByMs,requiresReview:true});
+   }
+   return {status:gate.status,manualReview:gate.status==='WINDOW_MISSED'};
+  }
   if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS')){
    run("UPDATE prospecting_batch_items SET status='SKIPPED',error='Elegibilidade alterada',attempt_at=? WHERE id=?",now(),next.id);
    return {status:'SKIPPED'};
@@ -231,16 +252,27 @@ export async function tickApproachQueue(deps={}){
   if(!wa.connected||!session)return {status:wa.reason||'OFFLINE'};
   if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('training_active',null))return {status:'TRAINING_REVIEW_REQUIRED'};
   if(!reserveApproachCredit(next.id))return {status:'NO_CREDITS'};
+  // Show WhatsApp's composing indicator before an authorized first approach.
+  // If presence cannot be confirmed, do not send the greeting.
+  const presencePath='/api/chat/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/presence';
+  try{
+   const typing=await send(presencePath,{method:'POST',data:{presence:'composing'}}).catch(()=>null);
+   if(typing?.status!==true){settleApproachCredit(next.id,false);return {status:'PRESENCE_UNAVAILABLE'};}
+   await new Promise(resolve=>setTimeout(resolve,2600));
+   if(!coldOutreachSwitchEnabled()||ownerProspectionPaused()){
+    settleApproachCredit(next.id,false);return {status:'PAUSED'};
+   }
   // Transaction reserves the global clock *before* invoking the provider.
   // Timestamp can only move forward. The interval is enforced after restarts.
   const reserved=tx(()=>{
+   if(!coldOutreachSwitchEnabled())return false;
    if(!currentBatch()||currentBatch().id!==batch.id)return false;
    const latest=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
    const nowMs=currentTime();
-   if(nowMs<approachDueAt(latest)||!insideApproachWindow(new Date(nowMs)))return false;
+   if(evaluateDeliveryGate(latest,nowMs).status!=='READY'||!insideApproachWindow(new Date(nowMs)))return false;
    if(dailyApproachBudget(new Date(nowMs)).remaining===0)return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return false;
-   if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return false;
+   if(batch.origin==='AUTONOMOUS'&&!autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false)))return false;
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
    if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS'))return false;
    if(rotating&&rotationCursor()!==wa.cursor)return false;
@@ -269,7 +301,10 @@ export async function tickApproachQueue(deps={}){
    addMessage({threadId:thread.id,providerId:'prospect-queue:'+next.id,direction:'out',body:message,status:'sent'});
    registerGreeting({leadId:lead.id,greetingId:next.id,sessionId:session});
    if(lead.stage==='NO_INTEREST')run("UPDATE leads SET stage='CONTACTED',last_activity_at=? WHERE id=?",now(),lead.id);
-   audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE});
+   audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:clock.interval_ms/1000,
+    cadence:APPROACH_CADENCE,senderSession:session,senderLabel:rotating?wa.sessionLabel:null,senderNumberLast4:rotating?wa.numberSuffix:null});
+   if(rotating)console.info('[approach rotation]',JSON.stringify({sender:wa.sessionLabel||'WhatsApp',lastFour:wa.numberSuffix||null,
+    alternationCursor:session,nextExpected:wa.pair?.find(x=>x!==session)||null,acknowledged:true}));
    return {status:'SENT',batchId:batch.id};
   }catch(error){
    settleApproachCredit(next.id,false);
@@ -285,6 +320,9 @@ export async function tickApproachQueue(deps={}){
     console.warn('[automatic approach] paused: uncertain gateway delivery');
    }
    return {status:'UNKNOWN',batchId:batch.id};
+  }
+  }finally{
+   try{await send(presencePath,{method:'POST',data:{presence:'paused'}});}catch{}
   }
  }finally{locked=false;}
 }

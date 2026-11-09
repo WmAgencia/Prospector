@@ -70,11 +70,14 @@ import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospec
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {coldOutreachSwitchEnabled} from './cold-outreach-switch.mjs';
 import {resumeOwnerApprovedProspecting} from './prospection-resume.mjs';
 import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} from './consecom-offer-ab.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
+import {productionConsentPreview,consentPreviewHtml} from './consent-production-preview.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
+import {tickConsecomProposalSequence} from './consecom-proposal-sequence.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
@@ -83,6 +86,9 @@ import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
 import {naturalConversationEnabled,NATURAL_CONVERSATION_VERSION} from './francisca-natural-conversation.mjs';
 import {approvedLabFactReply,labModelReplySafe,LAB_PAYMENT_SAFETY_VERSION} from './francisca-lab-safety.mjs';
+import {compactPromptEnabled} from './francisca-compact-policy-v3.mjs';
+import {generate100FranciscaScenarios,evaluateFrancisca100,gradeFranciscaReply,EVALUATOR_VERSION} from './francisca-quality-evaluator.mjs';
+import {styleIntentCategory} from './francisca-style-examples.mjs';
 import {styleMemoryEnabled,styleExampleStatus,proposeStyleExample,reviewStyleExample} from './francisca-style-examples.mjs';
 let lastNaturalPreviewAt=0;
 import {ownerStatus} from './groq-owner.mjs';
@@ -405,7 +411,7 @@ function snapshot(){
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
  const stats={profiles_analyzed:all('SELECT details FROM discoveries').reduce((total,row)=>{try{return total+(JSON.parse(row.details||'{}').examined||0);}catch{return total;}},0),qualified:leads.filter(l=>l.website_status==='NO_WEBSITE'&&l.phone).length,meetings:meetings.filter(x=>x.status==='SCHEDULED').length,found:one('SELECT COUNT(*) AS total FROM leads')?.total||0,contacted:one("SELECT COUNT(*) AS total FROM initial_contacts WHERE status='SENT'")?.total||0,responded:leads.filter(x=>['REPLIED','INTERESTED','NO_INTEREST'].includes(x.stage)).length,interested:leads.filter(x=>x.stage==='INTERESTED').length,no_interest:leads.filter(x=>x.stage==='NO_INTEREST').length,without_site:leads.filter(x=>x.website_status==='NO_WEBSITE').length};
- return {radar:radarSnapshot(),catalog:catalogSummary(),googleIndex:googleIndexStatus(),outreachQueue:outreachQueueSnapshot(),activeCampaign:selectedCampaign(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:gatewayConnectionView(connection()),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
+ return {radar:radarSnapshot(),catalog:catalogSummary(),googleIndex:googleIndexStatus(),outreachQueue:outreachQueueSnapshot(),consentPreview:productionConsentPreview(),activeCampaign:selectedCampaign(),bridge:bridgeStatus(),recontacts:eligibleRecontacts(),localDiscovery:{cities:Object.values(LOCATIONS).map(x=>x.label),segments:Object.keys(SEGMENTS).map(k=>({id:k,label:SEGMENTS[k].label})),autoEnabled:getSetting('discovery_auto_enabled',true),source:'© OpenStreetMap contributors (ODbL)'},production:productionList(),report:dailyReport(),ownerTarget:targetNumber(connection().user),providers:providerStatus(),stats,leads,threads,meetings,workflows,settings,media:all('SELECT * FROM media ORDER BY created_at DESC'),jobs:all('SELECT * FROM jobs ORDER BY created_at DESC LIMIT 60'),discoveries:all('SELECT * FROM discoveries ORDER BY at DESC LIMIT 20'),connection:gatewayConnectionView(connection()),searchConfigured:!!process.env.BRAVE_SEARCH_API_KEY};
 }
 async function upload(req,url,res){
  const kind=url.searchParams.get('kind'),name=String(url.searchParams.get('name')||'mídia').slice(0,100);
@@ -504,6 +510,12 @@ async function handler(req,res){
   }
   if(!protectedAccess(req,res,url.pathname))return;
   const pathname=decodeURIComponent(url.pathname);
+  // Signed-in operator preview on REAL production leads. No transport, no DB mutation.
+  if(req.method==='GET'&&pathname==='/consent-preview'){
+   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+   res.end(consentPreviewHtml());return;
+  }
+  if(req.method==='GET'&&pathname==='/api/outreach/consent-preview')return respond(res,200,productionConsentPreview());
   if(await handleFranciscaPanel(req,res,url,{json,respond},{masterAuthorized:authorized(req)||isPrimaryClient(req)}))return;
   if(await handleTraining(req,res,url,{json,respond}))return;
   if(pathname==='/api/events'){
@@ -655,6 +667,14 @@ async function handler(req,res){
    }
    return respond(res,405,{error:'Método indisponível.'});
   }
+  if(req.method==='GET'&&pathname==='/api/ai/evaluation-100'){
+   if(!compactPromptEnabled())return respond(res,403,{error:'Avaliador disponível somente na operação interna.'});
+   const quality=evaluateFrancisca100();
+   return respond(res,200,{ok:true,version:EVALUATOR_VERSION,syntheticCases:generate100FranciscaScenarios().length,
+    categories:10,kind:quality.kind,referenceCalibration:quality.passed,
+    note:'Calibração usando respostas fictícias revisadas, não mede desempenho real do Groq. A avaliação do chat aparece em cada resposta do laboratório.',
+    groqRealConversationsMeasured:0});
+  }
   if(req.method==='POST'&&pathname==='/api/ai/natural-preview'){
    if(!naturalConversationEnabled())return respond(res,409,{ok:false,code:'NATURAL_PREVIEW_DISABLED'});
    if(Date.now()-lastNaturalPreviewAt<1600)return respond(res,429,{ok:false,code:'PREVIEW_RATE_LIMIT'});
@@ -670,7 +690,7 @@ async function handler(req,res){
    // commercial facts use the same approved Consecom rules as production,
    // instead of letting a model invent payment steps or SEO package names.
    const fixed=approvedLabFactReply({incoming:phrase,history});
-   if(fixed)return respond(res,200,{ok:true,answer:fixed,model:'APPROVED_CONSECOM_SIMULATION',
+   if(fixed)return respond(res,200,{ok:true,answer:fixed,quality:gradeFranciscaReply({incoming:phrase,answer:fixed,category:styleIntentCategory(phrase),hasAssistantReply:hasAssistant}),model:'APPROVED_CONSECOM_SIMULATION',
     naturalConversation:true,commercialStage:'SIMULATION',version:LAB_PAYMENT_SAFETY_VERSION,
     noWhatsappSend:true,noPaymentCreated:true,reviewed:'APPROVED_TEST_FACT',code:null});
    const simulationMemory=nextConversationState({},[
@@ -683,7 +703,7 @@ async function handler(req,res){
     audience:'PROSPECT_APPROACHED',commercialMode:'SIMULATION',dialogueState:{hasAssistantReply:hasAssistant,salesMemory:simulationMemory}});
    const reviewed=result.ok?labModelReplySafe({incoming:phrase,history,draft:result.draft}):null;
    return respond(res,result.ok?200:result.httpStatus||502,
-    {ok:result.ok,answer:reviewed?.answer||null,model:result.model||null,
+    {ok:result.ok,answer:reviewed?.answer||null,quality:reviewed?.answer?gradeFranciscaReply({incoming:phrase,answer:reviewed.answer,category:styleIntentCategory(phrase),hasAssistantReply:hasAssistant}):null,model:result.model||null,
      naturalConversation:result.naturalConversation===true,commercialStage:result.commercialStage||null,
      version:NATURAL_CONVERSATION_VERSION,noWhatsappSend:true,noPaymentCreated:true,
      reviewed:reviewed?.source||null,code:result.code||null});
@@ -821,6 +841,10 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/settings'){
    const v=await json(req);
    for(const [k,value] of Object.entries(v)){
+    if((!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&
+       ['paused','autonomous_outreach_enabled'].includes(k))
+      return respond(res,409,{error:'Na Consecom, o liga/desliga das novas abordagens é controlado exclusivamente pela variável PROSPECTOR_COLD_FIRST_APPROACH no Railway. Autorizações dos destinatários continuam individuais.',
+        control:'PROSPECTOR_COLD_FIRST_APPROACH',coldApproachEnabled:coldOutreachSwitchEnabled()});
     if(process.env.PROSPECTOR_TENANT_ID&&!['paused','autonomous_outreach_enabled','discovery_auto_enabled'].includes(k))return respond(res,403,{error:'Esta configuração é administrada pela plataforma'});
     if(!allowedSettings.has(k))throw Error('Configuração desconhecida: '+k);
     if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
@@ -1021,7 +1045,7 @@ const customerAiTimer=setInterval(()=>{
  tickSalesAgent().then(async()=>{const prices=await flushPriceApprovals();return Number(prices.sent||0)+await flushInterestAlerts()+await flushPersonalNotices();}).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
 },6000);
 const autonomousQueueTimer=setInterval(()=>{
-  if(ownerProspectionPaused())return;
+  if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;
  try{
   // Cold first approach: monta a fila das 07:00 à primeira abordagem das 08:00.
   const cold=process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
@@ -1032,18 +1056,27 @@ const autonomousQueueTimer=setInterval(()=>{
   if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',cadence:approachQueueStatus().cadence,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
  }catch(error){console.warn('[automatic approach]',String(error?.message||error).slice(0,140));}
 },5000);
-const prospectQueueTimer=setInterval(()=>{if(ownerProspectionPaused())return;tickApproachQueue().then(result=>{
+const prospectQueueTimer=setInterval(()=>{if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
 }).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160)));},1000);
-const prospectIntroductionTimer=setInterval(()=>{if(ownerProspectionPaused())return;tickIntroductions().then(result=>{
+const prospectIntroductionTimer=setInterval(()=>{if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;tickIntroductions().then(result=>{
  if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160)));},1000);
+// Seven-part price-free proposal after Wesley introduction: typing presence
+// is refreshed during human-paced waits and each transport is persisted.
+const consecomProposalTimer=setInterval(()=>{
+ if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;
+ tickConsecomProposalSequence().then(result=>{
+  if(['SENT','DONE','CANCELLED','UNKNOWN'].includes(result.state))notify();
+  if(result.state==='UNKNOWN')console.warn('[consecom proposal] delivery uncertain; manual review required');
+ }).catch(error=>console.error('[consecom proposal]',String(error?.message||error).slice(0,150)));
+},1000);
 // Persistent 25-second follow-up with portfolio references, after the approved
 // offer is acknowledged. The owner pause applies to both campaign steps.
 const offerReferencesTimer=setInterval(()=>{
- if(ownerProspectionPaused())return;
+ if(!coldOutreachSwitchEnabled()||ownerProspectionPaused())return;
  tickOfferReferences().then(r=>{if(['SENT','CANCELLED','UNKNOWN'].includes(r.state))notify();if(r.state==='UNKNOWN')console.warn('[offer references] delivery uncertain; manual review required');})
  .catch(e=>console.error('[offer references]',String(e.message||e).slice(0,160)));
 },1000);
@@ -1114,4 +1147,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(consecomProposalTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
