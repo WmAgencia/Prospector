@@ -18,6 +18,7 @@ test('negative answers terminate the pending proposal; vague replies do not auth
  const introduction=fs.readFileSync(new URL('../dashboard/prospecting-introduction.mjs',import.meta.url),'utf8');
  const bridge=fs.readFileSync(new URL('../dashboard/waakg-bridge.mjs',import.meta.url),'utf8');
  assert.match(introduction,/if\(explicitlyDeclinesProposal\(body\)\)/);
+ assert.match(introduction,/state:'UNTRACKED_GREETING'/);
  assert.match(bridge,/state='NO_INTEREST'/);
  assert.match(bridge,/grantAutonomousFirstReply\(lead\.id,content,intro\.greeting_id\)/);
  assert.doesNotMatch(bridge,/PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true'/);
