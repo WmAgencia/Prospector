@@ -26,7 +26,15 @@ export function listLeadApprovals({status='PENDING',limit=40,offset=0}={}){
  }
  const filtered=status==='ALL'?allRows:allRows.filter(r=>r.approval_status===status);
  return {totals,total:filtered.length,status,limit:size,offset:skip,
-  items:filtered.slice(skip,skip+size).map(({contact_permission,...lead})=>lead)};
+  items:filtered.slice(skip,skip+size).map(({contact_permission,...lead})=>{
+   if(lead.approval_status!=='AUTHORIZED')return lead;
+   const last=one("SELECT at,detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' ORDER BY at DESC LIMIT 1",lead.id);
+   if(!last)return lead;
+   let details={};try{details=JSON.parse(last.detail);}catch{}
+   return {...lead,consentRecord:{recordedAt:last.at,consentAt:details.consentAt||last.at,
+    channel:details.channel||'OTHER',sourcePhone:details.sourcePhone||'',evidence:details.evidence||'',
+    batchId:details.batchId||null}};
+  })};
 }
 
 export function approveLeadBatch(input={}){
