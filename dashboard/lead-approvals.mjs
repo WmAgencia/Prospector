@@ -45,56 +45,65 @@ export function listLeadApprovals({status='PENDING',limit=40,offset=0}={}){
 function quickConsentBatch(input){
  if(input.confirmedByOperator!==true)throw Error('Confirme que os contatos selecionados aceitaram receber mensagens');
  const allPending=input.allPending===true;
- const raw=allPending?input.excludedLeadIds||[]:input.leadIds;
+ const raw=allPending?(input.excludedLeadIds||[]):input.leadIds;
  if(!Array.isArray(raw))throw Error('Seleção de contatos inválida');
- if(allPending&&typeof input.selectionCutoff!=='string')throw Error('Atualize a lista antes de selecionar todos');
- const timestamp=Date.parse(input.selectionCutoff||'');
- const receivedAt=Date.now();
- if(allPending&&(!Number.isFinite(timestamp)||timestamp>receivedAt+300000||timestamp<receivedAt-366*86400000))
-  throw Error('Seleção desatualizada. Atualize a lista de aprovações');
  const selected=new Set();
- for(const rawId of raw){
-  const leadId=String(rawId||'').trim();
+ for(const value of raw){
+  const leadId=String(value||'').trim();
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadId)||selected.has(leadId))
    throw Error('Seleção contém contato inválido ou duplicado');
   selected.add(leadId);
  }
- const selectionCutoff=allPending?new Date(timestamp).toISOString():null;
+ let selectionCutoff=null;
+ if(allPending){
+  const timestamp=Date.parse(input.selectionCutoff||''),current=Date.now();
+  if(!Number.isFinite(timestamp)||timestamp>current+300000||timestamp<current-366*86400000)
+   throw Error('A seleção expirou. Atualize a lista e selecione todos novamente');
+  selectionCutoff=new Date(timestamp).toISOString();
+ }
  const batchId=id(),recordedAt=new Date().toISOString();
  return tx(()=>{
   const candidates=allPending
    ?all("SELECT id FROM ("+BASE_SQL+") WHERE approval_status='PENDING' AND created_at<=?",selectionCutoff)
    :[...selected].map(leadId=>({id:leadId}));
   const leadIds=candidates.map(x=>x.id).filter(leadId=>!allPending||!selected.has(leadId));
-  if(!leadIds.length)throw Error('Nenhum contato elegível foi selecionado');
+  if(!leadIds.length)throw Error('Nenhum contato da seleção foi encontrado. Atualize a lista e tente novamente');
+  const approved=[],skipped=[],ownerPhone=verifiedOwnerPhone();
+  // A single ineligible lead never blocks the remaining, individually audited
+  // declarations. Existing clients, opt-outs and the owner's phone stay excluded.
   for(const leadId of leadIds){
    const lead=one('SELECT id,phone,contact_permission FROM leads WHERE id=?',leadId);
-   if(!lead?.phone)throw Error('Contato não encontrado ou sem WhatsApp');
-   if(lead.phone===verifiedOwnerPhone())throw Error('O número do proprietário não é elegível');
-   if(one('SELECT phone FROM suppressions WHERE phone=?',lead.phone))throw Error('Contato bloqueado para mensagens');
-   if(one("SELECT phone FROM contact_relationships WHERE phone=? AND kind='EXISTING_CLIENT'",lead.phone))
-    throw Error('Cliente existente não pode ser aprovado como prospecção');
-   if(lead.contact_permission===1&&one("SELECT id FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' LIMIT 1",lead.id))
-    throw Error('Um dos contatos já está autorizado. Atualize a lista');
+   let reason=null;
+   if(!lead?.phone)reason='CONTATO_INEXISTENTE';
+   else if(ownerPhone&&lead.phone===ownerPhone)reason='NUMERO_PROPRIETARIO';
+   else if(one('SELECT 1 FROM suppressions WHERE phone=?',lead.phone))reason='CONTATO_BLOQUEADO';
+   else if(one("SELECT 1 FROM contact_relationships WHERE phone=? AND kind='EXISTING_CLIENT'",lead.phone))reason='CLIENTE_EXISTENTE';
+   else if(lead.contact_permission===1&&one("SELECT 1 FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' LIMIT 1",lead.id))reason='JA_AUTORIZADO';
+   if(reason)skipped.push({leadId,reason});
+   else approved.push(leadId);
   }
-  for(const leadId of leadIds){
+  for(const leadId of approved){
    run('UPDATE leads SET contact_permission=1 WHERE id=?',leadId);
    audit('CONSENT_UPDATED',leadId,{
     permitted:true,
     evidence:'Declaração do operador autenticado: este contato aceitou receber mensagens. Comprovante da conversa não anexado.',
-    evidenceType:'OPERATOR_ATTESTATION',evidenceVerified:false,method:'manual_quick_approval',
-    channel:'PERSONAL_WHATSAPP_REPORTED',sourcePhone:'',consentAt:null,recordedAt,
-    actor:'AUTHENTICATED_WORKSPACE_OPERATOR',batchId,
-    workspace:process.env.PROSPECTOR_TENANT_ID||'PRIMARY'
+    evidenceType:'OPERATOR_ATTESTATION',evidenceVerified:false,
+    method:'manual_quick_approval',channel:'PERSONAL_WHATSAPP_REPORTED',
+    sourcePhone:'',consentAt:null,recordedAt,actor:'AUTHENTICATED_WORKSPACE_OPERATOR',
+    batchId,workspace:process.env.PROSPECTOR_TENANT_ID||'PRIMARY'
    });
   }
+  const skippedReasons={};
+  for(const item of skipped)skippedReasons[item.reason]=(skippedReasons[item.reason]||0)+1;
   audit('CONSENT_BATCH_APPROVED',null,{
-   batchId,quantity:leadIds.length,selection:allPending?'ALL_PENDING':'SELECTED',
-   selectionCutoff,excludedCount:allPending?selected.size:0,
+   batchId,quantity:approved.length,skipped:skipped.length,skippedReasons,
+   selection:allPending?'ALL_PENDING':'SELECTED',selectionCutoff,
+   excludedCount:allPending?selected.size:0,
    evidenceType:'OPERATOR_ATTESTATION',actor:'AUTHENTICATED_WORKSPACE_OPERATOR',
    method:'manual_quick_approval',workspace:process.env.PROSPECTOR_TENANT_ID||'PRIMARY'
   });
-  return {ok:true,batchId,approved:leadIds.length,selection:allPending?'ALL_PENDING':'SELECTED'};
+  return {ok:true,batchId,approved:approved.length,skipped:skipped.length,
+   skippedReasons,skippedItems:skipped,selection:allPending?'ALL_PENDING':'SELECTED'};
  });
 }
 

@@ -65,7 +65,7 @@ import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospec
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROSPECTING_CONTROL_KEYS} from './tenant-prospecting-controls.mjs';
-import {armApprovedOutreach} from './approval-ready-activation.mjs';
+import {armApprovedOutreach,apply250DailyLimit} from './approval-ready-activation.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
@@ -278,6 +278,7 @@ if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('auto
 
 const approvalReady=armApprovedOutreach();
 console.info('[approval ready]',JSON.stringify(approvalReady));
+console.info('[daily 250 limit]',JSON.stringify(apply250DailyLimit()));
 
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
 
@@ -495,7 +496,7 @@ async function handler(req,res){
   }
   if(req.method==='POST'&&pathname==='/api/approvals/batch'){
    try{const result=approveLeadBatch(await json(req));notify();return respond(res,200,result);}
-   catch(e){return respond(res,422,{error:String(e.message).slice(0,220)});}
+   catch(e){console.warn('[approvals batch] validation rejected:',String(e.message).slice(0,180));return respond(res,422,{error:String(e.message).slice(0,220)});}
   }
   if(pathname==='/api/prospecting/calendar'&&req.method==='GET'){
    const month=url.searchParams.get('month')||new Date().toISOString().slice(0,7);
@@ -741,7 +742,7 @@ async function handler(req,res){
     if(process.env.PROSPECTOR_TENANT_ID&&!['paused','autonomous_outreach_enabled','cold_first_approach_enabled','discovery_auto_enabled'].includes(k))return respond(res,403,{error:'Esta configuração é administrada pela plataforma'});
     if(!allowedSettings.has(k))throw Error('Configuração desconhecida: '+k);
     if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
-    if(k==='daily_limit'&&Number(value)>150)throw Error('O teto diário é 150 primeiras abordagens');
+    if(k==='daily_limit'&&Number(value)>250)throw Error('O teto diário é 250 primeiras abordagens');
      // Controles do motor de decisão são booleanos (sem alterar campanha/horários).
      if(['decision_engine_enabled','decision_learning_enabled'].includes(k)&&typeof value!=='boolean')throw Error('Use verdadeiro ou falso para o motor de decisão');
     if(k==='discovery_target_daily'&&(Number(value)<1||Number(value)>150))throw Error('A meta de descoberta deve ser de 1 a 150');
