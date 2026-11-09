@@ -11,9 +11,18 @@ const operatorPhone='5515988887336';
 const fixture=String.raw`
 const {addLead,one,run,all,db}=await import('./dashboard/db.mjs');
 const {approveLeadBatch,listLeadApprovals}=await import('./dashboard/lead-approvals.mjs');
+const {apply250DailyLimit}=await import('./dashboard/daily-approach-rollout.mjs');
 const input=JSON.parse(process.argv[1]);
 const data={};
 try{
+ if(input.action==='cap'){
+  data.result=apply250DailyLimit();
+  const {getSetting}=await import('./dashboard/db.mjs');
+  data.persisted=getSetting('daily_limit');
+  data.radar=(await import('./dashboard/radar.mjs')).budgetConfig().limit;
+  data.budget=(await import('./dashboard/daily-approach-limit.mjs')).dailyApproachBudget().limit;
+  data.auditEvents=all("SELECT action,detail FROM audit WHERE action='OWNER_DAILY_LIMIT_250'");
+ }
  if(input.action==='seed'){
   data.leads=[
    addLead({business:'Empresa A',phone:'5515999001234',source:'maps_extension'}).lead,
@@ -43,7 +52,7 @@ function run(folder,payload){
  const out=execFileSync(process.execPath,['--input-type=module','-e',fixture,JSON.stringify(payload)],{
   cwd:path.resolve('.'),
   env:{...process.env,PROSPECTOR_DATA_DIR:folder,PROSPECTOR_TENANT_ID:path.basename(folder),
-   PROSPECTOR_TENANT_INTERNAL:'false',PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false'},
+   PROSPECTOR_TENANT_INTERNAL:payload?.primary?'true':'false',PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false'},
   encoding:'utf8',timeout:25000
  });
  return JSON.parse(out.trim().split('\n').at(-1));
@@ -154,7 +163,7 @@ test('select all covers all pending pages, supports exclusions and does not incl
  assert.equal(state.list.totals.pending,3);
  assert.equal(state.permissions.find(x=>x.id===excluded).contact_permission,0);
 });
-test('quick approval refuses missing operator confirmation and blocked contacts atomically',()=>{
+test('quick approval requires confirmation and skips blocked contacts without rejecting the others',()=>{
  const dir=path.join(tmp,'quick-block');
  const ids=run(dir,{action:'seed'}).leads;
  const noConfirm=run(dir,{action:'approve',payload:{
@@ -165,10 +174,12 @@ test('quick approval refuses missing operator confirmation and blocked contacts 
  const blocked=run(dir,{action:'approve',payload:{
   quick:true,confirmedByOperator:true,leadIds:ids.map(x=>x.id)
  }});
- assert.match(blocked.error,/bloqueado/);
+ assert.equal(blocked.result?.approved,1,JSON.stringify(blocked));
+ assert.equal(blocked.result?.skipped,1);
+ assert.equal(blocked.result?.skippedReasons?.CONTATO_BLOQUEADO,1);
  const state=run(dir,{action:'inspect'});
- assert.equal(state.list.totals.authorized,0);
- assert.equal(state.audits.length,0);
+ assert.equal(state.list.totals.authorized,1);
+ assert.equal(state.audits.filter(x=>x.action==='CONSENT_UPDATED').length,1);
 });
 test('quick approvals remain isolated to the authenticated workspace database',()=>{
  const left=path.join(tmp,'quick-tenant-1'),right=path.join(tmp,'quick-tenant-2');
@@ -180,6 +191,30 @@ test('quick approvals remain isolated to the authenticated workspace database',(
  assert.equal(result.result?.approved,2,JSON.stringify(result));
  assert.equal(run(left,{action:'inspect'}).list.totals.authorized,2);
  assert.equal(run(right,{action:'inspect'}).list.totals.authorized,0);
+});
+
+test('select all over 500 pending contacts succeeds without a batch cap',()=>{
+ const dir=path.join(tmp,'large-total');
+ run(dir,{action:'seedMany',count:513});
+ const snapshot=run(dir,{action:'listing'}).list.snapshotAt;
+ const result=run(dir,{action:'approve',payload:{quick:true,confirmedByOperator:true,
+  allPending:true,selectionCutoff:snapshot,excludedLeadIds:[]}});
+ assert.equal(result.result?.approved,513,JSON.stringify(result));
+ assert.equal(result.result?.skipped,0);
+ assert.equal(run(dir,{action:'inspect'}).list.totals.authorized,513);
+});
+test('one-time daily limit 250 updates both dashboard and scheduler, without affecting other tenants',()=>{
+ const dir=path.join(tmp,'daily250');
+ const first=run(dir,{action:'cap',primary:true});
+ assert.equal(first.result?.status,'UPDATED');
+ assert.equal(first.persisted,250);
+ assert.equal(first.radar,250);
+ assert.equal(first.budget,250);
+ assert.equal(first.auditEvents.length,1);
+ const repeat=run(dir,{action:'cap',primary:true});
+ assert.equal(repeat.result?.status,'ALREADY_APPLIED');
+ assert.equal(repeat.auditEvents.length,1);
+ assert.equal(run(path.join(tmp,'daily250-other'),{action:'cap'}).result?.status,'OTHER_TENANT_UNCHANGED');
 });
 
 test.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));
