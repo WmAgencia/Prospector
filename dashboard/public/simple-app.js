@@ -760,6 +760,7 @@ function approvalsView(){
  const totals=data.totals||{pending:0,authorized:0,blocked:0};
  const button=(status,text,count)=>'<button type="button" class="approval-filter '+(approvalStatus===status?'active':'')+'" data-action="approval-filter" data-status="'+status+'" aria-pressed="'+(approvalStatus===status)+'">'+text+' <strong>'+count+'</strong></button>';
  const items=data.items||[],count=approvalSelectAll?Math.max(0,totals.pending-approvalExcludedIds.size):approvalSelection.size;
+ const approveAction=approvalStatus==='PENDING'?'<button type="button" class="primary compact" data-action="approval-submit" '+(!count||approvalBusy?'disabled':'')+'>'+(approvalBusy?'Aprovando...':'Aprovar '+count+' contato(s)')+'</button>':'';
  const cards=items.map(lead=>{
   const selectable=lead.approval_status==='PENDING';
   const chosen=selectable&&(approvalSelectAll?!approvalExcludedIds.has(lead.id):approvalSelection.has(lead.id));
@@ -777,13 +778,12 @@ function approvalsView(){
  const next=approvalOffset+40;
  return '<div class="workspace-head"><div><span class="kicker">CURADORIA / WHATSAPP</span><h2>Aprovações</h2><p>Confira pelo seu celular quem aceitou receber mensagens. Depois selecione os contatos e aprove em um único clique.</p></div></div>'+
   '<section class="approval-stat-grid"><div><small>Pendentes</small><strong>'+totals.pending+'</strong></div><div><small>Autorizados</small><strong>'+totals.authorized+'</strong></div><div><small>Bloqueados</small><strong>'+totals.blocked+'</strong></div></section>'+
-  '<section class="panel approvals-panel"><div class="approval-toolbar"><div class="approval-filters">'+button('PENDING','Pendentes',totals.pending)+button('AUTHORIZED','Autorizados',totals.authorized)+button('BLOCKED','Bloqueados',totals.blocked)+'</div><button type="button" class="secondary compact" data-action="approval-refresh">Atualizar</button></div>'+
+  '<section class="panel approvals-panel"><div class="approval-toolbar"><div class="approval-filters">'+button('PENDING','Pendentes',totals.pending)+button('AUTHORIZED','Autorizados',totals.authorized)+button('BLOCKED','Bloqueados',totals.blocked)+'</div><div class="approval-toolbar-actions"><button type="button" class="secondary compact" data-action="approval-refresh">Atualizar</button>'+approveAction+'</div></div>'+
+  (approvalFeedback?'<p class="approval-result" role="status" aria-live="polite">'+esc(approvalFeedback)+'</p>':'')+
   (approvalStatus==='PENDING'?'<div class="approval-select-bar"><label class="approval-all"><input type="checkbox" data-approval-all="true" '+(approvalSelectAll&&approvalExcludedIds.size===0?'checked':'')+' '+(!totals.pending?'disabled':'')+'> Selecionar todos os '+totals.pending+' pendentes (todas as páginas)</label><span>'+count+' selecionado(s)</span></div>':'')+
   '<div class="approval-contacts">'+(cards||'<div class="empty"><h3>Nenhum contato nesta categoria</h3><p>Os contatos aparecerão conforme forem encontrados ou autorizados.</p></div>')+'</div>'+
   '<div class="approval-pagination"><span>Exibindo '+(items.length?approvalOffset+1:0)+'–'+(approvalOffset+items.length)+' de '+data.total+'</span><div><button type="button" class="secondary compact" data-action="approval-prev" '+(!approvalOffset?'disabled':'')+'>Anterior</button><button type="button" class="secondary compact" data-action="approval-next" '+(next>=data.total?'disabled':'')+'>Próxima</button></div></div></section>'+
-  (approvalStatus==='PENDING'?'<section class="panel approval-submit-panel"><span class="kicker">APROVAÇÃO RÁPIDA</span><h3>Confirmar os selecionados</h3><p>Ao clicar em Aprovar, você declara que cada contato selecionado já aceitou receber mensagens. O registro fica individual por contato, sem inventar comprovantes.</p>'+
-  '<div class="approval-submit-actions"><span>'+count+' contato(s) selecionado(s)</span><button type="button" class="primary" data-action="approval-submit" '+(!count||approvalBusy?'disabled':'')+'>'+(approvalBusy?'Aprovando...':'Aprovar '+count+' contato(s)')+'</button></div></section>':'')+
-  '<p class="approval-result" role="status" aria-live="polite">'+esc(approvalFeedback)+'</p>'+
+
   '<p class="settings-small-note">A declaração do operador não equivale a uma prova independente de opt-in. A confirmação não envia mensagens nem altera pausas, horários e exclusões.</p>';
 }
 async function submitApprovals(){
