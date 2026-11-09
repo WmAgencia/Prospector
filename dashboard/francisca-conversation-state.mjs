@@ -1,4 +1,5 @@
 // Lightweight, tenant-local conversation state. No raw customer messages or PII stored.
+import {analyzeCommercialTurn} from './francisca-commercial-brain.mjs';
 export const CONVERSATION_STATE_VERSION='francisca-conversation-state-2026-11-06';
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const rules=[
@@ -30,11 +31,20 @@ export function isSpecificCommercialFollowup(message=''){
 }
 export function nextConversationState(previous={},messages=[]){
  const previousTopics=Array.isArray(previous.answeredTopics)?previous.answeredTopics.filter(x=>typeof x==='string').slice(-16):[];
- const state={version:CONVERSATION_STATE_VERSION,offerExplained:previous.offerExplained===true,alternativeOfferDiscussed:previous.alternativeOfferDiscussed===true,answeredTopics:previousTopics,lastCustomerIntent:previous.lastCustomerIntent||'general',turnCount:Number(previous.turnCount)||0};
+ const state={version:CONVERSATION_STATE_VERSION,offerExplained:previous.offerExplained===true,alternativeOfferDiscussed:previous.alternativeOfferDiscussed===true,answeredTopics:previousTopics,lastCustomerIntent:previous.lastCustomerIntent||'general',turnCount:Number(previous.turnCount)||0,
+  need:typeof previous.need==='string'?previous.need:null,
+  concern:typeof previous.concern==='string'?previous.concern:null,
+  lastCommercialStage:typeof previous.lastCommercialStage==='string'?previous.lastCommercialStage:'DISCOVERY'};
  for(const m of messages){
   if(!['in','out'].includes(m?.direction)||!String(m.body||'').trim())continue;
   const intent=commercialIntent(m.body);
-  if(m.direction==='in'){state.lastCustomerIntent=intent;state.turnCount++;continue;}
+  if(m.direction==='in'){
+   state.lastCustomerIntent=intent;state.turnCount++;
+   const plan=analyzeCommercialTurn({incoming:m.body,memory:state});
+   state.need=plan.need;state.concern=plan.concern;
+   state.lastCommercialStage=plan.stage;
+   continue;
+  }
   const outgoing=norm(m.body);
   if(/\br\$\s*550\b/.test(outgoing)&&/(?:site|portfolio|dominio|proposta)/.test(outgoing))state.offerExplained=true;
   if(/r\$\s*(?:450|750|2[.]?800)\b/.test(outgoing))state.alternativeOfferDiscussed=true;
@@ -52,6 +62,9 @@ export function memoryPrompt(state={}){
  'Alternativa de preço já discutida: '+(state.alternativeOfferDiscussed?'sim, nunca presumir preço-base na cobrança':'não registrada')+'.',
  'Assuntos já abordados nas respostas: '+topics+'.',
  'Intenção mais recente do cliente: '+(state.lastCustomerIntent||'general')+'.',
+ 'Necessidade comercial categorizada: '+(state.need||'não determinada')+'.',
+ 'Barreira/objeção categorizada: '+(state.concern||'não registrada')+'.',
+ 'Etapa comercial sugerida: '+(state.lastCommercialStage||'DISCOVERY')+'.',
  'Não repita uma proposta já apresentada quando houver nova dúvida; resolva primeiro a intenção atual. Não presuma pagamento, contrato assinado ou entrega a partir deste resumo.'
  ].join('\n');
 }

@@ -136,10 +136,10 @@ export function trainingStatus(){
   chat:all('SELECT role,body,at FROM training_chat ORDER BY rowid DESC LIMIT 40').reverse(),interview:trainingInterviewStatus(),
   runs};
 }
-export function trainingPrompt(){
+export function trainingPrompt({compact=false}={}){
  const tenantMarkdown=readActiveTrainingMarkdown(),business=getSetting('training_business',null);
  return [
-  'BASE GLOBAL DE VENDAS (SOMENTE MÉTODO, SEM DADOS DE EMPRESAS):\n'+globalSalesVoiceGuide(),
+  'BASE GLOBAL DE VENDAS (SOMENTE MÉTODO, SEM DADOS DE EMPRESAS):\n'+(compact?'Converse de maneira objetiva e natural em português brasileiro. Escute o cliente, não repita informações nem pressione por resposta. Estas instruções ensinam somente o jeito de falar; condições comerciais devem vir do conteúdo aprovado abaixo.':globalSalesVoiceGuide()),
   'IDENTIDADE DA EMPRESA DESTA SESSÃO (aprovada pelo gestor): '+JSON.stringify(
    business?{name:business.name,description:business.description}:{name:process.env.PROSPECTOR_TENANT_NAME||'Consecom Brasil'}),
   'PORTFÓLIO E PROVAS SOCIAIS APROVADOS DESTA EMPRESA:\n'+(readSalesContextMarkdown('proofs')||approvedProofText()||'Nenhum material aprovado.'),

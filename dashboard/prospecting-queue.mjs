@@ -7,6 +7,7 @@ import {daySP} from './radar.mjs';
 import {dailyApproachBudget} from './daily-approach-limit.mjs';
 import {reserveApproachCredit,settleApproachCredit,availableApproachCredits} from './tenant-credits.mjs';
 import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt} from './approach-cadence.mjs';
+import {evaluateDeliveryGate} from './delivery-gate.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
@@ -29,6 +30,10 @@ if(!db.prepare('PRAGMA table_info(prospecting_send_clock)').all().some(c=>c.name
  run('UPDATE prospecting_send_clock SET interval_ms=?',chooseApproachInterval(90000));
 }
 run('INSERT OR IGNORE INTO prospecting_send_clock(id,last_attempt_ms,interval_ms) VALUES(1,0,?)',chooseApproachInterval());
+const previousInterval=one('SELECT interval_ms FROM prospecting_send_clock WHERE id=1')?.interval_ms;
+if(previousInterval<APPROACH_CADENCE.minSeconds*1000||previousInterval>APPROACH_CADENCE.maxSeconds*1000){
+ run('UPDATE prospecting_send_clock SET interval_ms=? WHERE id=1',APPROACH_CADENCE.maxSeconds*1000);
+}
 if(!db.prepare('PRAGMA table_info(prospecting_send_clock)').all().some(c=>c.name==='last_finished_ms'))db.exec('ALTER TABLE prospecting_send_clock ADD COLUMN last_finished_ms INTEGER NOT NULL DEFAULT 0');
 // Crash safety: an interrupted network send may have been delivered.
 run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interrompido; conferir no WhatsApp' WHERE status='SENDING'");
@@ -221,7 +226,15 @@ export async function tickApproachQueue(deps={}){
   const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
   if(!next){run("UPDATE prospecting_batches SET status='COMPLETED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);return {status:'COMPLETED'};}
-  if(time<approachDueAt(clock))return {status:'WAITING',remainingMs:approachDueAt(clock)-time};
+  const gate=evaluateDeliveryGate(clock,time);
+  if(gate.status==='WAITING')return {status:'WAITING',remainingMs:gate.remainingMs};
+  if(gate.status!=='READY'){
+   if(gate.status==='WINDOW_MISSED'){
+    run("UPDATE prospecting_batches SET status='TIMING_REVIEW',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);
+    audit('PROSPECTING_DISPATCH_WINDOW_MISSED',null,{batchId:batch.id,lateByMs:gate.lateByMs,manualReview:true});
+   }
+   return {status:gate.status,manualReview:gate.status==='WINDOW_MISSED'};
+  }
   if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS')){
    run("UPDATE prospecting_batch_items SET status='SKIPPED',error='Elegibilidade alterada',attempt_at=? WHERE id=?",now(),next.id);
    return {status:'SKIPPED'};
@@ -231,13 +244,20 @@ export async function tickApproachQueue(deps={}){
   if(!wa.connected||!session)return {status:wa.reason||'OFFLINE'};
   if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('training_active',null))return {status:'TRAINING_REVIEW_REQUIRED'};
   if(!reserveApproachCredit(next.id))return {status:'NO_CREDITS'};
+  const presencePath='/api/chat/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/presence';
+  try{
+   const typing=await send(presencePath,{method:'POST',data:{presence:'composing'}}).catch(()=>null);
+   if(typing?.status!==true){settleApproachCredit(next.id,false);return {status:'PRESENCE_UNAVAILABLE'};}
+   await new Promise(resolve=>setTimeout(resolve,2600));
+   if(ownerProspectionPaused()){settleApproachCredit(next.id,false);return {status:'PAUSED_BY_OWNER'};}
   // Transaction reserves the global clock *before* invoking the provider.
   // Timestamp can only move forward. The interval is enforced after restarts.
   const reserved=tx(()=>{
+   if(ownerProspectionPaused())return false;
    if(!currentBatch()||currentBatch().id!==batch.id)return false;
    const latest=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
    const nowMs=currentTime();
-   if(nowMs<approachDueAt(latest)||!insideApproachWindow(new Date(nowMs)))return false;
+   if(evaluateDeliveryGate(latest,nowMs).status!=='READY'||!insideApproachWindow(new Date(nowMs)))return false;
    if(dailyApproachBudget(new Date(nowMs)).remaining===0)return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return false;
@@ -269,7 +289,8 @@ export async function tickApproachQueue(deps={}){
    addMessage({threadId:thread.id,providerId:'prospect-queue:'+next.id,direction:'out',body:message,status:'sent'});
    registerGreeting({leadId:lead.id,greetingId:next.id,sessionId:session});
    if(lead.stage==='NO_INTEREST')run("UPDATE leads SET stage='CONTACTED',last_activity_at=? WHERE id=?",now(),lead.id);
-   audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE});
+   audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,senderNumberLast4:rotating?wa.numberSuffix:null,senderSession:session});
+   if(rotating)console.info('[approach rotation]',JSON.stringify({senderLastFour:wa.numberSuffix||null,nextExpected:wa.pair?.find(x=>x!==session)||null,acknowledged:true}));
    return {status:'SENT',batchId:batch.id};
   }catch(error){
    settleApproachCredit(next.id,false);
@@ -285,6 +306,9 @@ export async function tickApproachQueue(deps={}){
     console.warn('[automatic approach] paused: uncertain gateway delivery');
    }
    return {status:'UNKNOWN',batchId:batch.id};
+  }
+  }finally{
+   try{await send(presencePath,{method:'POST',data:{presence:'paused'}});}catch{}
   }
  }finally{locked=false;}
 }

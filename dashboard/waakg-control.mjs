@@ -3,6 +3,7 @@
 import {getSetting,setSetting} from "./db.mjs";
 import {randomUUID} from 'node:crypto';
 import {managedSessions,isManagedSession,registerSession,nextConnectedSession,rotationCursor} from './waakg-session-registry.mjs';
+import {chooseConsecomAlternatingSender,consecomPairStatus} from './consecom-sender-rotation.mjs';
 import {sessionOutreachBudget} from './session-outreach-budget.mjs';
 const base="https://wa-akg-production-f9f0.up.railway.app";
 const sessionKey="waakg_primary_session_id";
@@ -192,11 +193,24 @@ export async function waCreateSession(label){
 }
 export async function selectApproachSender(){
  const pool=await waSessionList(),cursor=rotationCursor();
+ const internal=!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
+ if(internal){
+  const chosen=chooseConsecomAlternatingSender(pool.items,selectedWaSession(),cursor);
+  return {...chosen,cursor};
+ }
+ // Other tenant accounts keep their own normal rotation behavior.
  const sessionId=nextConnectedSession(managedSessions().map(x=>x.session_id),pool.items.filter(x=>x.connected).map(x=>x.session_id),cursor);
- return {connected:!!sessionId,sessionId,cursor,reason:'OFFLINE'};
+ return {connected:!!sessionId,sessionId,cursor,reason:sessionId?null:'OFFLINE'};
 }
 export async function waOperationalStatus(){
- if(managedSessions().length<=1){const status=await waControlStatus();return {...status,approachReady:status.connected};}
+ const internal=!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
+ if(!internal&&managedSessions().length<=1){const status=await waControlStatus();return {...status,approachReady:status.connected};}
  const pool=await waSessionList();
- return {ok:pool.items.some(x=>x.ok),connected:pool.connected,approachReady:pool.connected,status:pool.connected?'CONNECTED':'DISCONNECTED',totalSessions:pool.items.length,sessionId:selectedWaSession()};
+ const pair=internal?consecomPairStatus(pool.items,selectedWaSession()):null;
+ return {ok:pool.items.some(x=>x.ok),connected:pool.connected,
+  approachReady:internal?pair.ready:pool.connected,
+  approachReason:pair?.reason||null,
+  status:pool.connected?'CONNECTED':'DISCONNECTED',
+  totalSessions:pool.items.length,connectedSessions:pair?.onlineCount??pool.items.filter(x=>x.connected).length,
+  requiredSenders:pair?.requiredOnline??1,sessionId:selectedWaSession()};
 }
