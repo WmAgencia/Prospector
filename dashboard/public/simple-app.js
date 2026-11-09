@@ -35,6 +35,9 @@ try{preferredPackage=sessionStorage.getItem('prospector-preferred-package')||'';
 let offerType='portfolio';
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
 let view=Object.keys(tabs).includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
+let naturalPreviewHistory=[],naturalPreviewBusy=false;
+let styleExampleData=null,styleExampleBusy=false;
+let franciscaEvaluation=null;
 let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false,consentPolicy=null,consentPolicyBusy=false;
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
 function newProspectSession(){
@@ -635,12 +638,81 @@ function interviewView(){
  const shared='<div class="training-markdown-info"><span><strong>Método global de vendas</strong> · compartilhado e somente leitura. O seu perfil de serviços, preços e tom é privado.</span><a href="/api/training/global.md" download="francisca-vendas-global.md" class="secondary compact">Baixar base global .md ↗</a></div>';
  return top+'<div class="interview-layout">'+body+'</div>'+profile+trainingSalesExtras()+advanced;
 }
-function trainingView(){return interviewView();}
+// Private roleplay sandbox: no real clients, WhatsApp sends or production leads.
+function naturalPreviewView(){
+ if(!trainingState?.internalAccount)return '';
+ const transcript=naturalPreviewHistory.length?naturalPreviewHistory.map(item=>
+  '<div class="training-message '+(item.role==='user'?'sent':'received')+'"><small>'+
+  (item.role==='user'?'Cliente fictício':'Francisca Natural')+'</small><p>'+esc(item.text)+'</p>'+
+  (item.role==='assistant'&&item.quality?'<small>Naturalidade estimada: '+esc(item.quality.score)+'/100 · avaliação automática de estilo, não de fatos nem de vendas'+(item.quality.flags?.length?' · '+esc(item.quality.flags.join(', ')):'')+'</small>':'')+'</div>'
+ ).join(''):'<div class="training-welcome"><strong>Teste como a Francisca responde.</strong><p>Experimente: “Já tenho site”, “achei caro”, “vou falar com meu sócio” ou simule uma conversa inteira.</p></div>';
+ return '<section class="panel" style="margin-bottom:20px"><div class="heading"><div>'+
+ '<span class="kicker">LABORATÓRIO • SEM ENVIOS</span><h3>Testar conversa natural</h3>'+
+ '<p>Converse com a nova Francisca como se fosse um cliente. Este teste não envia WhatsApp nem acessa leads.</p>'+
+ '</div></div><div class="training-messages" role="log" aria-label="Simulação da conversa natural" style="min-height:130px;max-height:390px;overflow:auto">'+transcript+'</div>'+
+ '<form class="training-composer" id="natural-preview-form">'+
+ '<label for="natural-preview-text" class="sr-only">Mensagem do cliente fictício</label>'+
+ '<textarea id="natural-preview-text" name="text" maxlength="1500" rows="2" required placeholder="Escreva aqui como se fosse um cliente..." '+(naturalPreviewBusy?'disabled':'')+'></textarea>'+
+ '<div class="training-compose-actions">'+
+ '<button type="button" class="secondary" data-action="natural-preview-clear" '+(naturalPreviewBusy?'disabled':'')+'>Reiniciar conversa</button>'+
+ '<button type="submit" class="primary" '+(naturalPreviewBusy?'disabled':'')+'>'+(naturalPreviewBusy?'Respondendo…':'Enviar mensagem de teste')+'</button>'+
+ '</div></form><p class="footnote">Somente simulação. Nenhuma mensagem será enviada ou salva no WhatsApp.</p></section>';
+}
+// Reviewed dialogue examples: no automatic import of customer messages.
+function styleExamplesView(){
+ if(!trainingState?.internalAccount)return '';
+ if(!styleExampleData?.enabled)return '';
+ const status=styleExampleData;
+ const item=x=>'<div class="kanban-lead" style="margin-top:9px">'+
+  '<div class="kanban-lead-top"><div><strong>'+esc(x.incoming)+'</strong>'+
+  '<small>'+(x.status==='APPROVED'?'Aprovado para orientar estilo':'Pendente de revisão')+' · '+
+  (x.source==='SYNTHETIC'?'Fictício':'Autorizado e anonimizado')+'</small></div></div>'+
+  '<p>'+esc(x.reply)+'</p><div class="training-compose-actions">'+
+  (x.status!=='APPROVED'?'<button type="button" class="primary compact" data-action="style-example-approve" data-style-id="'+esc(x.id)+'">Aprovar</button>':'')+
+  '<button type="button" class="secondary compact" data-action="style-example-delete" data-style-id="'+esc(x.id)+'">Excluir</button>'+
+  '</div></div>';
+ const items=status.items||[];
+ return '<section class="panel" style="margin-bottom:20px">'+
+  '<div class="heading"><div><span class="kicker">CONVERSA NATURAL • EXEMPLOS REVISADOS</span>'+
+  '<h3>Como a Francisca deve conversar</h3>'+
+  '<p>Os exemplos são usados como referência de linguagem, nunca como autorização para mudar ofertas ou pagamentos.</p></div></div>'+
+  '<div class="kanban-metrics" style="margin-bottom:14px">'+
+  '<div class="kanban-metric"><span>Exemplos fictícios prontos</span><strong>'+esc(status.seeded||0)+'</strong><small>Escritos em português brasileiro</small></div>'+
+  '<div class="kanban-metric"><span>Seus exemplos aprovados</span><strong>'+esc(status.approved||0)+'</strong><small>Ajudam a escolher o tom de cada resposta</small></div>'+
+  '<div class="kanban-metric"><span>Pendentes</span><strong>'+esc(status.pending||0)+'</strong><small>Só serão usados depois de aprovados</small></div></div>'+
+  '<details><summary>Adicionar uma pergunta e resposta natural</summary>'+
+  '<p>Use um exemplo fictício ou um diálogo com autorização explícita, já anonimizado. Não cole exportações completas do WhatsApp, nomes, telefones, valores ou links.</p>'+
+  '<form id="style-example-form" class="training-composer">'+
+  '<label for="style-example-incoming">O que o cliente diz</label>'+
+  '<textarea id="style-example-incoming" name="incoming" rows="2" maxlength="230" required placeholder="Ex.: Já tenho site, mas ele demora no celular"></textarea>'+
+  '<label for="style-example-reply">Como uma pessoa responderia</label>'+
+  '<textarea id="style-example-reply" name="reply" rows="3" maxlength="330" required placeholder="Ex.: Dá pra começar olhando o que está deixando lento."></textarea>'+
+  '<label for="style-example-source">Origem do exemplo</label>'+
+  '<select name="source" id="style-example-source" required>'+
+  '<option value="SYNTHETIC">Exemplo fictício, escrito por mim</option>'+
+  '<option value="CONSENTED_ANONYMIZED">Conversa autorizada e anonimizada</option></select>'+
+  '<label><input name="permissionConfirmed" type="checkbox" required /> Confirmo que tenho direito de usar este exemplo e removi todos os dados pessoais e comerciais específicos.</label>'+
+  '<button type="submit" class="primary" '+(styleExampleBusy?'disabled':'')+'>Enviar para revisão</button></form></details>'+
+  (items.length?'<details style="margin-top:16px"><summary>Revisar exemplos cadastrados ('+items.length+')</summary>'+
+    items.slice(0,30).map(item).join('')+'</details>':'')+
+  '<p class="footnote">Exemplos aprovados não substituem o treinamento comercial. É possível excluir qualquer exemplo cadastrado.</p></section>';
+}
+function franciscaEvaluationView(){
+ if(!trainingState?.internalAccount||!franciscaEvaluation?.ok)return '';
+ const e=franciscaEvaluation;
+ return '<section class="panel" style="margin-bottom:20px">'+
+  '<div class="heading"><div><span class="kicker">AVALIAÇÃO • 100 SITUAÇÕES FICTÍCIAS</span>'+
+  '<h3>Como estamos medindo a naturalidade</h3>'+
+  '<p>Uma bateria de '+esc(e.syntheticCases)+' situações em '+esc(e.categories)+' categorias de conversas, sem disparar WhatsApp ou fazer pagamentos.</p></div></div>'+
+  '<p>A calibração usa respostas fictícias revisadas para verificar se o avaliador reconhece frases formais, perguntas burocráticas e promessas sem confirmação. <strong>Não é uma nota do Groq nem prova de aumento de conversão.</strong></p>'+
+  '<p>Durante o teste de conversa acima, cada resposta pode receber uma estimativa automática de naturalidade. É um sinal para revisão humana, não uma aprovação comercial.</p></section>';
+}
+function trainingView(){return naturalPreviewView()+franciscaEvaluationView()+styleExamplesView()+interviewView();}
 
 async function loadMasterMetrics(){try{masterMetrics=await api('/api/platform/analytics');if(platformContext.role==='master'&&view==='dashboard')render();}catch(e){n('Indicadores indisponíveis: '+e.message);}}
 async function loadClients(){try{const [clients,requests]=await Promise.all([api('/api/platform/clients'),api('/api/platform/credit-requests')]);clientList=clients.items||[];creditRequests=requests.items||[];if(platformContext.role==='master')render();}catch(e){n(e.message);}}
 async function loadCredits(){if(platformContext.role==='master')return;try{creditState=await api('/api/platform/credits');billingLastChecked=Date.now();platformContext.available=creditState.available;if(view==='credits')render();maybeOpenBillingReminder();}catch(e){n(e.message);}}
-async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
+async function loadTraining(){try{const wasRunning=trainingState?.runs?.some(x=>x.status==='RUNNING');trainingState=await api('/api/training');if(trainingState?.internalAccount){try{offerAbState=await api('/api/prospecting/offer-ab');}catch{offerAbState=null;}}if(trainingState?.internalAccount){try{styleExampleData=await api('/api/ai/style-examples');}catch{styleExampleData=null;}}if(trainingState?.internalAccount){try{franciscaEvaluation=await api('/api/ai/evaluation-100');}catch{franciscaEvaluation=null;}}if((view==='training'&&!q('textarea:focus,input:focus'))||(view!=='training'&&wasRunning&&!trainingState?.runs?.some(x=>x.status==='RUNNING')))render();}catch(e){n(e.message);}}
 
 let stripeEmbeddedInstance=null;
 async function openProspectorCheckout(order){
@@ -1312,6 +1384,15 @@ document.addEventListener("click",async ev=>{
  const action=el.dataset.action;
  try{
   if(await platformAction(action,el))return;
+  if(action==='natural-preview-clear'){naturalPreviewHistory=[];render();return;}
+  if(action==='style-example-approve'||action==='style-example-delete'){
+   if(styleExampleBusy)return;
+   const exampleId=el.dataset.styleId;if(!exampleId)return;
+   styleExampleBusy=true;
+   try{const data=await post('/api/ai/style-examples/review',{id:exampleId,action:action==='style-example-approve'?'APPROVE':'DELETE'});styleExampleData=data.status;render();}
+   finally{styleExampleBusy=false;}
+   return;
+  }
   if(action==="toggle-chat-handoff"){
    const chatId=selectedThread;
    const chosen=[...remoteChats,...(state?.threads||[])].find(x=>x.id===chatId);
@@ -1426,6 +1507,39 @@ document.addEventListener("submit",async ev=>{
  ev.preventDefault();
  if(await platformSubmit(ev))return;
 
+ if(ev.target.id==='style-example-form'){
+  if(styleExampleBusy)return;
+  const data=new FormData(ev.target);
+  styleExampleBusy=true;
+  try{
+   const result=await post('/api/ai/style-examples',{incoming:data.get('incoming'),reply:data.get('reply'),source:data.get('source'),permissionConfirmed:data.get('permissionConfirmed')==='on'});
+   styleExampleData=result.status;render();n('Exemplo cadastrado para revisão.');
+  }catch(error){n(String(error.message||error));}
+  finally{styleExampleBusy=false;}
+  return;
+ }
+ if(ev.target.id==='natural-preview-form'){
+  if(naturalPreviewBusy||!trainingState?.internalAccount)return;
+  const input=q('#natural-preview-text')?.value.trim()||'';
+  if(!input)return;
+  const prior=naturalPreviewHistory.slice(-10);
+  naturalPreviewHistory.push({role:'user',text:input});
+  naturalPreviewBusy=true;render();
+  try{
+   const reply=await post('/api/ai/natural-preview',{text:input,history:prior});
+   if(!reply.ok||!reply.answer)throw Error(reply.code||'A Francisca não respondeu.');
+   naturalPreviewHistory.push({role:'assistant',text:String(reply.answer).slice(0,1600),quality:reply.quality||null});
+  }catch(error){
+   naturalPreviewHistory.push({role:'assistant',text:'Não consegui responder neste teste: '+String(error.message||'erro').slice(0,120)});
+  }finally{
+   naturalPreviewHistory=naturalPreviewHistory.slice(-20);
+   naturalPreviewBusy=false;render();
+   const feed=q('[aria-label="Simulação da conversa natural"]');
+   if(feed)feed.scrollTop=feed.scrollHeight;
+  }
+  return;
+ }
+ 
  if(ev.target.id==='activate-account'){
   const input=Object.fromEntries(new FormData(ev.target));
   if(input.password!==input.confirmPassword){n('As senhas não são iguais.');return;}
