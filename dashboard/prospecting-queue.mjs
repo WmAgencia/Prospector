@@ -30,6 +30,12 @@ if(!db.prepare('PRAGMA table_info(prospecting_send_clock)').all().some(c=>c.name
  run('UPDATE prospecting_send_clock SET interval_ms=?',chooseApproachInterval(90000));
 }
 run('INSERT OR IGNORE INTO prospecting_send_clock(id,last_attempt_ms,interval_ms) VALUES(1,0,?)',chooseApproachInterval());
+const priorInterval=one('SELECT interval_ms FROM prospecting_send_clock WHERE id=1')?.interval_ms;
+if(priorInterval<APPROACH_CADENCE.minSeconds*1000||priorInterval>APPROACH_CADENCE.maxSeconds*1000){
+ // Honor a conservative 110s wait after migrations from the old 180s cadence.
+ run('UPDATE prospecting_send_clock SET interval_ms=? WHERE id=1',APPROACH_CADENCE.maxSeconds*1000);
+}
+
 if(!db.prepare('PRAGMA table_info(prospecting_send_clock)').all().some(c=>c.name==='last_finished_ms'))db.exec('ALTER TABLE prospecting_send_clock ADD COLUMN last_finished_ms INTEGER NOT NULL DEFAULT 0');
 // Crash safety: an interrupted network send may have been delivered.
 run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interrompido; conferir no WhatsApp' WHERE status='SENDING'");
