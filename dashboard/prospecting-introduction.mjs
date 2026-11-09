@@ -13,7 +13,7 @@ import {detectAutomaticReply,friendlyGreeting,portfolioQuestion} from './portfol
 import {tenantApproachGreeting} from './tenant-approach.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
-import {sendOfferAbAfterIntro} from './consecom-offer-ab.mjs';
+import {scheduleConsecomProposalAfterIntro} from './consecom-proposal-sequence.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const WESLEY_INTRO='Eu me chamo Wesley, sou o dono da Agência Consecom. Eu estou entrando em contato pra fazer uma proposta para vocês!';
@@ -122,20 +122,19 @@ export async function tickIntroductions(deps={}){
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
    if(thread)addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:WESLEY_INTRO,status:'sent'});
    audit('PROSPECT_INTRO_SENT',item.lead_id,{delaySeconds:30});
-   // Audio follows the ACKNOWLEDGED introduction; never send the old price recording.
-   // A missing/unapproved new recording skips the audio without affecting the intro.
-   let voice={state:'NOT_SENT'};
+   // Enqueue seven separate messages, each with its own typing delay.
+   // This does NOT send synchronously and respects the owner's pause.
+   let proposal={state:'NOT_SCHEDULED'};
    try{
-    voice=await sendOfferAbAfterIntro({
+    proposal=scheduleConsecomProposalAfterIntro({
      leadId:item.lead_id,sessionId:item.session_id,phone:item.phone,
-     providerId:item.first_reply_id,threadId:thread?.id
+     firstReplyId:item.first_reply_id,threadId:thread?.id
     });
-    if(voice.state==='UNKNOWN')audit('POST_INTRO_VOICE_UNKNOWN',item.lead_id,{manualReview:true});
    }catch(error){
-    audit('POST_INTRO_VOICE_ERROR',item.lead_id,{reason:String(error?.message||'UNKNOWN').slice(0,85)});
-    voice={state:'ERROR'};
+    audit('CONSECOM_PROPOSAL_SCHEDULE_ERROR',item.lead_id,{reason:String(error?.message||'UNKNOWN').slice(0,100)});
+    proposal={state:'ERROR'};
    }
-   return {state:'SENT',leadId:item.lead_id,audioState:voice.state};
+   return {state:'SENT',leadId:item.lead_id,proposalState:proposal.state};
   }catch{
    run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Uncertain delivery; verify WhatsApp',updated_at=? WHERE lead_id=?",now(),item.lead_id);
    audit('PROSPECT_INTRO_UNKNOWN',item.lead_id,{manualReview:true});
