@@ -1,0 +1,64 @@
+name: Francisca natural on legacy Prospector — consent code frozen
+on:
+  push:
+    branches:
+      - feature/francisca-natural-legacy-base-20261109
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  francisca-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify original consent and prospecting sources were not edited
+        run: |
+          git diff --exit-code a855ff10a3aa5ee4ae204bb3e0688d7def137b65 HEAD -- \
+            dashboard/prospecting-queue.mjs \
+            dashboard/outreach-queue.mjs \
+            dashboard/prospecting-introduction.mjs \
+            dashboard/waakg-bridge.mjs \
+            dashboard/prospection-resume.mjs \
+            dashboard/prospection-pause.mjs \
+            dashboard/outreach-consent-control.mjs \
+            dashboard/authorized-outreach.mjs \
+            dashboard/permission-invitation.mjs
+      - name: Syntax of the new Francisca integration and frontend
+        run: |
+          node --check dashboard/ai-groq.mjs
+          node --check dashboard/groq-models.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/francisca-commercial-brain.mjs
+          node --check dashboard/francisca-natural-conversation.mjs
+          node --check dashboard/francisca-compact-policy-v3.mjs
+          node --check dashboard/francisca-style-examples.mjs
+          node --check dashboard/francisca-quality-evaluator.mjs
+          node --check dashboard/training.mjs
+          node --check dashboard/platform.mjs
+          node --check dashboard/server.mjs
+          node --input-type=module --check < dashboard/public/simple-app.js
+      - name: Groq rate, naturalness, sales context, style memory and Pix regression
+        run: |
+          node --test \
+            tests/groq-rate-control-v3.test.mjs \
+            tests/francisca-natural-conversation.test.mjs \
+            tests/francisca-natural-v3.test.mjs \
+            tests/francisca-style-examples.test.mjs \
+            tests/francisca-commercial-brain-v2.test.mjs \
+            tests/francisca-lab-pix-safety.test.mjs
+      - name: Run 100-situation artificial dialog benchmark
+        run: node scripts/francisca-evaluate-100.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: francisca-natural-legacy-100
+          path: artifacts/francisca-eval-100.*
+          if-no-files-found: ignore
