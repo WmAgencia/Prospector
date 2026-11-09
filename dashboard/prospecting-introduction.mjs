@@ -7,7 +7,7 @@ import {coldOutreachSwitchEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-ou
 import {db,one,run,now,audit,addMessage} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
-import {explicitlyAcceptsProposal} from './proposal-acceptance.mjs';
+import {explicitlyAcceptsProposal,explicitlyDeclinesProposal} from './proposal-acceptance.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
 import {threeMonthsAfter} from './prospecting-recontact.mjs';
 import {priceQuestion} from './sales-policy.mjs';
@@ -39,7 +39,7 @@ export function greetingForProspect(lead={},at=new Date()){
 }
 // Only an affirmative reply or an explicit request for proposal details opts into
 // the commercial follow-up. Polite greetings and ambiguous replies are not approval.
-export {explicitlyAcceptsProposal} from './proposal-acceptance.mjs';
+export {explicitlyAcceptsProposal,explicitlyDeclinesProposal} from './proposal-acceptance.mjs';
 export function introductionStatus(leadId){return one('SELECT * FROM prospecting_introductions WHERE lead_id=?',String(leadId||''))||null;}
 export function registerGreeting({leadId,greetingId,sessionId}={}){
  if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')return false; // other tenants never use Wesley's introduction
@@ -66,6 +66,11 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  // Automated menus are not human permission to proceed; keep introduction pending.
  if(inboxState==='AUTO_REPLY'||detectAutomaticReply(body))return {managed:true,queueAi:false,state:'AUTO_REPLY'};
  if(!item)return {managed:false,queueAi:true};
+ if(explicitlyDeclinesProposal(body)){
+  cancelIntroduction(leadId,'PROPOSAL_DECLINED');
+  audit('PROSPECT_PROPOSAL_DECLINED',leadId,{followUp:false});
+  return {managed:true,queueAi:false,state:'DECLINED'};
+ }
  if(inboxState!=='REVIEW'){
   cancelIntroduction(leadId,'INBOX_'+inboxState);
   return {managed:true,queueAi:false,state:'CANCELLED'};
