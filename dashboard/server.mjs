@@ -63,7 +63,7 @@ import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
 import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospectorLeadEligible} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
-import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
+import {approachQueueStatus,autonomousReadyCount,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROSPECTING_CONTROL_KEYS} from './tenant-prospecting-controls.mjs';
 import {armApprovedOutreach,apply250DailyLimit} from './approval-ready-activation.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
@@ -279,6 +279,20 @@ if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('auto
 const approvalReady=armApprovedOutreach();
 console.info('[approval ready]',JSON.stringify(approvalReady));
 console.info('[daily 250 limit]',JSON.stringify(apply250DailyLimit()));
+// Read-only future start check. No batch is created and no WhatsApp message is sent.
+const nextStartAt=new Date('2026-11-10T11:00:00.000Z');
+const beforeNextStart=new Date('2026-11-10T10:59:59.000Z');
+console.info('[08h preflight]',JSON.stringify({
+  date:'2026-11-10',timezone:'America/Sao_Paulo',
+  gateBeforeStart:insideApproachWindow(beforeNextStart),
+  gateAtStart:insideApproachWindow(nextStartAt),
+  paused:getSetting('paused',true),
+  automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,
+  documentedConsentRequired:process.env.PROSPECTOR_COLD_FIRST_APPROACH!=='true',
+  eligibleApprovedContacts:autonomousReadyCount(nextStartAt),
+  dailyLimit:approachQueueStatus().dailyBudget.limit,
+  configuredSenders:approachQueueStatus().senderRotation.sessions
+}));
 
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
 
