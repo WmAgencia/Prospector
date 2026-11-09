@@ -11,6 +11,7 @@ import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs'
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
 import {insideApproachWindow,isOutboundBusinessDay,prospectingWindowLabel} from './outreach-window.mjs';
+import {isExcludedTestContact} from './test-contact-exclusion.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
 import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
 import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
@@ -35,7 +36,7 @@ run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interro
 
 function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false,automaticApproved=false){
  const l=one("SELECT id,business,phone,stage,contact_permission FROM leads WHERE id=?",leadId);
- if(!l||!l.phone)return null;
+ if(!l||!l.phone||isExcludedTestContact(l.phone))return null;
  if(ignoreQueueItemId&&one('SELECT phone FROM prospecting_batch_items WHERE id=?',ignoreQueueItemId)?.phone!==l.phone)return null;
  if(!recontactDecision(l,Date.now(),ignoreQueueItemId).eligible)return null;
  // Production safeguard: public business contact details and operator selection
@@ -164,12 +165,12 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
   selected.push(lead);if(key)keys.add(key);
  }
  if(!selected.length)return {status:'NO_ELIGIBLE_LEADS'};
- return createAutonomousBatch(selected);
+ return createAutonomousBatch(selected,at);
 }
-function createAutonomousBatch(selected){
+function createAutonomousBatch(selected,at=new Date()){
  return tx(()=>{
   if(currentBatch())return {status:'ACTIVE'};
-  const batchId=id(),created=now();
+  const batchId=id(),created=at.toISOString();
   run("INSERT INTO prospecting_batches(id,status,created_at,updated_at,origin) VALUES(?,'ACTIVE',?,?,'AUTONOMOUS')",batchId,created,created);
   let queued=0;
   for(const lead of selected){
@@ -200,7 +201,7 @@ export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
   selected.push(lead);
  }
  if(!selected.length)return {status:'NO_ELIGIBLE_LEADS'};
- return createAutonomousBatch(selected);
+ return createAutonomousBatch(selected,at);
 }
 
 let locked=false;
