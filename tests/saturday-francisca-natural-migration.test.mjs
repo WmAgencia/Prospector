@@ -25,7 +25,7 @@ test.after(()=>{try{db.close()}catch{}fs.rmSync(directory,{recursive:true,force:
 
 test('Saturday outreach eligibility remains byte-for-byte unchanged',()=>{
  const body=fs.readFileSync(new URL('../dashboard/prospecting-queue.mjs',import.meta.url));
- const prefix=Buffer.from('blob '+body.byteLength+'\\0');
+ const prefix=Buffer.from('blob '+body.byteLength+'\0');
  const sha=crypto.createHash('sha1').update(Buffer.concat([prefix,body])).digest('hex');
  assert.equal(sha,'f1f7f8274a91ab47efd4569f7a13977c63382483');
 });
