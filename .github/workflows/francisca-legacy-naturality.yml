@@ -63,6 +63,7 @@ jobs:
           node --test \
             tests/approach-cadence.test.mjs \
             tests/consecom-sender-rotation.test.mjs \
+            tests/prospector-delivery-gate.test.mjs \
             tests/groq-rate-control-v3.test.mjs \
             tests/francisca-natural-conversation.test.mjs \
             tests/francisca-natural-v3.test.mjs \
