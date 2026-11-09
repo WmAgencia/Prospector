@@ -5,7 +5,7 @@ import {initialBudget,hourSP,radarSnapshot} from './radar.mjs';
 import {automaticCandidateSql,outreachQueueSnapshot} from './outreach-queue.mjs';
 import {insideApproachWindow} from './outreach-window.mjs';
 import {coldFirstApproachEnabled,autonomousReadyCount,approachQueueStatus,requiresDocumentedOptIn} from './prospecting-queue.mjs';
-import {coldOutreachSwitchEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-outreach-switch.mjs';
+import {coldOutreachSwitchEnabled,autonomousOutreachOperationalEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-outreach-switch.mjs';
 
 export const INITIAL_PENDING_MAX_AGE_MINUTES=8;
 export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,senderReady=true}={}){
@@ -30,7 +30,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  FROM leads l`);
  let invitationQueue=outreachQueueSnapshot();
  const discovery=radarSnapshot(at);
- const autonomous=getSetting('autonomous_outreach_enabled',false)===true;
+ const autonomous=autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false));
  if(autonomous&&coldFirstApproachEnabled()&&!requiresDocumentedOptIn()){
   const queue=approachQueueStatus(),ready=autonomousReadyCount(at)+queue.waiting;
   invitationQueue={total:ready,ready,awaitingConsent:0,missingWhatsapp:0,suppressed:inventory.suppressed};
