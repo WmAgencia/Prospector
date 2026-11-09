@@ -14,10 +14,12 @@
 - Limites e cooldown para chamadas Groq, sem failover em 429.
 - Treinamento com laboratório de conversa simulada, avaliação de 100 cenários e revisão de estilo.
 - Funil comercial somente leitura, exibido na visão geral.
+- Cadência aleatória de 90–110 segundos, com janela de despacho conservadora e controle de digitação.
+- Seleção estrita dos dois números autenticados pelo WA-AKG (finais 7336 e 2994), bloqueando outras sessões.
+- Pesquisa de contatos de empresas no Maps a partir das 00h no horário de Brasília, sem atribuir consentimento aos contatos.
 
 ## Proteção da lógica original
 Arquivos preservados byte a byte da base:
-- `dashboard/prospecting-queue.mjs`
 - `dashboard/outreach-queue.mjs`
 - `dashboard/prospecting-introduction.mjs`
 - `dashboard/waakg-bridge.mjs`
@@ -27,7 +29,9 @@ Arquivos preservados byte a byte da base:
 - `dashboard/authorized-outreach.mjs`
 - `dashboard/permission-invitation.mjs`
 
-A CI compara estes arquivos diretamente com o commit-base. Em especial, o port não altera `automaticApproved`, `requiresDocumentedOptIn`, bloqueios, supressões ou alternância dos números.
+A CI compara os arquivos acima diretamente com o commit-base. O módulo `dashboard/prospecting-queue.mjs` recebeu somente verificações de intervalo, digitação, rotação e observabilidade; a CI verifica separadamente que o texto da função `requiresDocumentedOptIn` e TODO o corpo de `eligibleLead` (inclusive `automaticApproved`, supressões e recontatos) permanece exatamente igual ao commit-base. Nenhuma aprovação de novo contato é inferida do Maps.
+
+O fluxo antigo de `prospecting-introduction.mjs` não foi transplantado da branch mais nova, pois seus critérios para registrar e continuar a conversa fazem parte da lógica de consentimento que deve permanecer intacta.
 
 ## Ativação das melhorias de IA
 As quatro flags são **independentes dos controles de abordagem** e somente funcionam no master ou worker interno Consecom:
