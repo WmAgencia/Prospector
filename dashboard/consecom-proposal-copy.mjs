@@ -1,6 +1,6 @@
 // Cada entrada é uma mensagem separada no WhatsApp.
 // Quebras internas, especialmente os quatro links, permanecem na mesma bolha.
-export const PROPOSAL_TEXT_VERSION='consecom-multimessage-2026-11-09-v2-four-parts';
+export const PROPOSAL_TEXT_VERSION='consecom-multimessage-2026-11-09-v3-fixed-typing';
 // A urgência relativa ("hoje", "daqui 3 dias") precisa ser revalidada
 // antes de reutilizar esta campanha em outra data.
 export const PROPOSAL_REFERENCE_DATE='2026-11-09';
@@ -11,10 +11,12 @@ export const PROPOSAL_MESSAGES=Object.freeze([
   "Me diz aqui se conseguimos fazer essa parceiria, que já iniciamos hoje!"
 ]);
 export const PROPOSAL_TEXT=PROPOSAL_MESSAGES.join('\n\n');
-// Digitação rápida (aprox. 9 caracteres/segundo), sem disparo instantâneo.
-export function proposalTypingDelayMs(text){
- const n=String(text||'').trim().length;
- return Math.min(45000,Math.max(2200,1000+n*110));
+// Tempos fixos aprovados pelo proprietário, por posição de mensagem.
+export const PROPOSAL_TYPING_DELAYS_MS=Object.freeze([13000,25000,11000,9000]);
+export function proposalTypingDelayMs(messageIndex){
+ if(!Number.isInteger(messageIndex)||messageIndex<0||messageIndex>=PROPOSAL_TYPING_DELAYS_MS.length)
+  throw new RangeError('Índice de mensagem inválido');
+ return PROPOSAL_TYPING_DELAYS_MS[messageIndex];
 }
 export function proposalCopyIsCurrent(at=new Date()){
  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(at);
