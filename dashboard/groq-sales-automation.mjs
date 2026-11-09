@@ -16,13 +16,15 @@ import {queueNotice} from './notifications.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
+import {conversationalToneSignals,NATURAL_CONVERSATION_VERSION} from './francisca-natural-conversation.mjs';
 import {commercialIntent,isSpecificCommercialFollowup,memoryPrompt} from './francisca-conversation-state.mjs';
 import {recallConversationMemory} from './francisca-conversation-memory.mjs';
 import {approvedConsecomAnswer,extractProposalEmail} from './francisca-approved-replies.mjs';
 import {classifyContact,prospectorChatEligible} from './whatsapp-roles.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {readActiveTrainingMarkdown} from './training.mjs';
-import {configuredClosing} from './training-sales-extras.mjs';
+import {configuredClosing,evidenceStatus} from './training-sales-extras.mjs';
+import {commercialBrainEnabled,analyzeCommercialTurn,selectApprovedProof,commercialHandoffSummary} from './francisca-commercial-brain.mjs';
 import {paymentProposalForIncoming,reservePaymentProposal,paymentProposalSent,paymentDeliveryUnknown,paymentIntentStatus} from './sales-payment-flow.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
 import {chooseReplyChannel,channelPreference,saveChannelPreference,reservePart,acceptPart,partsFor} from './groq-reply-channels.mjs';
@@ -125,6 +127,12 @@ export async function handleSalesTurn(providerId,deps={}){
  const dialogue=analyzeChatTurn({text:r.body,history:recentTurns,role:identity.role});
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
+ // Advisory natural conversation strategy: no influence on eligibility or send permission.
+ const salesBrain=commercialBrainEnabled()&&identity.role==='PROSPECT_APPROACHED';
+ const commercialPlan=salesBrain?analyzeCommercialTurn({incoming:r.body,history:recentTurns,memory:commercialMemory,offerApproved:portfolioAllowed}):null;
+ const verifiedProof=salesBrain?selectApprovedProof({incoming:r.body,segment:r.segment,approved:evidenceStatus().approved}):null;
+ if(salesBrain)dialogue.salesMemory=commercialMemory;
+ dialogue.offerApproved=portfolioAllowed;
  const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
  const intent=commercialIntent(r.body);
  const approvedReply=portfolioAllowed?approvedConsecomAnswer(r.body):null;
@@ -147,7 +155,7 @@ export async function handleSalesTurn(providerId,deps={}){
     recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:interest.evidence||r.body,notify:false});
     run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
     queueNotice('groq-hot:'+r.lead_id,'GROQ_HOT_LEAD',
-     interestNotice(r,interest.evidence),r.lead_id);
+     interestNotice(r,interest.evidence)+(commercialPlan?'\n\n'+commercialHandoffSummary({plan:commercialPlan,memory:commercialMemory,business:r.business}):''),r.lead_id);
     audit('GROQ_INTEREST_ALERT_QUEUED',r.lead_id,{model:'groq',confidence:interest.confidence});
    }
   });
@@ -190,7 +198,7 @@ export async function handleSalesTurn(providerId,deps={}){
 
  // A one-word hello never requires an external model call.
  const draft=fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:strictApprovedReply?{ok:true,draft:strictApprovedReply,model:'APPROVED_CONSECOM_FOLLOWUP'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
-   await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
+   await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,approvedProof:verifiedProof,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      'Se não estiver claro, pergunte o que a pessoa precisa. '+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+memoryPrompt(commercialMemory)+'\n'+
@@ -206,6 +214,11 @@ export async function handleSalesTurn(providerId,deps={}){
  }
  if(fixedOffer&&proposalRequestWhileBusy(r.body))draft.draft=fixedOfferPitch({business:r.business,segment:r.segment},new Date(),{busy:true});
  let replyText=refineChatReply(draft.draft,{state:dialogue,incoming:r.body});
+ // Retain only aggregate style metrics. Do not log chat texts or bypass safety checks.
+ if(draft.naturalConversation===true&&replyText){
+  const tone=conversationalToneSignals(replyText);
+  audit('FRANCISCA_NATURAL_TONE',r.lead_id,{version:NATURAL_CONVERSATION_VERSION,corporate:tone.corporate,genericOpening:tone.genericOpening,bulleted:tone.bulleted,chars:tone.chars,hasQuestion:tone.hasQuestion});
+ }
  if(!replyText){
   audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});
   return finish('REVIEW','REPEATED_OR_EMPTY_REPLY');
