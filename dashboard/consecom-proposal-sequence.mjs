@@ -3,6 +3,7 @@
 // Network sends are reserved before transport; uncertain results are NEVER retried.
 import {db,one,run,now,addMessage,audit} from './db.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {coldOutreachSwitchEnabled} from './cold-outreach-switch.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {operatorOffer,conversationAuthorized} from './operator-outreach.mjs';
 import {leadSession,isManagedSession} from './waakg-session-registry.mjs';
@@ -10,7 +11,7 @@ import {waControlStatus,waRequest} from './waakg-control.mjs';
 import {PROPOSAL_TEXT_VERSION,PROPOSAL_MESSAGES,proposalTypingDelayMs,proposalCopyIsCurrent} from './consecom-proposal-copy.mjs';
 
 export const proposalSequenceEnabled=()=>!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
-const halted=()=>ownerProspectionPaused()||requirePaused();
+const halted=()=>!coldOutreachSwitchEnabled()||ownerProspectionPaused()||requirePaused();
 function requirePaused(){return (one("SELECT value FROM settings WHERE key='paused'")?.value||'true')==='true';}
 db.exec(`CREATE TABLE IF NOT EXISTS consecom_proposal_sequences(
  lead_id TEXT PRIMARY KEY REFERENCES leads(id),session_id TEXT NOT NULL,phone TEXT NOT NULL,
