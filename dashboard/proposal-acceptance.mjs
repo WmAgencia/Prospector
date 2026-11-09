@@ -5,6 +5,7 @@ const norm=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''
 export function explicitlyAcceptsProposal(text=''){
  const s=norm(text);
  if(!s||/(?:^|\b)(?:nao|nunca|pare|parar|sem interesse|nao quero|nao pode|nao manda|nao envie|agora nao|nao obrigado)(?:\b|$)/.test(s))return false;
+ if(/\b(?:queria|quero|gostaria de|tenho interesse em)\s+(?:saber|entender|conhecer|ver)\s+mais\b/.test(s))return true;
  if(/\b(?:pode (?:enviar|mandar|apresentar|explicar|falar)|me (?:manda|envia)|sim pode)\b/.test(s))return true;
  if(/^(?:sim|claro|com certeza|pode enviar|pode mandar|manda|mande|envia|envie|me manda|me envie|pode falar|pode explicar|pode apresentar|pode me contar|quero saber|quero ver|tenho interesse|gostaria de saber|gostaria de conhecer|vamos conversar)(?:\b|$)/.test(s))return true;
  // Asking directly about the proposal counts as consent to explain, not to
