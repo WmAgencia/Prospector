@@ -57,30 +57,46 @@ export function cancelIntroduction(leadId,reason='CONTACT_DECLINED'){
 }
 export function routeIntroductionReply({leadId,providerId,body='',inboxState='REVIEW',receivedAt=new Date()}={}){
  const item=introductionStatus(leadId);
- // Automated menus are not human permission to proceed; keep introduction pending.
+ // Never pitch an automated responder or an opted-out contact.
  if(inboxState==='AUTO_REPLY'||detectAutomaticReply(body))return {managed:true,queueAi:false,state:'AUTO_REPLY'};
  if(!item)return {managed:false,queueAi:true};
  if(inboxState!=='REVIEW'){
   cancelIntroduction(leadId,'INBOX_'+inboxState);
   return {managed:true,queueAi:false,state:'CANCELLED'};
  }
+ const wantsVoice=portfolioPitchAudioEnabled()&&wantsPortfolioPitchAudio(body);
+ const received=new Date(receivedAt),timestamp=Number.isFinite(received.getTime())?received:new Date();
+ const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
+ const sourceId=String(providerId||'').slice(0,180);
  if(item.stage==='GREETING_SENT'){
-  const received=new Date(receivedAt);
-  const timestamp=Number.isFinite(received.getTime())?received: new Date();
-  const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
-  run("UPDATE prospecting_introductions SET stage='WAITING',first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
-   String(providerId||'').slice(0,180),timestamp.toISOString(),due,now(),leadId);
-  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due});
+  const next=wantsVoice?'VOICE_WAITING':'WAITING';
+  run("UPDATE prospecting_introductions SET stage=?,first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
+   next,sourceId,timestamp.toISOString(),due,now(),leadId);
+  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,next,voiceRequested:wantsVoice});
+  return {managed:true,queueAi:false,state:next};
+ }
+ if(item.stage==='WAITING'){
+  if(wantsVoice){
+   run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='WAITING'",due,now(),leadId);
+   audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due});
+   return {managed:true,queueAi:false,state:'VOICE_WAITING'};
+  }
   return {managed:true,queueAi:false,state:'WAITING'};
  }
- if(item.stage==='WAITING')return {managed:true,queueAi:false,state:'WAITING'};
- if(item.stage==='SENT'){
-  run("UPDATE prospecting_introductions SET stage='CONVERSING',updated_at=? WHERE lead_id=? AND stage='SENT'",now(),leadId);
-  audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:String(providerId||'').slice(0,120)});
+ if(item.stage==='VOICE_WAITING')return {managed:true,queueAi:false,state:'VOICE_WAITING'};
+ if(item.stage==='SENT'&&wantsVoice){
+  run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='SENT'",due,now(),leadId);
+  audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due,afterTextIntro:true});
+  return {managed:true,queueAi:false,state:'VOICE_WAITING'};
+ }
+ if(item.stage==='SENT'||item.stage==='VOICE_SENT'){
+  run('UPDATE prospecting_introductions SET stage=?,updated_at=? WHERE lead_id=? AND stage=?','CONVERSING',now(),leadId,item.stage);
+  audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:sourceId,previousStage:item.stage});
   return {managed:true,queueAi:true,state:'CONVERSING'};
  }
  return {managed:true,queueAi:item.stage==='CONVERSING',state:item.stage};
 }
+
 let busy=false;
 export async function tickIntroductions(deps={}){
  if(busy)return {state:'BUSY'};
