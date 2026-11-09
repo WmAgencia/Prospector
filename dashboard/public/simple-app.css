@@ -247,3 +247,8 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
 .approval-evidence-fields{margin-left:0}.approval-evidence-row{grid-template-columns:1fr;gap:10px}
 .approval-audit{margin-left:0}
 }
+
+.approval-toolbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}
+.approval-toolbar-actions .primary{white-space:nowrap}
+.approval-result{margin:0 0 14px;color:var(--ink2);font-size:13px;font-weight:600;line-height:1.5}
+@media(max-width:700px){.approval-toolbar-actions{width:100%;justify-content:flex-start}.approval-toolbar-actions button{flex:1 1 auto}}
