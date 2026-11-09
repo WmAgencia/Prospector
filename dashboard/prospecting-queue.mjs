@@ -1,5 +1,5 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
-import {coldOutreachSwitchEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-outreach-switch.mjs';
+import {coldOutreachSwitchEnabled,autonomousOutreachOperationalEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-outreach-switch.mjs';
 // One explicitly approved list, persisted in the Prospector volume.
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
@@ -96,7 +96,7 @@ export function approachQueueStatus(){
  const waiting=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='QUEUED'")?.n||0;
  const unknown=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='UNKNOWN'")?.n||0;
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
- return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:prospectingWindowLabel(),waiting,sent,unknown,
+ return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false)),startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:prospectingWindowLabel(),waiting,sent,unknown,
   intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,senderRotation:{mode:'round_robin',sessions:managedSessions().length,lastSession:rotationCursor()},nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),approachDueAt(clock))).toISOString():null,
   status:b?.status||'IDLE',dailyBudget:dailyApproachBudget(),availableCredits:availableApproachCredits(),repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
@@ -147,7 +147,7 @@ function unsafeSister(sibling,at){
 export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
  if(!coldOutreachSwitchEnabled())return {status:COLD_OUTREACH_DISABLED_REASON};
  if(ownerProspectionPaused())return {status:'PAUSED_BY_OWNER'};
- if(getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
+ if(!autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false)))return {status:'DISABLED'};
  if(getSetting('paused',true))return {status:'PAUSED'};
  closeStaleBatch(at);
  if(currentBatch())return {status:'ACTIVE'};
@@ -217,7 +217,7 @@ export async function tickApproachQueue(deps={}){
   const time=currentTime(),batch=currentBatch();
   if(!batch)return {status:'IDLE'};
   if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return {status:'PAUSED'};
-  if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
+  if(batch.origin==='AUTONOMOUS'&&!autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false)))return {status:'DISABLED'};
   const expired=closeStaleBatch(new Date(time));
   if(expired)return expired;
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
@@ -245,7 +245,7 @@ export async function tickApproachQueue(deps={}){
    if(nowMs<approachDueAt(latest)||!insideApproachWindow(new Date(nowMs)))return false;
    if(dailyApproachBudget(new Date(nowMs)).remaining===0)return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return false;
-   if(batch.origin==='AUTONOMOUS'&&getSetting('autonomous_outreach_enabled',false)!==true)return false;
+   if(batch.origin==='AUTONOMOUS'&&!autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false)))return false;
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
    if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS'))return false;
    if(rotating&&rotationCursor()!==wa.cursor)return false;
