@@ -1,0 +1,29 @@
+name: Owner proposal audio focused checks
+on:
+  push:
+    branches: [feature/tenant-bulk-approvals-20261109, main]
+    paths:
+      - 'dashboard/portfolio-pitch-audio.mjs'
+      - 'dashboard/prospecting-introduction.mjs'
+      - 'dashboard/groq-sales-automation.mjs'
+      - 'dashboard/server.mjs'
+      - 'tests/prospecting-owner-audio-pitch.test.mjs'
+      - '.github/workflows/owner-proposal-audio.yml'
+  pull_request:
+    paths:
+      - 'dashboard/portfolio-pitch-audio.mjs'
+      - 'dashboard/prospecting-introduction.mjs'
+      - 'dashboard/groq-sales-automation.mjs'
+      - 'tests/prospecting-owner-audio-pitch.test.mjs'
+jobs:
+  voice-pitch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test tests/prospecting-owner-audio-pitch.test.mjs
