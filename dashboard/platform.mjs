@@ -56,7 +56,13 @@ export function workerEnvironment(client,port){
  const allowed=['PATH','Path','SystemRoot','TEMP','TMP','HOME','NODE_ENV','GROQ_API_KEY','GROQ_MODEL','WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD','FRANCISCA_PYTHON','EDGE_TTS_PYTHON','FRANCISCA_TTS_ENABLED','PUBLIC_BASE_URL'];
  const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]));
  return {...env,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
-  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
+  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',
+  // Style and conversation only; the historical consent and outbound config are unchanged.
+  FRANCISCA_NATURAL_V1_ENABLED:client.is_internal===1&&process.env.FRANCISCA_NATURAL_V1_ENABLED==='true'?'true':'false',
+  FRANCISCA_COMPACT_PROMPT_V3_ENABLED:client.is_internal===1&&process.env.FRANCISCA_COMPACT_PROMPT_V3_ENABLED==='true'?'true':'false',
+  FRANCISCA_STYLE_EXAMPLES_V1_ENABLED:client.is_internal===1&&process.env.FRANCISCA_STYLE_EXAMPLES_V1_ENABLED==='true'?'true':'false',
+  FRANCISCA_COMMERCIAL_BRAIN_V2_ENABLED:client.is_internal===1&&process.env.FRANCISCA_COMMERCIAL_BRAIN_V2_ENABLED==='true'?'true':'false',
+  PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
   PROSPECTOR_SESSION_DIR:path.join(root,'clients',client.id,'wa-session'),
   ADMIN_ACCESS_TOKEN:client.secret,ADMIN_SESSION_SECRET:client.secret,WA_AKG_WEBHOOK_SECRET:client.secret,
   WHATSAPP_TRANSPORT:'waakg',PROSPECTOR_INBOUND_AUTOREPLY_ENABLED:'true',AI_CONVERSATION_AUTOSEND:'true',
