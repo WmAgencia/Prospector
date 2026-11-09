@@ -69,6 +69,7 @@ import {resumeOwnerApprovedProspecting} from './prospection-resume.mjs';
 import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} from './consecom-offer-ab.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
+import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -502,6 +503,17 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+  if(req.method==='GET'&&pathname==='/api/approvals'){
+   try{return respond(res,200,listLeadApprovals({
+    status:url.searchParams.get('status')||'PENDING',
+    limit:Number(url.searchParams.get('limit')||40),
+    offset:Number(url.searchParams.get('offset')||0)
+   }));}catch(e){return respond(res,422,{error:String(e.message).slice(0,220)});}
+  }
+  if(req.method==='POST'&&pathname==='/api/approvals/batch'){
+   try{const result=approveLeadBatch(await json(req));notify();return respond(res,200,result);}
+   catch(e){return respond(res,422,{error:String(e.message).slice(0,220)});}
+  }
   if(pathname==='/api/prospecting/calendar'&&req.method==='GET'){
    const month=url.searchParams.get('month')||new Date().toISOString().slice(0,7);
    try{return respond(res,200,monthlyProspectingCalendar(month));}
