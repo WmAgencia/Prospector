@@ -64,6 +64,7 @@ import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-autom
 import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospectorLeadEligible} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
+import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROSPECTING_CONTROL_KEYS} from './tenant-prospecting-controls.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
@@ -270,7 +271,7 @@ if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('auto
  setSetting('initial_interval_seconds',90);
  setSetting('discovery_auto_enabled',true);
  setSetting('autonomous_outreach_nov04_rollout_v1',true);
- audit('AUTONOMOUS_OUTREACH_ENABLED',null,{window:'08:00-17:30 America/Sao_Paulo',minSeconds:90,threeCalendarMonths:true,autoResearch:true,coldFirstApproach:process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true'});
+ audit('AUTONOMOUS_OUTREACH_ENABLED',null,{window:'08:00-17:30 America/Sao_Paulo',minSeconds:90,threeCalendarMonths:true,autoResearch:true,coldFirstApproach:coldFirstApproachEnabled()});
 }
 
 const mediaDir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','media');fs.mkdirSync(mediaDir,{recursive:true});
@@ -360,7 +361,7 @@ async function body(req,limit=3*1024*1024){
  return Buffer.concat(parts);
 }
 async function json(req){const b=await body(req);return b.length?JSON.parse(b.toString('utf8')):{};}
-const allowedSettings=new Set(['decision_learning_enabled','decision_engine_enabled','paused','auto_initial','min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','autonomous_outreach_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
+const allowedSettings=new Set(['decision_learning_enabled','decision_engine_enabled','paused','auto_initial','min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','autonomous_outreach_enabled','cold_first_approach_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
 function snapshot(){
  const leadOrigins=all('SELECT o.lead_id,o.source,o.verified FROM lead_origins o WHERE o.lead_id IN (SELECT id FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000) ORDER BY o.at DESC');
   const originsByLead=new Map();for(const origin of leadOrigins){if(!originsByLead.has(origin.lead_id))originsByLead.set(origin.lead_id,[]);originsByLead.get(origin.lead_id).push(origin);}
@@ -717,10 +718,11 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/production/approve'){const v=await json(req);const x=approveAndQueue(v.lead_id);notify();return respond(res,200,x);}
   if(req.method==='POST'&&pathname==='/api/production/close'){const v=await json(req);closeDeal(v.lead_id);notify();return respond(res,200,{ok:true});}
   if(req.method==='GET'&&pathname==='/api/report/today')return respond(res,200,{metrics:dailyReport(),text:reportText(dailyReport())});
+  if(req.method==='GET'&&pathname==='/api/settings/prospecting-controls')return respond(res,200,{ok:true,controls:prospectingControls(),isolated:!!process.env.PROSPECTOR_TENANT_ID});
   if(req.method==='POST'&&pathname==='/api/settings'){
    const v=await json(req);
    for(const [k,value] of Object.entries(v)){
-    if(process.env.PROSPECTOR_TENANT_ID&&!['paused','autonomous_outreach_enabled','discovery_auto_enabled'].includes(k))return respond(res,403,{error:'Esta configuração é administrada pela plataforma'});
+    if(process.env.PROSPECTOR_TENANT_ID&&!['paused','autonomous_outreach_enabled','cold_first_approach_enabled','discovery_auto_enabled'].includes(k))return respond(res,403,{error:'Esta configuração é administrada pela plataforma'});
     if(!allowedSettings.has(k))throw Error('Configuração desconhecida: '+k);
     if(['min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour'].includes(k)&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>10000))throw Error('Valor inválido');
     if(k==='daily_limit'&&Number(value)>150)throw Error('O teto diário é 150 primeiras abordagens');
@@ -729,14 +731,15 @@ async function handler(req,res){
     if(k==='discovery_target_daily'&&(Number(value)<1||Number(value)>150))throw Error('A meta de descoberta deve ser de 1 a 150');
     if(k==='discovery_start_hour'&&(Number(value)<0||Number(value)>23))throw Error('O início da descoberta deve ficar entre 0h e 23h');
     if(k==='initial_interval_seconds'&&Number(value)<90)throw Error('Intervalo mínimo é 90 segundos');
-     if(k==='autonomous_outreach_enabled'&&typeof value!=='boolean')throw Error('Ativação automática deve ser booleana');
+     if(PROSPECTING_CONTROL_KEYS.includes(k)&&typeof value!=='boolean')throw Error('Use verdadeiro ou falso para os controles de prospecção');
     if(k==='owner_report_hour'&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>23))throw Error('Hora do relatório inválida');
     if(['owner_phone_a','owner_phone_b'].includes(k)&&value&&(!phone(value)||phone(value).length<12||phone(value).length>13))throw Error('Informe WhatsApp brasileiro válido com DDD');
-    setSetting(k,['owner_phone_a','owner_phone_b'].includes(k)&&value?phone(value):value);
+    if(PROSPECTING_CONTROL_KEYS.includes(k))saveProspectingControl(k,value);
+    else setSetting(k,['owner_phone_a','owner_phone_b'].includes(k)&&value?phone(value):value);
    }
    const a=getSetting('owner_phone_a',''),b=getSetting('owner_phone_b','');
    if(a&&b&&a===b){setSetting('owner_notifications_enabled',false);throw Error('Os dois números de WhatsApp devem ser diferentes');}
-   notify();return respond(res,200,{ok:true});
+   notify();return respond(res,200,{ok:true,prospectingControls:prospectingControls()});
   }
   if(req.method==='POST'&&pathname.startsWith('/api/workflows/start/')){
    const leadId=pathname.split('/')[4],input=await json(req);const runId=startWorkflow(leadId,input.workflow_id||null);drive(runId);notify();return respond(res,200,{executionId:runId});
@@ -866,7 +869,7 @@ const customerAiTimer=setInterval(()=>{
 const autonomousQueueTimer=setInterval(()=>{
  try{
   // Cold first approach: monta a fila das 07:00 à primeira abordagem das 08:00.
-  const cold=process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
+  const cold=coldFirstApproachEnabled();
   const minutes=saoPauloClock();
   const result=cold&&minutes>=7*60&&minutes<8*60
    ?preloadApproachQueue()
