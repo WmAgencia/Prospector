@@ -1,4 +1,5 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {coldOutreachSwitchEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-outreach-switch.mjs';
 // One explicitly approved list, persisted in the Prospector volume.
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
@@ -73,7 +74,7 @@ function closeStaleBatch(at=new Date()){
 }
 // Operador liberou a abordagem fria (2026-11-04). O opt-in por contato continua
 // valendo para o Groq: a primeira resposta da pessoa é o que libera a conversa.
-export const coldFirstApproachEnabled=()=>process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true';
+export const coldFirstApproachEnabled=()=>coldOutreachSwitchEnabled();
 // Read-only inventory using the sender's eligibility checks. Consent statistics
 // from legacy workflows do not describe the autonomous first-greeting queue.
 export function autonomousReadyCount(at=new Date()){
@@ -144,6 +145,7 @@ function unsafeSister(sibling,at){
  return !!due&&Date.parse(due)>at;
 }
 export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
+ if(!coldOutreachSwitchEnabled())return {status:COLD_OUTREACH_DISABLED_REASON};
  if(ownerProspectionPaused())return {status:'PAUSED_BY_OWNER'};
  if(getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
  if(getSetting('paused',true))return {status:'PAUSED'};
@@ -186,6 +188,7 @@ function createAutonomousBatch(selected){
 // Pré-aquecimento 07:00–08:00: a pesquisa do dia já virou leads no CRM, então a
 // fila nasce antes da janela e o trabalhador envia a partir das 08:00, 90s cada.
 export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
+ if(!coldOutreachSwitchEnabled())return {status:COLD_OUTREACH_DISABLED_REASON};
  if(getSetting('paused',true))return {status:'PAUSED'};
  if(!isOutboundBusinessDay(at))return {status:'OUTSIDE_WINDOW'};
  closeStaleBatch(at);
@@ -205,6 +208,7 @@ export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
 
 let locked=false;
 export async function tickApproachQueue(deps={}){
+ if(!coldOutreachSwitchEnabled())return {status:COLD_OUTREACH_DISABLED_REASON};
  if(ownerProspectionPaused())return {status:'PAUSED_BY_OWNER'};
  if(locked)return {status:'BUSY'};
  const {currentTime=()=>Date.now(),getWaStatus=waControlStatus,getSession=selectedWaSession,send=waRequest}=deps;
@@ -234,6 +238,7 @@ export async function tickApproachQueue(deps={}){
   // Transaction reserves the global clock *before* invoking the provider.
   // Timestamp can only move forward. The interval is enforced after restarts.
   const reserved=tx(()=>{
+   if(!coldOutreachSwitchEnabled())return false;
    if(!currentBatch()||currentBatch().id!==batch.id)return false;
    const latest=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
    const nowMs=currentTime();
