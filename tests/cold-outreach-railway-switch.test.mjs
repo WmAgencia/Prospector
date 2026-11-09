@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {coldOutreachSwitchEnabled,COLD_OUTREACH_DISABLED_REASON} from '../dashboard/cold-outreach-switch.mjs';
+import {coldOutreachSwitchEnabled,autonomousOutreachOperationalEnabled,COLD_OUTREACH_DISABLED_REASON} from '../dashboard/cold-outreach-switch.mjs';
 
 test('Railway false, missing or unknown stops Consecom cold outreach',()=>{
  for(const flag of ['false','FALSE','undefined','',null,'0']){
@@ -28,4 +28,29 @@ test('master false stops queued introductions, proposal parts, and exposes healt
  assert.match(intro,/if\(!coldOutreachSwitchEnabled\(\)\)/);
  assert.match(proposal,/halted=\(\)=>!coldOutreachSwitchEnabled\(\)/);
  assert.match(health,/reason=COLD_OUTREACH_DISABLED_REASON/);
+});
+
+test('Railway flag is the only normal master operator toggle, not a consent bypass',()=>{
+ const before=process.env.PROSPECTOR_COLD_FIRST_APPROACH;
+ const tenant=process.env.PROSPECTOR_TENANT_ID;
+ const internal=process.env.PROSPECTOR_TENANT_INTERNAL;
+ try {
+  delete process.env.PROSPECTOR_TENANT_ID;
+  delete process.env.PROSPECTOR_TENANT_INTERNAL;
+  process.env.PROSPECTOR_COLD_FIRST_APPROACH='true';
+  assert.equal(autonomousOutreachOperationalEnabled(false),true);
+  process.env.PROSPECTOR_COLD_FIRST_APPROACH='false';
+  assert.equal(autonomousOutreachOperationalEnabled(true),false);
+  process.env.PROSPECTOR_TENANT_ID='tenant-1';
+  assert.equal(autonomousOutreachOperationalEnabled(false),false);
+  assert.equal(autonomousOutreachOperationalEnabled(true),true);
+ } finally {
+  if(before===undefined)delete process.env.PROSPECTOR_COLD_FIRST_APPROACH;else process.env.PROSPECTOR_COLD_FIRST_APPROACH=before;
+  if(tenant===undefined)delete process.env.PROSPECTOR_TENANT_ID;else process.env.PROSPECTOR_TENANT_ID=tenant;
+  if(internal===undefined)delete process.env.PROSPECTOR_TENANT_INTERNAL;else process.env.PROSPECTOR_TENANT_INTERNAL=internal;
+ }
+ const server=fs.readFileSync(new URL('../dashboard/server.mjs',import.meta.url),'utf8');
+ assert.match(server,/\['paused','autonomous_outreach_enabled'\]\.includes\(k\)/);
+ const queue=fs.readFileSync(new URL('../dashboard/prospecting-queue.mjs',import.meta.url),'utf8');
+ assert.match(queue,/requiresDocumentedOptIn\(\)&&!documentedOptIn/);
 });
