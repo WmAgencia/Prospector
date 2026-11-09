@@ -13,6 +13,8 @@ import {detectAutomaticReply,friendlyGreeting,portfolioQuestion} from './portfol
 import {tenantApproachGreeting} from './tenant-approach.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
+import {sendVoiceMedia} from './waakg-media.mjs';
+import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
@@ -50,81 +52,124 @@ export function registerGreeting({leadId,greetingId,sessionId}={}){
 }
 export function cancelIntroduction(leadId,reason='CONTACT_DECLINED'){
  const row=introductionStatus(leadId);
- if(!row||!['GREETING_SENT','WAITING'].includes(row.stage))return false;
- run("UPDATE prospecting_introductions SET stage='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING')",String(reason).slice(0,110),now(),leadId);
+ if(!row||!['GREETING_SENT','WAITING','VOICE_WAITING'].includes(row.stage))return false;
+ run("UPDATE prospecting_introductions SET stage='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING','VOICE_WAITING')",String(reason).slice(0,110),now(),leadId);
  return true;
 }
 export function routeIntroductionReply({leadId,providerId,body='',inboxState='REVIEW',receivedAt=new Date()}={}){
  const item=introductionStatus(leadId);
- // Automated menus are not human permission to proceed; keep introduction pending.
+ // Never pitch an automated responder or an opted-out contact.
  if(inboxState==='AUTO_REPLY'||detectAutomaticReply(body))return {managed:true,queueAi:false,state:'AUTO_REPLY'};
  if(!item)return {managed:false,queueAi:true};
  if(inboxState!=='REVIEW'){
   cancelIntroduction(leadId,'INBOX_'+inboxState);
   return {managed:true,queueAi:false,state:'CANCELLED'};
  }
+ const wantsVoice=portfolioPitchAudioEnabled()&&wantsPortfolioPitchAudio(body);
+ const received=new Date(receivedAt),timestamp=Number.isFinite(received.getTime())?received:new Date();
+ const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
+ const sourceId=String(providerId||'').slice(0,180);
  if(item.stage==='GREETING_SENT'){
-  const received=new Date(receivedAt);
-  const timestamp=Number.isFinite(received.getTime())?received: new Date();
-  const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
-  run("UPDATE prospecting_introductions SET stage='WAITING',first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
-   String(providerId||'').slice(0,180),timestamp.toISOString(),due,now(),leadId);
-  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due});
+  const next=wantsVoice?'VOICE_WAITING':'WAITING';
+  run("UPDATE prospecting_introductions SET stage=?,first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
+   next,sourceId,timestamp.toISOString(),due,now(),leadId);
+  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,next,voiceRequested:wantsVoice});
+  return {managed:true,queueAi:false,state:next};
+ }
+ if(item.stage==='WAITING'){
+  if(wantsVoice){
+   run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='WAITING'",due,now(),leadId);
+   audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due});
+   return {managed:true,queueAi:false,state:'VOICE_WAITING'};
+  }
   return {managed:true,queueAi:false,state:'WAITING'};
  }
- if(item.stage==='WAITING')return {managed:true,queueAi:false,state:'WAITING'};
- if(item.stage==='SENT'){
-  run("UPDATE prospecting_introductions SET stage='CONVERSING',updated_at=? WHERE lead_id=? AND stage='SENT'",now(),leadId);
-  audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:String(providerId||'').slice(0,120)});
+ if(item.stage==='VOICE_WAITING')return {managed:true,queueAi:false,state:'VOICE_WAITING'};
+ if(item.stage==='SENT'&&wantsVoice){
+  run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='SENT'",due,now(),leadId);
+  audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due,afterTextIntro:true});
+  return {managed:true,queueAi:false,state:'VOICE_WAITING'};
+ }
+ if(item.stage==='SENT'||item.stage==='VOICE_SENT'){
+  run('UPDATE prospecting_introductions SET stage=?,updated_at=? WHERE lead_id=? AND stage=?','CONVERSING',now(),leadId,item.stage);
+  audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:sourceId,previousStage:item.stage});
   return {managed:true,queueAi:true,state:'CONVERSING'};
  }
  return {managed:true,queueAi:item.stage==='CONVERSING',state:item.stage};
 }
+
 let busy=false;
 export async function tickIntroductions(deps={}){
  if(ownerProspectionPaused())return {state:'PAUSED_BY_OWNER'};
  if(busy)return {state:'BUSY'};
- const {currentTime=()=>Date.now(),status=waControlStatus,session=selectedWaSession,send=waRequest}=deps;
+ const {currentTime=()=>Date.now(),status=waControlStatus,session=selectedWaSession,
+  send=waRequest,sendAudio=sendVoiceMedia,loadAudio=readPortfolioPitchAudio}=deps;
  busy=true;
  try{
   const at=currentTime();
-  const item=one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString());
+  const item=one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage IN ('WAITING','VOICE_WAITING') AND p.due_at<=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString());
   if(!item)return {state:'IDLE'};
+  const voiceRequested=item.stage==='VOICE_WAITING';
   const eligible=()=>{
-  const current=introductionStatus(item.lead_id);
-  const lead=one('SELECT stage,contact_permission,phone FROM leads WHERE id=?',item.lead_id);
-  const takeover=one('SELECT manual_takeover FROM threads WHERE lead_id=?',item.lead_id);
-  if(!current||current.greeting_id!==item.greeting_id||current.stage!=='WAITING'||!lead||lead.phone!==item.phone)return false;
-  const identified=classifyContact({jid:item.phone+'@s.whatsapp.net',sessionId:item.session_id});
-  const blocked=one('SELECT phone FROM suppressions WHERE phone=?',item.phone);
-  const extra=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id<>? AND m.rowid>COALESCE((SELECT rowid FROM messages WHERE provider_id=?),0) AND m.at>=? LIMIT 1",
-   item.lead_id,'prospect-queue:'+item.greeting_id,'prospect-queue:'+item.greeting_id,item.created_at);
-  if(!conversationAuthorized(item.lead_id)||blocked||takeover?.manual_takeover===1||
+   const current=introductionStatus(item.lead_id);
+   const lead=one('SELECT stage,contact_permission,phone FROM leads WHERE id=?',item.lead_id);
+   const takeover=one('SELECT manual_takeover FROM threads WHERE lead_id=?',item.lead_id);
+   if(!current||current.greeting_id!==item.greeting_id||current.stage!==item.stage||!lead||lead.phone!==item.phone)return false;
+   const identified=classifyContact({jid:item.phone+'@s.whatsapp.net',sessionId:item.session_id});
+   const blocked=one('SELECT phone FROM suppressions WHERE phone=?',item.phone);
+   // An existing first text introduction is allowed when the customer only
+   // then requests the full pitch as a voice note. Other outbound texts block.
+   const extra=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id<>? AND m.provider_id<>? AND m.rowid>COALESCE((SELECT rowid FROM messages WHERE provider_id=?),0) AND m.at>=? LIMIT 1",
+    item.lead_id,'prospect-queue:'+item.greeting_id,'intro:'+item.greeting_id,
+    'prospect-queue:'+item.greeting_id,item.created_at);
+   if(!conversationAuthorized(item.lead_id)||blocked||takeover?.manual_takeover===1||
     ['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)||extra||
-    identified.role!=='PROSPECT_APPROACHED'||(deps.session?session()!==item.session_id:!isManagedSession(item.session_id)||leadSession(item.lead_id)!==item.session_id)){
-   return false;
-  }
-  return true;
+    identified.role!=='PROSPECT_APPROACHED'||(voiceRequested&&!portfolioPitchAudioEnabled())||
+    (deps.session?session()!==item.session_id:!isManagedSession(item.session_id)||leadSession(item.lead_id)!==item.session_id)){
+    return false;
+   }
+   return true;
   };
   if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
+  // Validate/transcode the audio before claiming the send. When missing,
+  // keep the job pending instead of sending a different offer as plain text.
+  let voice=null;
+  if(voiceRequested){
+   try{
+    voice=await loadAudio();
+    if(!Buffer.isBuffer(voice?.bytes)||voice.bytes.length<200000)throw Error('AUDIO_NOT_READY');
+   }catch(e){return {state:'VOICE_ASSET_UNAVAILABLE',reason:String(e?.message||e).slice(0,85)};}
+  }
   const wa=await status(item.session_id);
   if(!wa.connected)return {state:'OFFLINE'};
   if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
-  // Reserve before attempting transport; an uncertain result must not be resent.
-  if(!run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND stage='WAITING' AND due_at<=?",
-   new Date(at).toISOString(),now(),item.lead_id,new Date(at).toISOString()).changes)return {state:'BUSY'};
+  // Reserve before attempting network transport; UNKNOWN never auto-retries.
+  if(!run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND stage=? AND due_at<=?",
+   new Date(at).toISOString(),now(),item.lead_id,item.stage,new Date(at).toISOString()).changes)return {state:'BUSY'};
   try{
-   const ack=await send('/api/messages/'+encodeURIComponent(item.session_id)+'/'+encodeURIComponent(item.phone+'@s.whatsapp.net')+'/send',
+   if(voiceRequested){
+    const ack=await sendAudio({jid:item.phone+'@s.whatsapp.net',session:item.session_id,bytes:voice.bytes});
+    if(ack?.accepted!==true)throw Error('VOICE_UNCONFIRMED');
+   }else{
+    const ack=await send('/api/messages/'+encodeURIComponent(item.session_id)+'/'+encodeURIComponent(item.phone+'@s.whatsapp.net')+'/send',
      {method:'POST',data:{message:{text:WESLEY_INTRO}}});
-   if(ack.status!==true)throw Error('UNCONFIRMED');
-   run("UPDATE prospecting_introductions SET stage='SENT',sent_at=?,updated_at=? WHERE lead_id=?",now(),now(),item.lead_id);
+    if(ack.status!==true)throw Error('TEXT_UNCONFIRMED');
+   }
+   const nextStage=voiceRequested?'VOICE_SENT':'SENT';
+   run("UPDATE prospecting_introductions SET stage=?,reason=?,sent_at=?,updated_at=? WHERE lead_id=? AND stage='SENDING'",
+    nextStage,voiceRequested?'PITCH_AUDIO_350':null,now(),now(),item.lead_id);
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
-   if(thread)addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:WESLEY_INTRO,status:'sent'});
-   audit('PROSPECT_INTRO_SENT',item.lead_id,{delaySeconds:30});
-   return {state:'SENT',leadId:item.lead_id};
+   if(thread)addMessage({threadId:thread.id,
+    providerId:(voiceRequested?'intro-voice:':'intro:')+item.greeting_id,direction:'out',
+    body:voiceRequested?'[Áudio original do Wesley: proposta de portfólio R$ 350]':WESLEY_INTRO,
+    status:'sent'});
+   audit(voiceRequested?'PROSPECT_PITCH_AUDIO_SENT':'PROSPECT_INTRO_SENT',item.lead_id,
+    voiceRequested?{voice:true,sourceSha256:PITCH_AUDIO_ORIGINAL_SHA256,offerBRL:350,delaySeconds:30,
+     gatewayAccepted:true,verifiedOnPhone:false}:{delaySeconds:30});
+   return {state:nextStage,leadId:item.lead_id,verifiedOnPhone:false};
   }catch{
-   run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Uncertain delivery; verify WhatsApp',updated_at=? WHERE lead_id=?",now(),item.lead_id);
-   audit('PROSPECT_INTRO_UNKNOWN',item.lead_id,{manualReview:true});
+   run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Uncertain delivery; verify WhatsApp',updated_at=? WHERE lead_id=? AND stage='SENDING'",now(),item.lead_id);
+   audit('PROSPECT_INTRO_UNKNOWN',item.lead_id,{manualReview:true,voice:voiceRequested});
    return {state:'UNKNOWN'};
   }
  }finally{busy=false;}
