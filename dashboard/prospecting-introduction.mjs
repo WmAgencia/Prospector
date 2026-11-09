@@ -12,6 +12,8 @@ import {detectAutomaticReply,friendlyGreeting,portfolioQuestion} from './portfol
 import {tenantApproachGreeting} from './tenant-approach.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
+import {sendVoiceMedia} from './waakg-media.mjs';
+import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
@@ -49,8 +51,8 @@ export function registerGreeting({leadId,greetingId,sessionId}={}){
 }
 export function cancelIntroduction(leadId,reason='CONTACT_DECLINED'){
  const row=introductionStatus(leadId);
- if(!row||!['GREETING_SENT','WAITING'].includes(row.stage))return false;
- run("UPDATE prospecting_introductions SET stage='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING')",String(reason).slice(0,110),now(),leadId);
+ if(!row||!['GREETING_SENT','WAITING','VOICE_WAITING'].includes(row.stage))return false;
+ run("UPDATE prospecting_introductions SET stage='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING','VOICE_WAITING')",String(reason).slice(0,110),now(),leadId);
  return true;
 }
 export function routeIntroductionReply({leadId,providerId,body='',inboxState='REVIEW',receivedAt=new Date()}={}){
