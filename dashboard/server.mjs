@@ -70,6 +70,7 @@ import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
+import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
@@ -279,6 +280,7 @@ if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('auto
 const approvalReady=armApprovedOutreach();
 console.info('[approval ready]',JSON.stringify(approvalReady));
 console.info('[daily 250 limit]',JSON.stringify(apply250DailyLimit()));
+console.info('[proposal voice asset]',JSON.stringify(portfolioPitchAudioHealth()));
 // Read-only future start check. No batch is created and no WhatsApp message is sent.
 const nextStartAt=new Date('2026-11-10T11:00:00.000Z');
 const beforeNextStart=new Date('2026-11-10T10:59:59.000Z');
@@ -913,7 +915,7 @@ const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
 }).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160))),1000);
 const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=>{
- if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
+ if(['SENT','VOICE_SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160))),1000);
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
