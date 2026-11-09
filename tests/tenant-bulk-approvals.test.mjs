@@ -23,6 +23,36 @@ try{
   data.budget=(await import('./dashboard/daily-approach-limit.mjs')).dailyApproachBudget().limit;
   data.auditEvents=all("SELECT action,detail FROM audit WHERE action='OWNER_DAILY_LIMIT_250'");
  }
+ if(input.action==='armDryRun'){
+  const {setSetting}=await import('./dashboard/db.mjs');
+  setSetting('paused',false);
+  setSetting('autonomous_outreach_enabled',true);
+  setSetting('cold_first_approach_enabled',false);
+ }
+ if(input.action==='testAndLead'){
+  const t=addLead({business:'Contato WhatsApp 7336',phone:'5515981817336',source:'WHATSAPP_INBOUND'}).lead;
+  const real=addLead({business:'Empresa válida',phone:'5515991001100',source:'maps_extension'}).lead;
+  data.testId=t.id;data.realId=real.id;
+ }
+ if(input.action==='windowDryRun'){
+  const {insideApproachWindow}=await import('./dashboard/outreach-window.mjs');
+  const {enrollAutonomousApproaches,tickApproachQueue}=await import('./dashboard/prospecting-queue.mjs');
+  const before=new Date('2026-11-10T10:59:59.000Z'),at=new Date('2026-11-10T11:00:00.000Z');
+  data.beforeWindow=insideApproachWindow(before);data.atWindow=insideApproachWindow(at);
+  data.before=enrollAutonomousApproaches({at:before});
+  data.at=enrollAutonomousApproaches({at});
+  data.queued=all("SELECT lead_id,phone FROM prospecting_batch_items WHERE status='QUEUED'");
+  if(input.simulateSend&&data.at.status==='QUEUED'){
+   const sent=[];
+   data.tick=await tickApproachQueue({
+    currentTime:()=>Date.parse('2026-11-10T11:00:02.000Z'),
+    getWaStatus:async()=>({connected:true,sessionId:'test-sender'}),
+    getSession:()=> 'test-sender',
+    send:async()=>{sent.push('FAKE_SEND');return {status:true};}
+   });
+   data.fakeSendCount=sent.length;
+  }
+ }
  if(input.action==='seed'){
   data.leads=[
    addLead({business:'Empresa A',phone:'5515999001234',source:'maps_extension'}).lead,
@@ -51,8 +81,8 @@ db.close();
 function run(folder,payload){
  const out=execFileSync(process.execPath,['--input-type=module','-e',fixture,JSON.stringify(payload)],{
   cwd:path.resolve('.'),
-  env:{...process.env,PROSPECTOR_DATA_DIR:folder,PROSPECTOR_TENANT_ID:path.basename(folder),
-   PROSPECTOR_TENANT_INTERNAL:payload?.primary?'true':'false',PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false'},
+  env:{...process.env,PROSPECTOR_DATA_DIR:folder,PROSPECTOR_TENANT_ID:payload?.simulateSend?'':path.basename(folder),
+   PROSPECTOR_TENANT_INTERNAL:payload?.primary?'true':'false',PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false',PROSPECTOR_COLD_FIRST_APPROACH:'false',PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN:'true',PROSPECTOR_FORCE_OUTREACH_PAUSE:'false',PROSPECTOR_TEST_CONTACT_PHONE:'5515981817336',PROSPECTOR_APPROACH_START_DATE:'2026-11-10',WA_AKG_SESSION_ID:'test-sender'},
   encoding:'utf8',timeout:25000
  });
  return JSON.parse(out.trim().split('\n').at(-1));
@@ -215,6 +245,44 @@ test('one-time daily limit 250 updates both dashboard and scheduler, without aff
  assert.equal(repeat.result?.status,'ALREADY_APPLIED');
  assert.equal(repeat.auditEvents.length,1);
  assert.equal(run(path.join(tmp,'daily250-other'),{action:'cap'}).result?.status,'OTHER_TENANT_UNCHANGED');
+});
+
+test('exclude test contact 7336 from approvals and outbound without deleting historical lead',()=>{
+ const dir=path.join(tmp,'exclude-7336');
+ const ids=run(dir,{action:'testAndLead'});
+ const list=run(dir,{action:'listing'}).list;
+ assert.equal(list.totals.pending,1);
+ assert.deepEqual(list.items.map(x=>x.id),[ids.realId]);
+ const result=run(dir,{action:'approve',payload:{quick:true,allPending:true,selectionCutoff:list.snapshotAt,confirmedByOperator:true}});
+ assert.equal(result.result?.approved,1,JSON.stringify(result));
+ const view=run(dir,{action:'inspect'});
+ assert.equal(view.list.totals.authorized,1);
+ assert.equal(view.permissions.length,2);
+ const reject=run(dir,{action:'approve',payload:{quick:true,leadIds:[ids.testId],confirmedByOperator:true}});
+ assert.equal(reject.result?.approved,0);
+ assert.equal(reject.result?.skippedReasons?.CONTATO_DE_TESTE,1);
+});
+test('08:00 on Nov 10 makes an eligible queue; fake sender proves dispatch path without real WhatsApp sends',()=>{
+ const dir=path.join(tmp,'nextday-08');
+ const ids=run(dir,{action:'testAndLead',simulateSend:true});
+ run(dir,{action:'armDryRun',primary:true,simulateSend:true});
+ const approved=run(dir,{action:'approve',simulateSend:true,payload:{quick:true,confirmedByOperator:true,leadIds:[ids.realId]}});
+ assert.equal(approved.result?.approved,1);
+ const r=run(dir,{action:'windowDryRun',simulateSend:true});
+ assert.equal(r.beforeWindow,false);
+ assert.equal(r.atWindow,true);
+ assert.equal(r.before?.status,'OUTSIDE_WINDOW',JSON.stringify(r));
+ assert.equal(r.at?.status,'QUEUED',JSON.stringify(r));
+ assert.equal(r.queued?.length,1);
+ assert.equal(r.queued?.[0]?.phone,'5515991001100');
+ assert.equal(r.tick?.status,'SENT',JSON.stringify(r));
+ assert.equal(r.fakeSendCount,1);
+});
+test('approval action is in the top toolbar, not a second bottom panel',()=>{
+ const page=fs.readFileSync(path.join(process.cwd(),'dashboard/public/simple-app.js'),'utf8');
+ assert.match(page,/approval-toolbar-actions/);
+ assert.match(page,/approveAction/);
+ assert.doesNotMatch(page,/approval-submit-panel/);
 });
 
 test.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));
