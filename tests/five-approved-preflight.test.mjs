@@ -9,6 +9,7 @@ process.env.PROSPECTOR_TEST_CONTACT_PHONE='5515981817336';
 process.env.PROSPECTOR_COLD_FIRST_APPROACH='false';
 process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN='true';
 process.env.PROSPECTOR_APPROACH_START_DATE='2026-11-10';
+process.env.WA_AKG_SESSION_ID='test-sender';
 const {db,addLead,run,audit,setSetting,all}=await import('../dashboard/db.mjs');
 const {runFiveApprovedPreflight}=await import('../dashboard/five-approved-preflight.mjs');
 test('five authorized real-DB fixtures pass outbound eligibility and 90-180s timings without sending',async()=>{
