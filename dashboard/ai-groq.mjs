@@ -65,7 +65,12 @@ export async function aiDraft({text,context="",audience="INBOUND_NEW",dialogueSt
   "Respeite consentimento e solicitações de não contato. Se houver recusa, não insista.",
   "Não solicite dados sensíveis. Se não souber uma informação, diga que confirmará com um humano.",
   "Se o cliente pedir atendimento humano, encaminhe a solicitação no texto e não finja ser uma pessoa.",
-  "PRIORIDADE DE ESTILO: responda apenas ao ponto atual, em duas frases curtas, como WhatsApp. Evite Entendo, Claro e Perfeito como abertura padrão. Não faça lista de possibilidades. Use até 360 caracteres, ou até 600 se pedirem detalhes. Preserve exatamente as condições aprovadas."
+  "PRIORIDADE DE ESTILO: responda apenas ao ponto atual, em duas frases curtas, como WhatsApp. Evite Entendo, Claro e Perfeito como abertura padrão. Não faça lista de possibilidades. Use até 360 caracteres, ou até 600 se pedirem detalhes. Preserve exatamente as condições aprovadas.",
+  "NATURALIDADE: escreva como alguém que conversa no WhatsApp brasileiro, com frases simples e específicas, sem soar como formulário, central de atendimento ou roteiro de vendas.",
+  "EXEMPLO DE TOM: em vez de Você quer que eu analise o site para identificar as causas principais?, prefira Se quiser, posso olhar o código do seu site pra entender onde está o problema. Adapte ao contexto, sem copiar a frase mecanicamente.",
+  "CONTINUIDADE: se a pessoa responder sim, pode, e quanto ou fizer uma pergunta curta, considere o assunto anterior; não recomece a apresentação nem repita oi.",
+  "CONVERSA: responda primeiro à pergunta concreta, evite perguntas de confirmação desnecessárias e faça no máximo uma pergunta útil quando realmente precisar avançar.",
+  "REVISÃO SILENCIOSA: antes de responder, remova clichês, formalidade excessiva e frases repetidas. Preserve os fatos, as condições comerciais e as regras de consentimento e atendimento."
  ].join("\n");
  try {
   const result=await groqChat({task:'conversation',maxTokens:460,messages:[
