@@ -7,24 +7,8 @@ import {documentedOptIn} from './outreach-queue.mjs';
 import {operatorOffer,conversationAuthorized} from './operator-outreach.mjs';
 import {leadSession,isManagedSession} from './waakg-session-registry.mjs';
 import {waControlStatus,waRequest} from './waakg-control.mjs';
+import {PROPOSAL_TEXT_VERSION,PROPOSAL_MESSAGES,proposalTypingDelayMs} from './consecom-proposal-copy.mjs';
 
-export const PROPOSAL_TEXT_VERSION='consecom-multimessage-2026-11-09-v1';
-export const PROPOSAL_TEXT=String.raw`Então, a minha agencia precisa entregar um projeto daqui 3 dias, e nós precisamos de mais um site para servir de portifólio para esse projeto, e eu achei que sua empresa vai servir certinho pra gente!
-
-A proposta é a seguinte, eu quero fazer um site pra vocês em tempo record já que preciso entregar em 3 dias, e ainda vou dar 1 ano de domínio grátis pra vocês, com SEO Master, que só nós fazemos na região, que vai fazer vocês estarem muito acima das pesquisas dos seus concorrentes no google de forma orgânica, e eu quero fazer isso pelo preço de custo pra gente fechar isso hoje e já começar a produção
-
-Eu vou deixar aqui alguns sites do nosso portifólio para vocês darem uma olhada
-
-https://consecom.com.br/
-https://oficinasc.com/
-https://quimerasite.vercel.app/
-https://tweco.com.br/`;
-export const PROPOSAL_MESSAGES=Object.freeze(PROPOSAL_TEXT.split(/\r?\n/).map(x=>x.trim()).filter(Boolean));
-// Fast but human-paced writing (roughly 9 characters/sec, bounded per message).
-export function proposalTypingDelayMs(text){
- const n=String(text||'').trim().length;
- return Math.min(45000,Math.max(2200,1000+n*110));
-}
 export const proposalSequenceEnabled=()=>!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
 const halted=()=>ownerProspectionPaused()||requirePaused();
 function requirePaused(){return (one("SELECT value FROM settings WHERE key='paused'")?.value||'true')==='true';}
@@ -71,8 +55,8 @@ function currentSequence(row){
  const jid=row.phone+'@s.whatsapp.net';
  if(one('SELECT 1 FROM waakg_inbox WHERE jid=? AND received_at>? LIMIT 1',jid,row.intro_sent_at))
   return {ok:false,reason:'CUSTOMER_REPLIED'};
- if(one("SELECT 1 FROM messages WHERE thread_id=? AND direction='out' AND at>? AND provider_id NOT LIKE 'consecom-proposal-text:%' AND provider_id<>? LIMIT 1",
-     row.thread_id,row.intro_sent_at,'intro:'+intro.first_reply_id))
+ if(one("SELECT 1 FROM messages WHERE thread_id=? AND direction='out' AND at>? AND provider_id NOT LIKE 'consecom-proposal-text:%' AND provider_id NOT LIKE 'intro:%' LIMIT 1",
+     row.thread_id,row.intro_sent_at))
   return {ok:false,reason:'OTHER_OUTBOUND_SENT'};
  return {ok:true,jid};
 }
