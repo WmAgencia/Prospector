@@ -269,7 +269,10 @@ export async function tickApproachQueue(deps={}){
    addMessage({threadId:thread.id,providerId:'prospect-queue:'+next.id,direction:'out',body:message,status:'sent'});
    registerGreeting({leadId:lead.id,greetingId:next.id,sessionId:session});
    if(lead.stage==='NO_INTEREST')run("UPDATE leads SET stage='CONTACTED',last_activity_at=? WHERE id=?",now(),lead.id);
-   audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE});
+   audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:clock.interval_ms/1000,
+    cadence:APPROACH_CADENCE,senderSession:session,senderLabel:rotating?wa.sessionLabel:null,senderNumberLast4:rotating?wa.numberSuffix:null});
+   if(rotating)console.info('[approach rotation]',JSON.stringify({sender:wa.sessionLabel||'WhatsApp',lastFour:wa.numberSuffix||null,
+    alternationCursor:session,nextExpected:wa.pair?.find(x=>x!==session)||null,acknowledged:true}));
    return {status:'SENT',batchId:batch.id};
   }catch(error){
    settleApproachCredit(next.id,false);
