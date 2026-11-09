@@ -1,4 +1,5 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {coldOutreachSwitchEnabled,COLD_OUTREACH_DISABLED_REASON} from './cold-outreach-switch.mjs';
 // Two-step introduction on an APPROVED WA-AKG prospect campaign.
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
 // After the introduction, schedule four separate text messages (links together in the third) with visible typing.
@@ -83,6 +84,7 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
 }
 let busy=false;
 export async function tickIntroductions(deps={}){
+ if(!coldOutreachSwitchEnabled())return {state:COLD_OUTREACH_DISABLED_REASON};
  if(ownerProspectionPaused())return {state:'PAUSED_BY_OWNER'};
  if(busy)return {state:'BUSY'};
  const {currentTime=()=>Date.now(),status=waControlStatus,session=selectedWaSession,send=waRequest}=deps;
