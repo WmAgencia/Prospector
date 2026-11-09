@@ -206,3 +206,54 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
 .tenant-control-copy small{font-size:12px;line-height:1.55;margin-top:6px;color:var(--muted)}
 .tenant-controls-footnote{border-top:1px solid var(--line);padding-top:13px;margin-top:8px}
 @media(max-width:700px){.tenant-prospecting-controls{padding:20px 18px}.tenant-prospecting-controls .setting-line{align-items:flex-start;gap:14px}.tenant-prospecting-controls .switch{margin-top:4px}}
+
+/* Manual consent curation — isolated client workspace */
+.approval-stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:0 0 18px}
+.approval-stat-grid>div{padding:19px 22px;background:#fff;border:1px solid var(--border);border-radius:15px;box-shadow:var(--shadow);display:grid;gap:5px}
+.approval-stat-grid small{font-weight:750;color:var(--muted);font-size:11px}
+.approval-stat-grid strong{font-size:29px;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-.06em;color:var(--ink);line-height:1}
+.approvals-panel{padding:23px 25px}
+.approval-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.approval-filters{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.approval-filter{border:1px solid var(--border);padding:9px 12px;border-radius:10px;color:var(--ink2);background:#fff;font-size:12px;font-weight:700}
+.approval-filter strong{font-size:11px;color:var(--muted);margin-left:6px}
+.approval-filter.active{border-color:#9cd4af;background:#ebf7f0;color:#155a39}
+.approval-select-bar{padding:12px 0;border-block:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px}
+.approval-select-bar .approval-all{display:flex;align-items:center;gap:8px;font-weight:750;color:var(--ink2)}
+.approval-contacts{display:grid;gap:10px;margin:16px 0}
+.approval-contact{border:1px solid var(--border);border-radius:14px;padding:16px 17px;background:#fff}
+.approval-contact.chosen{border-color:#88c69c;background:#fcfefc}
+.approval-contact-heading{display:flex;align-items:center;gap:14px}
+.approval-pick,.approval-spacer{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:22px}
+.approval-pick input,.approval-all input,.approval-affirmation input{width:17px;height:17px;accent-color:#207c59;flex:none}
+.approval-person{display:grid;min-width:0;gap:2px;flex:1}
+.approval-person strong{font-size:13px;font-weight:800;overflow-wrap:anywhere}
+.approval-person span{font-size:12px;color:var(--ink2);overflow-wrap:anywhere}
+.approval-person small{font-size:11px;color:var(--muted)}
+.approval-status{padding:5px 10px;font-size:10px;color:#9b6a32;background:#fff7e9;border-radius:99px;font-weight:800;flex:none}
+.approval-status.ok{background:#e9f8ee;color:#1d7b50}
+.approval-status.blocked{background:#fbeeee;color:#9a4848}
+.approval-evidence-fields{margin:15px 0 0 35px;padding-top:16px;border-top:1px solid var(--line)}
+.approval-evidence-fields label,.approval-source-phone{display:grid;gap:6px;color:var(--ink2);font-size:12px;font-weight:750}
+.approval-evidence-fields textarea,.approval-evidence-fields select,.approval-evidence-fields input,.approval-source-phone input{width:100%;background:#fff;color:var(--ink);border:1px solid #dce7de;border-radius:9px;padding:11px 12px;font-size:12px;min-height:42px}
+.approval-evidence-fields textarea{min-height:65px;resize:vertical}
+.approval-evidence-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.approval-audit{margin:12px 0 0 34px;padding:14px;background:#f4faf5;border:1px solid #ddf0e2;border-radius:10px;display:grid;gap:5px}
+.approval-audit strong{font-size:12px;color:#1f6543}.approval-audit p{font-size:12px;margin:0;color:var(--ink2);overflow-wrap:anywhere}.approval-audit small{font-size:10px;color:var(--muted);overflow-wrap:anywhere}
+.approval-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:17px;color:var(--muted);font-size:12px}
+.approval-pagination>div{display:flex;gap:8px}
+.approval-submit-panel{padding:24px 25px;margin-top:18px;display:grid;gap:14px}
+.approval-submit-panel h3{margin:0}.approval-submit-panel p{margin:0;color:var(--muted);font-size:12px}
+.approval-source-phone{max-width:370px}
+.approval-affirmation{display:flex;align-items:flex-start;gap:10px;max-width:800px;color:var(--ink2);font-size:12px;font-weight:600;line-height:1.6}
+.approval-affirmation input{margin-top:2px}
+.approval-submit-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid var(--line);padding-top:15px;color:var(--muted);font-size:12px}
+@media(max-width:700px){
+ .approval-stat-grid{gap:7px}.approval-stat-grid>div{padding:14px 11px}.approval-stat-grid strong{font-size:23px}
+ .approvals-panel,.approval-submit-panel{padding:17px 14px}
+ .approval-toolbar,.approval-select-bar,.approval-pagination,.approval-submit-actions{align-items:flex-start;flex-wrap:wrap}
+ .approval-contact{padding:13px 11px}.approval-contact-heading{gap:9px}
+ .approval-person span,.approval-person small{font-size:10px}.approval-status{font-size:9px;padding:4px 7px}
+ .approval-evidence-fields{margin-left:0}.approval-evidence-row{grid-template-columns:1fr;gap:10px}
+ .approval-audit{margin-left:0}
+}
