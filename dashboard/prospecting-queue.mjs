@@ -8,6 +8,7 @@ import {daySP} from './radar.mjs';
 import {dailyApproachBudget} from './daily-approach-limit.mjs';
 import {reserveApproachCredit,settleApproachCredit,availableApproachCredits} from './tenant-credits.mjs';
 import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt} from './approach-cadence.mjs';
+import {evaluateDeliveryGate} from './delivery-gate.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
@@ -231,7 +232,17 @@ export async function tickApproachQueue(deps={}){
   const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
   if(!next){run("UPDATE prospecting_batches SET status='COMPLETED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);return {status:'COMPLETED'};}
-  if(time<approachDueAt(clock))return {status:'WAITING',remainingMs:approachDueAt(clock)-time};
+  const gate=evaluateDeliveryGate(clock,time);
+  if(gate.status==='WAITING')return {status:'WAITING',remainingMs:gate.remainingMs};
+  if(gate.status!=='READY'){
+   // Never force an overdue WhatsApp send to meet a timing target.
+   // Freeze this batch for operator review; no retry or silent clock reset.
+   if(gate.status==='WINDOW_MISSED'){
+    run("UPDATE prospecting_batches SET status='TIMING_REVIEW',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);
+    audit('PROSPECTING_DISPATCH_WINDOW_MISSED',null,{batchId:batch.id,lateByMs:gate.lateByMs,requiresReview:true});
+   }
+   return {status:gate.status,manualReview:gate.status==='WINDOW_MISSED'};
+  }
   if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS')){
    run("UPDATE prospecting_batch_items SET status='SKIPPED',error='Elegibilidade alterada',attempt_at=? WHERE id=?",now(),next.id);
    return {status:'SKIPPED'};
@@ -258,7 +269,7 @@ export async function tickApproachQueue(deps={}){
    if(!currentBatch()||currentBatch().id!==batch.id)return false;
    const latest=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
    const nowMs=currentTime();
-   if(nowMs<approachDueAt(latest)||!insideApproachWindow(new Date(nowMs)))return false;
+   if(evaluateDeliveryGate(latest,nowMs).status!=='READY'||!insideApproachWindow(new Date(nowMs)))return false;
    if(dailyApproachBudget(new Date(nowMs)).remaining===0)return false;
    if(batch.origin==='AUTONOMOUS'&&getSetting('paused',true))return false;
    if(batch.origin==='AUTONOMOUS'&&!autonomousOutreachOperationalEnabled(getSetting('autonomous_outreach_enabled',false)))return false;
