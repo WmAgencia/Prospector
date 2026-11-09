@@ -75,6 +75,7 @@ import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} 
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
+import {tickConsecomProposalSequence} from './consecom-proposal-sequence.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
@@ -1051,6 +1052,15 @@ const prospectIntroductionTimer=setInterval(()=>{if(ownerProspectionPaused())ret
  if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160)));},1000);
+// Seven-part price-free proposal after Wesley introduction: typing presence
+// is refreshed during human-paced waits and each transport is persisted.
+const consecomProposalTimer=setInterval(()=>{
+ if(ownerProspectionPaused())return;
+ tickConsecomProposalSequence().then(result=>{
+  if(['SENT','DONE','CANCELLED','UNKNOWN'].includes(result.state))notify();
+  if(result.state==='UNKNOWN')console.warn('[consecom proposal] delivery uncertain; manual review required');
+ }).catch(error=>console.error('[consecom proposal]',String(error?.message||error).slice(0,150)));
+},1000);
 // Persistent 25-second follow-up with portfolio references, after the approved
 // offer is acknowledged. The owner pause applies to both campaign steps.
 const offerReferencesTimer=setInterval(()=>{
@@ -1125,4 +1135,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(consecomProposalTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
