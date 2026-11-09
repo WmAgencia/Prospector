@@ -8,7 +8,7 @@ import {execFileSync} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-bulk-approvals-'));
 const a=path.join(tmp,'tenant-a'),b=path.join(tmp,'tenant-b');
 const operatorPhone='5515988887336';
-const fixture=String.raw\`
+const fixture=String.raw`
 const {addLead,one,run,all,db}=await import('./dashboard/db.mjs');
 const {approveLeadBatch,listLeadApprovals}=await import('./dashboard/lead-approvals.mjs');
 const input=JSON.parse(process.argv[1]);
@@ -30,7 +30,7 @@ try{
 }catch(error){data.error=error.message;}
 console.log(JSON.stringify(data));
 db.close();
-\`;
+`;
 function run(folder,payload){
  const out=execFileSync(process.execPath,['--input-type=module','-e',fixture,JSON.stringify(payload)],{
   cwd:path.resolve('.'),
