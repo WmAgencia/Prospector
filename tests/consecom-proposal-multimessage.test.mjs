@@ -31,7 +31,7 @@ test('the four WhatsApp messages preserve the operator exact words',()=>{
  assert.deepEqual(PROPOSAL_MESSAGES,[
   "Então, a minha agencia precisa entregar um projeto daqui 3 dias, e nós precisamos de mais um site para servir de portifólio para esse projeto, e eu achei que sua empresa vai servir certinho pra gente!",
   "A proposta é a seguinte, eu quero fazer um site pra vocês em tempo record já que preciso entregar em 3 dias, e ainda vou dar 1 ano de domínio grátis pra vocês, com SEO Master, que só nós fazemos na região, que vai fazer vocês estarem muito acima das pesquisas dos seus concorrentes no google de forma orgânica, e eu quero fazer isso pelo preço de custo pra gente fechar isso hoje e já começar a produção",
-  "Eu vou deixar aqui alguns sites do nosso portifólio para vocês darem uma olhada\\n\\nhttps://consecom.com.br/\\nhttps://oficinasc.com/\\nhttps://quimerasite.vercel.app/\\nhttps://tweco.com.br/",
+  "Eu vou deixar aqui alguns sites do nosso portifólio para vocês darem uma olhada\n\nhttps://consecom.com.br/\nhttps://oficinasc.com/\nhttps://quimerasite.vercel.app/\nhttps://tweco.com.br/",
   "Me diz aqui se conseguimos fazer essa parceiria, que já iniciamos hoje!"
  ]);
 });
