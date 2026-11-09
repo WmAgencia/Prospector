@@ -4,6 +4,8 @@ on:
     branches: [feature/tenant-bulk-approvals-20261109, main]
     paths:
       - 'dashboard/portfolio-pitch-audio.mjs'
+      - 'dashboard/waakg-voice-presence.mjs'
+      - 'tests/waakg-voice-presence.test.mjs'
       - 'dashboard/prospecting-introduction.mjs'
       - 'dashboard/groq-sales-automation.mjs'
       - 'dashboard/server.mjs'
@@ -12,6 +14,8 @@ on:
   pull_request:
     paths:
       - 'dashboard/portfolio-pitch-audio.mjs'
+      - 'dashboard/waakg-voice-presence.mjs'
+      - 'tests/waakg-voice-presence.test.mjs'
       - 'dashboard/prospecting-introduction.mjs'
       - 'dashboard/groq-sales-automation.mjs'
       - 'tests/prospecting-owner-audio-pitch.test.mjs'
@@ -27,3 +31,4 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --test tests/prospecting-owner-audio-pitch.test.mjs
+      - run: node --test tests/waakg-voice-presence.test.mjs
