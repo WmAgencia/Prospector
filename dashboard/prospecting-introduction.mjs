@@ -1,7 +1,7 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
 // Two-step introduction on an APPROVED WA-AKG prospect campaign.
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
-// After the introduction, every incoming reply can continue the sales conversation.
+// After the introduction, send the approved no-price recording if ready; then continue replies.
 // No public listing is ever treated as documented WhatsApp opt-in.
 import {db,one,run,now,audit,addMessage} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
@@ -13,9 +13,10 @@ import {detectAutomaticReply,friendlyGreeting,portfolioQuestion} from './portfol
 import {tenantApproachGreeting} from './tenant-approach.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
+import {sendOfferAbAfterIntro} from './consecom-offer-ab.mjs';
 
 export const INTRO_DELAY_MS=30_000;
-export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
+export const WESLEY_INTRO='Eu me chamo Wesley, sou o dono da Agência Consecom. Eu estou entrando em contato pra fazer uma proposta para vocês!';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
 // Network activity may have succeeded before a process restart. Never retry automatically.
@@ -121,7 +122,20 @@ export async function tickIntroductions(deps={}){
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
    if(thread)addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:WESLEY_INTRO,status:'sent'});
    audit('PROSPECT_INTRO_SENT',item.lead_id,{delaySeconds:30});
-   return {state:'SENT',leadId:item.lead_id};
+   // Audio follows the ACKNOWLEDGED introduction; never send the old price recording.
+   // A missing/unapproved new recording skips the audio without affecting the intro.
+   let voice={state:'NOT_SENT'};
+   try{
+    voice=await sendOfferAbAfterIntro({
+     leadId:item.lead_id,sessionId:item.session_id,phone:item.phone,
+     providerId:item.first_reply_id,threadId:thread?.id
+    });
+    if(voice.state==='UNKNOWN')audit('POST_INTRO_VOICE_UNKNOWN',item.lead_id,{manualReview:true});
+   }catch(error){
+    audit('POST_INTRO_VOICE_ERROR',item.lead_id,{reason:String(error?.message||'UNKNOWN').slice(0,85)});
+    voice={state:'ERROR'};
+   }
+   return {state:'SENT',leadId:item.lead_id,audioState:voice.state};
   }catch{
    run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Uncertain delivery; verify WhatsApp',updated_at=? WHERE lead_id=?",now(),item.lead_id);
    audit('PROSPECT_INTRO_UNKNOWN',item.lead_id,{manualReview:true});
