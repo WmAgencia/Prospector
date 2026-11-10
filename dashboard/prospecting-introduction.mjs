@@ -57,6 +57,25 @@ export function cancelIntroduction(leadId,reason='CONTACT_DECLINED'){
  run("UPDATE prospecting_introductions SET stage='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING','VOICE_WAITING')",String(reason).slice(0,110),now(),leadId);
  return true;
 }
+// Explicit product decision: NEVER synthesize Francisca's voice as Wesley's
+// recorded sales pitch. Voice requests require a separately approved owner
+// recording and human review; disabling the voice service must not block text.
+export function queueManualPitchReview(leadId,reason='OWNER_RECORDING_REQUIRED'){
+ const item=introductionStatus(leadId);
+ if(!item||!['GREETING_SENT','WAITING','VOICE_WAITING','SENT','CONVERSING','VOICE_REVIEW'].includes(item.stage))return false;
+ const update=run("UPDATE prospecting_introductions SET stage='VOICE_REVIEW',reason=?,due_at=NULL,updated_at=? WHERE lead_id=? AND stage<> 'VOICE_REVIEW'",reason,now(),leadId);
+ queueNotice('owner-pitch-review:'+leadId,'OWNER_PITCH_REVIEW',
+  'Contato '+String(item.phone).slice(-4)+' pediu a proposta; enviar apenas gravação original do Wesley aprovada. Verifique o histórico antes de responder.',leadId);
+ if(update.changes)audit('OWNER_PITCH_REVIEW_REQUIRED',leadId,{reason,phoneSuffix:String(item.phone).slice(-4),sessionId:item.session_id});
+ return true;
+}
+export function recoverDisabledPitchQueue(){
+ const items=all("SELECT lead_id FROM prospecting_introductions WHERE stage='VOICE_WAITING'");
+ let count=0;
+ for(const item of items){if(queueManualPitchReview(item.lead_id,'AUTO_VOICE_DISABLED_OWNER_REVIEW'))count++;}
+ return {markedForReview:count};
+}
+
 export function routeIntroductionReply({leadId,providerId,body='',inboxState='REVIEW',receivedAt=new Date()}={}){
  const item=introductionStatus(leadId);
  // Never pitch an automated responder or an opted-out contact.
@@ -67,8 +86,14 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   return {managed:true,queueAi:false,state:'CANCELLED'};
  }
  const prefersText=/(?:prefiro|quero) (?:em )?texto|(?:nao|não).{0,20}(?:audio|áudio|voz)/i.test(body);
- const wantsVoice=currentVoiceEligible()&&!prefersText&&wantsPortfolioPitchAudio(body);
- const acceptsVoice=currentVoiceEligible()&&!prefersText&&acceptsPortfolioPresentation(body);
+ const wantsVoice=!prefersText&&wantsPortfolioPitchAudio(body);
+ const acceptsVoice=!prefersText&&acceptsPortfolioPresentation(body);
+ // If a customer specifically asks about the proposal after the greeting,
+ // never let a disabled AI voice service monopolize the text reply queue.
+ if(wantsVoice||acceptsVoice){
+  if(queueManualPitchReview(leadId,'AWAITING_APPROVED_WESLEY_RECORDING'))
+   return {managed:true,queueAi:false,state:'VOICE_REVIEW'};
+ }
  const received=new Date(receivedAt),timestamp=Number.isFinite(received.getTime())?received:new Date();
  const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
  const sourceId=String(providerId||'').slice(0,180);
@@ -87,7 +112,10 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   }
   return {managed:true,queueAi:false,state:'WAITING'};
  }
- if(item.stage==='VOICE_WAITING')return {managed:true,queueAi:false,state:'VOICE_WAITING'};
+ if(item.stage==='VOICE_WAITING'||item.stage==='VOICE_REVIEW'){
+  queueManualPitchReview(leadId,'AWAITING_APPROVED_WESLEY_RECORDING');
+  return {managed:true,queueAi:false,state:'VOICE_REVIEW'};
+ }
  if(['SENT','CONVERSING'].includes(item.stage)&&(wantsVoice||acceptsVoice)){
   const pitched=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id LIKE 'intro-voice:%' LIMIT 1",leadId);
   if(!pitched&&item.reason!=='PITCH_AUDIO_550'){
@@ -111,7 +139,9 @@ export async function tickIntroductions(deps={}){
  busy=true;
  try{
   const at=currentTime();
-  const item=one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage IN ('WAITING','VOICE_WAITING') AND p.due_at<=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString());
+  // Strictly text-only. Disabled or unapproved voice jobs are reviewed by an
+  // operator and NEVER selected, so they cannot starve other replies.
+  const item=one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString());
   if(!item)return {state:'IDLE'};
   const voiceRequested=item.stage==='VOICE_WAITING';
   const eligible=()=>{

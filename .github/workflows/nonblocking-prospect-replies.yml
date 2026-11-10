@@ -1,0 +1,26 @@
+name: Nonblocking inbound reply recovery
+on:
+  push:
+    branches:
+      - fix/nonblocking-prospect-replies-20261110
+  pull_request:
+    branches:
+      - feature/tenant-bulk-approvals-20261109
+jobs:
+  reply-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify reply recovery without audio or duplicate messages
+        run: node --test tests/prospect-reply-recovery.test.mjs
+      - name: Verify production entrypoint syntax
+        run: |
+          node --check dashboard/server.mjs
+          node --check dashboard/prospecting-introduction.mjs
+          node --check dashboard/prospect-reply-reconciliation.mjs

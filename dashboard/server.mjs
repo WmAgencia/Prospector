@@ -70,7 +70,8 @@ import {armApprovedOutreach,apply250DailyLimit} from './approval-ready-activatio
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
-import {tickIntroductions,recoverUnansweredPitchRequests} from './prospecting-introduction.mjs';
+import {tickIntroductions,recoverUnansweredPitchRequests,recoverDisabledPitchQueue} from './prospecting-introduction.mjs';
+import {reconcileApproachedReplies} from './prospect-reply-reconciliation.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -921,6 +922,33 @@ const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=
  if(result.state==='VOICE_SENT')console.info('[prospect introduction] voice gateway accepted',JSON.stringify({recipientSuffix:result.recipientSuffix,verifiedOnPhone:false}));
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160))),1000);
+// No synthesized Francisca sales voice is permitted. Migrate previously
+// stalled voice-only jobs to explicit human review before scanning text jobs.
+try{
+ const fix=recoverDisabledPitchQueue();
+ console.info('[reply queue recovery]',JSON.stringify(fix));
+ for(const phoneNumber of ['5511998974636','5519982106886']){
+  const state=one("SELECT stage,session_id,reason,created_at,due_at FROM prospecting_introductions WHERE phone=?",phoneNumber);
+  console.info('[reply queue checkpoint]',JSON.stringify({
+   suffix:phoneNumber.slice(-4),present:!!state,stage:state?.stage||null,
+   session:state?.session_id||null,due:state?.due_at||null,
+   inboxCount:one("SELECT COUNT(*) c FROM waakg_inbox WHERE lead_id=(SELECT id FROM leads WHERE phone=?)",phoneNumber)?.c||0
+  }));
+ }
+}catch(error){console.warn('[reply queue recovery]',String(error?.message||error).slice(0,120));}
+let replyHistoryBusy=false;
+async function recoverGatewayReplyHistory(){
+ if(replyHistoryBusy)return;
+ replyHistoryBusy=true;
+ try{
+  const results=await reconcileApproachedReplies({maxContacts:14});
+  if(results.imported||results.manualReview||results.unavailable)
+   console.info('[reply history reconciliation]',JSON.stringify(results));
+ }catch(error){console.warn('[reply history reconciliation]',String(error?.message||error).slice(0,120));}
+ finally{replyHistoryBusy=false;}
+}
+setTimeout(recoverGatewayReplyHistory,12000).unref();
+setInterval(recoverGatewayReplyHistory,120000).unref();
 // Existing approved conversations can contain an unanswered proposal question
 // from before this deploy. Requeue only an unresponded, explicit question once.
 if(process.env.WHATSAPP_TRANSPORT==='waakg'){
