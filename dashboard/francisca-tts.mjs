@@ -18,22 +18,25 @@ export function checkVoiceText(text){
  if(value.length<2||value.length>650)throw Error('VOICE_TEXT_LENGTH');
  return value;
 }
-export async function makeFranciscaVoice(text,{exec=execFile,read=readFile,makeTemp=mkdtemp,remove=rm}={}){
+export async function makeFranciscaVoice(text,{exec=execFile,read=readFile,makeTemp=mkdtemp,remove=rm,format='m4a'}={}){
  if(process.env.FRANCISCA_TTS_ENABLED!=='true')throw Error('FRANCISCA_DISABLED');
  const sentence=checkVoiceText(text),dir=await makeTemp(path.join(tmpdir(),'francisca-'));
- const mp3=path.join(dir,'audio.mp3'),mp4=path.join(dir,'voice.m4a');
+ const mp3=path.join(dir,'audio.mp3'),opus=format==='ogg',output=path.join(dir,opus?'voice.ogg':'voice.m4a');
  try{
   // Passing text in argv (not a shell) prevents command injection.
   await exec('/opt/francisca/bin/edge-tts',['--voice',FRANCISCA,
    '--rate=-3%','--pitch=+0Hz','--volume=+0%',
    '--text',sentence,'--write-media',mp3,'--no-progress'],{timeout:24000,maxBuffer:120000});
   const data=await stat(mp3);if(data.size<256||data.size>5*1024*1024)throw Error('VOICE_INVALID_OUTPUT');
-  await exec('ffmpeg',['-hide_banner','-loglevel','error','-y','-i',mp3,'-vn',
-    '-ac','1','-ar','24000','-codec:a','aac','-b:a','64k','-movflags','+faststart',mp4],
+  // WhatsApp native push-to-talk requires a real OGG/Opus stream; an
+  // M4A attachment with ptt:true may appear as a conventional audio player.
+  const codec=opus?['-ac','1','-ar','48000','-codec:a','libopus','-application','voip','-b:a','32k','-f','ogg']:
+   ['-ac','1','-ar','24000','-codec:a','aac','-b:a','64k','-movflags','+faststart'];
+  await exec('ffmpeg',['-hide_banner','-loglevel','error','-y','-i',mp3,'-vn',...codec,output],
     {timeout:15000,maxBuffer:120000});
-  const bytes=await read(mp4);
-  if(bytes.length<256||bytes.length>5*1024*1024)throw Error('VOICE_INVALID_OUTPUT');
-  return {bytes,mimeType:'audio/mp4',voice:FRANCISCA};
+  const bytes=await read(output);
+  if(bytes.length<256||bytes.length>5*1024*1024||(opus&&bytes.toString('ascii',0,4)!=='OggS'))throw Error('VOICE_INVALID_OUTPUT');
+  return {bytes,mimeType:opus?'audio/ogg; codecs=opus':'audio/mp4',voice:FRANCISCA};
  }finally{await remove(dir,{recursive:true,force:true}).catch(()=>{});}
 }
 
