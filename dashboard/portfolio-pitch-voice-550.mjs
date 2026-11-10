@@ -23,3 +23,7 @@ export async function loadCurrentPortfolioVoice({synthesize=makeFranciscaVoice}=
  if(!Buffer.isBuffer(audio?.bytes)||audio.bytes.length<256)throw Error('CONSECOM_VOICE_550_BAD_OUTPUT');
  return {bytes:audio.bytes,offerBRL:CURRENT_VOICE_OFFER_BRL,source:'FRANCISCA_TTS',durationSeconds:null};
 }
+
+export function currentPortfolioVoiceSentFor(intro){
+ return intro?.reason==='PITCH_AUDIO_550'&&['VOICE_SENT','CONVERSING'].includes(intro.stage);
+}
