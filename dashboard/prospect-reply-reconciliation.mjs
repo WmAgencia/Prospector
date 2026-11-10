@@ -32,7 +32,7 @@ export async function reconcileApproachedReplies({maxContacts=12,request=waReque
  const candidates=all(`SELECT p.lead_id,p.phone,p.session_id,p.stage,p.created_at
   FROM prospecting_introductions p
   WHERE p.stage IN ('GREETING_SENT','SENT','CONVERSING') AND p.created_at>=?
-  ORDER BY p.created_at DESC LIMIT ?`,since,Math.max(1,Math.min(100,maxContacts+priority.length*2)));
+  ORDER BY p.created_at DESC LIMIT 500`,since);
  candidates.sort((a,b)=>(priority.includes(b.phone)?1:0)-(priority.includes(a.phone)?1:0));
  candidates.length=Math.min(candidates.length,Math.max(1,Math.min(24,maxContacts)));
  const totals={examined:0,imported:0,alreadyHandled:0,manualReview:0,unavailable:0};
