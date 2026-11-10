@@ -63,6 +63,8 @@ test('provider history distinguishes unanswered inbound from existing manual out
 });
 test('recovers exactly one unreceived approved greeting reply from gateway history',async()=>{
  const c=createContact('5511944410123');
+ // The inbound must occur AFTER the persistently recorded greeting.
+ db.run('UPDATE prospecting_introductions SET created_at=? WHERE lead_id=?',new Date(Date.now()-60000).toISOString(),c.lead.id);
  const timestamp=new Date(Date.now()-10000).toISOString();
  const outcome=await reconcileApproachedReplies({maxContacts:24,request:async(endpoint)=>{
   if(endpoint.includes(encodeURIComponent(c.jid)))return {status:true,data:[
