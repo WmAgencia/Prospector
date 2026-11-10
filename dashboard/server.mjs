@@ -927,11 +927,19 @@ const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=
 try{
  const fix=recoverDisabledPitchQueue();
  console.info('[reply queue recovery]',JSON.stringify(fix));
- for(const phoneNumber of ['5511998974636','5519982106886']){
-  const state=one("SELECT stage,session_id,reason,created_at,due_at FROM prospecting_introductions WHERE phone=?",phoneNumber);
+ for(const phoneNumber of (process.env.PROSPECTOR_RECOVERY_PRIORITY_CONTACTS||'').split(',').map(x=>x.trim()).filter(x=>/^55\\d{10,11}$/.test(x)).slice(0,5)){
+  const state=one("SELECT lead_id,stage,session_id,reason,sent_at,created_at,due_at FROM prospecting_introductions WHERE phone=?",phoneNumber);
+  const records=state?one(`SELECT
+   SUM(CASE WHEN m.direction='out' AND m.provider_id LIKE 'intro:%' THEN 1 ELSE 0 END) introTexts,
+   SUM(CASE WHEN m.direction='out' AND m.provider_id LIKE 'intro-voice:%' THEN 1 ELSE 0 END) introVoices,
+   SUM(CASE WHEN m.direction='in' THEN 1 ELSE 0 END) inboundTexts,
+   SUM(CASE WHEN m.direction='out' AND m.provider_id NOT LIKE 'prospect-queue:%' THEN 1 ELSE 0 END) otherOutgoing
+   FROM messages m JOIN threads t ON m.thread_id=t.id WHERE t.lead_id=?`,state.lead_id):null;
   console.info('[reply queue checkpoint]',JSON.stringify({
-   suffix:phoneNumber.slice(-4),present:!!state,stage:state?.stage||null,
-   session:state?.session_id||null,due:state?.due_at||null,
+   suffix:phoneNumber.slice(-4),present:!!state,stage:state?.stage||null,reason:state?.reason||null,
+   session:state?.session_id||null,due:state?.due_at||null,sentAt:state?.sent_at||null,
+   introTexts:records?.introTexts||0,introVoices:records?.introVoices||0,
+   inboundTexts:records?.inboundTexts||0,otherOutgoing:records?.otherOutgoing||0,
    inboxCount:one("SELECT COUNT(*) c FROM waakg_inbox WHERE lead_id=(SELECT id FROM leads WHERE phone=?)",phoneNumber)?.c||0
   }));
  }

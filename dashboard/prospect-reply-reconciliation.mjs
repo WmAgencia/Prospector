@@ -27,11 +27,14 @@ export function chooseMissedReply(messages,earliest=0){
 }
 export async function reconcileApproachedReplies({maxContacts=12,request=waRequest}={}){
  const since=new Date(Date.now()-3*86400000).toISOString();
+ const priority=(process.env.PROSPECTOR_RECOVERY_PRIORITY_CONTACTS||'').split(',')
+  .map(x=>x.trim()).filter(x=>/^55\\d{10,11}$/.test(x)).slice(0,5);
  const candidates=all(`SELECT p.lead_id,p.phone,p.session_id,p.stage,p.created_at
   FROM prospecting_introductions p
   WHERE p.stage IN ('GREETING_SENT','SENT','CONVERSING') AND p.created_at>=?
-  ORDER BY CASE WHEN p.phone IN ('5511998974636','5519982106886') THEN 0 ELSE 1 END,
-   p.created_at DESC LIMIT ?`,since,Math.max(1,Math.min(24,maxContacts)));
+  ORDER BY p.created_at DESC LIMIT 500`,since);
+ candidates.sort((a,b)=>(priority.includes(b.phone)?1:0)-(priority.includes(a.phone)?1:0));
+ candidates.length=Math.min(candidates.length,Math.max(1,Math.min(24,maxContacts)));
  const totals={examined:0,imported:0,alreadyHandled:0,manualReview:0,unavailable:0};
  const examined=[];
  for(const row of candidates){
@@ -45,6 +48,18 @@ export async function reconcileApproachedReplies({maxContacts=12,request=waReque
    const messages=Array.isArray(response?.data)?response.data:[];
    // Only trust replies after this exact lead's persisted greeting.
    const selected=chooseMissedReply(messages,Math.max(ms(row.created_at),Date.now()-3*86400000));
+   // Never log message text or phone numbers; record only provider evidence.
+   if(priority.includes(row.phone)){
+    const local=one("SELECT COUNT(*) c FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id LIKE 'intro:%'",row.lead_id)?.c||0;
+    const fromMe=messages.filter(x=>x.fromMe===true);
+    const firstOwnerIntro=fromMe.some(x=>typeof x.content==='string'&&
+      x.content.includes('Meu nome é Wesley')&&x.content.includes('fazer uma proposta'));
+    const afterLastInbound=messages.some(x=>x.fromMe===true&&ms(x.timestamp)>
+     Math.max(0,...messages.filter(x=>x.fromMe===false).map(x=>ms(x.timestamp)))+500);
+    console.info('[reply provider evidence]',JSON.stringify({suffix,localIntroCount:local,providerIntro:firstOwnerIntro,
+      outboundAfterLastInbound:afterLastInbound,outboundCount:fromMe.length,inboundCount:messages.filter(x=>x.fromMe===false).length}));
+   }
+
    if(selected.kind==='NO_REPLY'){examined.push({suffix,status:'NO_REPLY_IN_GATEWAY'});continue;}
    const inbound=selected.incoming,unique=row.session_id+':'+inbound.keyId;
    if(one('SELECT 1 FROM waakg_inbox WHERE provider_id=?',unique)){
