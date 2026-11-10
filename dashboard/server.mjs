@@ -59,6 +59,7 @@ import {processProspectingSchedule} from './francisca-panel-actions.mjs';
 import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
 import {kanbanSnapshot} from './kanban.mjs';
+import {outreachDimensionSnapshot} from './overview-dimensions.mjs';
 import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
 import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospectorLeadEligible} from './whatsapp-roles.mjs';
@@ -555,6 +556,7 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/prospecting'){return respond(res,200,listUnseenCompanies({city:url.searchParams.get('city')||'',niche:url.searchParams.get('niche')||'',status:url.searchParams.get('status')||'uncontacted',session:url.searchParams.get('session')||'',limit:1000}));}
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
+  if(req.method==='GET'&&pathname==='/api/overview/dimensions')return respond(res,200,outreachDimensionSnapshot());
   if(req.method==='GET'&&pathname==='/api/sales/outcomes')return respond(res,200,salesOutcomes({limit:80}));
   if(req.method==='GET'&&pathname==='/api/sales/status')return respond(res,200,{priceReferenceBrl:SITE_AVERAGE_PRICE_BRL,agent:agentStatus(),queue:approachQueueStatus()});
   if(req.method==='GET'&&pathname==='/api/whatsapp/contact-role'){
