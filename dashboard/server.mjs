@@ -918,6 +918,7 @@ const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
 }).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160))),1000);
 const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=>{
  if(['SENT','VOICE_SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
+ if(result.state==='VOICE_SENT')console.info('[prospect introduction] voice gateway accepted',JSON.stringify({recipientSuffix:result.recipientSuffix,verifiedOnPhone:false}));
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160))),1000);
 // Existing approved conversations can contain an unanswered proposal question
