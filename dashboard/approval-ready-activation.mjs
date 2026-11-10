@@ -48,8 +48,8 @@ export function apply80DailyLimit(){
  if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')
   return {status:'OTHER_TENANT_UNCHANGED'};
  const previous=getSetting('daily_limit',150);
- if(previous===OWNER_DAILY_LIMIT&&getSetting(DAILY_80_MARKER,false)===true)
-  return {status:'ALREADY_APPLIED',dailyLimit:OWNER_DAILY_LIMIT};
+ if(getSetting(DAILY_80_MARKER,false)===true)
+  return {status:'ALREADY_APPLIED',dailyLimit:previous};
  setSetting('daily_limit',OWNER_DAILY_LIMIT);
  setSetting(DAILY_80_MARKER,true);
  audit('OWNER_DAILY_LIMIT_80',null,{previous,current:OWNER_DAILY_LIMIT,
