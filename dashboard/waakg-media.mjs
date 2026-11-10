@@ -39,7 +39,10 @@ export async function sendVoiceMedia({jid,bytes,session=selectedWaSession(),fetc
  if(!jidAllowed(jid)||!session||!Buffer.isBuffer(bytes)||bytes.length<256||bytes.length>MAX_MEDIA_BYTES)throw Error('INVALID_VOICE_SEND');
  const form=new FormData();
  form.append('type','voice');
- form.append('file',new Blob([bytes],{type:'audio/mp4'}),'francisca.m4a');
+ // OggS signature proves this is a WhatsApp-native Opus voice note.
+ const native=bytes.toString('ascii',0,4)==='OggS';
+ form.append('file',new Blob([bytes],{type:native?'audio/ogg; codecs=opus':'audio/mp4'}),
+  native?'francisca.ogg':'francisca.m4a');
  const key=apiKey||await getGatewayApiKey();
  // WA-AKG's own handler expects multipart form data, not JSON, and uses
  // type=voice to send a WhatsApp push-to-talk message.
