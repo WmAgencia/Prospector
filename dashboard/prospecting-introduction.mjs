@@ -16,6 +16,9 @@ import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
 import {wantsPortfolioPitchAudio,acceptsPortfolioPresentation} from './portfolio-pitch-audio.mjs';
 import {loadCurrentPortfolioVoice,currentVoiceEligible,CURRENT_VOICE_OFFER_BRL} from './portfolio-pitch-voice-550.mjs';
 import {queueNotice} from './notifications.mjs';
+import {conversationFinished} from './prospect-terminal-conversation.mjs';
+import {approvedOwnerRecordingStatus} from './owner-approved-pitch.mjs';
+import {enqueueOwnerPitch} from './owner-pitch-sequence.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
@@ -53,8 +56,8 @@ export function registerGreeting({leadId,greetingId,sessionId}={}){
 }
 export function cancelIntroduction(leadId,reason='CONTACT_DECLINED'){
  const row=introductionStatus(leadId);
- if(!row||!['GREETING_SENT','WAITING','VOICE_WAITING'].includes(row.stage))return false;
- run("UPDATE prospecting_introductions SET stage='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING','VOICE_WAITING')",String(reason).slice(0,110),now(),leadId);
+ if(!row||!['GREETING_SENT','WAITING','VOICE_WAITING','VOICE_REVIEW'].includes(row.stage))return false;
+ run("UPDATE prospecting_introductions SET stage='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING','VOICE_WAITING','VOICE_REVIEW')",String(reason).slice(0,110),now(),leadId);
  return true;
 }
 // Explicit product decision: NEVER synthesize Francisca's voice as Wesley's
@@ -81,6 +84,7 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  // Never pitch an automated responder or an opted-out contact.
  if(inboxState==='AUTO_REPLY'||detectAutomaticReply(body))return {managed:true,queueAi:false,state:'AUTO_REPLY'};
  if(!item)return {managed:false,queueAi:true};
+ if(conversationFinished(leadId,item.session_id))return {managed:true,queueAi:false,state:'FINISHED'};
  if(inboxState!=='REVIEW'){
   cancelIntroduction(leadId,'INBOX_'+inboxState);
   return {managed:true,queueAi:false,state:'CANCELLED'};
@@ -91,6 +95,14 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  // If a customer specifically asks about the proposal after the greeting,
  // never let a disabled AI voice service monopolize the text reply queue.
  if(wantsVoice||acceptsVoice){
+  if(approvedOwnerRecordingStatus().ready){
+   const result=enqueueOwnerPitch({leadId,sessionId:item.session_id,providerId,receivedAt});
+   if(['PENDING_AUDIO','AUDIO_ACCEPTED','DONE','ALREADY_QUEUED'].includes(result.state)){
+    run("UPDATE prospecting_introductions SET stage='VOICE_REVIEW',reason='OWNER_AUDIO_QUEUED',due_at=NULL,updated_at=? WHERE lead_id=? AND stage NOT IN ('UNKNOWN','CANCELLED')",now(),leadId);
+    audit('PROSPECT_OWNER_AUDIO_SCHEDULED',leadId,{sha:'OWNER_APPROVED',stage:result.state});
+    return {managed:true,queueAi:false,state:'OWNER_AUDIO_QUEUED'};
+   }
+  }
   if(queueManualPitchReview(leadId,'AWAITING_APPROVED_WESLEY_RECORDING'))
    return {managed:true,queueAi:false,state:'VOICE_REVIEW'};
  }
