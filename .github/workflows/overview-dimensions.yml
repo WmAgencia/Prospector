@@ -1,0 +1,27 @@
+name: Overview dimension focused checks
+on:
+  push:
+    branches:
+      - feat/overview-analytics-production-20261110
+  pull_request:
+    branches:
+      - feature/tenant-bulk-approvals-20261109
+  workflow_dispatch:
+jobs:
+  analytics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Test persisted metrics, conversion and syntax
+        run: node --test tests/overview-dimensions.test.mjs
+      - name: Validate browser module and backend syntax
+        run: |
+          node --input-type=module --check < dashboard/public/simple-app.js
+          node --check dashboard/server.mjs
+          node --check dashboard/overview-dimensions.mjs
