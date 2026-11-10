@@ -92,3 +92,66 @@ new_validation = 'participants: z.array(z.string().regex(/@s\\.whatsapp\\.net$/,
 assert validation_source.count(old_validation) == 1, "WA-AKG group-create schema anchor changed"
 group_validation.write_text(validation_source.replace(old_validation,new_validation))
 print("WA-AKG allows creator-only groups (participants: [])")
+
+
+# Cloud media archive: preserve existing per-session authorization in media route.
+hook=Path("/app/src/lib/webhook.ts")
+webhook=hook.read_text()
+import_anchor='import { logger } from "./logger";'
+assert webhook.count(import_anchor)==1
+webhook=webhook.replace(import_anchor,import_anchor+'\nimport {saveToArchive} from "./media-archive";')
+write_anchor='        await writeFile(filePath, buffer);'
+assert webhook.count(write_anchor)==1
+webhook=webhook.replace(write_anchor,'''        // Cloud-first; local storage is only a temporary fallback.
+        // Never discard an incoming file if remote upload fails.
+        const archived = await saveToArchive(filename,buffer);
+        if (!archived) await writeFile(filePath, buffer);''')
+hook.write_text(webhook)
+print("WA-AKG cloud-first private media storage installed")
+
+media_route_path=Path("/app/src/app/api/media/[filename]/route.ts")
+media_route=media_route_path.read_text()
+marker='import { getAuthenticatedUser, canAccessSession } from "@/lib/api-auth";'
+assert media_route.count(marker)==1
+media_route=media_route.replace(marker,marker+'\nimport {fetchFromArchive} from "@/lib/media-archive";')
+old='''        if (!existsSync(filePath)) {
+            return NextResponse.json({ status: false, message: "File not found", error: "File not found" }, { status: 404 });
+        }
+
+        const fileBuffer = await readFile(filePath);'''
+new='''        // Session ownership was checked above; the bucket is never public.
+        const fileBuffer = existsSync(filePath) ? await readFile(filePath) : await fetchFromArchive(filename);
+        if (!fileBuffer) {
+            return NextResponse.json({ status: false, message: "File not found", error: "File not found" }, { status: 404 });
+        }'''
+assert media_route.count(old)==1
+media_route_path.write_text(media_route.replace(old,new))
+print("WA-AKG private media read-through installed")
+
+runtime=Path("/app/src/server/index.ts")
+runtime_source=runtime.read_text()
+runtime_anchor='import pkg from "../../package.json";'
+assert runtime_source.count(runtime_anchor)==1
+runtime_source=runtime_source.replace(runtime_anchor,runtime_anchor+'\nimport {startMediaArchiveWorker} from "../lib/media-archive";')
+runtime_start='  server.listen(port, () => {'
+assert runtime_source.count(runtime_start)==1
+runtime_source=runtime_source.replace(runtime_start,'''  // Migrate previous local media only after cloud HEAD + SHA256 verification.
+  startMediaArchiveWorker();
+  server.listen(port, () => {''')
+runtime.write_text(runtime_source)
+print("WA-AKG safe media migration worker installed")
+
+# Audio presented as a native WhatsApp push-to-talk voice note, not an
+# audio attachment: audio/ogg; codecs=opus + ptt:true, with actual Opus data.
+chat=Path("/app/src/modules/whatsapp/chat.service.ts")
+chat_source=chat.read_text()
+voice_source="content = { audio: buffer, mimetype: 'audio/mp4', ptt: true };"
+assert chat_source.count(voice_source)==1
+chat_source=chat_source.replace(voice_source,
+ "content = { audio: buffer, mimetype: mimetype?.startsWith('audio/ogg') ? 'audio/ogg; codecs=opus' : 'audio/mp4', ptt: true };")
+webhook_media="webhookMsg.message = { audioMessage: { mimetype: 'audio/mp4', ptt: type === 'voice' } };"
+assert chat_source.count(webhook_media)==1
+chat_source=chat_source.replace(webhook_media,
+ "webhookMsg.message = { audioMessage: { mimetype: type === 'voice' && mimetype?.startsWith('audio/ogg') ? 'audio/ogg; codecs=opus' : 'audio/mp4', ptt: type === 'voice' } };")
+chat.write_text(chat_source)
+print("WA-AKG native voice notes honor ogg/opus mimetype")
