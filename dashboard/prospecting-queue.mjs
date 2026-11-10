@@ -221,7 +221,7 @@ export async function tickApproachQueue(deps={}){
   const expired=closeStaleBatch(new Date(time));
   if(expired)return expired;
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
-  if(dailyApproachBudget(new Date(time)).remaining===0)return {status:'DAILY_LIMIT',limit:250};
+  if(dailyApproachBudget(new Date(time)).remaining===0)return {status:'DAILY_LIMIT',limit:dailyApproachBudget(new Date(time)).limit};
   const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
   if(!next){run("UPDATE prospecting_batches SET status='COMPLETED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);return {status:'COMPLETED'};}
