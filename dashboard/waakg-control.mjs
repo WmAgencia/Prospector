@@ -4,9 +4,14 @@ import {getSetting,setSetting} from "./db.mjs";
 import {randomUUID} from 'node:crypto';
 import {managedSessions,isManagedSession,registerSession,nextConnectedSession,rotationCursor} from './waakg-session-registry.mjs';
 import {sessionOutreachBudget} from './session-outreach-budget.mjs';
-const base="https://wa-akg-production-f9f0.up.railway.app";
+// Same-project traffic should bypass the public edge: it can rate-limit
+// authentication even while the WA-AKG instance is healthy.
+const publicOrigin="https://wa-akg-production-f9f0.up.railway.app";
+const base=String(process.env.WA_AKG_BASE_URL||publicOrigin).replace(/\/$/,'');
+if(!/^https:\/\//.test(base)&&!/^http:\/\/wa-akg\.railway\.internal:3000$/.test(base))
+ throw Error('WA_AKG_BASE_URL must be HTTPS or the exact Railway private service endpoint');
 const sessionKey="waakg_primary_session_id";
-let cachedKey="",pendingKey=null;
+let cachedKey="",pendingKey=null,nextLoginAt=0,lastAuthFailure="";
 const safeId=v=>/^[a-zA-Z0-9_-]{3,70}$/.test(String(v||""));
 export function selectedWaSession(){const s=process.env.WA_AKG_SESSION_ID||getSetting(sessionKey,"");return safeId(s)?s:"";}
 function errorFrom(res,data){
@@ -18,7 +23,7 @@ async function loginAndKey(){
  const password=process.env.WA_AKG_ADMIN_PASSWORD||"";
  if(!email.includes("@")||password.length<12)throw Error("Credenciais internas do WA-AKG não configuradas no Railway");
  const csrfRes=await fetch(base+"/api/auth/csrf",{headers:{Accept:"application/json"},signal:AbortSignal.timeout(8500)});
- if(!csrfRes.ok)throw Error("WA-AKG indisponível durante autenticação");
+ if(!csrfRes.ok)throw Error("WA-AKG indisponível durante autenticação (HTTP "+csrfRes.status+")");
  const csrf=await csrfRes.json();
  const cookies=new Map();
  function harvest(res){for(const v of (res.headers.getSetCookie?.()||[])){const pair=v.split(";")[0];const at=pair.indexOf("=");if(at>0)cookies.set(pair.slice(0,at),pair.slice(at+1));}}
@@ -26,8 +31,8 @@ async function loginAndKey(){
  harvest(csrfRes);
  const res=await fetch(base+"/api/auth/callback/credentials",{
   method:"POST",redirect:"manual",
-  headers:{"Content-Type":"application/x-www-form-urlencoded","Cookie":header(),"Origin":base},
-  body:new URLSearchParams({email,password,csrfToken:csrf.csrfToken||"",callbackUrl:base+"/dashboard",json:"true"}),
+  headers:{"Content-Type":"application/x-www-form-urlencoded","Cookie":header(),"Origin":publicOrigin},
+  body:new URLSearchParams({email,password,csrfToken:csrf.csrfToken||"",callbackUrl:publicOrigin+"/dashboard",json:"true"}),
   signal:AbortSignal.timeout(12000)
  });
  harvest(res);
@@ -49,7 +54,16 @@ async function loginAndKey(){
 export async function getGatewayApiKey(){
  if(process.env.WA_AKG_API_KEY)return process.env.WA_AKG_API_KEY;
  if(cachedKey)return cachedKey;
- if(!pendingKey)pendingKey=loginAndKey().then(x=>(cachedKey=x,x)).finally(()=>pendingKey=null);
+ // A transient 429/502 must never trigger one new login per queue tick.
+ if(pendingKey)return pendingKey;
+ if(Date.now()<nextLoginAt)throw Error('WA-AKG autenticação em recuperação: '+lastAuthFailure);
+ pendingKey=loginAndKey().then(x=>{
+  cachedKey=x;nextLoginAt=0;lastAuthFailure='';return x;
+ }).catch(error=>{
+  lastAuthFailure=String(error?.message||error).slice(0,95);
+  nextLoginAt=Date.now()+30000;
+  throw error;
+ }).finally(()=>pendingKey=null);
  return pendingKey;
 }
 export async function waRequest(path,{method="GET",data}={}){
