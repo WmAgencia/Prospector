@@ -36,7 +36,8 @@ test('persisted metrics never count contacts without an actual sent message',()=
 
 test('overview client and server source parse cleanly',()=>{
  for(const path of ['dashboard/public/simple-app.js','dashboard/server.mjs','dashboard/overview-dimensions.mjs']){
-  const check=spawnSync(process.execPath,['--check',path],{encoding:'utf8'});
+  const jsModule=path.endsWith('.js');
+  const check=jsModule?spawnSync(process.execPath,['--input-type=module','--check'],{input:fs.readFileSync(path,'utf8'),encoding:'utf8'}):spawnSync(process.execPath,['--check',path],{encoding:'utf8'});
   assert.equal(check.status,0,path+': '+check.stderr);
  }
 });
