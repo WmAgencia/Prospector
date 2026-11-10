@@ -2,7 +2,8 @@
 // and pass the existing per-session authorization before any cloud fetch.
 // Every local file is deleted ONLY after a successful S3 upload + HEAD match.
 import {S3Client,PutObjectCommand,HeadObjectCommand,GetObjectCommand} from "@aws-sdk/client-s3";
-import {readdir,readFile,stat,statfs,unlink} from "node:fs/promises";
+import {readdir,stat,statfs,unlink} from "node:fs/promises";
+import {createHash} from "node:crypto";
 import {createReadStream} from "node:fs";
 import path from "node:path";
 
@@ -26,9 +27,9 @@ function connection():S3Client{
  });
  return client;
 }
-async function verified(name:string,bytes:number){
+async function verified(name:string,bytes:number,digest:string){
  const head=await connection().send(new HeadObjectCommand({Bucket:bucket(),Key:key(name)}),{abortSignal:AbortSignal.timeout(25000)});
- if(Number(head.ContentLength)!==bytes)throw new Error("MEDIA_ARCHIVE_SIZE_MISMATCH");
+ if(Number(head.ContentLength)!==bytes||head.Metadata?.sha256!==digest)throw new Error("MEDIA_ARCHIVE_INTEGRITY_MISMATCH");
 }
 export async function saveToArchive(filename:string,buffer:Buffer):Promise<boolean>{
  if(!configured())return false;
@@ -36,9 +37,9 @@ export async function saveToArchive(filename:string,buffer:Buffer):Promise<boole
   throw new Error("MEDIA_ARCHIVE_INVALID_FILE");
  try{
   await connection().send(new PutObjectCommand({
-   Bucket:bucket(),Key:key(filename),Body:buffer,ContentType:"application/octet-stream",ContentLength:buffer.length
+   Bucket:bucket(),Key:key(filename),Body:buffer,ContentType:"application/octet-stream",ContentLength:buffer.length,Metadata:{sha256:createHash("sha256").update(buffer).digest("hex")}
   }),{abortSignal:AbortSignal.timeout(35000)});
-  await verified(filename,buffer.length);
+  await verified(filename,buffer.length,createHash("sha256").update(buffer).digest("hex"));
   return true;
  }catch(error:any){
   console.warn("[media archive] live upload failed",String(error?.name||"ERROR").slice(0,50));
@@ -81,11 +82,15 @@ export async function archiveLocalMedia({batchLimit=85,minimumAgeMs=120000}={}):
    try{
     const size=item.info.size;
     if(size<100||size>60*1024*1024){result.failed++;continue;}
+    // Hash each local file; unchanged size alone is not proof of integrity.
+    const hash=createHash("sha256");
+    for await(const part of createReadStream(item.file))hash.update(part);
+    const digest=hash.digest("hex");
     const old=await connection().send(new HeadObjectCommand({Bucket:bucket(),Key:key(item.name)}),{abortSignal:AbortSignal.timeout(20000)}).catch(()=>null);
-    if(Number(old?.ContentLength)!==size){
-     await connection().send(new PutObjectCommand({Bucket:bucket(),Key:key(item.name),Body:createReadStream(item.file),ContentType:"application/octet-stream",ContentLength:size}),{abortSignal:AbortSignal.timeout(90000)});
-     await verified(item.name,size);
+    if(Number(old?.ContentLength)!==size||old?.Metadata?.sha256!==digest){
+     await connection().send(new PutObjectCommand({Bucket:bucket(),Key:key(item.name),Body:createReadStream(item.file),ContentType:"application/octet-stream",ContentLength:size,Metadata:{sha256:digest}}),{abortSignal:AbortSignal.timeout(90000)});
     }
+    await verified(item.name,size,digest);
     const current=await stat(item.file).catch(()=>null);
     if(!current||current.size!==size||current.mtimeMs!==item.info.mtimeMs)continue;
     await unlink(item.file);
