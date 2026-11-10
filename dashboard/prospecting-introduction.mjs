@@ -2,7 +2,7 @@
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
 // After the introduction, every incoming reply can continue the sales conversation.
 // No public listing is ever treated as documented WhatsApp opt-in.
-import {db,one,run,now,audit,addMessage} from './db.mjs';
+import {db,one,all,run,now,audit,addMessage} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
@@ -182,4 +182,34 @@ export async function tickIntroductions(deps={}){
    return {state:'UNKNOWN'};
   }
  }finally{busy=false;}
+}
+
+
+/**
+ * One-time, conservative repair for proposal questions received before a deploy.
+ * Recover only the latest, unanswered, approved inbound message. Never retry
+ * an uncertain send and never requeue an audio already recorded as sent.
+ */
+export function recoverUnansweredPitchRequests({at=Date.now(),windowMinutes=90,limit=8}={}){
+ const cutoff=new Date(at-Math.min(180,Math.max(1,windowMinutes))*60_000).toISOString();
+ const rows=all(`SELECT p.lead_id,p.phone,i.provider_id,i.body,i.received_at
+  FROM prospecting_introductions p
+  JOIN waakg_inbox i ON i.lead_id=p.lead_id
+  WHERE p.stage IN ('SENT','CONVERSING') AND i.state='REVIEW' AND i.received_at>=?
+    AND i.rowid=(SELECT MAX(i2.rowid) FROM waakg_inbox i2 WHERE i2.lead_id=p.lead_id)
+  ORDER BY i.received_at DESC LIMIT 80`,cutoff);
+ let recovered=0;const suffixes=[];
+ for(const row of rows){
+  if(recovered>=Math.max(1,Math.min(20,limit)))break;
+  if(!wantsPortfolioPitchAudio(row.body))continue;
+  const alreadyAnswered=one(`SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id
+    WHERE t.lead_id=? AND m.direction='out' AND m.at>=? LIMIT 1`,row.lead_id,row.received_at);
+  if(alreadyAnswered)continue;
+  const alreadySent=one(`SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id
+    WHERE t.lead_id=? AND m.provider_id LIKE 'intro-voice:%' LIMIT 1`,row.lead_id);
+  if(alreadySent||one('SELECT 1 FROM suppressions WHERE phone=?',row.phone))continue;
+  const routed=routeIntroductionReply({leadId:row.lead_id,providerId:row.provider_id,body:row.body,inboxState:'REVIEW',receivedAt:row.received_at});
+  if(routed.state==='VOICE_WAITING'){recovered++;suffixes.push(String(row.phone).slice(-4));}
+ }
+ return {recovered,contactSuffixes:suffixes};
 }
