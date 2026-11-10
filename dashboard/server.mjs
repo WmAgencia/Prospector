@@ -927,7 +927,7 @@ const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=
 try{
  const fix=recoverDisabledPitchQueue();
  console.info('[reply queue recovery]',JSON.stringify(fix));
- for(const phoneNumber of (process.env.PROSPECTOR_RECOVERY_PRIORITY_CONTACTS||'').split(',').map(x=>x.trim()).filter(x=>/^55\\d{10,11}$/.test(x)).slice(0,5)){
+ for(const phoneNumber of (process.env.PROSPECTOR_RECOVERY_PRIORITY_CONTACTS||'').split(',').map(x=>x.trim()).filter(x=>/^55\d{10,11}$/.test(x)).slice(0,5)){
   const state=one("SELECT lead_id,stage,session_id,reason,sent_at,created_at,due_at FROM prospecting_introductions WHERE phone=?",phoneNumber);
   const records=state?one(`SELECT
    SUM(CASE WHEN m.direction='out' AND m.provider_id LIKE 'intro:%' THEN 1 ELSE 0 END) introTexts,
