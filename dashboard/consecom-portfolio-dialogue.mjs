@@ -16,3 +16,9 @@ export function consecomPortfolioDialogue({text='',voiceAlreadySent=false}={}){
   return {kind:'OFFER_CONTEXT',text:'A proposta é criar um site profissional pra empresa por R$ 350, numa condição especial pra compor o portfólio da Consecom. O áudio apresenta os detalhes do projeto.'};
  return null;
 }
+
+export function offScriptPortfolioDraft(text=''){
+ const s=normalize(text);
+ return /(?:como (?:podemos|posso) ajudar|como (?:a|o) .{1,65} pode melhorar (?:a |sua |o )?(?:presenca|contato)|otimizar (?:o |seu )?contato|quais? (?:os? )?(?:objetivos?|necessidades?) (?:voces|voce) (?:buscam?|tem)|que tipo de automacao|qual automacao (?:voce|voces) (?:precisa|quer))/.test(s);
+}
+export const CONSECOM_SITE_PITCH_SAFE='A ideia da Consecom é criar um site profissional pra vocês por R$ 350, numa condição especial pra compor nosso portfólio. Se quiser, posso te explicar os detalhes da proposta.';

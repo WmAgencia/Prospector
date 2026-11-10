@@ -31,3 +31,11 @@ test('requested time is relayed without claiming scheduled followup',()=>{
 test('audio already received follows ordinary human-driven replies',()=>{
  assert.equal(consecomPortfolioDialogue({text:'Bom dia, bem e vc!',voiceAlreadySent:true}),null);
 });
+
+test('generic website needs-assessment drafts are replaced with the verified site offer',async()=>{
+ const {offScriptPortfolioDraft,CONSECOM_SITE_PITCH_SAFE}=await import('../dashboard/consecom-portfolio-dialogue.mjs');
+ assert.equal(offScriptPortfolioDraft('Tudo bem! Como a Auto Elétrica pode melhorar a presença online ou otimizar o contato com clientes?'),true);
+ assert.equal(offScriptPortfolioDraft('Qual objetivo vocês buscam com o site ou automação?'),true);
+ assert.equal(offScriptPortfolioDraft('Então vou conversar com os donos na terça-feira.'),false);
+ assert.match(CONSECOM_SITE_PITCH_SAFE,/R\$ 350/);
+});

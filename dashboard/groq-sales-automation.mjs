@@ -9,7 +9,7 @@ import {prospectSalesContext,priceQuestion,salesEnding} from './sales-policy.mjs
 import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,proposalRequestWhileBusy,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup,safeGeneralReply} from './portfolio-offer-550.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {portfolioAudioSentFor,portfolioPitchAudioEnabled} from './portfolio-pitch-audio.mjs';
-import {consecomPortfolioDialogue} from './consecom-portfolio-dialogue.mjs';
+import {consecomPortfolioDialogue,offScriptPortfolioDraft,CONSECOM_SITE_PITCH_SAFE} from './consecom-portfolio-dialogue.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
@@ -199,6 +199,7 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('REVIEW','GROQ_UNAVAILABLE');
  }
  if(fixedOffer&&proposalRequestWhileBusy(r.body))draft.draft=fixedOfferPitch({business:r.business,segment:r.segment},new Date(),{busy:true});
+ if(campaign350&&!scripted&&offScriptPortfolioDraft(draft.draft)){audit('FRANCISCA_CAMPAIGN_SCRIPT_CORRECTED',r.lead_id,{campaign:'PORTFOLIO_350'});draft.draft=CONSECOM_SITE_PITCH_SAFE;}
  let replyText=refineChatReply(draft.draft,{state:dialogue,incoming:r.body});
  if(!replyText){
   audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});
