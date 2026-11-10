@@ -1,0 +1,27 @@
+name: Consecom owner profile and voice-first flow
+on:
+  push:
+    branches: [fix/owner-training-audio-first-20261110, feature/tenant-bulk-approvals-20261109]
+    paths:
+      - 'dashboard/training.mjs'
+      - 'dashboard/consecom-owner-profile-rules.mjs'
+      - 'dashboard/prospecting-introduction.mjs'
+      - 'dashboard/portfolio-pitch-audio.mjs'
+      - 'dashboard/groq-sales-automation.mjs'
+      - 'tests/consecom-owner-audio-script.test.mjs'
+      - '.github/workflows/consecom-owner-audio-script.yml'
+jobs:
+  voice-first:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/training.mjs
+      - run: node --check dashboard/prospecting-introduction.mjs
+      - run: node --check dashboard/groq-sales-automation.mjs
+      - run: node --test tests/consecom-owner-audio-script.test.mjs tests/prospecting-owner-audio-pitch.test.mjs tests/consecom-portfolio-dialogue.test.mjs tests/inbound-automation.test.mjs

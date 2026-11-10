@@ -13,7 +13,7 @@ import {tenantApproachGreeting} from './tenant-approach.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
-import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
+import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,acceptsPortfolioPresentation,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
@@ -64,7 +64,9 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   cancelIntroduction(leadId,'INBOX_'+inboxState);
   return {managed:true,queueAi:false,state:'CANCELLED'};
  }
- const wantsVoice=portfolioPitchAudioEnabled()&&wantsPortfolioPitchAudio(body);
+ const prefersText=/(?:prefiro|quero) (?:em )?texto|(?:nao|não).{0,20}(?:audio|áudio|voz)/i.test(body);
+ const wantsVoice=portfolioPitchAudioEnabled()&&!prefersText&&wantsPortfolioPitchAudio(body);
+ const acceptsVoice=portfolioPitchAudioEnabled()&&!prefersText&&acceptsPortfolioPresentation(body);
  const received=new Date(receivedAt),timestamp=Number.isFinite(received.getTime())?received:new Date();
  const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
  const sourceId=String(providerId||'').slice(0,180);
@@ -76,7 +78,7 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   return {managed:true,queueAi:false,state:next};
  }
  if(item.stage==='WAITING'){
-  if(wantsVoice){
+  if(wantsVoice||acceptsVoice){
    run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='WAITING'",due,now(),leadId);
    audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due});
    return {managed:true,queueAi:false,state:'VOICE_WAITING'};
@@ -84,9 +86,9 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   return {managed:true,queueAi:false,state:'WAITING'};
  }
  if(item.stage==='VOICE_WAITING')return {managed:true,queueAi:false,state:'VOICE_WAITING'};
- if(item.stage==='SENT'&&wantsVoice){
+ if(item.stage==='SENT'&&(wantsVoice||acceptsVoice)){
   run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='SENT'",due,now(),leadId);
-  audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due,afterTextIntro:true});
+  audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due,afterTextIntro:true,affirmative:acceptsVoice});
   return {managed:true,queueAi:false,state:'VOICE_WAITING'};
  }
  if(item.stage==='SENT'||item.stage==='VOICE_SENT'){

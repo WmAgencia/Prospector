@@ -21,6 +21,11 @@ export function wantsPortfolioPitchAudio(text=''){
  if(!s||s.length>850)return false;
  return /(?:sobre o que|do que se trata|qual (?:e |seria )?(?:a |essa |sua )?(?:proposta|oferta)|que (?:proposta|oferta)|(?:pode|poderia|podia) (?:me )?(?:falar|explicar|contar|mandar)|(?:me )?(?:explica|fala|conte|manda)(?: (?:melhor|mais|a proposta|o que))?|o que (?:voces|voce) (?:faz|fazem|oferece|oferecem)|como funciona (?:a |essa |sua )?(?:proposta|oferta))/i.test(s);
 }
+export function acceptsPortfolioPresentation(text=''){
+ const s=normalized(text).replace(/[.!?]+$/g,'').trim();
+ if(!s||s.length>110||/(?:nao|sem interesse|depois|prefiro texto)/.test(s))return false;
+ return /^(?:perfeito|beleza|claro|pode ser|certo|ok|okay|sim|pode falar|pode mandar|manda|pode enviar|me manda|pode explicar|tudo certo|combinado)(?:[ ,.!?].*)?$/.test(s);
+}
 export function portfolioAudioSentFor(intro){
  return intro?.reason==='PITCH_AUDIO_350'&&
   ['VOICE_SENT','CONVERSING'].includes(intro.stage);

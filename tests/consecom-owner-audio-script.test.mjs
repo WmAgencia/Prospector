@@ -1,0 +1,62 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-voice-order-'));
+process.env.WA_AKG_SESSION_ID='consecom-principal';
+process.env.PROSPECTOR_PITCH_AUDIO_ENABLED='true';
+process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN='true';
+const db=await import('../dashboard/db.mjs');
+const {registerGreeting,routeIntroductionReply,introductionStatus,tickIntroductions}=await import('../dashboard/prospecting-introduction.mjs');
+const {acceptsPortfolioPresentation,portfolioAudioSentFor}=await import('../dashboard/portfolio-pitch-audio.mjs');
+const {OWNER_CAMPAIGN_RULES_VERSION,mergeConsecomOwnerRules}=await import('../dashboard/consecom-owner-profile-rules.mjs');
+
+test('owner profile receives campaign-specific rules without replacing existing training',()=>{
+ const before='# Meu treinamento antigo\n\nA Consecom vende sites e possui meu jeito de escrever.';
+ const after=mergeConsecomOwnerRules(before);
+ assert.ok(after.startsWith(before));
+ assert.match(after,/R\$ 350/);
+ assert.match(after,/R\$ 550/);
+ assert.match(after,/nunca perguntar/i);
+ assert.match(after,/áudio original/);
+ assert.match(after,new RegExp(OWNER_CAMPAIGN_RULES_VERSION));
+ assert.equal(mergeConsecomOwnerRules(after),after);
+ assert.equal(mergeConsecomOwnerRules(''),null);
+ assert.equal(mergeConsecomOwnerRules('X'.repeat(17900)),null);
+});
+test('a courteous hello is not approval to skip the introduction, but "Perfeito" accepts the original audio',async()=>{
+ const lead=db.addLead({business:'Empresa teste áudio',phone:'5515999543198',source:'maps_extension',contact_permission:true}).lead;
+ db.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Teste simulado com autorização'});
+ const greetingId=db.id(),jid=lead.phone+'@s.whatsapp.net';
+ const thread=db.getThread(lead.id,jid);
+ db.addMessage({threadId:thread.id,providerId:'prospect-queue:'+greetingId,direction:'out',body:'Olá, bom dia! Tudo bem?',status:'sent'});
+ assert.equal(registerGreeting({leadId:lead.id,greetingId,sessionId:'consecom-principal'}),true);
+ const first=routeIntroductionReply({leadId:lead.id,providerId:'human-1',body:'Bom dia, tudo bem?',receivedAt:new Date(Date.now()-70000)});
+ assert.equal(first.state,'WAITING');
+ assert.equal(first.queueAi,false);
+ let texts=0,voices=0;
+ const send=async()=>{texts++;return {status:true};};
+ const voice=async()=>{voices++;return {accepted:true,verifiedOnPhone:false};};
+ const introText=await tickIntroductions({status:async()=>({connected:true}),currentTime:()=>Date.now(),
+  send,sendAudio:voice,loadAudio:async()=>({bytes:Buffer.alloc(300000)})});
+ assert.equal(introText.state,'SENT',JSON.stringify(introText));
+ assert.equal(texts,1);assert.equal(voices,0);
+ assert.equal(acceptsPortfolioPresentation('Perfeito'),true);
+ assert.equal(acceptsPortfolioPresentation('agora não'),false);
+ const second=routeIntroductionReply({leadId:lead.id,providerId:'human-2',body:'Perfeito',receivedAt:new Date(Date.now()-40000)});
+ assert.equal(second.state,'VOICE_WAITING',JSON.stringify(second));
+ assert.equal(second.queueAi,false);
+ assert.equal(introductionStatus(lead.id).stage,'VOICE_WAITING');
+ const sentVoice=await tickIntroductions({status:async()=>({connected:true}),currentTime:()=>Date.now(),
+  send,sendAudio:voice,loadAudio:async()=>({bytes:Buffer.alloc(300000)})});
+ assert.equal(sentVoice.state,'VOICE_SENT',JSON.stringify(sentVoice));
+ assert.equal(texts,1);assert.equal(voices,1);
+ assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
+ const third=routeIntroductionReply({leadId:lead.id,providerId:'human-3',body:'Gostei, pode explicar um detalhe?'});
+ assert.equal(third.state,'CONVERSING');
+ assert.equal(third.queueAi,true);
+ const noDuplicate=await tickIntroductions({sendAudio:()=>{throw Error('DUPLICATE AUDIO');}});
+ assert.equal(noDuplicate.state,'IDLE');
+});
+test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
