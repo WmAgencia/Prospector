@@ -1,6 +1,8 @@
 import {all,one} from './db.mjs';
 import {daySP} from './radar.mjs';
-export const DAILY_APPROACH_LIMIT=250;
+export const OWNER_DAILY_APPROACH_LIMIT=80;
+export const OTHER_TENANT_DAILY_APPROACH_LIMIT=250;
+export const DAILY_APPROACH_LIMIT=(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')?OTHER_TENANT_DAILY_APPROACH_LIMIT:OWNER_DAILY_APPROACH_LIMIT;
 export function dailyApproachBudget(at=new Date()){
  const day=daySP(at),since=new Date(at.getTime()-48*3600000).toISOString();
  const events=all("SELECT lead_id,status,updated_at AS at FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status IN ('SENT','UNKNOWN','SENDING') AND updated_at>=?",since);
