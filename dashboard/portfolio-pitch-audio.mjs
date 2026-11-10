@@ -19,6 +19,7 @@ export function portfolioPitchAudioEnabled(){
 export function wantsPortfolioPitchAudio(text=''){
  const s=normalized(text);
  if(!s||s.length>850)return false;
+ if(/(?:o que (?:seria|e) sobre (?:a |essa |sua )?proposta|sobre (?:a |essa |sua )?proposta(?:[!? .]|$)|(?:que|qual) (?:e |seria )?(?:o )?assunto da proposta|que negocio e esse da proposta)/.test(s))return true;
  if(/(?:que|qual) (?:e |seria )?(?:o )?tipo de (?:proposta|oferta)|(?:proposta|oferta) de (?:que|qual) tipo|o que (?:e|seria) (?:a |essa |sua )?proposta|como assim (?:essa |a )?proposta|(?:que|qual) (?:e |seria )?(?:essa |a |sua )?(?:ideia|proposta)/i.test(s))return true;
  return /(?:sobre o que|do que se trata|qual (?:e |seria )?(?:a |essa |sua )?(?:proposta|oferta)|que (?:proposta|oferta)|(?:pode|poderia|podia) (?:me )?(?:falar|explicar|contar|mandar)|(?:me )?(?:explica|fala|conte|manda)(?: (?:melhor|mais|a proposta|o que))?|o que (?:voces|voce) (?:faz|fazem|oferece|oferecem)|como funciona (?:a |essa |sua )?(?:proposta|oferta))/i.test(s);
 }
