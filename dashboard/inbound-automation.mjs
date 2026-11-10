@@ -1,7 +1,7 @@
 // Message signals, not a claim to identify every AI. Never follow a redirected
 // number/link or treat a canned greeting as a person's interest or permission.
 const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
-export const INBOUND_AUTOMATION_VERSION='2026-11-05-v2';
+export const INBOUND_AUTOMATION_VERSION='2026-11-10-v3';
 export function classifyInboundAutomation(value=''){
  const n=normalize(value);
  const result=(reason,action='WAIT_HUMAN')=>({blocked:true,reason,action});
@@ -13,7 +13,11 @@ export function classifyInboundAutomation(value=''){
  if(/(?:mensagem|resposta|atendimento)\s+automatic[ao]|^[^a-z]*(?:assistente virtual|chatbot|menu (?:virtual|automatico))\b/.test(n)&&
     !/\b(?:nao (?:quero|mande|use)|recebi|recebemos|voces usam|voce e|isso e)\b.{0,45}(?:automatic|assistente|robo|bot)/.test(n))return result('AUTOMATIC_LABEL');
  if(/(?:digite|escolha|selecione|pressione)\s+(?:[0-9#*]|uma (?:das )?opco?e?s?|a opcao)|(?:para (?:agendar|orcamento|atendimento|suporte|continuar).{0,45}(?:informe|digite|selecione))|(?:informe (?:seu )?nome.{0,80}(?:modelo|ano|data|motor|servico|defeito))/.test(n))return result('AUTOMATIC_MENU');
- if(/(?:estamos|encontramo nos|no momento estamos).{0,35}(?:ausentes|indisponiveis|fora do horario|fechados)|(?:retornaremos|retornamos|responderemos).{0,45}(?:assim que possivel|em breve|horario comercial)|fora (?:do nosso|do) horario de atendimento/.test(n))return result('AWAY_MESSAGE');
+ if(/(?:estamos|encontramo nos|no momento estamos).{0,35}(?:ausentes|indisponiveis|fora do horario|fechados)|(?:retornaremos|retornamos|responderemos).{0,45}(?:assim que possivel|em breve|horario comercial)|fora (?:do nosso|do) horario de atendimento|(?:assim que possivel|em breve).{0,30}(?:irei|vamos|nos iremos).{0,28}(?:responder|retornar)|(?:irei|vamos).{0,28}(?:responder|retornar).{0,28}(?:assim que possivel|em breve)/.test(n))return result('AWAY_MESSAGE');
+ // A named company acknowledging a contact and quoting opening hours is not
+ // a human reply, even when it does not explicitly say "mensagem automática".
+ if(/(?:agradece|agradecemos|obrigad[oa] pelo).{0,35}(?:seu|o) contato/.test(n)&&
+    /(?:horario de funcionamento|horario comercial|assim que possivel|em breve|retornarem?os|responderemos|irei te responder)/.test(n))return result('CANNED_GREETING');
  if(/(?:seja(?:m)? (?:muito )?bem[ -]?vind[oa]s?|agradece(?:mos)? (?:o |seu |o seu )?contato|obrigad[oa] pelo (?:seu )?contato).{0,180}(?:como (?:podemos|posso) ajudar|em que (?:podemos|posso) ajudar|retornaremos|horario de atendimento)/.test(n))return result('CANNED_GREETING');
  return {blocked:false,reason:'NO_AUTOMATION_SIGNAL',action:'CONTINUE'};
 }
