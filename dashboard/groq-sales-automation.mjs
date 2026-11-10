@@ -56,6 +56,9 @@ export function queueInboundTurn({providerId,jid,sessionId}={}){
  const intro=lead?introductionStatus(lead.id):null;
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(lead.id))return false;
  const allowed=approvedProspectFollowup(identity,jid);
+ if(intro&&portfolioPitchAudioEnabled()&&
+  (!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&
+  !portfolioAudioSentFor(intro))return false;
  if(!allowed&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!testModeAllowed(String(jid).split('@')[0]))return false;
  return run("INSERT OR IGNORE INTO groq_auto_events(provider_id,jid,state,at) VALUES(?,?,?,?)",providerId,jid,'PENDING',now()).changes>0;
 }
@@ -72,8 +75,12 @@ export async function handleSalesTurn(providerId,deps={}){
  const portfolioAllowed=(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
  const intro=introductionStatus(r.lead_id);
  const audioOffer350=portfolioAudioSentFor(intro);
- const campaign350=portfolioAllowed&&!!intro&&portfolioPitchAudioEnabled();
+ // A Consecom introduction is the campaign ID, independent of whether an
+ // older batch selection remains in 'SENT' after its queue progresses.
+ const campaign350=(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&
+  !!intro&&portfolioPitchAudioEnabled()&&identity.role==='PROSPECT_APPROACHED';
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))return finish('SKIPPED','INTRO_NOT_COMPLETE');
+ if(campaign350&&!audioOffer350)return finish('REVIEW','CAMPAIGN_AUDIO_FIRST_REQUIRED');
  if(!prospectorChatEligible({jid:r.jid,sessionId:r.session_id}))return finish('SKIPPED','NOT_PROSPECTOR_APPROACHED');
  if(identity.role==='OWNER'&&!allowTest)return finish('HANDOFF','OWNER_PRIVILEGED_CHANNEL');
  if(!salesFollowup&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!allowTest)return finish('DISABLED');
