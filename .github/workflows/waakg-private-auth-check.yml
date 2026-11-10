@@ -1,0 +1,21 @@
+name: WA-AKG private auth recovery
+on:
+  push:
+    branches:
+      - fix/gateway-private-network-auth-20261110
+  pull_request:
+    branches:
+      - feature/tenant-bulk-approvals-20261109
+jobs:
+  auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/waakg-control.mjs
+      - run: node --test tests/waakg-private-auth-cooldown.test.mjs
