@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: '22'
       - run: node --check dashboard/public/francisca-orb.mjs
-      - run: node --check dashboard/public/simple-app.js
+      - run: node --input-type=module --check < dashboard/public/simple-app.js
       - run: node --test tests/francisca-orb.test.mjs
       - name: Verify both interfaces and voice playback are wired
         run: |
