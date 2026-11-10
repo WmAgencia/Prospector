@@ -6,7 +6,7 @@ export function consecomPortfolioDialogue({text='',voiceAlreadySent=false}={}){
  const s=normalize(text);
  if(!s||voiceAlreadySent)return null;
  // Scheduling is a human task here: do not claim an appointment or reminder.
- if(/^(?:depois|apos|a partir) das?\s*\d{1,2}(?:\s*h(?:oras?)?)?\.?!$/.test(s))
+ if(/^(?:depois|apos|a partir) das?\s*\d{1,2}(?:\s*h(?:oras?)?)?[.!?]?$/.test(s))
   return {kind:'TIME_WINDOW',text:'Combinado, obrigado por avisar! Vou passar o horário que você indicou pro responsável, pra ele combinar certinho o retorno.',notifyOwner:true};
  if(/(?:donos?|responsaveis?|gerentes?|diretoria).{0,70}(?:ferias|viajando|so (?:voltam|retornam)|estarao|estao fora|precisam ver)|(?:ferias|viajando|voltam|retornam).{0,70}(?:donos?|responsaveis?)|(?:retorn[ae]|fale|converse|entre em contato).{0,40}(?:terca|quarta|quinta|sexta|segunda|semana que vem|outro dia|mais tarde)/.test(s))
   return {kind:'DECISION_MAKER_UNAVAILABLE',text:'Entendi, sem problema! A proposta é oferecer um site profissional pra oficina numa condição especial, pra incluir o trabalho no portfólio da Consecom. Podemos conversar com os responsáveis quando estiverem disponíveis.',notifyOwner:true};
