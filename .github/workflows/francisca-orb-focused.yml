@@ -1,0 +1,34 @@
+name: Francisca reactive orb focused checks
+on:
+  push:
+    branches: [feat/francisca-orb-audio-reactive-20261110, main]
+    paths:
+      - 'dashboard/public/francisca-orb.mjs'
+      - 'dashboard/public/simple-app.js'
+      - 'dashboard/public/dashboard-purple.css'
+      - 'tests/francisca-orb.test.mjs'
+      - '.github/workflows/francisca-orb-focused.yml'
+  pull_request:
+    paths:
+      - 'dashboard/public/francisca-orb.mjs'
+      - 'dashboard/public/simple-app.js'
+      - 'dashboard/public/dashboard-purple.css'
+      - 'tests/francisca-orb.test.mjs'
+jobs:
+  orb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check dashboard/public/francisca-orb.mjs
+      - run: node --check dashboard/public/simple-app.js
+      - run: node --test tests/francisca-orb.test.mjs
+      - name: Verify both interfaces and voice playback are wired
+        run: |
+          grep -q "francisca-training-stage" dashboard/public/simple-app.js
+          grep -q "francisca-owner-orb-hero" dashboard/public/simple-app.js
+          grep -q "orbTrack(audio,'training')" dashboard/public/simple-app.js
+          grep -q "orbTrack(audio,'floating')" dashboard/public/simple-app.js
