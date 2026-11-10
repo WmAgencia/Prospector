@@ -16,12 +16,24 @@ export const CURRENT_VOICE_PITCH_TEXT=
 export function currentVoiceEligible(){
  return !process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
 }
+let cachedVoice=null,cachedAt=0,voicePromise=null;
 export async function loadCurrentPortfolioVoice({synthesize=makeFranciscaVoice}={}){
  if(!currentVoiceEligible())throw Error('CONSECOM_VOICE_WRONG_TENANT');
  if(process.env.FRANCISCA_TTS_ENABLED!=='true')throw Error('CONSECOM_VOICE_550_TTS_UNAVAILABLE');
- const audio=await synthesize(CURRENT_VOICE_PITCH_TEXT);
- if(!Buffer.isBuffer(audio?.bytes)||audio.bytes.length<256)throw Error('CONSECOM_VOICE_550_BAD_OUTPUT');
- return {bytes:audio.bytes,offerBRL:CURRENT_VOICE_OFFER_BRL,source:'FRANCISCA_TTS',durationSeconds:null};
+ const production=synthesize===makeFranciscaVoice;
+ if(production&&cachedVoice&&Date.now()-cachedAt<30*60_000)return cachedVoice;
+ if(production&&voicePromise)return voicePromise;
+ const prepare=async()=>{
+  const audio=await synthesize(CURRENT_VOICE_PITCH_TEXT,{format:'ogg'});
+  if(!Buffer.isBuffer(audio?.bytes)||audio.bytes.length<256)throw Error('CONSECOM_VOICE_550_BAD_OUTPUT');
+  if(production&&(audio.mimeType!=='audio/ogg; codecs=opus'||audio.bytes.toString('ascii',0,4)!=='OggS'))
+   throw Error('CONSECOM_VOICE_NOT_NATIVE_OPUS');
+  return {bytes:audio.bytes,mimeType:audio.mimeType||'audio/ogg; codecs=opus',
+   offerBRL:CURRENT_VOICE_OFFER_BRL,source:'FRANCISCA_TTS_OPUS',durationSeconds:null};
+ };
+ if(!production)return prepare();
+ voicePromise=prepare().then(asset=>{cachedVoice=asset;cachedAt=Date.now();return asset;}).finally(()=>{voicePromise=null;});
+ return voicePromise;
 }
 
 export function currentPortfolioVoiceSentFor(intro){
