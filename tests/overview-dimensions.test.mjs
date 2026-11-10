@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/prospector-metrics-');
 const db=await import('../dashboard/db.mjs');
+await import('../dashboard/prospecting-queue.mjs');
 const {aggregateOutreachDimensions,outreachDimensionSnapshot}=await import('../dashboard/overview-dimensions.mjs');
 
 test('aggregates unique approached companies and confirmed conversions by city and niche',()=>{
