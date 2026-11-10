@@ -17,6 +17,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Install audio conversion dependency
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
       - name: Check module and UI syntax
         run: |
           node --check dashboard/prospect-terminal-conversation.mjs
