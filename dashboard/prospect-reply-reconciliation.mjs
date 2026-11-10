@@ -28,7 +28,7 @@ export function chooseMissedReply(messages,earliest=0){
 export async function reconcileApproachedReplies({maxContacts=12,request=waRequest}={}){
  const since=new Date(Date.now()-3*86400000).toISOString();
  const priority=(process.env.PROSPECTOR_RECOVERY_PRIORITY_CONTACTS||'').split(',')
-  .map(x=>x.trim()).filter(x=>/^55\\d{10,11}$/.test(x)).slice(0,5);
+  .map(x=>x.trim()).filter(x=>/^55\d{10,11}$/.test(x)).slice(0,5);
  const candidates=all(`SELECT p.lead_id,p.phone,p.session_id,p.stage,p.created_at
   FROM prospecting_introductions p
   WHERE p.stage IN ('GREETING_SENT','SENT','CONVERSING') AND p.created_at>=?
