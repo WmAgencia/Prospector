@@ -1,0 +1,22 @@
+name: Safe reply evidence
+on:
+  push:
+    branches:
+      - fix/verify-and-recover-wesley-intro-20261110
+  pull_request:
+    branches:
+      - feature/tenant-bulk-approvals-20261109
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/prospect-reply-reconciliation.mjs
+      - run: node --check dashboard/server.mjs
+      - run: node --test tests/prospect-reply-recovery.test.mjs
