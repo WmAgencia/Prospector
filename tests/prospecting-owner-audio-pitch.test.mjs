@@ -11,6 +11,7 @@ process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN='true';
 const db=await import('../dashboard/db.mjs');
 const {registerGreeting,routeIntroductionReply,introductionStatus,tickIntroductions}=await import('../dashboard/prospecting-introduction.mjs');
 const {wantsPortfolioPitchAudio,portfolioAudioSentFor,portfolioPitchAudioHealth}=await import('../dashboard/portfolio-pitch-audio.mjs');
+const {currentPortfolioVoiceSentFor}=await import('../dashboard/portfolio-pitch-voice-550.mjs');
 let idNum=1000;
 function addAuthorized(){
  const phone='55159987'+String(idNum++).padStart(4,'0');
@@ -26,6 +27,8 @@ function addAuthorized(){
 test('phrases asking for the offer choose voice; generic greetings do not',()=>{
  assert.equal(wantsPortfolioPitchAudio('Oi, pode falar. É sobre o quê?'),true);
  assert.equal(wantsPortfolioPitchAudio('Pode explicar melhor essa proposta?'),true);
+ assert.equal(wantsPortfolioPitchAudio('Que tipo de proposta?'),true);
+ assert.equal(wantsPortfolioPitchAudio('Qual é o tipo de oferta?'),true);
  assert.equal(wantsPortfolioPitchAudio('Oi, tudo bem?'),false);
  assert.equal(wantsPortfolioPitchAudio('Não tenho interesse'),false);
 });
@@ -42,7 +45,7 @@ test('first permission to explain queues original voice only, never text, and ne
  const sent=await tickIntroductions({
   currentTime:()=>Date.now(),status:async()=>({connected:true}),
   send:async()=>{textCount++;return {status:true};},
-  loadAudio:async()=>({bytes:Buffer.alloc(300000,19)}),
+  loadAudio:async()=>({bytes:Buffer.alloc(300000,19),offerBRL:550,source:'FRANCISCA_TTS'}),
   sendAudio:async({jid:to,session,bytes})=>{
    voiceCount++;assert.equal(to,jid);assert.equal(session,'consecom-principal');
    assert.equal(bytes.length,300000);return {accepted:true,verifiedOnPhone:false};
@@ -51,13 +54,15 @@ test('first permission to explain queues original voice only, never text, and ne
  assert.equal(sent.state,'VOICE_SENT',JSON.stringify(sent));
  assert.equal(textCount,0);
  assert.equal(voiceCount,1);
- assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
+ assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),false);
+ assert.equal(currentPortfolioVoiceSentFor(introductionStatus(lead.id)),true);
  const second=await tickIntroductions({sendAudio:async()=>{throw Error('DUPLICATE');}});
  assert.equal(second.state,'IDLE');
  const next=routeIntroductionReply({leadId:lead.id,providerId:'inbound-next',body:'Gostei, me conta mais'});
  assert.equal(next.state,'CONVERSING');
  assert.equal(next.queueAi,true);
- assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
+ assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),false);
+ assert.equal(currentPortfolioVoiceSentFor(introductionStatus(lead.id)),true);
  const matches=db.all("SELECT provider_id FROM messages WHERE provider_id LIKE 'intro-voice:%' AND direction='out'");
  assert.equal(matches.length,1);
 });

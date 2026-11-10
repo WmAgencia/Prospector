@@ -10,6 +10,7 @@ process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN='true';
 const db=await import('../dashboard/db.mjs');
 const {registerGreeting,routeIntroductionReply,introductionStatus,tickIntroductions}=await import('../dashboard/prospecting-introduction.mjs');
 const {acceptsPortfolioPresentation,portfolioAudioSentFor}=await import('../dashboard/portfolio-pitch-audio.mjs');
+const {currentPortfolioVoiceSentFor}=await import('../dashboard/portfolio-pitch-voice-550.mjs');
 const {OWNER_CAMPAIGN_RULES_VERSION,mergeConsecomOwnerRules}=await import('../dashboard/consecom-owner-profile-rules.mjs');
 
 test('owner profile receives campaign-specific rules without replacing existing training',()=>{
@@ -39,7 +40,7 @@ test('a courteous hello is not approval to skip the introduction, but "Perfeito"
  const send=async()=>{texts++;return {status:true};};
  const voice=async()=>{voices++;return {accepted:true,verifiedOnPhone:false};};
  const introText=await tickIntroductions({status:async()=>({connected:true}),currentTime:()=>Date.now(),
-  send,sendAudio:voice,loadAudio:async()=>({bytes:Buffer.alloc(300000)})});
+  send,sendAudio:voice,loadAudio:async()=>({bytes:Buffer.alloc(300000),offerBRL:550,source:'FRANCISCA_TTS'})});
  assert.equal(introText.state,'SENT',JSON.stringify(introText));
  assert.equal(texts,1);assert.equal(voices,0);
  assert.equal(acceptsPortfolioPresentation('Perfeito'),true);
@@ -49,10 +50,11 @@ test('a courteous hello is not approval to skip the introduction, but "Perfeito"
  assert.equal(second.queueAi,false);
  assert.equal(introductionStatus(lead.id).stage,'VOICE_WAITING');
  const sentVoice=await tickIntroductions({status:async()=>({connected:true}),currentTime:()=>Date.now(),
-  send,sendAudio:voice,loadAudio:async()=>({bytes:Buffer.alloc(300000)})});
+  send,sendAudio:voice,loadAudio:async()=>({bytes:Buffer.alloc(300000),offerBRL:550,source:'FRANCISCA_TTS'})});
  assert.equal(sentVoice.state,'VOICE_SENT',JSON.stringify(sentVoice));
  assert.equal(texts,1);assert.equal(voices,1);
- assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
+ assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),false);
+ assert.equal(currentPortfolioVoiceSentFor(introductionStatus(lead.id)),true);
  const third=routeIntroductionReply({leadId:lead.id,providerId:'human-3',body:'Gostei, pode explicar um detalhe?'});
  assert.equal(third.state,'CONVERSING');
  assert.equal(third.queueAi,true);

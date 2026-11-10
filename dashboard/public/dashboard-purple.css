@@ -746,3 +746,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .training-payment-row small{font-size:10px;color:#706487}
 @media(max-width:1100px){.training-addons-grid{grid-template-columns:1fr}}
 @media(max-width:630px){.training-addons-pair{grid-template-columns:1fr}.training-addons-card{padding:16px!important}.training-proof-item{flex-direction:column}.training-proof-controls{flex-direction:row}}
+
+
+/* Overview: two visible cards per stage, then the page scrolls to the analytics. */
+body:has(.kanban-dashboard) .kanban-dashboard{height:auto!important;min-height:0!important;}
+body:has(.kanban-dashboard) .kanban-dashboard .kanban-columns{
+ flex:0 0 auto!important;height:448px!important;min-height:0!important;
+ align-items:stretch!important;overflow-y:hidden!important;
+}
+body:has(.kanban-dashboard) .kanban-dashboard .kanban-column{
+ height:100%!important;min-height:0!important;max-height:448px!important;
+}
+body:has(.kanban-dashboard) .kanban-dashboard .kanban-column-items{
+ flex:1 1 auto!important;min-height:0!important;max-height:100%!important;
+ overflow-y:auto!important;overscroll-behavior-y:auto!important;
+ scrollbar-width:thin;
+}
+@media(max-width:700px){
+ body:has(.kanban-dashboard) .kanban-dashboard .kanban-columns{height:430px!important;}
+ body:has(.kanban-dashboard) .kanban-dashboard .kanban-column{max-height:430px!important;}
+}

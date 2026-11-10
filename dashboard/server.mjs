@@ -70,7 +70,7 @@ import {armApprovedOutreach,apply250DailyLimit} from './approval-ready-activatio
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
-import {tickIntroductions} from './prospecting-introduction.mjs';
+import {tickIntroductions,recoverUnansweredPitchRequests} from './prospecting-introduction.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -918,8 +918,19 @@ const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
 }).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160))),1000);
 const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=>{
  if(['SENT','VOICE_SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
+ if(result.state==='VOICE_SENT')console.info('[prospect introduction] voice gateway accepted',JSON.stringify({recipientSuffix:result.recipientSuffix,verifiedOnPhone:false}));
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160))),1000);
+// Existing approved conversations can contain an unanswered proposal question
+// from before this deploy. Requeue only an unresponded, explicit question once.
+if(process.env.WHATSAPP_TRANSPORT==='waakg'){
+ setTimeout(()=>{
+  try{
+   const repair=recoverUnansweredPitchRequests({windowMinutes:90,limit:8});
+   if(repair.recovered)console.info('[proposal voice repair]',JSON.stringify(repair));
+  }catch(error){console.warn('[proposal voice repair]',String(error?.message||error).slice(0,120));}
+ },7000).unref();
+}
 const agentBridgeTimer=setInterval(()=>syncAgentBridge().then(s=>{const result=enableAuthorizedOutreach();if(result.status==='ENABLED')console.log('[authorized outreach]',result.status,'ready='+result.ready);if(s.state==='READY'||s.state==='WAITING_MEDIA')notify();}).catch(e=>console.error('[agent bridge]',e.message)),120000);
 setTimeout(()=>restorePrivateCampaign().then(s=>{console.log('[private media restore]',s.state,s.message||'');if(s.state==='IMPORTED')syncAgentBridge().then(()=>notify()).catch(()=>{});}).catch(e=>console.error('[private media restore]',e.message)),5000).unref();
 setTimeout(()=>syncAgentBridge().then(()=>{const x=enableAuthorizedOutreach();if(x.status==='ENABLED')console.log('[authorized outreach]',x.status,'ready='+x.ready);notify();}).catch(e=>console.error('[agent bridge]',e.message)),10000).unref();
