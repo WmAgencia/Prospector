@@ -40,16 +40,19 @@ export function armApprovedOutreach(){
 }
 
 
-export const DAILY_250_MARKER='owner_daily_250_20261109_v1';
-export function apply250DailyLimit(){
+// Owner-only limit, shared by all connected WhatsApp numbers. Does not
+// reactivate outreach or modify consent, cadence, campaigns or tenant limits.
+export const OWNER_DAILY_LIMIT=80;
+export const DAILY_80_MARKER='owner_daily_80_20261110_v1';
+export function apply80DailyLimit(){
  if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')
   return {status:'OTHER_TENANT_UNCHANGED'};
- if(getSetting(DAILY_250_MARKER,false)===true)
-  return {status:'ALREADY_APPLIED',dailyLimit:getSetting('daily_limit',150)};
  const previous=getSetting('daily_limit',150);
- setSetting('daily_limit',250);
- setSetting(DAILY_250_MARKER,true);
- audit('OWNER_DAILY_LIMIT_250',null,{previous,current:250,
-  at:new Date().toISOString(),minSpacingSeconds:90,consentRequired:true});
- return {status:'UPDATED',dailyLimit:250,previous};
+ if(previous===OWNER_DAILY_LIMIT&&getSetting(DAILY_80_MARKER,false)===true)
+  return {status:'ALREADY_APPLIED',dailyLimit:OWNER_DAILY_LIMIT};
+ setSetting('daily_limit',OWNER_DAILY_LIMIT);
+ setSetting(DAILY_80_MARKER,true);
+ audit('OWNER_DAILY_LIMIT_80',null,{previous,current:OWNER_DAILY_LIMIT,
+  at:new Date().toISOString(),allConnectedNumbers:true,requiresRecordedConsent:true});
+ return {status:'UPDATED',dailyLimit:OWNER_DAILY_LIMIT,previous};
 }
