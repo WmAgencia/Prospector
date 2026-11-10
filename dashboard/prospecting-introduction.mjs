@@ -13,7 +13,9 @@ import {tenantApproachGreeting} from './tenant-approach.mjs';
 import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
-import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,acceptsPortfolioPresentation,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
+import {wantsPortfolioPitchAudio,acceptsPortfolioPresentation} from './portfolio-pitch-audio.mjs';
+import {loadCurrentPortfolioVoice,currentVoiceEligible,CURRENT_VOICE_OFFER_BRL} from './portfolio-pitch-voice-550.mjs';
+import {queueNotice} from './notifications.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
@@ -65,8 +67,8 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   return {managed:true,queueAi:false,state:'CANCELLED'};
  }
  const prefersText=/(?:prefiro|quero) (?:em )?texto|(?:nao|não).{0,20}(?:audio|áudio|voz)/i.test(body);
- const wantsVoice=portfolioPitchAudioEnabled()&&!prefersText&&wantsPortfolioPitchAudio(body);
- const acceptsVoice=portfolioPitchAudioEnabled()&&!prefersText&&acceptsPortfolioPresentation(body);
+ const wantsVoice=currentVoiceEligible()&&!prefersText&&wantsPortfolioPitchAudio(body);
+ const acceptsVoice=currentVoiceEligible()&&!prefersText&&acceptsPortfolioPresentation(body);
  const received=new Date(receivedAt),timestamp=Number.isFinite(received.getTime())?received:new Date();
  const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
  const sourceId=String(providerId||'').slice(0,180);
@@ -86,10 +88,12 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   return {managed:true,queueAi:false,state:'WAITING'};
  }
  if(item.stage==='VOICE_WAITING')return {managed:true,queueAi:false,state:'VOICE_WAITING'};
- if(item.stage==='SENT'&&(wantsVoice||acceptsVoice)){
-  run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='SENT'",due,now(),leadId);
-  audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due,afterTextIntro:true,affirmative:acceptsVoice});
-  return {managed:true,queueAi:false,state:'VOICE_WAITING'};
+ if(['SENT','CONVERSING'].includes(item.stage)&&(wantsVoice||acceptsVoice)){
+  const pitched=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id LIKE 'intro-voice:%' LIMIT 1",leadId);
+  if(!pitched&&item.reason!=='PITCH_AUDIO_550'){
+   const updated=run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage=?",sourceId,timestamp.toISOString(),due,now(),leadId,item.stage);
+   if(updated.changes){audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due,afterTextIntro:true,affirmative:acceptsVoice});return {managed:true,queueAi:false,state:'VOICE_WAITING'};}
+  }
  }
  if(item.stage==='SENT'||item.stage==='VOICE_SENT'){
   run('UPDATE prospecting_introductions SET stage=?,updated_at=? WHERE lead_id=? AND stage=?','CONVERSING',now(),leadId,item.stage);
@@ -103,7 +107,7 @@ let busy=false;
 export async function tickIntroductions(deps={}){
  if(busy)return {state:'BUSY'};
  const {currentTime=()=>Date.now(),status=waControlStatus,session=selectedWaSession,
-  send=waRequest,sendAudio=sendVoiceWithRecording,loadAudio=readPortfolioPitchAudio}=deps;
+  send=waRequest,sendAudio=sendVoiceWithRecording,loadAudio=loadCurrentPortfolioVoice}=deps;
  busy=true;
  try{
   const at=currentTime();
@@ -121,10 +125,10 @@ export async function tickIntroductions(deps={}){
    // then requests the full pitch as a voice note. Other outbound texts block.
    const extra=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.provider_id<>? AND m.provider_id<>? AND m.rowid>COALESCE((SELECT rowid FROM messages WHERE provider_id=?),0) AND m.at>=? LIMIT 1",
     item.lead_id,'prospect-queue:'+item.greeting_id,'intro:'+item.greeting_id,
-    'prospect-queue:'+item.greeting_id,item.created_at);
+    'prospect-queue:'+item.greeting_id,voiceRequested?(item.first_reply_at||item.created_at):item.created_at);
    if(!conversationAuthorized(item.lead_id)||blocked||takeover?.manual_takeover===1||
     ['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)||extra||
-    identified.role!=='PROSPECT_APPROACHED'||(voiceRequested&&!portfolioPitchAudioEnabled())||
+    identified.role!=='PROSPECT_APPROACHED'||(voiceRequested&&!currentVoiceEligible())||
     (deps.session?session()!==item.session_id:!isManagedSession(item.session_id)||leadSession(item.lead_id)!==item.session_id)){
     return false;
    }
@@ -137,8 +141,13 @@ export async function tickIntroductions(deps={}){
   if(voiceRequested){
    try{
     voice=await loadAudio();
-    if(!Buffer.isBuffer(voice?.bytes)||voice.bytes.length<200000)throw Error('AUDIO_NOT_READY');
-   }catch(e){return {state:'VOICE_ASSET_UNAVAILABLE',reason:String(e?.message||e).slice(0,85)};}
+    if(!Buffer.isBuffer(voice?.bytes)||voice.bytes.length<256||voice.offerBRL!==CURRENT_VOICE_OFFER_BRL)throw Error('AUDIO_OFFER_NOT_APPROVED');
+   }catch(e){
+    const reason=String(e?.message||e).slice(0,85);
+    queueNotice('pitch-550-unavailable:'+item.lead_id,'PITCH_AUDIO_NEEDS_REVIEW',
+     'Áudio da proposta de R$ 550 pendente para '+item.phone+'; motivo: '+reason+'. Conferir WhatsApp antes de qualquer envio manual.',item.lead_id);
+    return {state:'VOICE_ASSET_UNAVAILABLE',reason};
+   }
   }
   const wa=await status(item.session_id);
   if(!wa.connected)return {state:'OFFLINE'};
@@ -157,14 +166,14 @@ export async function tickIntroductions(deps={}){
    }
    const nextStage=voiceRequested?'VOICE_SENT':'SENT';
    run("UPDATE prospecting_introductions SET stage=?,reason=?,sent_at=?,updated_at=? WHERE lead_id=? AND stage='SENDING'",
-    nextStage,voiceRequested?'PITCH_AUDIO_350':null,now(),now(),item.lead_id);
+    nextStage,voiceRequested?'PITCH_AUDIO_550':null,now(),now(),item.lead_id);
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
    if(thread)addMessage({threadId:thread.id,
     providerId:(voiceRequested?'intro-voice:':'intro:')+item.greeting_id,direction:'out',
-    body:voiceRequested?'[Áudio original do Wesley: proposta de portfólio R$ 350]':WESLEY_INTRO,
+    body:voiceRequested?'[Áudio da Francisca: proposta de portfólio R$ 550]':WESLEY_INTRO,
     status:'sent'});
    audit(voiceRequested?'PROSPECT_PITCH_AUDIO_SENT':'PROSPECT_INTRO_SENT',item.lead_id,
-    voiceRequested?{voice:true,sourceSha256:PITCH_AUDIO_ORIGINAL_SHA256,offerBRL:350,delaySeconds:30,
+    voiceRequested?{voice:true,voiceProvider:'FRANCISCA_TTS',offerBRL:CURRENT_VOICE_OFFER_BRL,delaySeconds:30,
      gatewayAccepted:true,verifiedOnPhone:false}:{delaySeconds:30});
    return {state:nextStage,leadId:item.lead_id,verifiedOnPhone:false};
   }catch{
