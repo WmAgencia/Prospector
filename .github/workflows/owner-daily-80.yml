@@ -1,0 +1,22 @@
+name: Owner daily 80 limit
+on:
+  push:
+    branches:
+      - fix/owner-daily-80-approaches-20261110
+  pull_request:
+    branches:
+      - feature/tenant-bulk-approvals-20261109
+jobs:
+  daily-limit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/server.mjs
+      - run: node --check dashboard/daily-approach-limit.mjs
+      - run: node --test tests/owner-daily-80.test.mjs
