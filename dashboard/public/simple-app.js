@@ -32,6 +32,7 @@ let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
 let outreachHours={start:'08:00',end:'17:30'};
+let ownerRecordingStatus=null,ownerRecordingBusy=false;
 let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalSelectAll=false,approvalExcludedIds=new Set(),approvalSelectionCutoff='',approvalBusy=false,approvalFeedback='';
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
 let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
@@ -87,7 +88,7 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
  });
 }
 
-function nav(viewName){if(view==='training'&&viewName!=='training')interviewStopVoice();n('');if(platformContext.role==="master"&&!["dashboard","clients","credits","settings"].includes(viewName))viewName="overview";if((viewName==="clients"||viewName==="dashboard")&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName=platformContext.role==="master"?"dashboard":"overview";if(viewName==="overview"&&platformContext.role==="master")viewName="dashboard";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients")loadClients();if(view==="dashboard")loadMasterMetrics();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();if(view==='approvals')loadApprovals();}
+function nav(viewName){if(view==='training'&&viewName!=='training')interviewStopVoice();n('');if(platformContext.role==="master"&&!["dashboard","clients","credits","settings"].includes(viewName))viewName="overview";if((viewName==="clients"||viewName==="dashboard")&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName=platformContext.role==="master"?"dashboard":"overview";if(viewName==="overview"&&platformContext.role==="master")viewName="dashboard";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients")loadClients();if(view==="dashboard")loadMasterMetrics();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings"){loadOutreachHours();loadOwnerRecordingStatus();}if(view==='approvals')loadApprovals();}
 
 function glyph(key){
  if(globalThis.ProspectorIcons)return globalThis.ProspectorIcons.svg(key);
@@ -829,6 +830,13 @@ async function submitApprovals(){
 function settings(){
  if(platformContext.role==='master')return masterSettings();
  const hours=outreachHours||{start:'08:00',end:'17:30'};
+ const recordingPanel=ownerRecordingStatus?.available===false?'':!ownerRecordingStatus?'':(
+  '<section class="panel owner-recording-panel"><div class="heading"><div><span class="kicker">ÁUDIO COMERCIAL · APENAS SUA CONTA</span><h3>Gravação original do Wesley</h3><p>Somente o arquivo escolhido aqui poderá ser enviado. A Francisca não gera este áudio.</p></div></div>'+
+  (ownerRecordingStatus.ready?'<div class="owner-recording-status"><strong>Áudio original aprovado</strong><small>Identificador: '+esc((ownerRecordingStatus.sourceSha256||'').slice(0,14))+'… · Envio nativo WhatsApp</small><audio controls preload="none" src="/api/owner/pitch-recording/preview" aria-label="Ouvir gravação aprovada"></audio><button type="button" class="secondary compact" data-action="owner-recording-disable">Desativar gravação</button></div>'
+   :'<p class="owner-recording-warning">Nenhum áudio original aprovado está ativo. O sistema não enviará gravações geradas nem reutilizará o áudio antigo.</p>')+
+  '<form id="owner-recording-form" class="stack-form"><label>Selecione o mesmo áudio que você enviou no WhatsApp<input type="file" id="owner-pitch-file" accept="audio/*,.ogg,.opus,.m4a,.mp3,.wav" required></label><button type="submit" class="primary">Cadastrar esta gravação original</button></form>'+
+  '<p class="footnote">Após o áudio, o sistema envia uma única vez, 10 segundos depois: “Se você quiser, posso te enviar aqui uma prévia de como ficaria o site de vocês, pode ser?”</p></section>');
+
  const prefs=state?.settings||{};
  const operationalToggle=(switchId,title,description,checked)=>{
   return '<div class="setting-line tenant-control-line"><div class="tenant-control-copy"><strong>'+esc(title)+'</strong><small>'+esc(description)+'</small></div>'+
@@ -842,7 +850,29 @@ function settings(){
  operationalToggle('s-paused','Pausar a prospecção','Quando ativado, interrompe novas abordagens automáticas desta conta.',prefs.paused!==false)+
  operationalToggle('s-cold-first','Primeira abordagem automática','Ativa a preparação da primeira saudação, respeitando autorização dos contatos, horários e limites.',prefs.cold_first_approach_enabled===true)+
  '<p class="footnote tenant-controls-footnote">Os controles não substituem a autorização dos destinatários nem as regras do WhatsApp. Pausar um cliente não pausa os demais.</p></section>'+
+ recordingPanel+
  '<p class="settings-small-note">Seus dados e conversas ficam vinculados ao seu espaço. Treinamento com históricos exige autorização. A Francisca está disponível na bolinha lateral, em todas as áreas do painel.</p>';
+}
+async function loadOwnerRecordingStatus(){
+ try{ownerRecordingStatus=await api('/api/owner/pitch-recording');}
+ catch{ownerRecordingStatus={available:false};}
+ if(view==='settings'&&platformContext.role!=='master')render();
+}
+async function submitOwnerRecording(){
+ if(ownerRecordingBusy)return;
+ const file=q('#owner-pitch-file')?.files?.[0];
+ if(!file){n('Selecione o arquivo de áudio original enviado por você.');return;}
+ if(file.size<6000||file.size>12*1024*1024){n('O áudio precisa ter até 12 MB.');return;}
+ const confirmed=await confirmInApp({title:'Usar somente esta gravação?',description:'O arquivo escolhido substituirá a gravação comercial aprovada. Não usaremos voz gerada pela IA. O áudio será seguido da frase da prévia 10 segundos depois.',confirmLabel:'Aprovar gravação'});
+ if(!confirmed)return;
+ ownerRecordingBusy=true;
+ try{
+  const r=await fetch('/api/owner/pitch-recording',{method:'POST',credentials:'same-origin',cache:'no-store',
+   headers:{'Content-Type':'application/octet-stream','Accept':'application/json'},body:file});
+  const out=await r.json().catch(()=>({}));
+  if(!r.ok)throw Error(out.error||'Não foi possível aprovar o áudio');
+  ownerRecordingStatus=out;n('Gravação original cadastrada. Somente ela poderá ser usada nesta conta.');render();
+ }catch(error){n(error.message);}finally{ownerRecordingBusy=false;}
 }
 async function loadOutreachHours(){
  try{const r=await api('/api/settings/outreach-hours');outreachHours=r.hours;if(view==='settings')render();}
@@ -1057,7 +1087,12 @@ document.addEventListener("click",async ev=>{
    return;
   }
 
-  if(action==='approval-filter'){
+  if(action==='owner-recording-disable'){
+    const yes=await confirmInApp({title:'Desativar áudio original?',description:'Nenhuma nova proposta em áudio será enviada. As mensagens já entregues permanecem no WhatsApp.',confirmLabel:'Desativar gravação',danger:true});
+    if(yes){ownerRecordingStatus=await api('/api/owner/pitch-recording',{method:'DELETE'});n('Áudio original desativado.');render();}
+    return;
+   }
+   if(action==='approval-filter'){
    approvalStatus=el.dataset.status||'PENDING';approvalOffset=0;approvalSelection.clear();approvalExcludedIds.clear();approvalSelectAll=false;approvalSelectionCutoff='';await loadApprovals();return;
   }
   if(action==='approval-refresh'){approvalSelection.clear();approvalExcludedIds.clear();approvalSelectAll=false;approvalSelectionCutoff='';await loadApprovals();n('Lista de aprovações atualizada.');return;}
@@ -1174,6 +1209,7 @@ document.addEventListener("submit",async ev=>{
   }catch(error){n(error.message);}
   return;
  }
+ if(ev.target.id==='owner-recording-form'){await submitOwnerRecording();return;}
  if(ev.target.id==='outreach-hours-form'){
   const payload=Object.fromEntries(new FormData(ev.target));
   try{const r=await post('/api/settings/outreach-hours',payload);outreachHours=r.hours;n('Horário de abordagem salvo.');render();}catch(e){n(e.message);}return;
@@ -1335,4 +1371,4 @@ window.addEventListener("online",()=>refreshWa());
 await reload();
 await refreshWa();
 if(view==='prospects')await Promise.all([loadCalendar(),loadScope()]);
-if(view==='settings')await loadOutreachHours();
+if(view==='settings')await Promise.all([loadOutreachHours(),loadOwnerRecordingStatus()]);
