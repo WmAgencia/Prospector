@@ -18,9 +18,11 @@ RUN git init /tmp/voice-source \
  && test "$(git rev-parse HEAD)" = "f9db8e52f8c0d915f1a1c29f009506e7ec2bf02c"
 WORKDIR /app
 COPY patch.py /tmp/patch.py
-RUN python3 /tmp/patch.py
+COPY media-archive.ts /tmp/media-archive.ts
+RUN cp /tmp/media-archive.ts /app/src/lib/media-archive.ts && python3 /tmp/patch.py
 # First build pristine Next.js without bundling WebRTC/MLow into app routes.
 RUN npm ci --legacy-peer-deps \
+ && npm install --save-exact --legacy-peer-deps @aws-sdk/client-s3 \
  && npx prisma generate && npm run build
 # Install native runtime calling dependencies after Next build.
 RUN npm install --save-exact --legacy-peer-deps baileys@7.0.0-rc12 @roamhq/wrtc@0.8.0 koffi@2.12.0 @evan/opus@1.0.3 fluent-ffmpeg@2.1.3
