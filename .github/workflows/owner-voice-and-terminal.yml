@@ -1,0 +1,33 @@
+name: Approved owner voice + terminal closure
+on:
+  push:
+    branches:
+      - fix/owner-voice-and-terminal-stop-20261110
+  pull_request:
+    branches:
+      - feature/tenant-bulk-approvals-20261109
+jobs:
+  safe-replies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check module and UI syntax
+        run: |
+          node --check dashboard/prospect-terminal-conversation.mjs
+          node --check dashboard/owner-approved-pitch.mjs
+          node --check dashboard/owner-pitch-sequence.mjs
+          node --check dashboard/server.mjs
+          node --check dashboard/prospecting-introduction.mjs
+          node --check dashboard/waakg-bridge.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --input-type=module --check < dashboard/public/simple-app.js
+      - name: Test real recording, followup, closure, earlier recovery
+        run: |
+          node --test tests/owner-recording-terminal-stop.test.mjs
+          node --test tests/prospect-reply-recovery.test.mjs
