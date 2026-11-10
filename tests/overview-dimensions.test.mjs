@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
+import {spawnSync} from 'node:child_process';
 process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(os.tmpdir()+'/prospector-metrics-');
 const db=await import('../dashboard/db.mjs');
 await import('../dashboard/prospecting-queue.mjs');
@@ -31,4 +32,11 @@ test('persisted metrics never count contacts without an actual sent message',()=
  assert.equal(result.totals.approached,1);
  assert.equal(result.cities[0].label,'Sorocaba');
  assert.equal(result.cities[0].approached,1);
+});
+
+test('overview client and server source parse cleanly',()=>{
+ for(const path of ['dashboard/public/simple-app.js','dashboard/server.mjs','dashboard/overview-dimensions.mjs']){
+  const check=spawnSync(process.execPath,['--check',path],{encoding:'utf8'});
+  assert.equal(check.status,0,path+': '+check.stderr);
+ }
 });
