@@ -35,6 +35,7 @@ try{preferredPackage=sessionStorage.getItem('prospector-preferred-package')||'';
 let offerType='portfolio';
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",approvals:"✓",connections:"◫",settings:"⚙"};
 let view=Object.keys(tabs).includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
+let dimensionMetrics=null,selectedDimension=null;
 let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false,consentPolicy=null,consentPolicyBusy=false;
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
 function newProspectSession(){
@@ -1008,6 +1009,25 @@ function pipelineGraphic(k){
  const stages=[['approaching','Em abordagem'],['interested','Interessados'],['conversing','Em atendimento']],values=stages.map(([key])=>Math.max(0,Number(k.counts?.[key])||0)),max=Math.max(1,...values);
  return '<section class="pipeline-graphic" aria-label="Resumo visual do funil"><div><span class="kicker">MOVIMENTO DA OPERAÇÃO</span><h3>Da conversa à oportunidade.</h3></div><div class="pipeline-bars">'+stages.map(([key,label],i)=>'<div><span>'+label+'</span><div class="pipeline-track"><i style="width:'+Math.round(values[i]/max*100)+'%"></i></div><strong>'+values[i]+'</strong></div>').join('')+'</div></section>';
 }
+
+function overviewDimensionSection(){
+ const data=dimensionMetrics;
+ const groups=[['cities','Cidades e regiões','Veja onde a prospecção está acontecendo.'],['niches','Nichos abordados','Compare os segmentos com maior volume de contatos.']];
+ const nf=new Intl.NumberFormat('pt-BR');
+ const list=(dimension)=>{
+  const items=data?.[dimension]||[];
+  const max=Math.max(1,...items.map(x=>x.approached));
+  return items.length?'<div class="dimension-list">'+items.map(item=>{
+   const active=selectedDimension?.dimension===dimension&&selectedDimension.key===item.key;
+   return '<button class="dimension-row '+(active?'selected':'')+'" type="button" data-action="overview-dimension" data-dimension="'+dimension+'" data-key="'+encodeURIComponent(item.key)+'" aria-expanded="'+(active?'true':'false')+'"><span class="dimension-name">'+esc(item.label)+'</span><span class="dimension-track"><i style="width:'+Math.round(100*item.approached/max)+'%"></i></span><strong>'+nf.format(item.approached)+'</strong><span class="dimension-chevron">›</span></button>';
+  }).join('')+'</div>':'<p class="dimension-empty">Ainda não há abordagens confirmadas para apresentar.</p>';
+ };
+ const selected=selectedDimension&&(data?.[selectedDimension.dimension]||[]).find(x=>x.key===selectedDimension.key);
+ const detail=selected?'<div class="dimension-detail" role="region" aria-label="Desempenho de '+esc(selected.label)+'"><div class="dimension-detail-heading"><div><small>DESEMPENHO DETALHADO</small><h4>'+esc(selected.label)+'</h4></div><button type="button" data-action="overview-dimension-close" aria-label="Fechar detalhes">×</button></div><div class="dimension-detail-stats"><div><span>Abordados</span><strong>'+nf.format(selected.approached)+'</strong></div><div><span>Interessados</span><strong>'+nf.format(selected.interested)+'</strong></div><div><span>Vendas confirmadas</span><strong>'+nf.format(selected.converted)+'</strong></div><div><span>Conversão em vendas</span><strong>'+selected.conversionRate.toLocaleString('pt-BR')+'%</strong></div></div><p>Conversão = vendas confirmadas ÷ empresas abordadas. Cada empresa é contada uma vez.</p></div>':'';
+ return '<section class="dimension-analytics" aria-label="Desempenho por localização e nicho"><div class="dimension-analytics-header"><div><span class="kicker">INTELIGÊNCIA COMERCIAL</span><h3>Onde estamos prospectando?</h3><p>Volume real de empresas abordadas por cidade e por nicho. Selecione uma barra para ver a conversão.</p></div><span class="dimension-source">Dados registrados</span></div>'+
+ '<div class="dimension-grid">'+groups.map(([dimension,title,subtitle])=>'<div class="dimension-panel"><header><h4>'+title+'</h4><p>'+subtitle+'</p></header>'+list(dimension)+'</div>').join('')+'</div>'+detail+'</section>';
+}
+
 function overview(){
  if(platformContext.role==="master")return masterDashboard();
  const k=kanban||{columns:{approaching:[],no_interest:[],interested:[],conversing:[]},counts:{}};
@@ -1040,6 +1060,7 @@ function overview(){
    '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items">'+
    ((k.columns?.[key]||[]).length?k.columns[key].map(x=>item(x,key)).join(''):'<div class="kanban-empty">Nenhuma empresa nesta etapa.</div>')+'</div></section>').join('')+
   '</div>'+
+  overviewDimensionSection()+
   '<section class="panel" style="margin-top:20px"><div class="heading"><div><h3>Desfechos comerciais</h3><p>Referência média por site: R$ '+esc(salesResults?.priceReferenceBrl||550)+' · Proposta final depende do escopo.</p></div></div>'+
    (salesResults?.items?.length?salesResults.items.slice(0,8).map(x=>
     '<div class="kanban-lead" style="margin-bottom:8px"><div class="kanban-lead-top"><div><strong>'+esc(x.business)+'</strong><small>'+esc(({INTERESTED:'Interessado',NO_INTEREST:'Sem interesse',OPT_OUT:'Não contatar',HUMAN_REVIEW:'Revisão humana',CLOSED_WON:'Venda confirmada'})[x.status]||x.status)+'</small></div></div><p>'+esc(x.summary)+'</p>'+
@@ -1334,7 +1355,7 @@ async function loadMessages(id){
   if(!id.startsWith("wa:"))await post("/api/threads/"+encodeURIComponent(id)+"/read",{}).catch(()=>{});
  }catch(e){const feed=q("#messages");if(feed)feed.textContent="Não foi possível carregar a conversa.";}
 }
-async function loadKanban(){try{kanban=await api('/api/kanban');salesResults=await api('/api/sales/outcomes').catch(()=>null);if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
+async function loadKanban(){try{const [board,sales,dimensions]=await Promise.all([api('/api/kanban'),api('/api/sales/outcomes').catch(()=>null),api('/api/overview/dimensions').catch(()=>null)]);kanban=board;salesResults=sales;dimensionMetrics=dimensions;if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
 async function reload(){
  if(!workspaceInitialized){
   workspaceInitialized=true;
@@ -1423,6 +1444,8 @@ document.addEventListener("click",async ev=>{
   if(action==='francisca-record-toggle'){await toggleFranciscaRecording();return;}
   if(action==='calendar-prev'||action==='calendar-next'){moveCalendar(action==='calendar-prev'?-1:1);return;}
   if(action==='calendar-day'){calendarDay=el.dataset.date||'';calendarCategory=el.dataset.kind==='closed'?'closed':'approached';render();return;}
+  if(action==='overview-dimension'){const dimension=el.dataset.dimension,key=decodeURIComponent(el.dataset.key||'');if(!['cities','niches'].includes(dimension))return;selectedDimension=selectedDimension?.dimension===dimension&&selectedDimension.key===key?null:{dimension,key};render();return;}
+  if(action==='overview-dimension-close'){selectedDimension=null;render();return;}
   if(action==="refresh-kanban"){await loadKanban();n('Kanban atualizado.');return;}
   if(action==="menu"){q("#side")?.classList.toggle("mobile-open");q(".scrim")?.classList.toggle("visible");return;}
   if(action==="close-menu"){q("#side")?.classList.remove("mobile-open");q(".scrim")?.classList.remove("visible");return;}
