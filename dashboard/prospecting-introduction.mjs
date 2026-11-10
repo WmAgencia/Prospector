@@ -175,7 +175,7 @@ export async function tickIntroductions(deps={}){
    audit(voiceRequested?'PROSPECT_PITCH_AUDIO_SENT':'PROSPECT_INTRO_SENT',item.lead_id,
     voiceRequested?{voice:true,voiceProvider:'FRANCISCA_TTS',offerBRL:CURRENT_VOICE_OFFER_BRL,delaySeconds:30,
      gatewayAccepted:true,verifiedOnPhone:false}:{delaySeconds:30});
-   return {state:nextStage,leadId:item.lead_id,verifiedOnPhone:false};
+   return {state:nextStage,leadId:item.lead_id,recipientSuffix:String(item.phone).slice(-4),verifiedOnPhone:false};
   }catch{
    run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Uncertain delivery; verify WhatsApp',updated_at=? WHERE lead_id=? AND stage='SENDING'",now(),item.lead_id);
    audit('PROSPECT_INTRO_UNKNOWN',item.lead_id,{manualReview:true,voice:voiceRequested});
