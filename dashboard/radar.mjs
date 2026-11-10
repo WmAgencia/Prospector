@@ -2,7 +2,7 @@
 // Fuso America/Sao_Paulo: não usa UTC como substituto do dia local.
 import {all,one,getSetting} from './db.mjs';
 const ZONE='America/Sao_Paulo';
-export const MAX_APPROACHES=250;
+export const MAX_APPROACHES=(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')?250:80;
 export const WINDOW_START=8;
 export const WINDOW_END=18;
 export const TARGET_INTERVAL_SECONDS=240;
