@@ -155,3 +155,18 @@ chat_source=chat_source.replace(webhook_media,
  "webhookMsg.message = { audioMessage: { mimetype: type === 'voice' && mimetype?.startsWith('audio/ogg') ? 'audio/ogg; codecs=opus' : 'audio/mp4', ptt: type === 'voice' } };")
 chat.write_text(chat_source)
 print("WA-AKG native voice notes honor ogg/opus mimetype")
+
+
+# WA-AKG emits a synthesized outbound webhook for sent audio; it contains
+# ptt/mimetype but not WhatsApp encrypted media fields. The original logic
+# incorrectly tried to download this header-only message, logging errors.
+synthetic_anchor='        const mediaObj = (messageContent as any)[messageType];'
+synthetic_patch='''        const mediaObj = (messageContent as any)[messageType];
+        if (message.key.fromMe && mediaObj && !mediaObj.mediaKey && !mediaObj.url && !mediaObj.directPath) {
+            logger.debug("Media", "Outbound notification has no retrievable media payload");
+            return null;
+        }'''
+assert webhook.count(synthetic_anchor)==1
+webhook=webhook.replace(synthetic_anchor,synthetic_patch)
+hook.write_text(webhook)
+print("WA-AKG no longer redownloads metadata-only outbound voice notices")
