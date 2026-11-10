@@ -1,5 +1,23 @@
 // Prospector: five focused views. Deliberately no legacy campaign modules.
 const q=s=>document.querySelector(s);
+// Francisca's orb is a self-contained Canvas renderer, not a pre-rendered GIF.
+// The existing application remains framework-free; no prospecting code changes.
+let orbClientPromise=null;
+const orbHTML=scope=>'<span class="francisca-orb-shell"><canvas width="240" height="240" data-francisca-orb="'+scope+'" aria-hidden="true"></canvas><span class="francisca-orb-fallback" aria-hidden="true">✦</span></span>';
+function orbClient(){
+ if(!orbClientPromise)orbClientPromise=import('./francisca-orb.mjs').catch(error=>{
+  console.warn('[Francisca orb] efeito visual indisponível:',String(error?.message||error).slice(0,90));
+  orbClientPromise=null;return null;
+ });
+ return orbClientPromise;
+}
+function orbSync(){
+ const states={floating:franciscaVoiceActive?franciscaVoiceState:'idle',
+  training:interviewVoice?interviewVoiceState:'idle'};
+ orbClient().then(module=>module?.syncFranciscaOrbs(states));
+}
+function orbTrack(audio,scope){orbClient().then(module=>{if(audio&&(scope==='floating'?franciscaAudio===audio:interviewAudio===audio))module?.attachFranciscaAudio(audio,scope);});}
+function orbUntrack(scope){if(orbClientPromise)orbClientPromise.then(module=>module?.detachFranciscaAudio(scope));}
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
 const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",approvals:"Aprovações",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
@@ -223,7 +241,7 @@ function franciscaActionButton(m){
  return action?'<button type="button" class="francisca-quick-action" '+action.attribute+'>'+action.label+'</button>':'';
 }
 function franciscaWidget(){
- return '<div class="francisca-widget"><button type="button" class="francisca-orb" data-action="francisca-toggle" aria-label="'+(franciscaOpen?'Fechar Francisca':'Conversar com Francisca por voz')+'" aria-expanded="'+String(franciscaOpen)+'"><span>F</span><small>Francisca</small></button>'+
+ return '<div class="francisca-widget"><button type="button" class="francisca-orb" data-action="francisca-toggle" aria-label="'+(franciscaOpen?'Fechar Francisca':'Conversar com Francisca por voz')+'" aria-expanded="'+String(franciscaOpen)+'">'+orbHTML('floating')+'<small>Francisca</small></button>'+
  (franciscaOpen?'<section class="francisca-window" role="dialog" aria-label="Assistente Francisca"><div class="francisca-header"><span class="francisca-avatar">F</span><div><strong>Francisca</strong><small>Assistente do seu painel · voz e texto</small></div><button type="button" data-action="francisca-close" aria-label="Fechar Francisca">×</button></div><div class="francisca-log" role="log" aria-live="polite">'+(franciscaHistory.length?franciscaHistory.map(m=>'<div class="francisca-message '+(m.role==='user'?'sent':'received')+'">'+esc(m.text)+franciscaActionButton(m)+'</div>').join(''):'<div class="francisca-intro"><strong>Oi! Sou a Francisca.</strong><p>Posso explicar seus indicadores, créditos, conexões e orientações de atendimento. Posso consultar informações da operação, preparar pesquisas e responder contatos pelo WhatsApp quando você me der um comando direto.</p></div>')+(franciscaBusy?'<div class="francisca-message received">Preparando sua resposta…</div>':'')+'</div><form id="francisca-form" class="francisca-compose"><input id="francisca-input" maxlength="700" placeholder="Pergunte ou fale com a Francisca…" autocomplete="off" aria-label="Sua pergunta para Francisca"><button type="submit" class="francisca-send" '+(franciscaBusy?'disabled':'')+' aria-label="Enviar pergunta">➤</button></form><div class="francisca-controls"><button type="button" class="francisca-mic '+(franciscaVoiceActive?'recording':'')+'" data-action="francisca-record-toggle" aria-pressed="'+String(franciscaVoiceActive)+'">'+(franciscaVoiceActive?'■ Encerrar conversa por voz':'🎙 Conversar por voz')+'</button></div><p class="francisca-voice-status" role="status" aria-live="polite">'+esc(({'off':'Por texto, a Francisca responde somente por texto.','connecting':'Aguardando permissão do microfone…','listening':'● Estou ouvindo. Pode falar naturalmente.','hearing':'● Estou ouvindo sua frase…','processing':'Preparando a resposta da Francisca…','speaking':'A Francisca está falando. Você pode interromper quando quiser.'})[franciscaVoiceState]||'Pronto para conversar.')+'</p><p class="francisca-privacy">A conversa por voz começa ao tocar no microfone e termina ao tocar em Encerrar. Áudios são processados somente para responder, sem gravação persistente no painel.</p></section>':'')+'</div>';
 }
 function renderFrancisca(){
@@ -232,12 +250,14 @@ function renderFrancisca(){
  const wrap=document.createElement('div');wrap.innerHTML=franciscaWidget();
  const next=wrap.firstElementChild;if(old&&next)old.replaceWith(next);
  q('.francisca-log')?.scrollTo({top:q('.francisca-log').scrollHeight,behavior:'smooth'});
+ orbSync();
 }
 function franciscaInlineError(message){
  franciscaHistory.push({role:'assistant',text:String(message||'Não consegui concluir agora.').slice(0,380)});
  franciscaHistory=franciscaHistory.slice(-20);renderFrancisca();
 }
 function stopFranciscaSound(){
+ orbUntrack('floating');
  const audio=franciscaAudio;franciscaAudio=null;
  if(audio){try{audio.pause();audio.removeAttribute('src');audio.load();}catch{}}
  if(franciscaAudioObjectURL){
@@ -268,6 +288,7 @@ async function speakFrancisca(text){
   const url=URL.createObjectURL(blob),audio=new Audio(url);
   franciscaAudio=audio;franciscaAudioObjectURL=url;
   franciscaVoiceState='speaking';renderFrancisca();
+  orbTrack(audio,'floating');
   await new Promise((resolve,reject)=>{
    let settled=false;
    franciscaAudioResolve=()=>{
@@ -373,12 +394,14 @@ function trainingAnalysis(t){
 
 let interviewVoice=false,interviewVoiceSession=null,interviewAudio=null,interviewAudioUrl=null,interviewAudioDone=null,interviewVoiceState='off',interviewSending=false,interviewInput='',interviewShowAnalysis=false;
 function interviewStopSpeech(){
+ orbUntrack('training');
  if(interviewAudio){try{interviewAudio.pause();interviewAudio.src='';}catch{}interviewAudio=null;}
  if(interviewAudioUrl){URL.revokeObjectURL(interviewAudioUrl);interviewAudioUrl=null;}
  const done=interviewAudioDone;interviewAudioDone=null;if(done)done();
 }
 function interviewStopVoice(){
  interviewVoice=false;interviewVoiceState='off';
+ orbSync();
  if(interviewVoiceSession){interviewVoiceSession.stop();interviewVoiceSession=null;}
  interviewStopSpeech();
 }
@@ -390,6 +413,7 @@ function interviewVoiceIndicator(){
  const s=q('#interview-voice-status');if(s)s.textContent=interviewVoiceLabel();
  const button=q('[data-action="interview-voice-toggle"]');
  if(button){button.textContent=interviewVoice?'Desligar voz':'Conversar por voz';button.classList.toggle('recording',interviewVoice);}
+ orbSync();
 }
 async function interviewSpeak(message){
  if(!interviewVoice||!message)return;
@@ -400,6 +424,7 @@ async function interviewSpeak(message){
   if(!interviewVoice)return;
   const url=URL.createObjectURL(await response.blob()),audio=new Audio(url);
   interviewStopSpeech();interviewAudioUrl=url;interviewAudio=audio;
+  orbTrack(audio,'training');
   await new Promise((resolve,reject)=>{
    interviewAudioDone=resolve;
    audio.onended=()=>interviewStopSpeech();
@@ -477,10 +502,10 @@ function interviewView(){
  if(t.internalAccount&&t.profile){
   body='<section class="panel interview-owner-ready"><span class="interview-owner-ready-icon" aria-hidden="true">✓</span><span class="kicker">CONSECOM BRASIL · OPERAÇÃO ORIGINAL</span><h3>Sua Francisca já está treinada.</h3><p>O perfil comercial da Consecom e a abordagem em duas etapas do Wesley estão preservados. A entrevista de novos clientes não é necessária aqui.</p><div class="interview-owner-ready-points"><span>✓ Método global de vendas</span><span>✓ Perfil exclusivo da Consecom</span><span>✓ Abordagem do Wesley</span><span>✓ Manual editável sob revisão</span></div><button type="button" class="secondary" data-action="training-edit-profile">Editar meu treinamento</button><p class="interview-hint">Qualquer alteração precisa ser revisada e aprovada; a Francisca mantém o manual atual até lá.</p></section>';
  }else if(!i){
-  body='<section class="panel interview-welcome"><span class="interview-avatar">F</span><span class="kicker">OI! SOU A FRANCISCA</span><h3>Você quer fazer meu treinamento escrito ou por voz?</h3><p>Eu vou aprender o que você vende, para quem vende, valores, condições e quando devo avisar você.</p><div class="interview-modes"><button type="button" data-action="interview-start" data-mode="voice"><span>◉</span><strong>Por voz</strong><small>Eu pergunto em voz alta, escuto suas respostas e também mostro tudo por escrito.</small><b>Começar por voz ↗</b></button><button type="button" data-action="interview-start" data-mode="text"><span>✎</span><strong>Por escrito</strong><small>Uma conversa natural no chat. Responda com calma e revise no final.</small><b>Começar por chat ↗</b></button></div><p class="interview-hint">Seu perfil só será usado após sua aprovação.</p></section>';
+  body='<section class="panel interview-welcome"><div class="francisca-welcome-orb">'+orbHTML('training')+'</div><span class="kicker">OI! SOU A FRANCISCA</span><h3>Você quer fazer meu treinamento escrito ou por voz?</h3><p>Eu vou aprender o que você vende, para quem vende, valores, condições e quando devo avisar você.</p><div class="interview-modes"><button type="button" data-action="interview-start" data-mode="voice"><span>◉</span><strong>Por voz</strong><small>Eu pergunto em voz alta, escuto suas respostas e também mostro tudo por escrito.</small><b>Começar por voz ↗</b></button><button type="button" data-action="interview-start" data-mode="text"><span>✎</span><strong>Por escrito</strong><small>Uma conversa natural no chat. Responda com calma e revise no final.</small><b>Começar por chat ↗</b></button></div><p class="interview-hint">Seu perfil só será usado após sua aprovação.</p></section>';
  }else{
   const messages=(i.messages||[]).map(m=>'<div class="interview-line '+(m.role==='user'?'user':'assistant')+'">'+(m.role==='assistant'?'<span class="interview-small-avatar">F</span>':'')+'<div class="interview-bubble"><small>'+(m.role==='assistant'?'Francisca':'Você')+'</small><p>'+esc(m.body)+'</p></div></div>').join('');
-  body='<section class="panel interview-chat"><header><div><span class="interview-small-avatar">F</span><div><strong>Francisca</strong><small>'+(i.mode==='voice'?'Treinamento por voz e chat':'Treinamento por chat')+'</small></div></div><div><span class="tag">'+esc(i.progress)+'%</span><button type="button" class="secondary compact" data-action="interview-reset">Recomeçar</button></div></header><div class="interview-progress" role="progressbar" aria-label="Progresso do treinamento" aria-valuenow="'+esc(i.progress)+'" aria-valuemin="0" aria-valuemax="100"><span style="width:'+esc(i.progress)+'%"></span></div><div class="training-interview-feed" role="log" aria-live="polite">'+messages+'</div>'+
+  body='<section class="panel interview-chat"><header><div><span class="francisca-header-mini-orb">'+orbHTML('training')+'</span><div><strong>Francisca</strong><small>'+(i.mode==='voice'?'Treinamento por voz e chat':'Treinamento por chat')+'</small></div></div><div><span class="tag">'+esc(i.progress)+'%</span><button type="button" class="secondary compact" data-action="interview-reset">Recomeçar</button></div></header><div class="interview-progress" role="progressbar" aria-label="Progresso do treinamento" aria-valuenow="'+esc(i.progress)+'" aria-valuemin="0" aria-valuemax="100"><span style="width:'+esc(i.progress)+'%"></span></div><div class="francisca-training-stage"><div class="francisca-training-stage-orb">'+orbHTML('training')+'</div><div class="francisca-training-stage-copy"><span class="francisca-training-kicker">FRANCISCA · ASSISTENTE POR VOZ</span><strong>'+esc(interviewVoice&&interviewVoiceState==='speaking'?'Francisca está falando':interviewVoice&&['hearing','listening'].includes(interviewVoiceState)?'Estou ouvindo você':interviewVoiceState==='processing'?'Preparando a próxima etapa':'Construindo sua automação com você')+'</strong><small>A esfera reage à intensidade da voz durante a conversa.</small></div><span class="francisca-training-stage-signal" aria-hidden="true">◉</span></div><div class="training-interview-feed" role="log" aria-live="polite">'+messages+'</div>'+
   (['approach','closing_mode','payment_methods'].includes(i.step)&&Array.isArray(i.choices)&&i.choices.length?'<div class="interview-approach-options" role="group" aria-label="Escolha sua abordagem inicial">'+i.choices.map((opt,index)=>'<button type="button" data-action="interview-choice" data-choice="'+esc(opt.id)+'" '+(interviewSending?'disabled':'')+'><span class="approach-number">'+(index+1)+'</span><strong>'+esc(opt.label)+'</strong><small>'+esc(opt.description)+'</small></button>').join('')+'</div>':'')+
   (i.completed?'<p class="interview-completed">✓ Entrevista concluída. Revise o perfil abaixo antes de ativar.</p>':
   '<form id="interview-compose"><label class="sr-only" for="interview-answer">Sua resposta</label><textarea id="interview-answer" name="text" maxlength="850" rows="2" placeholder="'+(i.step==='approach_custom'?'Escreva a mensagem exata, com {{nome}}, {{empresa}} e {{servico}}…':'Responda escrevendo ou por voz…')+'" '+(interviewSending?'disabled':'')+'>'+esc(interviewInput)+'</textarea><div class="interview-compose-actions"><button type="button" class="secondary '+(interviewVoice?'recording':'')+'" data-action="interview-voice-toggle">'+(interviewVoice?'Desligar voz':'Conversar por voz')+'</button><button type="submit" class="primary" '+(interviewSending?'disabled':'')+'>'+(interviewSending?'Registrando…':'Enviar ↗')+'</button></div><p id="interview-voice-status" role="status">'+esc(interviewVoiceLabel())+'</p></form>')+
@@ -833,6 +858,7 @@ function render(){
  const el=q("#view");
  el.innerHTML={dashboard:masterDashboard,clients:clientsView,overview,conversations,prospects:prospecting,approvals:approvalsView,connections,training:trainingView,credits:creditsView,settings}[view]();
  if(view==='training'){const feed=q('.training-interview-feed');if(feed)feed.scrollTop=feed.scrollHeight;}
+ orbSync();
  if(view==="conversations"&&selectedThread)loadMessages(selectedThread);
  if(view==="connections"&&!wa)refreshWa(false);
 }
