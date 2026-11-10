@@ -8,7 +8,8 @@ import {requestPriceApproval,approvedPriceForLead} from './owner-price-approvals
 import {prospectSalesContext,priceQuestion,salesEnding} from './sales-policy.mjs';
 import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,proposalRequestWhileBusy,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup,safeGeneralReply} from './portfolio-offer-550.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
-import {portfolioAudioSentFor} from './portfolio-pitch-audio.mjs';
+import {portfolioAudioSentFor,portfolioPitchAudioEnabled} from './portfolio-pitch-audio.mjs';
+import {consecomPortfolioDialogue,offScriptPortfolioDraft,CONSECOM_SITE_PITCH_SAFE} from './consecom-portfolio-dialogue.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
@@ -71,6 +72,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const portfolioAllowed=(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
  const intro=introductionStatus(r.lead_id);
  const audioOffer350=portfolioAudioSentFor(intro);
+ const campaign350=portfolioAllowed&&!!intro&&portfolioPitchAudioEnabled();
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))return finish('SKIPPED','INTRO_NOT_COMPLETE');
  if(!prospectorChatEligible({jid:r.jid,sessionId:r.session_id}))return finish('SKIPPED','NOT_PROSPECTOR_APPROACHED');
  if(identity.role==='OWNER'&&!allowTest)return finish('HANDOFF','OWNER_PRIVILEGED_CHANNEL');
@@ -128,9 +130,9 @@ export async function handleSalesTurn(providerId,deps={}){
    interestNotice(r,'Cliente demonstrou interesse na oferta de R$ 350 enviada por áudio; revisar escopo e pagamento.'),r.lead_id);
   return finish('HOT','AUDIO_350_CLOSING_TO_OWNER');
  }
- const audioPriceQuestion=audioOffer350&&/(?:quanto|pre[cç]o|valor|custa|r\$ ?350)/i.test(r.body)&&
+ const audioPriceQuestion=campaign350&&/(?:quanto|pre[cç]o|valor|custa|r\$ ?350)/i.test(r.body)&&
   !/(?:parcel|pix|cart[aã]o|entrada|pagamento)/i.test(r.body);
- const fixedOffer=portfolioAllowed&&!audioOffer350&&!buyerCommitment&&(isBaseOfferQuestion(r.body)||isPortfolioFAQ(r.body));
+ const fixedOffer=portfolioAllowed&&!campaign350&&!buyerCommitment&&(isBaseOfferQuestion(r.body)||isPortfolioFAQ(r.body));
  const financial=priceQuestion(r.body)&&!fixedOffer&&!audioPriceQuestion&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
  const approval=financial?(deps.requestPriceApproval||requestPriceApproval)({leadId:r.lead_id,providerId,question:r.body,sessionId:r.session_id}):null;
  if(financial&&!approval?.ok)return finish('REVIEW','PRICE_APPROVAL_UNAVAILABLE');
@@ -175,16 +177,18 @@ export async function handleSalesTurn(providerId,deps={}){
   }
   return finish('HANDOFF','REQUESTED_HUMAN');
  }
- // A one-word hello never requires an external model call.
+ // The Consecom site campaign has a defined objective; do not ask buyers what
+ // they want from an agency or drift into unrelated automation services.
+ const scripted=campaign350?consecomPortfolioDialogue({text:r.body,voiceAlreadySent:audioOffer350}):null;
  const draft=audioPriceQuestion?{ok:true,
-  draft:'A proposta especial que te enviei em áudio fica em R$ 350 para esse site de portfólio. Antes de começar, a gente alinha direitinho o escopo e o pagamento. Faz sentido pra vocês?',
-  model:'APPROVED_PITCH_AUDIO_350'}:fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
+  draft:audioOffer350?'A proposta especial que te enviei em áudio fica em R$ 350 para esse site de portfólio. Antes de começar, a gente alinha direitinho o escopo e o pagamento. Faz sentido pra vocês?':'Nesta campanha, a proposta é um site profissional por R$ 350, em condição especial pra entrar no portfólio da Consecom. Posso enviar a apresentação em áudio ou explicar por aqui.',
+  model:'APPROVED_CAMPAIGN_350'}:scripted?{ok:true,draft:scripted.text,model:'CONSECOM_SITE_SCRIPT'}:fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
    await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      (audioOffer350?'Este contato recebeu o áudio ORIGINAL da proposta de portfólio por R$ 350. A condição desse áudio substitui a oferta padrão de R$ 550 SOMENTE nesta conversa. Nunca informe R$ 550, nunca invente desconto ou outro prazo, nem ofereça PIX/entrada não aprovados. Se o contato quiser contratar, encaminhe para o Wesley confirmar escopo e pagamento. ':'')+
-     'Se não estiver claro, pergunte o que a pessoa precisa. '+
+     (campaign350?'A oferta já é definida: site profissional em campanha especial por R$ 350 para compor o portfólio da Consecom. Não pergunte ao cliente de que serviço precisa, como quer melhorar presença online, qual automação busca ou como podemos ajudar; explique a oferta, respeite recusas e a disponibilidade do responsável. ':'Se não estiver claro, pergunte o que a pessoa precisa. ')+
      'Não afirme ser humano. Não invente disponibilidade, preço ou serviços.\n'+
-     (!process.env.PROSPECTOR_TENANT_ID&&salesFollowup?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(portfolioAllowed&&!audioOffer350?'Existe uma oferta BASE aprovada para portfólio: R$ 550 com domínio por um ano e prazo de até 3 dias após materiais/escopo. Não invente extras nem desconto de 90%; consulte o operador para parcelamento ou outra modalidade.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
+     (!process.env.PROSPECTOR_TENANT_ID&&salesFollowup&&!campaign350?prospectSalesContext({...r,offerType:operatorOffer(r.lead_id)}):'')+'\n'+(portfolioAllowed&&!campaign350?'Existe uma oferta BASE aprovada para portfólio: R$ 550 com domínio por um ano e prazo de até 3 dias após materiais/escopo. Não invente extras nem desconto de 90%; consulte o operador para parcelamento ou outra modalidade.':approvedPriceForLead(r.lead_id)?'Uma proposta já foi aprovada e enviada nesta conversa. Não repita valores nem altere condições; dúvidas financeiras voltam ao operador.':'Nenhuma proposta aprovada. Não forneça preço, prazo ou pagamento.')});
  if(stale())return finish(stale());
  if(!draft.ok&&draft.code==='RATE_LIMITED'){
   run("UPDATE groq_auto_events SET state='PENDING',at=?,error='GROQ_RATE_LIMITED' WHERE provider_id=? AND state='PROCESSING'",new Date(Date.now()+90000).toISOString(),providerId);
@@ -195,13 +199,14 @@ export async function handleSalesTurn(providerId,deps={}){
   return finish('REVIEW','GROQ_UNAVAILABLE');
  }
  if(fixedOffer&&proposalRequestWhileBusy(r.body))draft.draft=fixedOfferPitch({business:r.business,segment:r.segment},new Date(),{busy:true});
+ if(campaign350&&!scripted&&offScriptPortfolioDraft(draft.draft)){audit('FRANCISCA_CAMPAIGN_SCRIPT_CORRECTED',r.lead_id,{campaign:'PORTFOLIO_350'});draft.draft=CONSECOM_SITE_PITCH_SAFE;}
  let replyText=refineChatReply(draft.draft,{state:dialogue,incoming:r.body});
  if(!replyText){
   audit('FRANCISCA_REPETITION_SUPPRESSED',r.lead_id,{reason:'REPEATED_OR_GREETING_ONLY',chatTurns:dialogue.turnCount});
   return finish('REVIEW','REPEATED_OR_EMPTY_REPLY');
  }
  // Only a server-authored fixed portfolio template bypasses the generic price filter.
- let review=(fixedOffer||audioPriceQuestion)?{ok:true,code:audioPriceQuestion?'APPROVED_AUDIO_PRICE_350':'OPERATOR_APPROVED_FIXED_OFFER'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
+ let review=(fixedOffer||audioPriceQuestion||scripted)?{ok:true,code:campaign350?'APPROVED_CAMPAIGN_350':'OPERATOR_APPROVED_FIXED_OFFER'}:reviewGroqReply({inbound:r.body,draft:replyText,allowAveragePrice:false});
  // If the model invented commercial terms or claimed an unperformed action,
  // replace it with deterministic, operator-safe information rather than falling silent.
  if(!review.ok&&portfolioAllowed&&['UNVERIFIED_PRICE','UNAPPROVED_TERMS','UNVERIFIED_ACTION'].includes(review.code)){
@@ -270,6 +275,11 @@ export async function handleSalesTurn(providerId,deps={}){
   const prefix=routing.mode==='VOICE'?'[Áudio Francisca] ':
     routing.mode==='BOTH'?'[Texto + áudio Francisca] ':'';
   run('UPDATE messages SET body=? WHERE provider_id=?',prefix+replyText,'groq:'+providerId);
+  if(scripted?.notifyOwner)queueNotice('portfolio-return:'+providerId,'GROQ_HOT_LEAD',
+   ['Pedido de retorno — não é uma venda confirmada',
+    'Empresa: '+r.business,'Telefone: '+r.phone,
+    'Pedido do contato: '+String(r.body).slice(0,240),
+    'Próximo passo: Wesley confirmar data e horário antes de novo contato.'].join('\n'),r.lead_id);
   audit('GROQ_AUTOMATED_INBOUND_REPLY',r.lead_id,{inbound:true,testOnly:allowTest,
     replyLength:replyText.length,deliveryMode:routing.mode,channelReason:routing.reason,contactRole:identity.role,parts:accepted});
   return finish('SENT');

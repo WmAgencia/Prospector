@@ -1,0 +1,29 @@
+name: Consecom portfolio dialogue regression
+on:
+  push:
+    branches: [fix/consecom-portfolio-dialogue-20261110, main, feature/tenant-bulk-approvals-20261109]
+    paths:
+      - 'dashboard/inbound-automation.mjs'
+      - 'dashboard/consecom-portfolio-dialogue.mjs'
+      - 'dashboard/groq-sales-automation.mjs'
+      - 'tests/consecom-portfolio-dialogue.test.mjs'
+      - '.github/workflows/consecom-portfolio-dialogue.yml'
+  pull_request:
+    paths:
+      - 'dashboard/inbound-automation.mjs'
+      - 'dashboard/consecom-portfolio-dialogue.mjs'
+      - 'dashboard/groq-sales-automation.mjs'
+      - 'tests/consecom-portfolio-dialogue.test.mjs'
+jobs:
+  script:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/groq-sales-automation.mjs
+      - run: node --test tests/consecom-portfolio-dialogue.test.mjs tests/inbound-automation.test.mjs tests/prospecting-owner-audio-pitch.test.mjs
