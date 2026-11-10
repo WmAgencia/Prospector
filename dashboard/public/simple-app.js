@@ -13,7 +13,7 @@ function orbClient(){
 }
 function orbSync(){
  const states={floating:franciscaVoiceActive?franciscaVoiceState:'idle',
-  training:interviewVoice?interviewVoiceState:'idle'};
+  training:interviewVoice?interviewVoiceState:(franciscaVoiceActive?franciscaVoiceState:'idle')};
  orbClient().then(module=>module?.syncFranciscaOrbs(states));
 }
 function orbTrack(audio,scope){orbClient().then(module=>{if(audio&&(scope==='floating'?franciscaAudio===audio:interviewAudio===audio))module?.attachFranciscaAudio(audio,scope);});}
@@ -413,6 +413,8 @@ function interviewVoiceIndicator(){
  const s=q('#interview-voice-status');if(s)s.textContent=interviewVoiceLabel();
  const button=q('[data-action="interview-voice-toggle"]');
  if(button){button.textContent=interviewVoice?'Desligar voz':'Conversar por voz';button.classList.toggle('recording',interviewVoice);}
+ const title=q('.francisca-training-stage-copy strong');
+ if(title)title.textContent=interviewVoiceState==='speaking'?'Francisca está falando':interviewVoice&&['hearing','listening'].includes(interviewVoiceState)?'Estou ouvindo você':interviewVoiceState==='processing'?'Preparando a próxima etapa':'Construindo sua automação com você';
  orbSync();
 }
 async function interviewSpeak(message){

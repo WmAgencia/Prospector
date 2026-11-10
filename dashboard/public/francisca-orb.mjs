@@ -75,7 +75,7 @@ function paint(canvas,phase,amp,mode){
  }
 }
 function readLevel(scope){
- const track=audioSources.get(scope);
+ const track=audioSources.get(scope)||(scope==='training'?audioSources.get('floating'):null);
  if(!track||track.audio.ended||track.audio.paused)return 0;
  try{track.analyser.getByteTimeDomainData(track.samples);return rmsIntensity(track.samples);}catch{return 0;}
 }

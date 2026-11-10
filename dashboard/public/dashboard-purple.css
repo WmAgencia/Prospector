@@ -783,3 +783,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  .francisca-training-stage-signal{animation:none}
  .francisca-orb{transition:none!important}
 }
+
+.francisca-owner-orb-hero{display:flex;align-items:center;gap:15px;margin:14px auto 19px;padding:12px 17px 12px 8px;max-width:620px;border-radius:19px;border:1px solid #e5d9fb;background:linear-gradient(110deg,#f5efff,#fff);text-align:left}
+.francisca-owner-orb-visual{width:106px;height:106px;flex:none}
+.francisca-owner-orb-hero>div:last-child{min-width:0}
+.francisca-owner-orb-hero strong{display:block;color:#39225b;font-size:15px}
+.francisca-owner-orb-hero p{font-size:12px!important;line-height:1.55;margin:5px 0 10px!important;color:#786793}
+.francisca-owner-orb-hero button{font-size:11px}
+@media(max-width:580px){.francisca-owner-orb-visual{width:78px;height:78px}.francisca-owner-orb-hero{padding:10px 12px 10px 4px;gap:8px}.francisca-owner-orb-hero strong{font-size:12px}}
