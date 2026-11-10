@@ -1,0 +1,16 @@
+name: WA-AKG media archive and voice checks
+on:
+  push:
+    branches:
+      - fix/waakg-private-media-archive-20261110
+  workflow_dispatch:
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check pinned upstream patch syntax
+        run: python3 -m py_compile waakg-voice/patch.py
+      - name: Build pinned WA-AKG with archive and voice patches
+        run: docker build --progress=plain --file waakg-voice/Dockerfile waakg-voice
