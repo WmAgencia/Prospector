@@ -35,7 +35,7 @@ export function availableCallSlots(at=Date.now()){
  start=Math.max(start,10*60+30);
  const slots=[];
  for(let m=start;m<=17*60+30;m+=30)slots.push(dateAt(p,Math.floor(m/60),m%60));
- return slots.filter(x=>validSlot(x,at));
+ return slots.filter(x=>validSlot(x,at)&&!meetingBusy(x));
 }
 function read(leadId){return one('SELECT * FROM call_scheduling WHERE lead_id=?',leadId);}
 const liveCustomer=(r,{sendingConfirmation=false}={})=>isManagedSession(r.session_id)&&leadSession(r.lead_id)===r.session_id&&!one('SELECT 1 FROM suppressions WHERE phone=?',r.phone)&&(sendingConfirmation||!one('SELECT 1 FROM threads WHERE lead_id=? AND manual_takeover=1',r.lead_id));
