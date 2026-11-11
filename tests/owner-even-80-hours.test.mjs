@@ -1,0 +1,47 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'owner-even-80-'));
+delete process.env.PROSPECTOR_TENANT_ID;
+const db=await import('../dashboard/db.mjs');
+const {applyOwnerDailySpread}=await import('../dashboard/approval-ready-activation.mjs');
+const {insideApproachWindow,FIRST_APPROACH_END_MINUTES}=await import('../dashboard/outreach-window.mjs');
+const {getOutreachHours,saveOutreachHours,OUTREACH_HARD_MAX}=await import('../dashboard/client-preferences.mjs');
+const {approachQueueStatus}=await import('../dashboard/prospecting-queue.mjs');
+const sp=clock=>new Date('2026-11-11T'+clock+':00-03:00');
+test('Owner migration selects 08:00 to 17:40 without enabling any sender',()=>{
+ db.setSetting('paused',true);
+ db.setSetting('autonomous_outreach_enabled',false);
+ db.setSetting('client_outreach_hours',{start:'08:00',end:'17:30'});
+ const r=applyOwnerDailySpread();
+ assert.equal(r.status,'UPDATED');
+ assert.deepEqual(getOutreachHours(),{start:'08:00',end:'17:40'});
+ assert.equal(db.getSetting('initial_interval_seconds'),435);
+ assert.equal(db.getSetting('paused'),true);
+ assert.equal(db.getSetting('autonomous_outreach_enabled'),false);
+ assert.equal(OUTREACH_HARD_MAX,'17:40');
+ assert.equal(FIRST_APPROACH_END_MINUTES,1060);
+ assert.equal(approachQueueStatus().intervalSeconds,435);
+ assert.match(approachQueueStatus().window,/08:00–17:40/);
+});
+test('Owner window is open at 08:00 and closed at exactly 17:40',()=>{
+ assert.equal(insideApproachWindow(sp('07:59')),false);
+ assert.equal(insideApproachWindow(sp('08:00')),true);
+ assert.equal(insideApproachWindow(sp('17:39')),true);
+ assert.equal(insideApproachWindow(sp('17:40')),false);
+ assert.equal(insideApproachWindow(sp('17:41')),false);
+});
+test('Owner settings honor 17:40 maximum and persist lower preference',()=>{
+ assert.deepEqual(saveOutreachHours({start:'08:00',end:'17:40'}),{start:'08:00',end:'17:40'});
+ assert.throws(()=>saveOutreachHours({start:'08:00',end:'17:41'}),/17:40/);
+ assert.equal(applyOwnerDailySpread().status,'ALREADY_APPLIED');
+ db.setSetting('client_outreach_hours',{start:'09:00',end:'16:00'});
+ assert.equal(applyOwnerDailySpread().status,'ALREADY_APPLIED');
+ assert.deepEqual(getOutreachHours(),{start:'09:00',end:'16:00'});
+ assert.equal(insideApproachWindow(sp('08:30')),false);
+ assert.equal(insideApproachWindow(sp('15:59')),true);
+ assert.equal(insideApproachWindow(sp('16:00')),false);
+});
+test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
