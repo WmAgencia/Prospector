@@ -29,48 +29,49 @@ test('phrases asking for the offer choose voice; generic greetings do not',()=>{
  assert.equal(wantsPortfolioPitchAudio('Oi, tudo bem?'),false);
  assert.equal(wantsPortfolioPitchAudio('Não tenho interesse'),false);
 });
-test('first permission to explain queues original voice only, never text, and never duplicates',async()=>{
+test('first reply delivers Wesley permission question; second affirmative delivers only original audio, once',async()=>{
  const {lead,jid}=addAuthorized();
- const timestamp=new Date(Date.now()-42000);
- const first=routeIntroductionReply({leadId:lead.id,providerId:'inbound-1',
-  body:'Oi, pode falar. É sobre o quê?',receivedAt:timestamp});
- assert.equal(first.state,'VOICE_WAITING');
- assert.equal(first.queueAi,false);
- assert.equal(routeIntroductionReply({leadId:lead.id,providerId:'inbound-1',
-  body:'Oi, pode falar. É sobre o quê?',receivedAt:timestamp}).state,'VOICE_WAITING');
+ const when=new Date(Date.now()-42000);
+ const first=routeIntroductionReply({leadId:lead.id,providerId:'inbound-1',body:'Oi, pode falar. É sobre o quê?',receivedAt:when});
+ assert.equal(first.state,'WAITING');assert.equal(first.queueAi,false);
  let textCount=0,voiceCount=0;
- const sent=await tickIntroductions({
-  currentTime:()=>Date.now(),status:async()=>({connected:true}),
+ const text=await tickIntroductions({currentTime:()=>Date.now(),session:()=> 'consecom-principal',
+  status:async()=>({connected:true}),send:async()=>{textCount++;return {status:true};},
+  sendAudio:async()=>{voiceCount++;return {accepted:true};}});
+ assert.equal(text.state,'SENT');
+ assert.equal(textCount,1);assert.equal(voiceCount,0);
+ const permission=routeIntroductionReply({leadId:lead.id,providerId:'inbound-2',body:'sim, pode mandar',receivedAt:when});
+ assert.equal(permission.state,'VOICE_WAITING');
+ const sent=await tickIntroductions({currentTime:()=>Date.now(),session:()=> 'consecom-principal',
+  status:async()=>({connected:true}),
   send:async()=>{textCount++;return {status:true};},
   loadAudio:async()=>({bytes:Buffer.alloc(300000,19)}),
   sendAudio:async({jid:to,session,bytes})=>{
    voiceCount++;assert.equal(to,jid);assert.equal(session,'consecom-principal');
    assert.equal(bytes.length,300000);return {accepted:true,verifiedOnPhone:false};
-  }
- });
+  }});
  assert.equal(sent.state,'VOICE_SENT',JSON.stringify(sent));
- assert.equal(textCount,0);
- assert.equal(voiceCount,1);
+ assert.equal(textCount,1);assert.equal(voiceCount,1);
  assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
- const second=await tickIntroductions({sendAudio:async()=>{throw Error('DUPLICATE');}});
- assert.equal(second.state,'IDLE');
+ assert.equal((await tickIntroductions({sendAudio:async()=>{throw Error('DUPLICATE');}})).state,'IDLE');
  const next=routeIntroductionReply({leadId:lead.id,providerId:'inbound-next',body:'Gostei, me conta mais'});
- assert.equal(next.state,'CONVERSING');
- assert.equal(next.queueAi,true);
+ assert.equal(next.state,'CONVERSING');assert.equal(next.queueAi,true);
  assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
  const matches=db.all("SELECT provider_id FROM messages WHERE provider_id LIKE 'intro-voice:%' AND direction='out'");
  assert.equal(matches.length,1);
 });
-test('audio unavailable fails closed, leaving voice pending instead of sending a written offer',async()=>{
+test('audio unavailable fails closed, leaving voice pending and sending no replacement text',async()=>{
  const {lead}=addAuthorized();
- routeIntroductionReply({leadId:lead.id,providerId:'inbound-2',
-  body:'Sobre o que seria a proposta?',receivedAt:new Date(Date.now()-41000)});
+ const when=new Date(Date.now()-41000);
+ assert.equal(routeIntroductionReply({leadId:lead.id,providerId:'inbound-3',body:'Oi',receivedAt:when}).state,'WAITING');
+ assert.equal((await tickIntroductions({session:()=> 'consecom-principal',status:async()=>({connected:true}),
+  send:async()=>({status:true})})).state,'SENT');
+ assert.equal(routeIntroductionReply({leadId:lead.id,providerId:'inbound-4',body:'Claro, manda',receivedAt:when}).state,'VOICE_WAITING');
  let sends=0;
- const result=await tickIntroductions({
+ const result=await tickIntroductions({session:()=> 'consecom-principal',
   loadAudio:async()=>{throw Error('VOICE_ASSET_MISSING');},
   send:async()=>{sends++;return {status:true};},
-  sendAudio:async()=>{sends++;return {accepted:true};}
- });
+  sendAudio:async()=>{sends++;return {accepted:true};}});
  assert.equal(result.state,'VOICE_ASSET_UNAVAILABLE');
  assert.equal(introductionStatus(lead.id).stage,'VOICE_WAITING');
  assert.equal(sends,0);

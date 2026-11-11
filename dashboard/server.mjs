@@ -72,6 +72,7 @@ import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {tickIntroductions} from './prospecting-introduction.mjs';
+import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -935,6 +936,13 @@ const prospectIntroductionTimer=setInterval(()=>{if(ownerProspectionPaused())ret
  if(['SENT','VOICE_SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160)));},1000);
+const prospectFarewellTimer=setInterval(()=>{
+ if(ownerProspectionPaused())return;
+ tickProspectorFarewells().then(result=>{
+  if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
+  if(result.state==='UNKNOWN')console.warn('[prospect farewell] uncertain delivery; no automatic resend');
+ }).catch(e=>console.warn('[prospect farewell]',String(e?.message||e).slice(0,140)));
+},1800);
 // Persistent 25-second follow-up with portfolio references, after the approved
 // offer is acknowledged. The owner pause applies to both campaign steps.
 const offerReferencesTimer=setInterval(()=>{

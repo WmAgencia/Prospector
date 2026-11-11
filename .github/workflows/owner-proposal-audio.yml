@@ -31,4 +31,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --test tests/prospecting-owner-audio-pitch.test.mjs
+      - run: node --test tests/prospector-owner-handoff-flow.test.mjs
       - run: node --test tests/waakg-voice-presence.test.mjs
