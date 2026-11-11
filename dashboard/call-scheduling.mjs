@@ -8,7 +8,7 @@ import {selectedWaSession,waControlStatus,waRequest} from './waakg-control.mjs';
 
 const TZ='America/Sao_Paulo';
 const GROUP=()=>String(process.env.PROSPECTOR_GROUP_IMPORT_JID||'').trim();
-const validGroup=()=>/^\d{8,24}@g\.us$/.test(GROUP());
+const validGroup=()=>/^\d{8,24}(?:-\d{8,15})?@g\.us$/.test(GROUP());
 const pathFor=(session,jid,kind)=>'/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(jid)+'/'+kind;
 const timeParts=(date)=>Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date).filter(p=>p.type!=='literal').map(p=>[p.type,Number(p.value)]));
 const dateAt=(p,h,m)=>new Date(Date.UTC(p.year,p.month-1,p.day,h+3,m)).toISOString();
