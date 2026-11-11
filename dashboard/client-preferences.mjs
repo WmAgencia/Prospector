@@ -1,5 +1,6 @@
 import {getSetting,setSetting,audit,now} from './db.mjs';
 import {LOCATIONS,SEGMENTS,resolveLocation,resolveSegment} from './osm-discovery.mjs';
+import {isConsecomOwner} from './approach-cadence.mjs';
 
 const allCities=[...new Set(Object.values(LOCATIONS).map(x=>x.label))];
 const allSegments=Object.keys(SEGMENTS);
@@ -33,12 +34,13 @@ export function saveScope(input={}){
  audit('PROSPECTING_SCOPE_CHANGED',null,{mode,niche:segmentKey||null,city:city?.label||null});
  return {selection:selected,options:scopeOptions()};
 }
-export const DEFAULT_OUTREACH_HOURS=Object.freeze({start:'08:00',end:'17:30'});
+export const OUTREACH_HARD_MAX=isConsecomOwner()?'17:40':'17:30';
+export const DEFAULT_OUTREACH_HOURS=Object.freeze({start:'08:00',end:OUTREACH_HARD_MAX});
 const parse=x=>{const m=/^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(x||''));return m?Number(m[1])*60+Number(m[2]):NaN;};
 export function getOutreachHours(){return getSetting('client_outreach_hours',DEFAULT_OUTREACH_HOURS);}
 export function saveOutreachHours({start,end}={}){
  const a=parse(start),b=parse(end);
- if(!Number.isInteger(a)||!Number.isInteger(b)||a<8*60||b>17*60+30||b<=a)throw Error('Escolha horários entre 08:00 e 17:30, com o início anterior ao término.');
+ if(!Number.isInteger(a)||!Number.isInteger(b)||a<8*60||b>parse(OUTREACH_HARD_MAX)||b<=a)throw Error('Escolha horários entre 08:00 e '+OUTREACH_HARD_MAX+', com o início anterior ao término.');
  const value={start,end};
  setSetting('client_outreach_hours',value);
  audit('CLIENT_OUTREACH_HOURS_CHANGED',null,{start,end});
@@ -46,5 +48,5 @@ export function saveOutreachHours({start,end}={}){
 }
 export function approachWindowMinutes(){
  const v=getOutreachHours(),a=parse(v.start),b=parse(v.end);
- return Number.isInteger(a)&&Number.isInteger(b)&&a>=480&&b<=1050&&a<b?{start:a,end:b}:{start:480,end:1050};
+ return Number.isInteger(a)&&Number.isInteger(b)&&a>=480&&b<=parse(OUTREACH_HARD_MAX)&&a<b?{start:a,end:b}:{start:480,end:parse(OUTREACH_HARD_MAX)};
 }

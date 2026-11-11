@@ -11,6 +11,7 @@ let offerType='portfolio';
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",connections:"◫",settings:"⚙"};
 let view=Object.keys(tabs).includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
 let dimensionMetrics=null,selectedDimension=null;
+let overviewApproaches=null,overviewApproachPeriod='today',overviewApproachDay='',overviewApproachLoading=false,overviewApproachRequest=0;
 let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false,consentPolicy=null,consentPolicyBusy=false;
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
 function newProspectSession(){
@@ -31,7 +32,7 @@ const root=q("#app");
 let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
-let outreachHours={start:'08:00',end:'17:30'};
+let outreachHours={start:'08:00',end:'17:30'},outreachHardMax='17:30';
 let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalSelectAll=false,approvalExcludedIds=new Set(),approvalSelectionCutoff='',approvalBusy=false,approvalFeedback='';
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
 let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
@@ -649,6 +650,56 @@ function pipelineGraphic(k){
  const stages=[['approaching','Em abordagem'],['interested','Interessados'],['conversing','Em atendimento']],values=stages.map(([key])=>Math.max(0,Number(k.counts?.[key])||0)),max=Math.max(1,...values);
  return '<section class="pipeline-graphic" aria-label="Resumo visual do funil"><div><span class="kicker">MOVIMENTO DA OPERAÇÃO</span><h3>Da conversa à oportunidade.</h3></div><div class="pipeline-bars">'+stages.map(([key,label],i)=>'<div><span>'+label+'</span><div class="pipeline-track"><i style="width:'+Math.round(values[i]/max*100)+'%"></i></div><strong>'+values[i]+'</strong></div>').join('')+'</div></section>';
 }
+const overviewTodaySP=()=>{
+ const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{
+  timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'
+ }).formatToParts(new Date()).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+ return parts.year+'-'+parts.month+'-'+parts.day;
+};
+function overviewApproachesSection(){
+ const options=[['today','Hoje'],['7d','Últimos 7 dias'],['month','Este mês'],['day','Personalizado']];
+ const names=Object.fromEntries(options),nf=new Intl.NumberFormat('pt-BR');
+ const actual=overviewApproaches,valid=actual&&actual.period===overviewApproachPeriod&&
+  (overviewApproachPeriod!=='day'||actual.from===overviewApproachDay);
+ const label=overviewApproachPeriod==='day'&&overviewApproachDay
+  ?new Date(overviewApproachDay+'T12:00:00Z').toLocaleDateString('pt-BR',{timeZone:'UTC'})
+  :names[overviewApproachPeriod]||'Hoje';
+ const bars=valid&&actual.daily?.length>1?'<div class="overview-approaches-bars" aria-label="Abordagens por dia">'+
+  actual.daily.map(d=>'<span class="overview-approaches-bar" title="'+esc(d.date+': '+d.approached+' abordagens')+'" style="--bar-height:'+Math.max(4,Math.round(d.approached/Math.max(1,...actual.daily.map(x=>x.approached))*100))+'%" aria-hidden="true"></span>').join('')+
+  '</div>':'';
+ return '<section class="overview-approaches" aria-label="Abordagens por período">'+
+  '<div class="overview-approaches-total"><span class="kicker">ABORDAGENS CONFIRMADAS</span>'+
+  '<strong aria-live="polite">'+(overviewApproachLoading?'…':valid?nf.format(actual.total):'—')+'</strong>'+
+  '<small>'+esc(label)+' · empresas distintas, primeira abordagem</small></div>'+
+  '<div class="overview-approaches-filter"><span class="overview-approaches-label">Período</span>'+
+  '<div class="overview-approaches-options" role="group" aria-label="Selecionar período">'+
+  options.map(([period,name])=>'<button type="button" data-action="overview-approach-period" data-period="'+period+'" aria-pressed="'+(period===overviewApproachPeriod?'true':'false')+'" class="'+(period===overviewApproachPeriod?'selected':'')+'">'+name+'</button>').join('')+'</div>'+
+  (overviewApproachPeriod==='day'?'<label class="overview-approaches-date-label">Escolha o dia <input id="overview-approach-day" type="date" value="'+esc(overviewApproachDay||overviewTodaySP())+'" max="'+overviewTodaySP()+'" aria-label="Data personalizada das abordagens"></label>':'')+
+  '<small class="overview-approaches-hint">Somente primeiras abordagens aceitas. Respostas e áudios não entram na contagem.</small></div>'+
+  bars+'</section>';
+}
+async function loadOverviewApproaches({redraw=true}={}){
+ const token=++overviewApproachRequest;
+ overviewApproachLoading=true;
+ if(redraw&&view==='overview')render();
+ const period=overviewApproachPeriod,date=overviewApproachDay;
+ try{
+  const result=await api('/api/overview/approaches?period='+encodeURIComponent(period)+
+   (period==='day'?'&date='+encodeURIComponent(date||overviewTodaySP()):''));
+  if(token!==overviewApproachRequest)return;
+  overviewApproaches=result;
+ }catch(e){
+  if(token!==overviewApproachRequest)return;
+  overviewApproaches=null;
+  n('Não foi possível consultar as abordagens: '+e.message);
+ }finally{
+  if(token===overviewApproachRequest){
+   overviewApproachLoading=false;
+   if(redraw&&view==='overview')render();
+  }
+ }
+}
+
 function overviewDimensionSection(){
  const data=dimensionMetrics;
  const groups=[['cities','Cidades e regiões','Veja onde a prospecção está acontecendo.'],['niches','Nichos abordados','Compare os segmentos com maior volume de contatos.']];
@@ -693,6 +744,7 @@ function overview(){
  };
  return '<div class="kanban-dashboard" id="overview-board">'+
   '<div class="kanban-overview-head"><div><span class="kicker">PIPELINE COMERCIAL</span><h2>Visão da operação</h2><p>Todos os contatos e oportunidades em uma única tela.</p></div><button class="secondary compact" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div>'+
+  overviewApproachesSection()+
   '<div class="kanban-metrics">'+stat('Empresas acompanhadas',total,'Com atividade registrada')+stat('Abordando',k.counts?.approaching||0,'Em contato')+stat('Interessados',k.counts?.interested||0,'Prioridade comercial')+stat('Conversando',k.counts?.conversing||0,'Atendimento humano')+'</div>'+
   startupPanel+
   '<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>Acompanhe cada etapa e abra a conversa pelo cartão.</small></div>'+
@@ -828,14 +880,14 @@ async function submitApprovals(){
 
 function settings(){
  if(platformContext.role==='master')return masterSettings();
- const hours=outreachHours||{start:'08:00',end:'17:30'};
+ const hours=outreachHours||{start:'08:00',end:outreachHardMax};
  const prefs=state?.settings||{};
  const operationalToggle=(switchId,title,description,checked)=>{
   return '<div class="setting-line tenant-control-line"><div class="tenant-control-copy"><strong>'+esc(title)+'</strong><small>'+esc(description)+'</small></div>'+
    '<label class="switch" aria-label="'+esc(title)+'"><input id="'+switchId+'" type="checkbox" '+(checked?'checked':'')+'><span></span></label></div>';
  };
  return '<div class="workspace-head"><div><span class="kicker">PREFERÊNCIAS DA CONTA</span><h2>Configurações</h2><p>O essencial para sua operação, com segurança e sem ferramentas técnicas desnecessárias.</p></div></div>'+
- '<div class="account-settings-grid"><section class="panel"><div class="heading"><div><span class="kicker">HORÁRIO DE ABORDAGENS</span><h3>Quando abordar empresas?</h3><p>Defina quando sua operação pode iniciar novas conversas.</p></div></div><form id="outreach-hours-form" class="stack-form"><div class="setting-hour-fields"><label>Início das abordagens<input name="start" type="time" step="60" min="08:00" max="17:29" value="'+esc(hours.start)+'" required></label><label>Fim das abordagens<input name="end" type="time" step="60" min="08:01" max="17:30" value="'+esc(hours.end)+'" required></label></div><p class="footnote">A descoberta continua a partir das 5h. Os horários configurados devem ficar dentro da janela de segurança das 8h às 17h30, e os envios continuam sujeitos à autorização do destinatário e às regras do canal.</p><button class="primary" type="submit">Salvar horário</button></form></section>'+
+ '<div class="account-settings-grid"><section class="panel"><div class="heading"><div><span class="kicker">HORÁRIO DE ABORDAGENS</span><h3>Quando abordar empresas?</h3><p>Defina quando sua operação pode iniciar novas conversas.</p></div></div><form id="outreach-hours-form" class="stack-form"><div class="setting-hour-fields"><label>Início das abordagens<input name="start" type="time" step="60" min="08:00" max="'+(outreachHardMax==='17:40'?'17:39':'17:29')+'" value="'+esc(hours.start)+'" required></label><label>Fim das abordagens<input name="end" type="time" step="60" min="08:01" max="'+outreachHardMax+'" value="'+esc(hours.end)+'" required></label></div><p class="footnote">A descoberta continua a partir das 5h. Os horários configurados devem ficar dentro da janela de segurança das 8h às '+(outreachHardMax==='17:40'?'17h40':'17h30')+', e os envios continuam sujeitos à autorização do destinatário e às regras do canal.'+(outreachHardMax==='17:40'?' O intervalo mínimo entre primeiras abordagens é de 7min15s, compartilhado entre todos os seus números.':'')+'</p><button class="primary" type="submit">Salvar horário</button></form></section>'+
  '<section class="panel"><div class="heading"><div><span class="kicker">ACESSO E SEGURANÇA</span><h3>E-mail e senha</h3><p>Para qualquer alteração, confirme a senha atual.</p></div></div><form id="account-credentials" class="stack-form"><label>Novo e-mail<input type="email" name="newEmail" autocomplete="email" value="'+esc(platformContext.email||'')+'" required></label><label>Senha atual<input type="password" name="currentPassword" autocomplete="current-password" minlength="1" maxlength="128" required></label><label>Nova senha (opcional)<input type="password" name="newPassword" autocomplete="new-password" minlength="10" maxlength="128" placeholder="Mínimo de 10 caracteres"></label><p class="footnote">Alterar o e-mail ou a senha encerra outras sessões conectadas. Você permanece conectado neste navegador.</p><button class="primary" type="submit">Salvar dados de acesso</button></form></section></div>'+
  '<section class="panel tenant-prospecting-controls"><div class="heading"><div><span class="kicker">PROSPECÇÃO / SUA CONTA</span><h3>Controle da prospecção</h3><p>Ative ou pause sua operação de forma independente. Estas opções são exclusivas deste espaço de trabalho.</p></div></div>'+
  operationalToggle('s-autonomous','Prospecção autônoma','Permite que o sistema pesquise e prepare abordagens para contatos elegíveis.',prefs.autonomous_outreach_enabled===true)+
@@ -845,7 +897,7 @@ function settings(){
  '<p class="settings-small-note">Seus dados e conversas ficam vinculados ao seu espaço. Treinamento com históricos exige autorização. A Francisca está disponível na bolinha lateral, em todas as áreas do painel.</p>';
 }
 async function loadOutreachHours(){
- try{const r=await api('/api/settings/outreach-hours');outreachHours=r.hours;if(view==='settings')render();}
+ try{const r=await api('/api/settings/outreach-hours');outreachHours=r.hours;outreachHardMax=r.hardMax||'17:30';if(view==='settings')render();}
  catch(e){n(e.message);}
 }
 function render(){
@@ -1002,7 +1054,17 @@ async function loadMessages(id){
   if(!id.startsWith("wa:"))await post("/api/threads/"+encodeURIComponent(id)+"/read",{}).catch(()=>{});
  }catch(e){const feed=q("#messages");if(feed)feed.textContent="Não foi possível carregar a conversa.";}
 }
-async function loadKanban(){try{const [board,sales,dimensions]=await Promise.all([api('/api/kanban'),api('/api/sales/outcomes').catch(()=>null),api('/api/overview/dimensions').catch(()=>null)]);kanban=board;salesResults=sales;dimensionMetrics=dimensions;if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
+async function loadKanban(){try{
+ const [board,sales,dimensions]=await Promise.all([
+  api('/api/kanban'),
+  api('/api/sales/outcomes').catch(()=>null),
+  api('/api/overview/dimensions').catch(()=>null),
+  loadOverviewApproaches({redraw:false})
+ ]);
+ kanban=board;salesResults=sales;dimensionMetrics=dimensions;
+ if(view==='overview')render();
+ }catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}
+}
 async function reload(){
  if(!workspaceInitialized){
   workspaceInitialized=true;
@@ -1090,6 +1152,13 @@ document.addEventListener("click",async ev=>{
   if(action==='francisca-record-toggle'){await toggleFranciscaRecording();return;}
   if(action==='calendar-prev'||action==='calendar-next'){moveCalendar(action==='calendar-prev'?-1:1);return;}
   if(action==='calendar-day'){calendarDay=el.dataset.date||'';calendarCategory=el.dataset.kind==='closed'?'closed':'approached';render();return;}
+  if(action==='overview-approach-period'){
+   const period=el.dataset.period;
+   if(!['today','7d','month','day'].includes(period))return;
+   overviewApproachPeriod=period;
+   if(period==='day'&&!overviewApproachDay)overviewApproachDay=overviewTodaySP();
+   await loadOverviewApproaches();return;
+  }
   if(action==='overview-dimension'){const dimension=el.dataset.dimension,key=decodeURIComponent(el.dataset.key||'');if(!['cities','niches'].includes(dimension))return;selectedDimension=selectedDimension?.dimension===dimension&&selectedDimension.key===key?null:{dimension,key};render();return;}
   if(action==='overview-dimension-close'){selectedDimension=null;render();return;}
   if(action==="refresh-kanban"){await loadKanban();n('Kanban atualizado.');return;}
@@ -1277,6 +1346,14 @@ document.addEventListener("change",async e=>{
  }
 
  const t=e.target;
+ if(t.id==='overview-approach-day'){
+  const value=String(t.value||'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||value>overviewTodaySP()){
+   n('Selecione um dia válido até hoje.');return;
+  }
+  overviewApproachPeriod='day';overviewApproachDay=value;
+  await loadOverviewApproaches();return;
+ }
  if(t.id==='approach-offer'){offerType=t.value;return;}
  if(t.dataset?.selectLead){
   const leadId=t.dataset.selectLead;

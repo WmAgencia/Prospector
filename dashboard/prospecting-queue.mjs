@@ -5,12 +5,12 @@ import {db,id,one,all,run,tx,now,audit,getSetting,setSetting,getThread,addMessag
 import {daySP} from './radar.mjs';
 import {dailyApproachBudget} from './daily-approach-limit.mjs';
 import {reserveApproachCredit,settleApproachCredit,availableApproachCredits} from './tenant-credits.mjs';
-import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt} from './approach-cadence.mjs';
+import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt,isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {coldFirstApproachEnabled as tenantColdFirstApproachEnabled} from './tenant-prospecting-controls.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
-import {insideApproachWindow} from './outreach-window.mjs';
+import {insideApproachWindow,FIRST_APPROACH_WINDOW_LABEL} from './outreach-window.mjs';
 import {isExcludedTestContact} from './test-contact-exclusion.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
 import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
@@ -30,6 +30,8 @@ if(!db.prepare('PRAGMA table_info(prospecting_send_clock)').all().some(c=>c.name
  run('UPDATE prospecting_send_clock SET interval_ms=?',chooseApproachInterval(90000));
 }
 run('INSERT OR IGNORE INTO prospecting_send_clock(id,last_attempt_ms,interval_ms) VALUES(1,0,?)',chooseApproachInterval());
+if(isConsecomOwner())
+ run('UPDATE prospecting_send_clock SET interval_ms=? WHERE id=1 AND interval_ms<>?',OWNER_APPROACH_INTERVAL_MS,OWNER_APPROACH_INTERVAL_MS);
 if(!db.prepare('PRAGMA table_info(prospecting_send_clock)').all().some(c=>c.name==='last_finished_ms'))db.exec('ALTER TABLE prospecting_send_clock ADD COLUMN last_finished_ms INTEGER NOT NULL DEFAULT 0');
 // Crash safety: an interrupted network send may have been delivered.
 run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Processo interrompido; conferir no WhatsApp' WHERE status='SENDING'");
@@ -96,7 +98,7 @@ export function approachQueueStatus(){
  const waiting=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='QUEUED'")?.n||0;
  const unknown=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='UNKNOWN'")?.n||0;
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
- return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:'08:00–17:30 America/Sao_Paulo',waiting,sent,unknown,
+ return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:FIRST_APPROACH_WINDOW_LABEL,waiting,sent,unknown,
   intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,senderRotation:{mode:'round_robin',sessions:managedSessions().length,lastSession:rotationCursor()},nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),approachDueAt(clock))).toISOString():null,
   status:b?.status||'IDLE',dailyBudget:dailyApproachBudget(),availableCredits:availableApproachCredits(),repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
@@ -185,7 +187,7 @@ function createAutonomousBatch(selected,at=new Date()){
    queued++;
   }
   if(!queued){run('DELETE FROM prospecting_batches WHERE id=?',batchId);return {status:'NO_ELIGIBLE_LEADS'};}
-  audit('AUTONOMOUS_APPROACH_BATCH',null,{batchId,queued,window:'08:00-17:30',cadence:APPROACH_CADENCE,threeCalendarMonths:true});
+  audit('AUTONOMOUS_APPROACH_BATCH',null,{batchId,queued,window:isConsecomOwner()?'08:00-17:40':'08:00-17:30',cadence:APPROACH_CADENCE,threeCalendarMonths:true});
   return {status:'QUEUED',batchId,queued};
  });
 }
@@ -248,8 +250,8 @@ export async function tickApproachQueue(deps={}){
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
    if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS'))return false;
    if(rotating&&rotationCursor()!==wa.cursor)return false;
-   // Reserve both the attempt and its next random interval atomically. Polling,
-   // failures and process restarts never reroll or shorten the chosen wait.
+   // Reserve the attempt and next interval atomically. The owner gets exactly
+   // one 7m15s cooldown across all numbers; restarts and delays never compress it.
    run('UPDATE prospecting_send_clock SET last_attempt_ms=?,interval_ms=? WHERE id=1',nowMs,chooseApproachInterval(latest.interval_ms));
    bindLeadSession(next.lead_id,session);
    if(rotating)advanceRotation(session);

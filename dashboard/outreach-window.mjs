@@ -1,8 +1,10 @@
 // São Paulo business-hour gate for every new WhatsApp prospecting approach.
-// End is exclusive: 17:30:00 must not start another new approach.
+// End is exclusive: Consecom stops at 17:40; other tenants keep 17:30.
 import {getSetting} from './db.mjs';
+import {isConsecomOwner} from './approach-cadence.mjs';
 export const FIRST_APPROACH_START_MINUTES=8*60;
-export const FIRST_APPROACH_END_MINUTES=17*60+30;
+export const FIRST_APPROACH_END_MINUTES=isConsecomOwner()?17*60+40:17*60+30;
+export const FIRST_APPROACH_WINDOW_LABEL=isConsecomOwner()?'08:00–17:40 America/Sao_Paulo':'08:00–17:30 America/Sao_Paulo';
 export function saoPauloClock(at=new Date()){
  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{
   timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hourCycle:'h23'

@@ -4,7 +4,7 @@ import {handlePlatform,isPrimaryClient} from './platform.mjs';
 import {handleTraining} from './training.mjs';
 import {handleFranciscaPanel} from './francisca-panel.mjs';
 import {monthlyProspectingCalendar} from './prospecting-calendar.mjs';
-import {currentScope,scopeOptions,saveScope,getOutreachHours,saveOutreachHours} from './client-preferences.mjs';
+import {currentScope,scopeOptions,saveScope,getOutreachHours,saveOutreachHours,OUTREACH_HARD_MAX} from './client-preferences.mjs';
 import {accessClientKey,createAccessLimiter} from './access-rate-limit.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -60,13 +60,15 @@ import {listUnseenCompanies} from './prospecting-visibility.mjs';
 import {prepareApproaches} from './prospecting-approach.mjs';
 import {kanbanSnapshot} from './kanban.mjs';
 import {outreachDimensionSnapshot} from './overview-dimensions.mjs';
+import {firstApproachHistory} from './overview-approaches.mjs';
 import {qualifyWithGroq} from './groq-interest-check.mjs';
 import {agentStatus,tickSalesAgent,flushInterestAlerts} from './groq-sales-automation.mjs';
 import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospectorLeadEligible} from './whatsapp-roles.mjs';
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,autonomousReadyCount,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROSPECTING_CONTROL_KEYS} from './tenant-prospecting-controls.mjs';
-import {armApprovedOutreach,apply80DailyLimit} from './approval-ready-activation.mjs';
+import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread} from './approval-ready-activation.mjs';
+import {isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
@@ -282,6 +284,7 @@ if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('auto
 const approvalReady=armApprovedOutreach();
 console.info('[approval ready]',JSON.stringify(approvalReady));
 console.info('[daily 80 limit]',JSON.stringify(apply80DailyLimit()));
+console.info('[daily 80 spread]',JSON.stringify(applyOwnerDailySpread()));
 console.info('[proposal voice asset]',JSON.stringify(portfolioPitchAudioHealth()));
 // Read-only future start check. No batch is created and no WhatsApp message is sent.
 const nextStartAt=new Date('2026-11-10T11:00:00.000Z');
@@ -526,8 +529,8 @@ async function handler(req,res){
    if(req.method==='POST'){try{return respond(res,200,saveScope(await json(req)));}catch(e){return respond(res,422,{error:String(e.message).slice(0,200)});}}
   }
   if(pathname==='/api/settings/outreach-hours'){
-   if(req.method==='GET')return respond(res,200,{hours:getOutreachHours(),hardMin:'08:00',hardMax:'17:30'});
-   if(req.method==='POST'){try{return respond(res,200,{hours:saveOutreachHours(await json(req)),hardMin:'08:00',hardMax:'17:30'});}catch(e){return respond(res,422,{error:String(e.message).slice(0,200)});}}
+   if(req.method==='GET')return respond(res,200,{hours:getOutreachHours(),hardMin:'08:00',hardMax:OUTREACH_HARD_MAX});
+   if(req.method==='POST'){try{return respond(res,200,{hours:saveOutreachHours(await json(req)),hardMin:'08:00',hardMax:OUTREACH_HARD_MAX});}catch(e){return respond(res,422,{error:String(e.message).slice(0,200)});}}
   }
   if(req.method==='GET'&&pathname==='/api/google-places/status')return respond(res,200,placesStatus());
   if(req.method==='POST'&&pathname==='/api/google-places/search'){const result=await placesSearch(await json(req));return respond(res,result.status,result.body);}
@@ -558,6 +561,13 @@ async function handler(req,res){
   if(req.method==='POST'&&pathname==='/api/prospecting/approach-preview'){try{return respond(res,200,prepareApproaches(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,220)});}}
   if(req.method==='GET'&&pathname==='/api/kanban')return respond(res,200,kanbanSnapshot());
   if(req.method==='GET'&&pathname==='/api/overview/dimensions')return respond(res,200,outreachDimensionSnapshot());
+  if(req.method==='GET'&&pathname==='/api/overview/approaches'){
+   try{return respond(res,200,firstApproachHistory({
+    period:url.searchParams.get('period')||'today',
+    date:url.searchParams.get('date')||''
+   }));}
+   catch(e){return respond(res,422,{error:String(e?.message||e).slice(0,130)});}
+  }
   if(req.method==='GET'&&pathname==='/api/sales/outcomes')return respond(res,200,salesOutcomes({limit:80}));
   if(req.method==='GET'&&pathname==='/api/sales/status')return respond(res,200,{priceReferenceBrl:SITE_AVERAGE_PRICE_BRL,agent:agentStatus(),queue:approachQueueStatus()});
   if(req.method==='GET'&&pathname==='/api/whatsapp/contact-role'){
@@ -766,7 +776,8 @@ async function handler(req,res){
      if(['decision_engine_enabled','decision_learning_enabled'].includes(k)&&typeof value!=='boolean')throw Error('Use verdadeiro ou falso para o motor de decisão');
     if(k==='discovery_target_daily'&&(Number(value)<1||Number(value)>150))throw Error('A meta de descoberta deve ser de 1 a 150');
     if(k==='discovery_start_hour'&&(Number(value)<0||Number(value)>23))throw Error('O início da descoberta deve ficar entre 0h e 23h');
-    if(k==='initial_interval_seconds'&&Number(value)<90)throw Error('Intervalo mínimo é 90 segundos');
+    if(k==='initial_interval_seconds'&&Number(value)<(isConsecomOwner()?OWNER_APPROACH_INTERVAL_MS/1000:90))
+     throw Error('Intervalo mínimo de abordagens nesta conta: '+(isConsecomOwner()?OWNER_APPROACH_INTERVAL_MS/1000:90)+' segundos');
      if(PROSPECTING_CONTROL_KEYS.includes(k)&&typeof value!=='boolean')throw Error('Use verdadeiro ou falso para os controles de prospecção');
     if(k==='owner_report_hour'&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>23))throw Error('Hora do relatório inválida');
     if(['owner_phone_a','owner_phone_b'].includes(k)&&value&&(!phone(value)||phone(value).length<12||phone(value).length>13))throw Error('Informe WhatsApp brasileiro válido com DDD');
@@ -910,7 +921,7 @@ const autonomousQueueTimer=setInterval(()=>{
   const result=cold&&minutes>=7*60&&minutes<8*60
    ?preloadApproachQueue()
    :cold&&insideApproachWindow()?enrollAutonomousApproaches():enrollAutonomousApproaches();
-  if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',cadence:approachQueueStatus().cadence,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
+  if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:approachQueueStatus().window,cadence:approachQueueStatus().cadence,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
  }catch(error){console.warn('[automatic approach]',String(error?.message||error).slice(0,140));}
 },5000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
