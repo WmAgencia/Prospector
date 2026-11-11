@@ -15,9 +15,10 @@ import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
 import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
+import {acceptsProposalAudio} from './prospector-sales-signals.mjs';
 
 export const INTRO_DELAY_MS=30_000;
-export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
+export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês. Posso te mandar um áudio explicando a ideia?';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
 // Network activity may have succeeded before a process restart. Never retry automatically.
@@ -70,27 +71,22 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
  const sourceId=String(providerId||'').slice(0,180);
  if(item.stage==='GREETING_SENT'){
-  const next=wantsVoice?'VOICE_WAITING':'WAITING';
+  // First reply only unlocks Wesley's written permission question, never skips straight to audio.
+  const next='WAITING';
   run("UPDATE prospecting_introductions SET stage=?,first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
    next,sourceId,timestamp.toISOString(),due,now(),leadId);
-  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,next,voiceRequested:wantsVoice});
+  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,next,voiceRequested:false});
   return {managed:true,queueAi:false,state:next};
  }
- if(item.stage==='WAITING'){
-  if(wantsVoice){
-   run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='WAITING'",due,now(),leadId);
-   audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due});
-   return {managed:true,queueAi:false,state:'VOICE_WAITING'};
-  }
-  return {managed:true,queueAi:false,state:'WAITING'};
- }
+ if(item.stage==='WAITING')return {managed:true,queueAi:false,state:'WAITING'};
  if(item.stage==='VOICE_WAITING')return {managed:true,queueAi:false,state:'VOICE_WAITING'};
- if(item.stage==='SENT'&&wantsVoice){
+ if(item.stage==='SENT'&&(wantsVoice||acceptsProposalAudio(body))){
   run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='SENT'",due,now(),leadId);
   audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due,afterTextIntro:true});
   return {managed:true,queueAi:false,state:'VOICE_WAITING'};
  }
- if(item.stage==='SENT'||item.stage==='VOICE_SENT'){
+ if(item.stage==='SENT')return {managed:true,queueAi:false,state:'AWAITING_AUDIO_PERMISSION'};
+ if(item.stage==='VOICE_SENT'){
   run('UPDATE prospecting_introductions SET stage=?,updated_at=? WHERE lead_id=? AND stage=?','CONVERSING',now(),leadId,item.stage);
   audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:sourceId,previousStage:item.stage});
   return {managed:true,queueAi:true,state:'CONVERSING'};
