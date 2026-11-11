@@ -1,0 +1,22 @@
+name: Exact original owner audio bootstrapping
+on:
+  push:
+    branches: [fix/owner-voice-env-bootstrap-20261111]
+  pull_request:
+    branches: [feature/tenant-bulk-approvals-20261109]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: |
+          node --check dashboard/server.mjs
+          node --check dashboard/owner-approved-pitch.mjs
+          node --test tests/owner-voice-env-bootstrap.test.mjs
+          node --test tests/emergency-pause-outbound.test.mjs
