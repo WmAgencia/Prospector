@@ -1,0 +1,19 @@
+name: Original R$350 voice consistency
+on:
+  push:
+    branches: [fix/owner-original-350-price-consistency-20261111]
+  pull_request:
+    branches: [feature/tenant-bulk-approvals-20261109]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/groq-sales-automation.mjs
+      - run: node --test tests/owner-original-350-offer.test.mjs
