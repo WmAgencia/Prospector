@@ -3,6 +3,7 @@
 // Does not start the legacy campaign, send messages, change recipient consent,
 // or activate this mode for unrelated tenant databases.
 import {getSetting,setSetting,audit} from './db.mjs';
+import {OWNER_APPROACH_INTERVAL_MS,isConsecomOwner} from './approach-cadence.mjs';
 
 export const APPROVAL_READY_MARKER='approval_ready_outreach_20261109_v1';
 
@@ -55,4 +56,24 @@ export function apply80DailyLimit(){
  audit('OWNER_DAILY_LIMIT_80',null,{previous,current:OWNER_DAILY_LIMIT,
   at:new Date().toISOString(),allConnectedNumbers:true,requiresRecordedConsent:true});
  return {status:'UPDATED',dailyLimit:OWNER_DAILY_LIMIT,previous};
+}
+
+// One-time scoped migration to match the owner's explicit 08:00–17:40
+// distribution. Does NOT enable outreach, reconnect WhatsApp or relax consent.
+export const OWNER_DAILY_SPREAD_MARKER='owner_daily_80_spread_0800_1740_20261111_v1';
+export function applyOwnerDailySpread(){
+ if(!isConsecomOwner())return {status:'OTHER_TENANT_UNCHANGED'};
+ if(getSetting(OWNER_DAILY_SPREAD_MARKER,false)===true)
+  return {status:'ALREADY_APPLIED',window:getSetting('client_outreach_hours',null)};
+ const previousHours=getSetting('client_outreach_hours',null);
+ const previousInterval=getSetting('initial_interval_seconds',null);
+ const newHours={start:'08:00',end:'17:40'};
+ setSetting('client_outreach_hours',newHours);
+ setSetting('initial_interval_seconds',OWNER_APPROACH_INTERVAL_MS/1000);
+ setSetting(OWNER_DAILY_SPREAD_MARKER,true);
+ audit('OWNER_80_EVEN_SCHEDULE',null,{previousHours,previousInterval,
+  window:newHours,maxFirstApproaches:80,minimumGapSeconds:OWNER_APPROACH_INTERVAL_MS/1000,
+  noAutoStart:true,allConnectedNumbers:true});
+ return {status:'UPDATED',window:newHours,intervalSeconds:OWNER_APPROACH_INTERVAL_MS/1000,
+  maximumFirstApproachesPerDay:80,paused:getSetting('paused',true)};
 }
