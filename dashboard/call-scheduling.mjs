@@ -84,6 +84,8 @@ export function routeCustomerCall({leadId,sessionId,providerId,body}={}){
  }
  if(!liveCustomer(r))return {handled:false};
  if(r.state==='WAIT_CLIENT_CONFIRM'){
+  // Never treat an answer to the earlier call invitation as confirmation of an unsent time.
+  if(r.customer_send_state!=='SENT')return {handled:true,state:'AWAITING_PROPOSAL_DELIVERY'};
   // "Pode ser às 16h?" is a counterproposal, NOT an acceptance of 15h.
   const suggested=parseSuggestedTime(text);
   if(/(?:amanh[aã]|outro dia|semana que vem)/i.test(text)){
