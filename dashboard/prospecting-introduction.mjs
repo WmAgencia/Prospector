@@ -133,6 +133,7 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
 
 let busy=false;
 export async function tickIntroductions(deps={}){
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {state:'PAUSED_EMERGENCY'};
  if(busy)return {state:'BUSY'};
  const {currentTime=()=>Date.now(),status=waControlStatus,session=selectedWaSession,
   send=waRequest,sendAudio=sendVoiceWithRecording,loadAudio=loadCurrentPortfolioVoice}=deps;

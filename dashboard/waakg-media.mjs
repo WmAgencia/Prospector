@@ -36,6 +36,7 @@ export async function fetchPrivateAudio(urlPath,{fetchFn=fetch,apiKey,session=se
  return {buffer,filename:path.split('/').at(-1),mimeType:type||'application/octet-stream'};
 }
 export async function sendVoiceMedia({jid,bytes,session=selectedWaSession(),fetchFn=fetch,apiKey}={}){
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')throw Error('PROSPECTOR_EMERGENCY_ALL_OUTBOUND_PAUSED');
  if(!jidAllowed(jid)||!session||!Buffer.isBuffer(bytes)||bytes.length<256||bytes.length>MAX_MEDIA_BYTES)throw Error('INVALID_VOICE_SEND');
  const form=new FormData();
  form.append('type','voice');

@@ -68,6 +68,10 @@ export async function getGatewayApiKey(){
 }
 export async function waRequest(path,{method="GET",data}={}){
  if(!path.startsWith("/api/")||path.includes(".."))throw Error("Rota interna inválida");
+ // Production emergency-stop: deny all outbound WhatsApp message operations
+ // at the shared transport, regardless of persistent queue settings.
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'&&method!=='GET'&&/^\/api\/messages\/[^/]+\/[^/]+\/(?:send|media|interactive|forward|react|reply)(?:\/|$)/.test(path))
+  throw Error('PROSPECTOR_EMERGENCY_ALL_OUTBOUND_PAUSED');
  if(process.env.PROSPECTOR_TENANT_ID){
   const parts=path.split('/').map(decodeURIComponent);
   if(path==='/api/sessions'&&method==='POST'){
