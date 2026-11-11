@@ -16,6 +16,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Install audio utilities used in production image
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - run: npm ci
       - name: Validate script and modules
         run: |
