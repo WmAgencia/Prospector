@@ -7,14 +7,14 @@ export const OWNER_PROPOSAL_INTENT=Object.freeze({ACCEPT:'ACCEPT',TEXT_ONLY:'TEX
 export function classifyOwnerProposalIntent(value=''){
  const msg=clean(value);
  if(!msg||msg.length>900)return OWNER_PROPOSAL_INTENT.UNCLEAR;
+ if(/(?:prefiro|quero|manda|envia|responde|explica) (?:por |em )?texto|sem audio|nao quero audio|nao manda audio|(?:audio|voz) nao/.test(msg))
+  return OWNER_PROPOSAL_INTENT.TEXT_ONLY;
  // Hard precedence: NEVER interpret a negative with an embedded positive
  // word as affirmative ("não, obrigado, pode deixar").
- if(/(?:^|\b)(?:nao tenho interesse|sem interesse|nao quero|nao me mande|para de mandar|pare de enviar|me exclua|me remova|nao pode|nao vou|nao obrigado|prefiro nao|nao quero ouvir|depois|agora nao|nao e o momento|nao estou interessado|nao me liga|nao quero proposta)(?:\b|[,.!?]|$)/.test(msg))
+ if(/(?:^|\b)(?:nao tenho interesse|sem interesse|nao quero|nao me mande|para de mandar|pare de enviar|me exclua|me remova|nao pode|nao vou|nao[, ]+obrigado|prefiro nao|nao quero ouvir|depois|agora nao|nao e o momento|nao estou interessado|nao me liga|nao quero proposta)(?:\b|[,.!?]|$)/.test(msg))
   return OWNER_PROPOSAL_INTENT.DECLINE;
  if(/(?:\b(?:estou ocupado|to ocupado|sem tempo|mais tarde|amanha|outro dia|agora nao|nao agora|me chama depois|pode deixar para depois)\b)/.test(msg))
   return OWNER_PROPOSAL_INTENT.DECLINE;
- if(/(?:prefiro|quero|manda|envia|responde|explica) (?:por |em )?texto|sem audio|nao quero audio|nao manda audio|(?:audio|voz) nao/.test(msg))
-  return OWNER_PROPOSAL_INTENT.TEXT_ONLY;
  // Short affirmatives remain affirmative even when conversational ("Beleza,
  // pode falar", "Sim, manda", "Pode prosseguir"). Negatives above win.
  if(msg.length<=160&&/^(?:sim|ss|s|ok|okay|blz|beleza|claro|certo|perfeito|pode sim|pode ser|pode falar|pode mandar|pode prosseguir|pode continuar|prossegue|prossiga|manda|me conta|vamos la|tranquilo|combinado|show|pois nao|ta bom|ta certo|tudo certo|to ouvindo|estou ouvindo|fico no aguardo)(?:[\s,.!?]|$)/.test(msg))
