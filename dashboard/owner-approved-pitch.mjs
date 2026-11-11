@@ -6,6 +6,9 @@ import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {getSetting,setSetting,now,audit} from './db.mjs';
 
+// Original WhatsApp voice note supplied by the account owner (63.0665s).
+// Only this exact source file is eligible, never the former 99.5s recording.
+export const APPROVED_WESLEY_SOURCE_SHA256='9579652b25cf3c29aaff0c2972f2452bb847d00c697abdcfc9601f510c30a389';
 export const OWNER_PREVIEW_FOLLOWUP='Se você quiser, posso te enviar aqui uma prévia de como ficaria o site de vocês, pode ser?';
 export const OWNER_PREVIEW_DELAY_MS=10_000;
 const ownerOnly=()=>!process.env.PROSPECTOR_TENANT_ID;
@@ -14,7 +17,7 @@ const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 export function approvedOwnerRecordingStatus(){
  const meta=getSetting('owner_approved_pitch_recording',null);
  if(!ownerOnly())return {enabled:false,ready:false,reason:'OWNER_ACCOUNT_ONLY'};
- if(!meta?.sha256||!/^[a-f0-9]{64}$/.test(meta.sha256)||meta.active!==true)
+ if(!meta?.sha256||meta.sha256!==APPROVED_WESLEY_SOURCE_SHA256||meta.active!==true)
   return {enabled:false,ready:false,reason:'AWAITING_OWNER_AUDIO_FILE'};
  const file=path.join(root(),meta.sha256+'.ogg');
  try{
@@ -34,11 +37,15 @@ export function loadApprovedOwnerRecording(){
  return {bytes,sourceSha256:state.sourceSha256,outputSha256:state.outputSha256,
   mimetype:'audio/ogg; codecs=opus',type:'voice',source:'OWNER_APPROVED_RECORDING'};
 }
-export function registerOwnerRecording(raw){
+export function registerOwnerRecording(raw,{testExpectedHash}={}){
  if(!ownerOnly())throw Error('OWNER_ACCOUNT_ONLY');
  if(!Buffer.isBuffer(raw)||raw.length<6000||raw.length>12*1024*1024)
   throw Error('Envie o arquivo de áudio original com até 12 MB');
  const digest=sha(raw);
+ // In production this can NEVER be overridden by requests, settings or AI.
+ // Test-only hash injection permits CI to use synthetic, non-user audio.
+ const expected=process.env.NODE_ENV==='test'&&testExpectedHash?testExpectedHash:APPROVED_WESLEY_SOURCE_SHA256;
+ if(digest!==expected)throw Error('Este arquivo não corresponde ao áudio original de 1min03 aprovado pelo Wesley');
  // Byte-level identity of the original is retained, and audio content is only
  // transcoded to native WhatsApp Opus. No speech synthesis is performed.
  const result=spawnSync('ffmpeg',[
