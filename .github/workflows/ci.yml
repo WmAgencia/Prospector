@@ -101,4 +101,4 @@ jobs:
           node --check dashboard/server.mjs
           node --check dashboard/owner-approved-pitch.mjs
       - name: Test call scheduling without real WhatsApp sends
-        run: node --test tests/call-scheduling.test.mjs
+        run: node --test tests/call-scheduling*.test.mjs
