@@ -83,3 +83,22 @@ jobs:
       - name: Show server output on failure
         if: failure()
         run: cat /tmp/prospector.log || true
+
+  call-scheduling-focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Check scheduling module syntax
+        run: |
+          node --check dashboard/call-scheduling.mjs
+          node --check dashboard/waakg-bridge.mjs
+          node --check dashboard/server.mjs
+          node --check dashboard/owner-approved-pitch.mjs
+      - name: Test call scheduling without real WhatsApp sends
+        run: node --test tests/call-scheduling.test.mjs
