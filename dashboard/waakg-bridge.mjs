@@ -9,6 +9,7 @@ import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {classifyInboundAutomation} from './inbound-automation.mjs';
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
 import {routeIntroductionReply} from "./prospecting-introduction.mjs";
+import {queueProspectorFarewell} from "./prospector-farewell.mjs";
 import {conversationFinished} from "./prospect-terminal-conversation.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
@@ -142,6 +143,9 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  const ending=identity.role==='PROSPECT_APPROACHED'&&state!=='AUTO_REPLY'?salesEnding(content):null;
  if(isExplicitOptOut(content)||ending==='OPT_OUT'){
   stopLead(lead.id,"INBOUND_OPTOUT");state="OPT_OUT";
+ }else if(identity.role==='PROSPECT_APPROACHED'&&lead.stage==='NO_INTEREST'){
+  // A rejected conversation stays terminal regardless of later greetings.
+  state='NO_INTEREST';
  }else if(state!=='AUTO_REPLY'&&(/^(?:não tenho interesse|nao tenho interesse|agora não|agora nao|não é o momento|nao e o momento)(?:[.!\s]|$)/i.test(content)||ending==='NO_INTEREST')){
   stage(lead.id,'NO_INTEREST','INBOUND_SOFT_DECLINE');state='NO_INTEREST';
  }else if(state!=='AUTO_REPLY'&&(/\b(humano|atendente|pessoa de verdade|falar com algu[eé]m)\b/i.test(content)||ending==='HUMAN_REVIEW')){
@@ -156,14 +160,15 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  if(identity.role==='PROSPECT_APPROACHED'){
   if(state==='REVIEW'&&lead.stage!=='CONVERSING')stage(lead.id,'CONVERSING','PROSPECT_REPLIED');
   const outcome=state==='OPT_OUT'?'OPT_OUT':state==='HUMAN'?'HUMAN_REVIEW':state==='NO_INTEREST'?'NO_INTEREST':null;
-  if(outcome)recordSalesOutcome({leadId:lead.id,status:outcome,providerId:unique,evidence:content});
+  if(outcome)recordSalesOutcome({leadId:lead.id,status:outcome,providerId:unique,evidence:content,notify:outcome!=='NO_INTEREST'});
+  if(state==='NO_INTEREST'&&lead.stage!=='NO_INTEREST')queueProspectorFarewell({leadId:lead.id,sessionId:sid,jid});
   if(state==='REVIEW'&&process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true')grantAutonomousFirstReply(lead.id,content);
  }
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
  // The owner has already been routed above, including the sandbox exception.
- if(firstInbound&&state!=='AUTO_REPLY'&&configuredClosing()?.mode!=='complete')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
+ if(firstInbound&&state==='REVIEW'&&configuredClosing()?.mode!=='complete')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
  const call=identity.role==='PROSPECT_APPROACHED'&&state==='REVIEW'?
   routeCustomerCall({leadId:lead.id,sessionId:sid,providerId:unique,body:content}):{handled:false};
  if(call.handled){
