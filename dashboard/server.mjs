@@ -76,6 +76,7 @@ import {tickIntroductions,recoverUnansweredPitchRequests,recoverDisabledPitchQue
 import {reconcileApproachedReplies} from './prospect-reply-reconciliation.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {approvedOwnerRecordingStatus,registerOwnerRecording,loadApprovedOwnerRecording,deactivateOwnerRecording} from './owner-approved-pitch.mjs';
+import {recoverApprovedWesleyVoice,approvedVoiceRecoveryStatus} from './owner-audio-whatsapp-recovery.mjs';
 import {tickOwnerPitch} from './owner-pitch-sequence.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -289,6 +290,14 @@ console.info('[daily 80 limit]',JSON.stringify(apply80DailyLimit()));
 console.info('[daily 80 spread]',JSON.stringify(applyOwnerDailySpread()));
 console.info('[proposal voice asset]',JSON.stringify(portfolioPitchAudioHealth()));
 console.info('[approved owner voice]',JSON.stringify(approvedOwnerRecordingStatus()));
+if(process.env.PROSPECTOR_OWNER_VOICE_RECOVERY_ENABLED==='true'){
+ setTimeout(()=>recoverApprovedWesleyVoice()
+  .then(result=>{
+   console.info('[owner voice recovery startup]',JSON.stringify(result));
+   if(result.status==='READY')notify();
+  })
+  .catch(err=>console.warn('[owner voice recovery startup]',String(err?.message||err).slice(0,130))),11000).unref();
+}
 // Read-only future start check. No batch is created and no WhatsApp message is sent.
 const nextStartAt=new Date('2026-11-10T11:00:00.000Z');
 const beforeNextStart=new Date('2026-11-10T10:59:59.000Z');
@@ -511,6 +520,16 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
     // An approved recording is an uploaded ORIGINAL, not an AI-generated sample.
+  if(pathname==='/api/owner/pitch-recording/recovery'){
+   if(process.env.PROSPECTOR_TENANT_ID)return respond(res,403,{error:'Somente a conta principal Consecom'});
+   if(req.method==='GET')return respond(res,200,approvedVoiceRecoveryStatus()||{status:'NOT_STARTED'});
+   if(req.method==='POST'){
+    const result=await recoverApprovedWesleyVoice();
+    notify();
+    return respond(res,200,result);
+   }
+   return respond(res,405,{error:'Método não permitido'});
+  }
   if(pathname==='/api/owner/pitch-recording'||pathname==='/api/owner/pitch-recording/preview'){
    if(process.env.PROSPECTOR_TENANT_ID)return respond(res,403,{error:'Somente a conta principal Consecom'});
    if(req.method==='GET'&&pathname.endsWith('/preview')){

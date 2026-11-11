@@ -1,0 +1,23 @@
+name: Private original voice recovery
+on:
+  push:
+    branches: [fix/recover-approved-wesley-voice-whatsapp-20261111]
+  pull_request:
+    branches: [feature/tenant-bulk-approvals-20261109]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Syntax and no-send recovery tests
+        run: |
+          node --check dashboard/owner-audio-whatsapp-recovery.mjs
+          node --check dashboard/server.mjs
+          node --test tests/owner-voice-private-recovery.test.mjs
+          node --test tests/emergency-pause-outbound.test.mjs
