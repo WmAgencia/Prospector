@@ -1348,7 +1348,7 @@ document.addEventListener("change",async e=>{
  const t=e.target;
  if(t.id==='overview-approach-day'){
   const value=String(t.value||'');
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)||value>overviewTodaySP()){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||value>overviewTodaySP()){
    n('Selecione um dia válido até hoje.');return;
   }
   overviewApproachPeriod='day';overviewApproachDay=value;
