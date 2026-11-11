@@ -68,6 +68,7 @@ import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,autonomousReadyCount,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROSPECTING_CONTROL_KEYS} from './tenant-prospecting-controls.mjs';
 import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread} from './approval-ready-activation.mjs';
+import {isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
@@ -775,7 +776,8 @@ async function handler(req,res){
      if(['decision_engine_enabled','decision_learning_enabled'].includes(k)&&typeof value!=='boolean')throw Error('Use verdadeiro ou falso para o motor de decisão');
     if(k==='discovery_target_daily'&&(Number(value)<1||Number(value)>150))throw Error('A meta de descoberta deve ser de 1 a 150');
     if(k==='discovery_start_hour'&&(Number(value)<0||Number(value)>23))throw Error('O início da descoberta deve ficar entre 0h e 23h');
-    if(k==='initial_interval_seconds'&&Number(value)<90)throw Error('Intervalo mínimo é 90 segundos');
+    if(k==='initial_interval_seconds'&&Number(value)<(isConsecomOwner()?OWNER_APPROACH_INTERVAL_MS/1000:90))
+     throw Error('Intervalo mínimo de abordagens nesta conta: '+(isConsecomOwner()?OWNER_APPROACH_INTERVAL_MS/1000:90)+' segundos');
      if(PROSPECTING_CONTROL_KEYS.includes(k)&&typeof value!=='boolean')throw Error('Use verdadeiro ou falso para os controles de prospecção');
     if(k==='owner_report_hour'&&(!Number.isInteger(Number(value))||Number(value)<0||Number(value)>23))throw Error('Hora do relatório inválida');
     if(['owner_phone_a','owner_phone_b'].includes(k)&&value&&(!phone(value)||phone(value).length<12||phone(value).length>13))throw Error('Informe WhatsApp brasileiro válido com DDD');
@@ -919,7 +921,7 @@ const autonomousQueueTimer=setInterval(()=>{
   const result=cold&&minutes>=7*60&&minutes<8*60
    ?preloadApproachQueue()
    :cold&&insideApproachWindow()?enrollAutonomousApproaches():enrollAutonomousApproaches();
-  if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',cadence:approachQueueStatus().cadence,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
+  if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:approachQueueStatus().window,cadence:approachQueueStatus().cadence,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
  }catch(error){console.warn('[automatic approach]',String(error?.message||error).slice(0,140));}
 },5000);
 const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
