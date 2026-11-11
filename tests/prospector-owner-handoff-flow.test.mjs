@@ -69,6 +69,7 @@ test('without audio asset, never send a different written offer',async()=>{
  assert.equal(result.state,'VOICE_ASSET_UNAVAILABLE');
  assert.equal(introductionStatus(item.lead.id).stage,'VOICE_WAITING');
  assert.equal(calls,0);
+ db.run("UPDATE prospecting_introductions SET stage='CANCELLED' WHERE lead_id=?",item.lead.id);
 });
 test('a refusal sends exactly one farewell; subsequent inbound does not revive the lead',async()=>{
  const item=prospect();
