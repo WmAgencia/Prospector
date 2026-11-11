@@ -84,8 +84,17 @@ export function routeCustomerCall({leadId,sessionId,providerId,body}={}){
  }
  if(!liveCustomer(r))return {handled:false};
  if(r.state==='WAIT_CLIENT_CONFIRM'){
+  // "Pode ser às 16h?" is a counterproposal, NOT an acceptance of 15h.
+  const suggested=parseSuggestedTime(text);
+  if(suggested&&suggested!==r.proposed_at){
+   run("UPDATE call_scheduling SET state='WAIT_OWNER_ALTERNATIVE',proposed_at=?,slots_json=?,notice_state='PENDING',customer_send_state='NONE',updated_at=? WHERE id=?",suggested,JSON.stringify([suggested]),now(),r.id);
+   audit('CALL_CLIENT_ALTERNATIVE_REQUESTED',leadId,{time:suggested});
+   return {handled:true,state:'WAIT_OWNER_ALTERNATIVE'};
+  }
+  if(negative(text)||/\b(?:n[aã]o d[aá]|n[aã]o consigo|outro hor[aá]rio|prefiro outro|esse hor[aá]rio n[aã]o)\b/i.test(text)){
+   setCustomer(r,requestAlternative,'WAIT_CLIENT_ALTERNATIVE');return {handled:true,state:'WAIT_CLIENT_ALTERNATIVE'};
+  }
   if(positive(text)){if(reserveMeeting(r,r.proposed_at))return {handled:true,state:'CONFIRMED'};run("UPDATE call_scheduling SET state='REVIEW',notice_state='PENDING',updated_at=? WHERE id=?",now(),r.id);return {handled:true,state:'REVIEW'};}
-  if(negative(text)){setCustomer(r,requestAlternative,'WAIT_CLIENT_ALTERNATIVE');return {handled:true,state:'WAIT_CLIENT_ALTERNATIVE'};}
   return {handled:false};
  }
  if(r.state==='WAIT_CLIENT_ALTERNATIVE'){
