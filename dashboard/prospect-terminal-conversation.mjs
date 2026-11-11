@@ -15,6 +15,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS prospect_terminal_conversations (
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 export function isFinalGoodbye(text=''){
  const s=norm(text);
+ // One explicit, owner-approved farewell also closes the thread terminally.
+ if(/^(?:beleza|sem problemas)[,!. ]+muito obrigad[oa] pela atencao/.test(s)&&
+    /qualquer coisa,? e so chamar/.test(s))return true;
  // Deliberately require BOTH clear acceptance/closure AND an invitation for
  // FUTURE contact; a normal sales CTA ("posso te mostrar?") is NOT terminal.
  return /^(?:entendido|compreendo|sem problemas?|tudo bem|certo|perfeito)(?:[,! .]|$)/.test(s)&&
