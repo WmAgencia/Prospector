@@ -44,7 +44,7 @@ const setCustomer=(r,text,state,extra='')=>run("UPDATE call_scheduling SET state
 const clientConfirm=iso=>'Perfeito, marcado para hoje às '+hhmm(iso)+'! Até lá 😊';
 const requestAlternative='Sem problemas! Qual horário fica mais fácil pra você hoje?';
 
-function parseSuggestedTime(text,at=Date.now()){
+export function parseSuggestedTime(text,at=Date.now()){
  if(/\b(?:amanh[aã]|outro dia|semana que vem)\b/i.test(text))return null;
  const found=String(text||'').match(/\b(1[0-7]|0?[1-9])(?:(?:h|:)\s*([0-5]\d)|h|\s*horas?)?(?=$|[^\d:])/i);
  if(!found)return null;
