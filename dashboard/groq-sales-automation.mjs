@@ -14,6 +14,7 @@ import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
 import {conversationFinished,finishConversation,isFinalGoodbye} from './prospect-terminal-conversation.mjs';
+import {ownerPitchStatus} from './owner-pitch-sequence.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
@@ -53,6 +54,10 @@ export function queueInboundTurn({providerId,jid,sessionId}={}){
  const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
  const boundSession=sessionId||(lead?leadSession(lead.id):selectedWaSession());
  if(lead&&conversationFinished(lead.id,boundSession))return false;
+ if(lead){
+  const pitch=ownerPitchStatus(lead.id);
+  if(pitch&&pitch.stage!=='DONE')return false;
+ }
  if(!prospectorChatEligible({jid,sessionId:boundSession}))return false;
  const identity=classifyContact({jid,sessionId:boundSession});
  const intro=lead?introductionStatus(lead.id):null;
@@ -72,6 +77,15 @@ export async function handleSalesTurn(providerId,deps={}){
  if(conversationFinished(r.lead_id,r.session_id)){
   run("UPDATE groq_auto_events SET state='CLOSED',error='CONVERSATION_FINISHED' WHERE provider_id=?",providerId);
   return {state:'CLOSED'};
+ }
+ const pendingPitch=ownerPitchStatus(r.lead_id);
+ if(pendingPitch&&pendingPitch.stage!=='DONE'){
+  run("UPDATE groq_auto_events SET state='REVIEW',error='OWNER_ORIGINAL_AUDIO_WORKFLOW' WHERE provider_id=?",providerId);
+  return {state:'REVIEW'};
+ }
+ if(one("SELECT 1 FROM prospecting_introductions WHERE lead_id=? AND stage='VOICE_REVIEW'",r.lead_id)){
+  run("UPDATE groq_auto_events SET state='REVIEW',error='OWNER_AUDIO_FILE_NOT_APPROVED' WHERE provider_id=?",providerId);
+  return {state:'REVIEW'};
  }
  const replyStartedAt=(deps.replyNow||Date.now)();
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
