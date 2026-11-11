@@ -147,7 +147,7 @@ test('Named greeting is followed by permission, then original audio, then owner 
   assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
   time+=180_000;
   assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
-  assert.match(sent.at(-1).text,/Olá(?:, \\p{Lu}\\p{L}{1,29})?, (?:bom dia|boa tarde|boa noite)! Tudo bem\\?/u);
+  assert.match(sent.at(-1).text,/Olá(?:, \p{Lu}\p{L}{1,29})?, (?:bom dia|boa tarde|boa noite)! Tudo bem\?/u);
   assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
   const incoming=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
    unique:'consecom-principal:proposed-greeting-1',content:'Oi, tudo bem!'});
@@ -161,7 +161,7 @@ test('Named greeting is followed by permission, then original audio, then owner 
   assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due-1})).state,'IDLE');
   assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due})).state,'SENT');
   assert.deepEqual(delivered,[WESLEY_INTRO]);
-  assert.match(WESLEY_INTRO,/Posso te mandar um áudio explicando a ideia\\?/);
+  assert.match(WESLEY_INTRO,/Posso te mandar um áudio explicando a ideia\?/);
   assert.equal(asksAboutProposal('Ah, sobre o que se trata a proposta?'),true);
   recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
    unique:'consecom-principal:proposed-greeting-2',content:'Sim, pode mandar'});
