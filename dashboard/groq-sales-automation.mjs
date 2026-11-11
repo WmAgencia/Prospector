@@ -15,6 +15,7 @@ import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
 import {conversationFinished,finishConversation,isFinalGoodbye} from './prospect-terminal-conversation.mjs';
 import {ownerPitchStatus} from './owner-pitch-sequence.mjs';
+import {interestedAfterProposal} from './prospector-sales-signals.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
@@ -66,7 +67,7 @@ export function queueInboundTurn({providerId,jid,sessionId}={}){
  const allowed=approvedProspectFollowup(identity,jid);
  if(intro&&portfolioPitchAudioEnabled()&&
   (!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&
-  !portfolioAudioSentFor(intro))return false;
+  !portfolioAudioSentFor(intro)&&ownerPitchStatus(lead.id)?.stage!=='DONE')return false;
  if(!allowed&&process.env.AI_CONVERSATION_AUTOSEND!=='true'&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED!=='true'&&process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED!=='true'&&!testModeAllowed(String(jid).split('@')[0]))return false;
  return run("INSERT OR IGNORE INTO groq_auto_events(provider_id,jid,state,at) VALUES(?,?,?,?)",providerId,jid,'PENDING',now()).changes>0;
 }
@@ -155,7 +156,7 @@ export async function handleSalesTurn(providerId,deps={}){
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
  const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
- if(audioOffer350&&buyerCommitment){
+ if(audioOffer350&&interestedAfterProposal(r.body)){
   run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
   stage(r.lead_id,'INTERESTED','PITCH_AUDIO_350_INTEREST');
   recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:r.body,notify:false});
@@ -163,6 +164,8 @@ export async function handleSalesTurn(providerId,deps={}){
    interestNotice(r,'Cliente demonstrou interesse na oferta de R$ 350 enviada por áudio; revisar escopo e pagamento.'),r.lead_id);
   return finish('HOT','AUDIO_350_CLOSING_TO_OWNER');
  }
+ // Never improvise a new written offer after a verified original owner audio.
+ if(audioOffer350)return finish('REVIEW','OWNER_AUDIO_OFFER_AWAITING_OPERATOR');
  const audioPriceQuestion=campaign350&&/(?:quanto|pre[cç]o|valor|custa|r\$ ?350)/i.test(r.body)&&
   !/(?:parcel|pix|cart[aã]o|entrada|pagamento)/i.test(r.body);
  const fixedOffer=portfolioAllowed&&!campaign350&&!audioOffer350&&!buyerCommitment&&(isBaseOfferQuestion(r.body)||isPortfolioFAQ(r.body));
@@ -345,20 +348,32 @@ export async function tickSalesAgent(deps={}){
 }
 let notifying=false;
 export async function flushInterestAlerts(deps={}){
- const target=ownerTarget();if(!target||notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' LIMIT 1"))return 0;
+ const target=ownerTarget();if(notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' LIMIT 1"))return 0;
  notifying=true;
  try{
   const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
   if(!wa.connected||!session)return 0;
   let delivered=0;
   for(const entry of all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' ORDER BY created_at LIMIT 5")){
+   const toGroup=entry.kind==='GROQ_HOT_LEAD';
+   const group=String(process.env.PROSPECTOR_GROUP_IMPORT_JID||'').trim();
+   if(toGroup){
+    if(!/^\d{8,24}(?:-\d{8,15})?@g\.us$/.test(group))continue;
+    if(one('SELECT stage FROM leads WHERE id=?',entry.lead_id)?.stage!=='INTERESTED')continue;
+    try{
+     const reply=await (deps.groupInfo||waRequest)('/api/groups/'+encodeURIComponent(session)+'/'+encodeURIComponent(group));
+     const info=reply?.data?.group||reply?.data||reply;
+     if(info?.subject!=='Meu Prospector'||String(info?.jid||info?.id||'')!==group)continue;
+    }catch{continue;}
+   }else if(!target)continue;
    if(!run("UPDATE owner_notices SET status='SENDING',updated_at=? WHERE id=? AND status='PENDING'",now(),entry.id).changes)continue;
    try{
     const send=deps.send||waRequest;
-    const ack=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(target+'@s.whatsapp.net')+'/send',{method:'POST',data:{message:{text:entry.message}}});
+    const to=toGroup?group:target+'@s.whatsapp.net';
+    const ack=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(to)+'/send',{method:'POST',data:{message:{text:entry.message}}});
     if(ack.status!==true)throw Error('UNCONFIRMED');
     run("UPDATE owner_notices SET status='SENT',updated_at=? WHERE id=?",now(),entry.id);
-    audit('GROQ_HOT_LEAD_ALERT_SENT',entry.lead_id,{owner:true});delivered++;
+    audit('GROQ_HOT_LEAD_ALERT_SENT',entry.lead_id,{owner:true,group:toGroup});delivered++;
    }catch{run("UPDATE owner_notices SET status='UNKNOWN',updated_at=?,error=? WHERE id=?",now(),'Unknown delivery, do not automatically retry',entry.id);}
   }
   return delivered;
