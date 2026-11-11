@@ -7,7 +7,7 @@ export const PROSPECTOR_FAREWELL='Beleza, muito obrigado pela atenção! Qualque
 db.exec("CREATE TABLE IF NOT EXISTS prospector_farewell_outbox(lead_id TEXT PRIMARY KEY REFERENCES leads(id),session_id TEXT NOT NULL,jid TEXT NOT NULL,status TEXT NOT NULL,attempted_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 run("UPDATE prospector_farewell_outbox SET status='UNKNOWN',updated_at=? WHERE status='SENDING'",now());
 export function queueProspectorFarewell({leadId,sessionId,jid}={}){
- if(!leadId||!isManagedSession(sessionId)||!/^[0-9]{10,15}@s\\.whatsapp\\.net$/.test(String(jid||''))||leadSession(leadId)!==sessionId)return false;
+ if(!leadId||!isManagedSession(sessionId)||!/^[0-9]{10,15}@s\.whatsapp\.net$/.test(String(jid||''))||leadSession(leadId)!==sessionId)return false;
  const lead=one('SELECT stage,phone FROM leads WHERE id=?',leadId);
  if(lead?.stage!=='NO_INTEREST'||jid.split('@')[0]!==lead.phone||
   one('SELECT phone FROM suppressions WHERE phone=?',lead.phone))return false;
