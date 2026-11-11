@@ -62,13 +62,13 @@ export async function receiveWebhook(req){
  const contentText=typeof data.content==="string"?data.content:typeof data.content?.text==="string"?data.content.text:"";
  const interactiveId=String(data.selectedButtonId||data.buttonId||data.content?.selectedButtonId||data.content?.buttonId||data.content?.selectedRowId||data.content?.id||"");
  if(data.isGroup===true||String(key.remoteJid||'').endsWith('@g.us')){
+  if(!/^[\w-]{5,150}$/.test(String(key.id||data.id||'')))return {status:200,body:{accepted:true,ignored:true}};
   const decision=routeOwnerCall({jid:String(key.remoteJid||''),sessionId:sid,participant:String(key.participant||data.participant||data.sender||''),providerId:sid+':'+String(key.id||data.id||''),text:contentText,interactiveId});
   return {status:200,body:{accepted:true,ownerMeetingDecision:decision.handled&&decision.ok===true,ignored:!decision.handled}};
  }
  const jid=String(key.remoteJid||data.from||"");
  if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid))return {status:200,body:{accepted:true,ignored:true}};
- // Only the confirmed Prospector outbound list is eligible for this customer inbox.
- if(!prospectorChatEligible({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
+ // Owner control messages must be recognized BEFORE the ordinary customer filter.
  const providerId=String(key.id||data.id||"");
  if(!/^[\w\-]{5,150}$/.test(providerId))return {status:200,body:{accepted:true,ignored:true}};
  const unique=sid+":"+providerId;
