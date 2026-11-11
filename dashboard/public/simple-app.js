@@ -32,7 +32,7 @@ const root=q("#app");
 let waAccounts=[],connectionSession='',waModalOpen=false,waModalCloseTimer=null;
 let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scopeCityInput='',calendarDay='',calendarCategory='approached';
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
-let outreachHours={start:'08:00',end:'17:30'};
+let outreachHours={start:'08:00',end:'17:30'},outreachHardMax='17:30';
 let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalSelectAll=false,approvalExcludedIds=new Set(),approvalSelectionCutoff='',approvalBusy=false,approvalFeedback='';
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
 let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
@@ -880,14 +880,14 @@ async function submitApprovals(){
 
 function settings(){
  if(platformContext.role==='master')return masterSettings();
- const hours=outreachHours||{start:'08:00',end:'17:30'};
+ const hours=outreachHours||{start:'08:00',end:outreachHardMax};
  const prefs=state?.settings||{};
  const operationalToggle=(switchId,title,description,checked)=>{
   return '<div class="setting-line tenant-control-line"><div class="tenant-control-copy"><strong>'+esc(title)+'</strong><small>'+esc(description)+'</small></div>'+
    '<label class="switch" aria-label="'+esc(title)+'"><input id="'+switchId+'" type="checkbox" '+(checked?'checked':'')+'><span></span></label></div>';
  };
  return '<div class="workspace-head"><div><span class="kicker">PREFERÊNCIAS DA CONTA</span><h2>Configurações</h2><p>O essencial para sua operação, com segurança e sem ferramentas técnicas desnecessárias.</p></div></div>'+
- '<div class="account-settings-grid"><section class="panel"><div class="heading"><div><span class="kicker">HORÁRIO DE ABORDAGENS</span><h3>Quando abordar empresas?</h3><p>Defina quando sua operação pode iniciar novas conversas.</p></div></div><form id="outreach-hours-form" class="stack-form"><div class="setting-hour-fields"><label>Início das abordagens<input name="start" type="time" step="60" min="08:00" max="17:29" value="'+esc(hours.start)+'" required></label><label>Fim das abordagens<input name="end" type="time" step="60" min="08:01" max="17:30" value="'+esc(hours.end)+'" required></label></div><p class="footnote">A descoberta continua a partir das 5h. Os horários configurados devem ficar dentro da janela de segurança das 8h às 17h30, e os envios continuam sujeitos à autorização do destinatário e às regras do canal.</p><button class="primary" type="submit">Salvar horário</button></form></section>'+
+ '<div class="account-settings-grid"><section class="panel"><div class="heading"><div><span class="kicker">HORÁRIO DE ABORDAGENS</span><h3>Quando abordar empresas?</h3><p>Defina quando sua operação pode iniciar novas conversas.</p></div></div><form id="outreach-hours-form" class="stack-form"><div class="setting-hour-fields"><label>Início das abordagens<input name="start" type="time" step="60" min="08:00" max="'+(outreachHardMax==='17:40'?'17:39':'17:29')+'" value="'+esc(hours.start)+'" required></label><label>Fim das abordagens<input name="end" type="time" step="60" min="08:01" max="'+outreachHardMax+'" value="'+esc(hours.end)+'" required></label></div><p class="footnote">A descoberta continua a partir das 5h. Os horários configurados devem ficar dentro da janela de segurança das 8h às '+(outreachHardMax==='17:40'?'17h40':'17h30')+', e os envios continuam sujeitos à autorização do destinatário e às regras do canal.</p><button class="primary" type="submit">Salvar horário</button></form></section>'+
  '<section class="panel"><div class="heading"><div><span class="kicker">ACESSO E SEGURANÇA</span><h3>E-mail e senha</h3><p>Para qualquer alteração, confirme a senha atual.</p></div></div><form id="account-credentials" class="stack-form"><label>Novo e-mail<input type="email" name="newEmail" autocomplete="email" value="'+esc(platformContext.email||'')+'" required></label><label>Senha atual<input type="password" name="currentPassword" autocomplete="current-password" minlength="1" maxlength="128" required></label><label>Nova senha (opcional)<input type="password" name="newPassword" autocomplete="new-password" minlength="10" maxlength="128" placeholder="Mínimo de 10 caracteres"></label><p class="footnote">Alterar o e-mail ou a senha encerra outras sessões conectadas. Você permanece conectado neste navegador.</p><button class="primary" type="submit">Salvar dados de acesso</button></form></section></div>'+
  '<section class="panel tenant-prospecting-controls"><div class="heading"><div><span class="kicker">PROSPECÇÃO / SUA CONTA</span><h3>Controle da prospecção</h3><p>Ative ou pause sua operação de forma independente. Estas opções são exclusivas deste espaço de trabalho.</p></div></div>'+
  operationalToggle('s-autonomous','Prospecção autônoma','Permite que o sistema pesquise e prepare abordagens para contatos elegíveis.',prefs.autonomous_outreach_enabled===true)+
@@ -897,7 +897,7 @@ function settings(){
  '<p class="settings-small-note">Seus dados e conversas ficam vinculados ao seu espaço. Treinamento com históricos exige autorização. A Francisca está disponível na bolinha lateral, em todas as áreas do painel.</p>';
 }
 async function loadOutreachHours(){
- try{const r=await api('/api/settings/outreach-hours');outreachHours=r.hours;if(view==='settings')render();}
+ try{const r=await api('/api/settings/outreach-hours');outreachHours=r.hours;outreachHardMax=r.hardMax||'17:30';if(view==='settings')render();}
  catch(e){n(e.message);}
 }
 function render(){
