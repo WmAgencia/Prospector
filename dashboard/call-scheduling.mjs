@@ -15,7 +15,9 @@ const dateAt=(p,h,m)=>new Date(Date.UTC(p.year,p.month-1,p.day,h+3,m)).toISOStri
 const hhmm=(iso)=>new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(iso));
 const dayKey=(iso)=>{const p=timeParts(new Date(iso));return [p.year,String(p.month).padStart(2,'0'),String(p.day).padStart(2,'0')].join('-');};
 const dayToday=()=>dayKey(new Date().toISOString());
-const validSlot=(iso,at=Date.now())=>typeof iso==='string'&&Number.isFinite(Date.parse(iso))&&dayKey(iso)===dayKey(new Date(at).toISOString())&&Date.parse(iso)>=at+10*60000&&(()=>{const p=timeParts(new Date(iso));return p.hour>=10&&p.hour*60+p.minute<=17*60+30&&p.minute%30===0;})();
+const validMeetingTime=(iso,at=Date.now())=>typeof iso==='string'&&Number.isFinite(Date.parse(iso))&&dayKey(iso)===dayKey(new Date(at).toISOString())&&Date.parse(iso)>=at+10*60000&&(()=>{const p=timeParts(new Date(iso));return p.hour*60+p.minute>=10*60&&p.hour*60+p.minute<=17*60+30;})();
+const validSlot=(iso,at=Date.now())=>validMeetingTime(iso,at)&&timeParts(new Date(iso)).minute%30===0;
+const meetingBusy=iso=>!!one("SELECT 1 FROM meetings WHERE status='SCHEDULED' AND ABS(strftime('%s',start_at)-strftime('%s',?))<1800 LIMIT 1",iso);
 const positive=t=>/^(?:sim|claro|pode|com certeza|beleza|bora|vamos|fechado|combinado|top|ok|pode ser|tenho sim|consigo sim|tenho|tenho tempo|tenho disponibilidade|pode me ligar|me liga|quero sim)(?:[.!?,\s]|$)/i.test(String(t||'').trim())||/\b(?:vamos conversar|pode ligar|pode me chamar|vamos marcar|pode sim|quero conversar|tenho uns minutinhos)\b/i.test(String(t||''));
 const negative=t=>/^(?:n[aã]o|nao|nesse hor[aá]rio n[aã]o|nao consigo|não consigo|n[aã]o posso|outro hor[aá]rio|hoje n[aã]o)(?:[.!?,\s]|$)/i.test(String(t||'').trim());
 const groupOrOwner=()=>validGroup()?GROUP():(verifiedOwnerPhone()?verifiedOwnerPhone()+'@s.whatsapp.net':null);
@@ -44,18 +46,16 @@ const requestAlternative='Sem problemas! Qual horário fica mais fácil pra voc�
 
 function parseSuggestedTime(text,at=Date.now()){
  if(/\b(?:amanh[aã]|outro dia|semana que vem)\b/i.test(text))return null;
- const found=String(text||'').match(/(?:^|[^\d])(?:[aà]s?\s+|pode ser\s+|por volta d[ae]\s+)?(1[0-7]|[1-9])(?:\s*(?:h|:)\s*(00|30)?|\s*horas?)?(?:\s*(?:da tarde|da manh[aã]))?(?!\d)/i);
+ const found=String(text||'').match(/\b(1[0-7]|0?[1-9])(?:(?:h|:)\s*([0-5]\d)|h|\s*horas?)?(?=$|[^\d:])/i);
  if(!found)return null;
  let h=Number(found[1]),m=found[2]?Number(found[2]):0;
  const p=timeParts(new Date(at));
  if(h>=1&&h<=5&&!/manh[aã]/i.test(text))h+=12;
  const iso=dateAt(p,h,m);
- return validSlot(iso,at)?iso:null;
+ return validMeetingTime(iso,at)?iso:null;
 }
 function reserveMeeting(r,iso){
- if(!validSlot(iso))return false;
- const conflicting=one("SELECT 1 FROM meetings WHERE start_at=? AND status='SCHEDULED'",iso);
- if(conflicting)return false;
+ if(!validMeetingTime(iso)||meetingBusy(iso))return false;
  try{
   run("INSERT INTO meetings(id,lead_id,start_at,notes,status,created_at) VALUES(?,?,?,?,'SCHEDULED',?)",id(),r.lead_id,iso,'Chamada via Prospector — aprovação do proprietário',now());
  }catch{return false;}
@@ -138,7 +138,7 @@ export function routeOwnerCall({jid,sessionId,participant,providerId,text,intera
  let next=null;
  if(cmd.action==='SLOT'&&r.state==='WAIT_OWNER_SLOT'){
   const slots=JSON.parse(r.slots_json||'[]');
-  next=slots.find(s=>hhmm(s)===cmd.time&&validSlot(s)&&!one("SELECT 1 FROM meetings WHERE start_at=? AND status='SCHEDULED'",s));
+  next=slots.find(s=>hhmm(s)===cmd.time&&validSlot(s)&&!meetingBusy(s));
   if(!next)return {handled:true,ok:false,error:'SLOT_EXPIRED'};
   setCustomer(r,'Legal, tenho um horário disponível às '+hhmm(next)+'. Podemos marcar pra esse horário?','WAIT_CLIENT_CONFIRM',",proposed_at='"+next+"'");
  }else if(['ACEITAR','RECUSAR'].includes(cmd.action)&&r.state==='WAIT_OWNER_ALTERNATIVE'){
