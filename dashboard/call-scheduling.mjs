@@ -15,7 +15,7 @@ const dateAt=(p,h,m)=>new Date(Date.UTC(p.year,p.month-1,p.day,h+3,m)).toISOStri
 const hhmm=(iso)=>new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(iso));
 const dayKey=(iso)=>{const p=timeParts(new Date(iso));return [p.year,String(p.month).padStart(2,'0'),String(p.day).padStart(2,'0')].join('-');};
 const dayToday=()=>dayKey(new Date().toISOString());
-const validSlot=(iso,at=Date.now())=>typeof iso==='string'&&Number.isFinite(Date.parse(iso))&&dayKey(iso)===dayKey(new Date(at).toISOString())&&Date.parse(iso)>=at+20*60000&&(()=>{const p=timeParts(new Date(iso));return p.hour>=10&&p.hour*60+p.minute<=17*60+30&&p.minute%30===0;})();
+const validSlot=(iso,at=Date.now())=>typeof iso==='string'&&Number.isFinite(Date.parse(iso))&&dayKey(iso)===dayKey(new Date(at).toISOString())&&Date.parse(iso)>=at+30*60000&&(()=>{const p=timeParts(new Date(iso));return p.hour>=10&&p.hour*60+p.minute<=17*60+30&&p.minute%30===0;})();
 const positive=t=>/^(?:sim|claro|pode|com certeza|beleza|bora|vamos|fechado|combinado|top|ok|pode ser|tenho sim|consigo sim|tenho|tenho tempo|tenho disponibilidade|pode me ligar|me liga|quero sim)(?:[.!?,\s]|$)/i.test(String(t||'').trim());
 const negative=t=>/^(?:n[aã]o|nao|nesse hor[aá]rio n[aã]o|nao consigo|não consigo|n[aã]o posso|outro hor[aá]rio|hoje n[aã]o)(?:[.!?,\s]|$)/i.test(String(t||'').trim());
 const groupOrOwner=()=>validGroup()?GROUP():(verifiedOwnerPhone()?verifiedOwnerPhone()+'@s.whatsapp.net':null);
@@ -36,7 +36,7 @@ export function availableCallSlots(at=Date.now()){
  return slots.filter(x=>validSlot(x,at));
 }
 function read(leadId){return one('SELECT * FROM call_scheduling WHERE lead_id=?',leadId);}
-const liveCustomer=r=>isManagedSession(r.session_id)&&leadSession(r.lead_id)===r.session_id&&!one('SELECT 1 FROM suppressions WHERE phone=?',r.phone)&&!one('SELECT 1 FROM threads WHERE lead_id=? AND manual_takeover=1',r.lead_id);
+const liveCustomer=(r,{sendingConfirmation=false}={})=>isManagedSession(r.session_id)&&leadSession(r.lead_id)===r.session_id&&!one('SELECT 1 FROM suppressions WHERE phone=?',r.phone)&&(sendingConfirmation||!one('SELECT 1 FROM threads WHERE lead_id=? AND manual_takeover=1',r.lead_id));
 const reminderDue=r=>r.state==='CONFIRMED'&&r.proposed_at&&Date.parse(r.proposed_at)-30*60*1000<=Date.now();
 const setCustomer=(r,text,state,extra='')=>run("UPDATE call_scheduling SET state=?,customer_text=?,customer_send_state='PENDING',updated_at=? "+extra+" WHERE id=?",state,text,now(),r.id);
 const clientConfirm=iso=>'Perfeito, marcado para hoje às '+hhmm(iso)+'! Até lá 😊';
@@ -165,6 +165,7 @@ function noticeText(r,number){
 let working=false;
 export async function flushCallScheduling(deps={}){
  if(working||process.env.PROSPECTOR_TENANT_ID)return {state:'IDLE'};
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {state:'PAUSED',sent:0};
  working=true;let sent=0;
  try{
   for(const r of all("SELECT * FROM call_scheduling WHERE notice_state='PENDING' ORDER BY created_at LIMIT 3")){
@@ -189,7 +190,7 @@ export async function flushCallScheduling(deps={}){
    }catch{run("UPDATE call_scheduling SET notice_state='UNKNOWN',updated_at=? WHERE id=?",now(),r.id);}
   }
   for(const r of all("SELECT * FROM call_scheduling WHERE customer_send_state='PENDING' ORDER BY updated_at LIMIT 3")){
-   if(!liveCustomer(r)||!await sendingSession(r.session_id,deps))continue;
+   if(!liveCustomer(r,{sendingConfirmation:r.state==='CONFIRMED'})||!await sendingSession(r.session_id,deps))continue;
    if(!run("UPDATE call_scheduling SET customer_send_state='SENDING',updated_at=? WHERE id=? AND customer_send_state='PENDING'",now(),r.id).changes)continue;
    try{
     const ack=await sendMessage(r,r.phone+'@s.whatsapp.net',r.customer_text,deps);
