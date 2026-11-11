@@ -1,0 +1,36 @@
+name: Wesley original audio state machine
+on:
+  push:
+    branches: [fix/wesley-approved-audio-state-machine-20261111]
+  pull_request:
+    branches: [feature/tenant-bulk-approvals-20261109]
+jobs:
+  owner-pitch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Compile and syntax check
+        run: |
+          node --check dashboard/owner-approved-pitch.mjs
+          node --check dashboard/owner-proposal-interest.mjs
+          node --check dashboard/owner-pitch-sequence.mjs
+          node --check dashboard/prospecting-introduction.mjs
+          node --check dashboard/prospect-terminal-conversation.mjs
+          node --check dashboard/waakg-control.mjs
+          node --check dashboard/waakg-media.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/waakg-bridge.mjs
+          node --check dashboard/server.mjs
+          node --input-type=module --check < dashboard/public/simple-app.js
+      - name: Simulate customer agreement original audio and closure without sending real messages
+        run: node --test tests/owner-recording-terminal-stop.test.mjs tests/owner-proposal-interest.test.mjs
+      - name: Verify historical queue and emergency pause regression
+        run: |
+          node --test tests/emergency-pause-outbound.test.mjs
+          node --test tests/prospect-reply-recovery.test.mjs
