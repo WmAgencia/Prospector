@@ -11,6 +11,7 @@ import {prospectSalesContext,priceQuestion,salesEnding} from './sales-policy.mjs
 import {detectAutomaticReply,isBaseOfferQuestion,isPortfolioFAQ,portfolioQuestion,proposalRequestWhileBusy,fixedOfferPitch,fixedOfferPriceReply,fixedOfferFollowup,safeGeneralReply} from './portfolio-offer-550.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
 import {portfolioAudioSentFor} from './portfolio-pitch-audio.mjs';
+import {interestedAfterProposal} from './prospector-sales-signals.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
@@ -128,7 +129,7 @@ export async function handleSalesTurn(providerId,deps={}){
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
  const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
- if(audioOffer350&&buyerCommitment){
+ if(audioOffer350&&interestedAfterProposal(r.body)){
   run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
   stage(r.lead_id,'INTERESTED','PITCH_AUDIO_350_INTEREST');
   recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:r.body,notify:false});
@@ -136,6 +137,8 @@ export async function handleSalesTurn(providerId,deps={}){
    interestNotice(r,'Interesse na oferta de R$ 350 enviada por áudio. Confirmar escopo e pagamento.'),r.lead_id);
   return finish('HOT','AUDIO_350_CLOSING_TO_OWNER');
  }
+ // The original voice note is the approved proposal. Never improvise a written replacement.
+ if(audioOffer350)return finish('REVIEW','AUDIO_OFFER_AWAITING_OPERATOR');
  const audioPriceQuestion=audioOffer350&&/(?:quanto|pre[cç]o|valor|custa|r\$ ?350)/i.test(r.body)&&
   !/(?:parcel|pix|cart[aã]o|entrada|pagamento)/i.test(r.body);
  const intent=commercialIntent(r.body);
@@ -328,20 +331,33 @@ export async function tickSalesAgent(deps={}){
 }
 let notifying=false;
 export async function flushInterestAlerts(deps={}){
- const target=ownerTarget();if(!target||notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT','SALES_REQUEST') AND status='PENDING' LIMIT 1"))return 0;
+ const target=ownerTarget();if(notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT','SALES_REQUEST') AND status='PENDING' LIMIT 1"))return 0;
  notifying=true;
  try{
   const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
   if(!wa.connected||!session)return 0;
   let delivered=0;
   for(const entry of all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT','SALES_REQUEST') AND status='PENDING' ORDER BY created_at LIMIT 5")){
+   const toGroup=entry.kind==='GROQ_HOT_LEAD';
+   const group=String(process.env.PROSPECTOR_GROUP_IMPORT_JID||'').trim();
+   if(toGroup){
+    // Never send private prospect data to an unverified group or a personal fallback.
+    if(!/^\\d{8,30}@g\\.us$/.test(group))continue;
+    if(one('SELECT stage FROM leads WHERE id=?',entry.lead_id)?.stage!=='INTERESTED')continue;
+    try{
+     const lookup=await (deps.groupInfo||waRequest)('/api/groups/'+encodeURIComponent(session)+'/'+encodeURIComponent(group));
+     const info=lookup?.data?.group||lookup?.data||lookup;
+     if(info?.subject!=='Meu Prospector'||String(info?.jid||info?.id||'')!==group)continue;
+    }catch{continue;}
+   }else if(!target)continue;
    if(!run("UPDATE owner_notices SET status='SENDING',updated_at=? WHERE id=? AND status='PENDING'",now(),entry.id).changes)continue;
    try{
     const send=deps.send||waRequest;
-    const ack=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(target+'@s.whatsapp.net')+'/send',{method:'POST',data:{message:{text:entry.message}}});
+    const recipient=toGroup?group:target+'@s.whatsapp.net';
+    const ack=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(recipient)+'/send',{method:'POST',data:{message:{text:entry.message}}});
     if(ack.status!==true)throw Error('UNCONFIRMED');
     run("UPDATE owner_notices SET status='SENT',updated_at=? WHERE id=?",now(),entry.id);
-    audit('GROQ_HOT_LEAD_ALERT_SENT',entry.lead_id,{owner:true});delivered++;
+    audit('GROQ_HOT_LEAD_ALERT_SENT',entry.lead_id,{owner:true,group:toGroup});delivered++;
    }catch{run("UPDATE owner_notices SET status='UNKNOWN',updated_at=?,error=? WHERE id=?",now(),'Unknown delivery, do not automatically retry',entry.id);}
   }
   return delivered;
