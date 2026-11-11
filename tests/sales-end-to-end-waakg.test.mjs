@@ -79,7 +79,7 @@ test('A hard refusal is terminal, not queued for more AI replies',async()=>{
  assert.equal(introductionStatus(lead.id).stage,'CANCELLED');
  assert.equal(db.one('SELECT status FROM sales_outcomes WHERE lead_id=?',lead.id).status,'NO_INTEREST');
  assert.equal(db.one("SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id='consecom-principal:fullsales-2'").n,0);
- assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='SALES_OUTCOME'",lead.id).n,1);
+ assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='SALES_OUTCOME'",lead.id).n,0);
  assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
 });
 test('Explicit interest transfers to human and records the result once',async()=>{
@@ -139,47 +139,57 @@ test('No generated price is safe without individual operator approval',()=>{
  assert.equal(reviewGroqReply({inbound:'Quanto custa?',draft:good,allowAveragePrice:false}).ok,false);
  assert.equal(reviewGroqReply({inbound:'Quanto custa?',draft:'Só R$ 350, desconto de 80%',allowAveragePrice:true}).ok,false);
 });
-test('Named greeting waits for reply, sends Wesley exactly after 30s and transfers proposal to Francisca',async()=>{
- const lead=eligible('Mecânica Silva');
- assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
- time+=180_000;
- assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
- assert.match(sent.at(-1).text,/Olá(?:, \p{Lu}\p{L}{1,29})?, (?:bom dia|boa tarde|boa noite)! Tudo bem\?/u);
- assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
- const incoming=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
-  unique:'consecom-principal:proposed-greeting-1',content:'Oi, tudo bem!'});
- assert.equal(incoming.status,200);
- const intro=introductionStatus(lead.id);
- assert.equal(intro.stage,'WAITING');
- assert.equal(Date.parse(intro.due_at)-Date.parse(intro.first_reply_at),30000);
- assert.equal(db.one("SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id='consecom-principal:proposed-greeting-1'").n,0);
- const due=Date.parse(intro.due_at),delivered=[];
- const dependencies={session:()=> 'consecom-principal',status:async()=>({connected:true}),
-  send:async(url,opts)=>{delivered.push(opts.data.message.text);return {status:true};}};
- assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due-1})).state,'IDLE');
- assert.equal(delivered.length,0);
- assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due})).state,'SENT');
- assert.deepEqual(delivered,[WESLEY_INTRO]);
- assert.equal(WESLEY_INTRO,"Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.");
- assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due+30000})).state,'IDLE');
- assert.equal(delivered.length,1);
- assert.equal(asksAboutProposal('Ah, sobre o que se trata a proposta?'),true);
- recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
-  unique:'consecom-principal:proposed-greeting-2',content:'Ah, sobre o que se trata a proposta?'});
- assert.equal(introductionStatus(lead.id).stage,'CONVERSING');
- assert.equal(db.one("SELECT state FROM groq_auto_events WHERE provider_id='consecom-principal:proposed-greeting-2'").state,'PENDING');
- let seenContext='',sentMessage='';
- const response=await handleSalesTurn('consecom-principal:proposed-greeting-2',{
-  qualify:async()=>({confirmed:false}),
-  status:async()=>({connected:true,sessionId:'consecom-principal'}),
-  draft:async(args)=>{seenContext=args.context;return {ok:true,draft:'Sou a Francisca, assistente virtual da Consecom. Criamos sites profissionais para empresas. Posso entender sua necessidade?'};},
-  send:async(route,options)=>{sentMessage=options.data.message.text;return {status:true};}
- });
- assert.equal(response.state,'SENT');
- assert.equal(seenContext,'','Approved fixed portfolio pitch must not invoke a general-purpose draft');
- assert.match(sentMessage,/R\$ 550/);
- assert.match(sentMessage,/domínio pago por um ano/);
- assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
+test('Named greeting is followed by permission, then original audio, then owner takeover',async()=>{
+ const originalAudioFlag=process.env.PROSPECTOR_PITCH_AUDIO_ENABLED;
+ process.env.PROSPECTOR_PITCH_AUDIO_ENABLED='true';
+ try{
+  const lead=eligible('Mecânica Silva');
+  assert.equal(enqueueApprovedApproaches({leadIds:[lead.id],approve:true,operatorApproved:true,offerType:'portfolio'}).status,202);
+  time+=180_000;
+  assert.equal((await tickApproachQueue(sendDeps)).status,'SENT');
+  assert.match(sent.at(-1).text,/Olá(?:, \\p{Lu}\\p{L}{1,29})?, (?:bom dia|boa tarde|boa noite)! Tudo bem\\?/u);
+  assert.equal(introductionStatus(lead.id).stage,'GREETING_SENT');
+  const incoming=recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
+   unique:'consecom-principal:proposed-greeting-1',content:'Oi, tudo bem!'});
+  assert.equal(incoming.status,200);
+  const intro=introductionStatus(lead.id);
+  assert.equal(intro.stage,'WAITING');
+  assert.equal(Date.parse(intro.due_at)-Date.parse(intro.first_reply_at),30000);
+  const due=Date.parse(intro.due_at),delivered=[];
+  const dependencies={session:()=> 'consecom-principal',status:async()=>({connected:true}),
+   send:async(url,opts)=>{delivered.push(opts.data.message.text);return {status:true};}};
+  assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due-1})).state,'IDLE');
+  assert.equal((await tickIntroductions({...dependencies,currentTime:()=>due})).state,'SENT');
+  assert.deepEqual(delivered,[WESLEY_INTRO]);
+  assert.match(WESLEY_INTRO,/Posso te mandar um áudio explicando a ideia\\?/);
+  assert.equal(asksAboutProposal('Ah, sobre o que se trata a proposta?'),true);
+  recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
+   unique:'consecom-principal:proposed-greeting-2',content:'Sim, pode mandar'});
+  const voiceWaiting=introductionStatus(lead.id);
+  assert.equal(voiceWaiting.stage,'VOICE_WAITING');
+  assert.equal(db.one("SELECT COUNT(*) n FROM groq_auto_events WHERE provider_id='consecom-principal:proposed-greeting-2'").n,0);
+  let voices=0;
+  const voice=await tickIntroductions({...dependencies,currentTime:()=>Date.parse(voiceWaiting.due_at),
+   loadAudio:async()=>({bytes:Buffer.alloc(300000,13)}),
+   sendAudio:async()=>{voices++;return {accepted:true};}});
+  assert.equal(voice.state,'VOICE_SENT');
+  assert.equal(voices,1);assert.equal(delivered.length,1);
+  recordInboundTranscript({sessionId:'consecom-principal',jid:lead.phone+'@s.whatsapp.net',
+   unique:'consecom-principal:proposed-greeting-3',content:'Gostei, podemos conversar?'});
+  assert.equal(introductionStatus(lead.id).stage,'CONVERSING');
+  assert.equal(db.one("SELECT state FROM groq_auto_events WHERE provider_id='consecom-principal:proposed-greeting-3'").state,'PENDING');
+  const response=await handleSalesTurn('consecom-principal:proposed-greeting-3',{
+   qualify:async()=>{throw Error('No model called after original audio');},
+   draft:async()=>{throw Error('No text proposal allowed');}
+  });
+  assert.equal(response.state,'HOT');
+  assert.equal(db.one('SELECT manual_takeover FROM threads WHERE lead_id=?',lead.id).manual_takeover,1);
+  assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE lead_id=? AND kind='GROQ_HOT_LEAD'",lead.id).n,1);
+  assert.equal((await tickApproachQueue(sendDeps)).status,'COMPLETED');
+ }finally{
+  if(originalAudioFlag===undefined)delete process.env.PROSPECTOR_PITCH_AUDIO_ENABLED;
+  else process.env.PROSPECTOR_PITCH_AUDIO_ENABLED=originalAudioFlag;
+ }
 });
 test('Francisca never treats a second hello as a new conversation, even on an inbound-only chat',async()=>{
  const previous=process.env.AI_CONVERSATION_AUTOSEND;
