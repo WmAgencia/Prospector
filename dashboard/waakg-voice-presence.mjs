@@ -9,7 +9,7 @@ const validJid=x=>/^\d{12,15}@s\.whatsapp\.net$/.test(String(x||''));
 const validSession=x=>/^[A-Za-z0-9_-]{3,70}$/.test(String(x||''));
 
 export async function sendVoiceWithRecording({
- jid,session,bytes,
+ jid,session,bytes,mimeType='audio/mp4',originalOwnerAudio=false,
  sendAudio=sendVoiceMedia,
  sendPresence=waRequest,
  sleep=wait,
@@ -26,7 +26,7 @@ export async function sendVoiceWithRecording({
  // WhatsApp recording presence can expire quickly; keep it visible briefly.
  if(recording)await sleep(Math.min(7000,Math.max(1000,holdMs)));
  try{
-  const sent=await sendAudio({jid,session,bytes});
+  const sent=await sendAudio({jid,session,bytes,mimeType,originalOwnerAudio});
   return {...sent,recordingPresenceAccepted:recording};
  }finally{
   if(recording){
