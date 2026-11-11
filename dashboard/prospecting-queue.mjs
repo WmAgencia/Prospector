@@ -13,6 +13,7 @@ import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting
 import {insideApproachWindow,FIRST_APPROACH_WINDOW_LABEL} from './outreach-window.mjs';
 import {isExcludedTestContact} from './test-contact-exclusion.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
+import {approvedOwnerRecordingStatus} from './owner-approved-pitch.mjs';
 import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
 import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
 
@@ -224,6 +225,11 @@ export async function tickApproachQueue(deps={}){
   const expired=closeStaleBatch(new Date(time));
   if(expired)return expired;
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
+  // Never start a Consecom outreach whose next scripted step requires an
+  // approved voice asset that the application cannot actually load.
+  if(isConsecomOwner()&&!approvedOwnerRecordingStatus().ready)
+   return {status:'OWNER_RECORDING_REQUIRED',noMessagesSent:true};
+
   if(dailyApproachBudget(new Date(time)).remaining===0)return {status:'DAILY_LIMIT',limit:dailyApproachBudget(new Date(time)).limit};
   const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
