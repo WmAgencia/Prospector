@@ -76,6 +76,50 @@ export function registerOwnerRecording(raw){
   return approvedOwnerRecordingStatus();
  }finally{try{fs.unlinkSync(temp);}catch{}}
 }
+// Secure one-time transfer from owner-protected Railway variables into
+// /data/owner-approved-pitch. The raw 63-second audio NEVER enters GitHub.
+// Reject missing, mixed or tampered chunks before writing anything.
+export const EXACT_APPROVED_OWNER_AUDIO_SHA256='9579652b25cf3c29aaff0c2972f2452bb847d00c697abdcfc9601f510c30a389';
+export const EXACT_APPROVED_OWNER_AUDIO_BYTES=154890;
+export function bootstrapApprovedOwnerAudioFromEnv({environ=process.env,register=registerOwnerRecording}={}){
+ if(!ownerOnly())return {status:'OTHER_TENANT_UNCHANGED'};
+ const existing=approvedOwnerRecordingStatus();
+ if(existing.ready&&existing.sourceSha256===EXACT_APPROVED_OWNER_AUDIO_SHA256&&
+    existing.outputSha256===EXACT_APPROVED_OWNER_AUDIO_SHA256)
+  return {status:'ALREADY_READY',ready:true,shaPrefix:EXACT_APPROVED_OWNER_AUDIO_SHA256.slice(0,12)};
+ const declaredSha=String(environ.PROSPECTOR_OWNER_APPROVED_AUDIO_SHA256||'');
+ if(declaredSha!==EXACT_APPROVED_OWNER_AUDIO_SHA256)return {status:'NOT_PROVISIONED',ready:false};
+ const count=Number(environ.PROSPECTOR_OWNER_APPROVED_AUDIO_B64_PARTS);
+ if(!Number.isInteger(count)||count<1||count>40)return {status:'INVALID_PART_COUNT',ready:false};
+ const chunks=[];
+ for(let i=0;i<count;i++){
+  const part=environ['PROSPECTOR_OWNER_APPROVED_AUDIO_B64_'+String(i).padStart(2,'0')];
+  if(typeof part!=='string'||!/^[A-Za-z0-9+/=]{1,20000}$/.test(part))
+   return {status:'PART_MISSING_OR_INVALID',ready:false,part:i};
+  chunks.push(part);
+ }
+ const encoded=chunks.join('');
+ if(encoded.length>500000||encoded.length<150000||encoded.length%4!==0)
+  return {status:'INVALID_AUDIO_LENGTH',ready:false};
+ const bytes=Buffer.from(encoded,'base64');
+ // Node's base64 decoder is permissive: demand canonical round-trip as well as
+ // a cryptographic identity check to avoid mixed/truncated environment chunks.
+ if(bytes.toString('base64')!==encoded||bytes.length!==EXACT_APPROVED_OWNER_AUDIO_BYTES||
+    bytes.toString('ascii',0,4)!=='OggS'||sha(bytes)!==EXACT_APPROVED_OWNER_AUDIO_SHA256)
+  return {status:'AUDIO_HASH_MISMATCH',ready:false};
+ try{
+  const stored=register(bytes);
+  if(!stored.ready||stored.sourceSha256!==EXACT_APPROVED_OWNER_AUDIO_SHA256||
+     stored.outputSha256!==EXACT_APPROVED_OWNER_AUDIO_SHA256||
+     stored.bytes!==EXACT_APPROVED_OWNER_AUDIO_BYTES)
+   return {status:'PERSISTENCE_VALIDATION_FAILED',ready:false};
+  audit('OWNER_APPROVED_AUDIO_IMPORTED',null,{source:'RAILWAY_PRIVATE_ENV',bytes:bytes.length,shaPrefix:EXACT_APPROVED_OWNER_AUDIO_SHA256.slice(0,12)});
+  return {status:'READY',ready:true,bytes:bytes.length,shaPrefix:EXACT_APPROVED_OWNER_AUDIO_SHA256.slice(0,12),persistent:true};
+ }catch(error){
+  return {status:'PERSISTENCE_ERROR',ready:false,reason:String(error?.message||error).slice(0,130)};
+ }
+}
+
 export function deactivateOwnerRecording(){
  if(!ownerOnly())throw Error('OWNER_ACCOUNT_ONLY');
  const meta=getSetting('owner_approved_pitch_recording',null);
