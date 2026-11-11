@@ -31,6 +31,7 @@ const ownerOnly=()=>!process.env.PROSPECTOR_TENANT_ID;
 export const ownerPitchStatus=leadId=>one('SELECT * FROM owner_pitch_sequences WHERE lead_id=?',leadId)||null;
 export const ownerPitchActive=leadId=>!!one("SELECT 1 FROM owner_pitch_sequences WHERE lead_id=? AND stage IN ('PENDING_AUDIO','SENDING_AUDIO','AUDIO_ACCEPTED','SENDING_TEXT','UNKNOWN')",leadId);
 export function enqueueOwnerPitch({leadId,sessionId,providerId,receivedAt=now()}={}){
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {state:'PAUSED_EMERGENCY'};
  if(!ownerOnly()||!leadId||!sessionId||!providerId)return {state:'NOT_OWNER'};
  const asset=approvedOwnerRecordingStatus();
  if(!asset.ready)return {state:'ASSET_NOT_READY',reason:asset.reason};
@@ -75,6 +76,7 @@ function allowed(item,{beforeAudio=false}={}){
 let working=false;
 export async function tickOwnerPitch({clock=()=>Date.now(),status=waControlStatus,
  sendAudio=sendVoiceWithRecording,sendText=waRequest,load=loadApprovedOwnerRecording}={}){
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {state:'PAUSED_EMERGENCY'};
  if(working)return {state:'BUSY'};
  working=true;
  try{
@@ -82,6 +84,12 @@ export async function tickOwnerPitch({clock=()=>Date.now(),status=waControlStatu
   const item=one("SELECT * FROM owner_pitch_sequences WHERE stage IN ('PENDING_AUDIO','AUDIO_ACCEPTED') AND due_at<=? ORDER BY due_at LIMIT 1",due);
   if(!item)return {state:'IDLE'};
   const audioStep=item.stage==='PENDING_AUDIO';
+  if(!audioStep&&clock()-Date.parse(item.due_at)>120000){
+   // A paused service must NOT deliver an old CTA hours later.
+   run("UPDATE owner_pitch_sequences SET stage='NEEDS_REVIEW',last_error='Follow-up expired during pause',updated_at=? WHERE lead_id=? AND stage='AUDIO_ACCEPTED'",
+    now(),item.lead_id);
+   return {state:'NEEDS_REVIEW',reason:'STALE_FOLLOWUP'};
+  }
   if(!allowed(item,{beforeAudio:audioStep})){
    run("UPDATE owner_pitch_sequences SET stage='CANCELLED',last_error='Conversation changed or ended',updated_at=? WHERE lead_id=? AND stage=?",now(),item.lead_id,item.stage);
    return {state:'CANCELLED'};
@@ -93,6 +101,7 @@ export async function tickOwnerPitch({clock=()=>Date.now(),status=waControlStatu
   const phone=one('SELECT phone FROM leads WHERE id=?',item.lead_id)?.phone;
   const live=await status(item.session_id);
   if(!live.connected)return {state:'GATEWAY_OFFLINE'};
+  if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {state:'PAUSED_EMERGENCY'};
   if(!allowed(item,{beforeAudio:audioStep}))return {state:'CANCELLED'};
   const sending=audioStep?'SENDING_AUDIO':'SENDING_TEXT';
   if(!run("UPDATE owner_pitch_sequences SET stage=?,attempt_at=?,updated_at=? WHERE lead_id=? AND stage=?",sending,now(),now(),item.lead_id,item.stage).changes)return {state:'BUSY'};
