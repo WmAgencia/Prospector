@@ -1,6 +1,6 @@
 // Typed media bridge to WA-AKG. No arbitrary URLs or external hosts.
 import {getGatewayApiKey,selectedWaSession} from './waakg-control.mjs';
-const base='https://wa-akg-production-f9f0.up.railway.app';
+const base=String(process.env.WA_AKG_BASE_URL||'https://wa-akg-production-f9f0.up.railway.app').replace(/\/$/,'');
 export const MAX_MEDIA_BYTES=15*1024*1024;
 const mediaFile=/^\/api\/media\/[A-Za-z0-9_-]{3,140}\.(?:mp3|m4a|mp4|ogg|opus|wav|webm)$/i;
 const jidAllowed=j=>/^\d{10,15}@s\.whatsapp\.net$/.test(j);
@@ -35,12 +35,16 @@ export async function fetchPrivateAudio(urlPath,{fetchFn=fetch,apiKey,session=se
  // Node and Groq understand the supplied extension (OGG/MP3/WAV/M4A).
  return {buffer,filename:path.split('/').at(-1),mimeType:type||'application/octet-stream'};
 }
-export async function sendVoiceMedia({jid,bytes,session=selectedWaSession(),fetchFn=fetch,apiKey}={}){
+export async function sendVoiceMedia({jid,bytes,session=selectedWaSession(),fetchFn=fetch,apiKey,mimeType='audio/mp4',originalOwnerAudio=false}={}){
  if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')throw Error('PROSPECTOR_EMERGENCY_ALL_OUTBOUND_PAUSED');
  if(!jidAllowed(jid)||!session||!Buffer.isBuffer(bytes)||bytes.length<256||bytes.length>MAX_MEDIA_BYTES)throw Error('INVALID_VOICE_SEND');
+ // The owner account is forbidden to send any synthetic or legacy recording.
+ if(!process.env.PROSPECTOR_TENANT_ID&&!originalOwnerAudio)throw Error('OWNER_AUDIO_MUST_USE_PINNED_RECORDING');
+ const opus=bytes.toString('ascii',0,4)==='OggS';
+ if(originalOwnerAudio&&(!opus||mimeType!=='audio/ogg; codecs=opus'))throw Error('OWNER_AUDIO_NOT_NATIVE_OPUS');
  const form=new FormData();
  form.append('type','voice');
- form.append('file',new Blob([bytes],{type:'audio/mp4'}),'francisca.m4a');
+ form.append('file',new Blob([bytes],{type:opus?'audio/ogg; codecs=opus':'audio/mp4'}),opus?'wesley-approved.ogg':'francisca.m4a');
  const key=apiKey||await getGatewayApiKey();
  // WA-AKG's own handler expects multipart form data, not JSON, and uses
  // type=voice to send a WhatsApp push-to-talk message.

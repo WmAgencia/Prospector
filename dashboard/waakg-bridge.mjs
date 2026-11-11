@@ -9,6 +9,7 @@ import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {classifyInboundAutomation} from './inbound-automation.mjs';
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
 import {routeIntroductionReply} from "./prospecting-introduction.mjs";
+import {conversationFinished} from "./prospect-terminal-conversation.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {configuredClosing} from "./training-sales-extras.mjs";
@@ -117,6 +118,16 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  const thread=getThread(lead.id,jid);
  const firstInbound=!one("SELECT id FROM messages WHERE thread_id=? AND direction=\'in\' LIMIT 1",thread.id);
  addMessage({threadId:thread.id,providerId:unique,direction:"in",body:content,status:"received"});
+ // A polite last message ends the assistant's part permanently.
+ // Continue recording customer replies for the owner without generating text.
+ if(identity.role==='PROSPECT_APPROACHED'&&conversationFinished(lead.id,sid)){
+  if(isExplicitOptOut(content))stopLead(lead.id,'INBOUND_OPTOUT_AFTER_CLOSURE');
+  const at=now();
+  run("INSERT OR IGNORE INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+   id(),sid,jid,unique,lead.id,content,'FINISHED',at,at);
+  audit('PROSPECT_CLOSED_INBOUND_IGNORED',lead.id,{session:sid});
+  return {status:200,body:{accepted:true,processed:true,automatedReply:false,reason:'CONVERSATION_FINISHED'}};
+ }
  const automation=classifyInboundAutomation(content);
  let state=automation.blocked?'AUTO_REPLY':'REVIEW';
  const ending=identity.role==='PROSPECT_APPROACHED'&&state!=='AUTO_REPLY'?salesEnding(content):null;

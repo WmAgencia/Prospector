@@ -1,0 +1,25 @@
+name: Wesley proposal fast safety checks
+on:
+  push:
+    branches: [fix/wesley-approved-audio-state-machine-20261111]
+  pull_request:
+    branches: [feature/tenant-bulk-approvals-20261109]
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Check all production modules
+        run: |
+          node --check dashboard/prospecting-introduction.mjs
+          node --check dashboard/owner-proposal-interest.mjs
+          node --check dashboard/owner-pitch-sequence.mjs
+          node --check dashboard/prospect-terminal-conversation.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/server.mjs
+          node --input-type=module --check < dashboard/public/simple-app.js
+      - name: Test 24 natural permission and refusal cases
+        run: node --test tests/owner-proposal-interest.test.mjs

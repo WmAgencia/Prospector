@@ -13,6 +13,8 @@ import {consecomPortfolioDialogue,offScriptPortfolioDraft,CONSECOM_SITE_PITCH_SA
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
+import {conversationFinished,finishConversation,isFinalGoodbye} from './prospect-terminal-conversation.mjs';
+import {ownerPitchStatus} from './owner-pitch-sequence.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
@@ -51,6 +53,11 @@ export function queueInboundTurn({providerId,jid,sessionId}={}){
  if(!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
  const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
  const boundSession=sessionId||(lead?leadSession(lead.id):selectedWaSession());
+ if(lead&&conversationFinished(lead.id,boundSession))return false;
+ if(lead){
+  const pitch=ownerPitchStatus(lead.id);
+  if(pitch&&pitch.stage!=='DONE')return false;
+ }
  if(!prospectorChatEligible({jid,sessionId:boundSession}))return false;
  const identity=classifyContact({jid,sessionId:boundSession});
  const intro=lead?introductionStatus(lead.id):null;
@@ -67,6 +74,19 @@ export async function handleSalesTurn(providerId,deps={}){
  if(process.env.PROSPECTOR_TENANT_ID&&!readActiveTrainingMarkdown())return {state:'TRAINING_REVIEW_REQUIRED'};
  const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.segment,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
  if(!r)return {state:'SKIP'};
+ if(conversationFinished(r.lead_id,r.session_id)){
+  run("UPDATE groq_auto_events SET state='CLOSED',error='CONVERSATION_FINISHED' WHERE provider_id=?",providerId);
+  return {state:'CLOSED'};
+ }
+ const pendingPitch=ownerPitchStatus(r.lead_id);
+ if(pendingPitch&&pendingPitch.stage!=='DONE'){
+  run("UPDATE groq_auto_events SET state='REVIEW',error='OWNER_ORIGINAL_AUDIO_WORKFLOW' WHERE provider_id=?",providerId);
+  return {state:'REVIEW'};
+ }
+ if(one("SELECT 1 FROM prospecting_introductions WHERE lead_id=? AND stage='VOICE_REVIEW'",r.lead_id)){
+  run("UPDATE groq_auto_events SET state='REVIEW',error='OWNER_AUDIO_FILE_NOT_APPROVED' WHERE provider_id=?",providerId);
+  return {state:'REVIEW'};
+ }
  const replyStartedAt=(deps.replyNow||Date.now)();
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
  const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
@@ -109,6 +129,7 @@ export async function handleSalesTurn(providerId,deps={}){
 
  if(identity.role!=='EXISTING_CLIENT'&&['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(r.stage))return finish('SKIPPED','ALREADY_HANDOFF');
  const stale=()=>{
+  if(conversationFinished(r.lead_id,r.session_id))return 'CLOSED';
   const current=one('SELECT l.stage,l.phone,t.manual_takeover,i.state inbox_state,i.body FROM leads l JOIN threads t ON t.lead_id=l.id JOIN waakg_inbox i ON i.provider_id=? WHERE l.id=?',providerId,r.lead_id);
   if(!current||current.manual_takeover||current.inbox_state!=='REVIEW'||current.stage!==r.stage||current.phone!==r.phone||current.body!==r.body||leadSession(r.lead_id)!==r.session_id||!isManagedSession(r.session_id)||one('SELECT phone FROM suppressions WHERE phone=?',r.phone))return 'HANDOFF';
   if(!prospectorChatEligible({jid:r.jid,sessionId:r.session_id}))return 'HANDOFF';
@@ -232,7 +253,9 @@ export async function handleSalesTurn(providerId,deps={}){
  const wasAudio=audioTable&&!!one("SELECT provider_id FROM inbound_audio_jobs WHERE provider_id=? AND state='DONE'",providerId);
  const routing=chooseReplyChannel({inbound:r.body,draft:replyText,wasAudio,isOperatorTest:allowTest,
   preferredMode:channelPreference(r.jid),
-  voiceAvailable:process.env.AUDIO_RESPONSE_ENABLED==='true'&&process.env.FRANCISCA_TTS_ENABLED==='true'});
+  // Consecom owner uses ONLY the explicitly uploaded Wesley recording;
+  // synthesised Francisca responses are unavailable regardless of flag state.
+  voiceAvailable:!!process.env.PROSPECTOR_TENANT_ID&&process.env.AUDIO_RESPONSE_ENABLED==='true'&&process.env.FRANCISCA_TTS_ENABLED==='true'});
  if(routing.preference)saveChannelPreference(r.jid,routing.preference);
  // Synthesise before any transport attempt. For temporary TTS failure, retain a
  // complete written response instead of leaving the contact without a reply.
@@ -282,6 +305,8 @@ export async function handleSalesTurn(providerId,deps={}){
   const prefix=routing.mode==='VOICE'?'[Áudio Francisca] ':
     routing.mode==='BOTH'?'[Texto + áudio Francisca] ':'';
   run('UPDATE messages SET body=? WHERE provider_id=?',prefix+replyText,'groq:'+providerId);
+  if(accepted.includes('TEXT')&&isFinalGoodbye(replyText))
+   finishConversation({leadId:r.lead_id,sessionId:r.session_id,providerId:'groq:'+providerId,body:replyText});
   if(scripted?.notifyOwner)queueNotice('portfolio-return:'+providerId,'GROQ_HOT_LEAD',
    ['Pedido de retorno — não é uma venda confirmada',
     'Empresa: '+r.business,'Telefone: '+r.phone,

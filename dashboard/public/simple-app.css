@@ -289,3 +289,16 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
 .overview-approaches-bar{display:block;flex:1 1 0;min-width:3px;max-width:56px;height:var(--bar-height);background:linear-gradient(180deg,#4aa778,#c2e2cb);border-radius:4px 4px 1px 1px}
 @media(max-width:860px){.overview-approaches{grid-template-columns:1fr;gap:13px;padding:14px}.overview-approaches-total>strong{font-size:34px;min-height:35px}.overview-approaches-options{width:100%}.overview-approaches-options button{flex:1;min-width:85px}.overview-approaches-bars{height:25px}}
 @media(max-width:480px){.overview-approaches-options button{font-size:10px;padding:9px 8px}.overview-approaches-total>strong{font-size:31px}}
+
+
+/* Owner-approved audio card: scoped to settings, no changes to master layout. */
+.owner-recording-panel{margin-top:18px}
+.owner-recording-status{display:flex;flex-direction:column;gap:9px;margin:12px 0;padding:12px 14px;background:#f0f8f2;border:1px solid #c6e5d0;border-radius:12px}
+.owner-recording-status>strong{font-weight:700;color:#245e3e}
+.owner-recording-status>small{font-size:11px;color:#567563}
+.owner-recording-status audio{width:100%;max-width:380px}
+.owner-recording-warning{padding:12px 14px;border-radius:10px;background:#fff9ef;border:1px solid #f1dec0;color:#785d31;font-size:12px;line-height:1.5}
+.owner-recording-panel .stack-form{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:10px 0}
+.owner-recording-panel .stack-form label{display:flex;flex-direction:column;gap:8px;font-size:12px;font-weight:650;color:inherit}
+.owner-recording-panel input[type=file]{max-width:100%;font-size:12px}
+.owner-recording-panel .footnote{font-size:11px;opacity:.7;line-height:1.5}

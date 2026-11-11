@@ -16,9 +16,13 @@ import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
 import {wantsPortfolioPitchAudio,acceptsPortfolioPresentation} from './portfolio-pitch-audio.mjs';
 import {loadCurrentPortfolioVoice,currentVoiceEligible,CURRENT_VOICE_OFFER_BRL} from './portfolio-pitch-voice-550.mjs';
 import {queueNotice} from './notifications.mjs';
+import {conversationFinished} from './prospect-terminal-conversation.mjs';
+import {approvedOwnerRecordingStatus} from './owner-approved-pitch.mjs';
+import {enqueueOwnerPitch,ownerPitchStatus} from './owner-pitch-sequence.mjs';
+import {classifyOwnerProposalIntent,OWNER_PROPOSAL_INTENT} from './owner-proposal-interest.mjs';
 
 export const INTRO_DELAY_MS=30_000;
-export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês.';
+export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Estou entrando em contato porque queria fazer uma proposta pra vocês.';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
 // Network activity may have succeeded before a process restart. Never retry automatically.
@@ -53,8 +57,8 @@ export function registerGreeting({leadId,greetingId,sessionId}={}){
 }
 export function cancelIntroduction(leadId,reason='CONTACT_DECLINED'){
  const row=introductionStatus(leadId);
- if(!row||!['GREETING_SENT','WAITING','VOICE_WAITING'].includes(row.stage))return false;
- run("UPDATE prospecting_introductions SET stage='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING','VOICE_WAITING')",String(reason).slice(0,110),now(),leadId);
+ if(!row||!['GREETING_SENT','WAITING','VOICE_WAITING','VOICE_REVIEW'].includes(row.stage))return false;
+ run("UPDATE prospecting_introductions SET stage='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage IN ('GREETING_SENT','WAITING','VOICE_WAITING','VOICE_REVIEW')",String(reason).slice(0,110),now(),leadId);
  return true;
 }
 // Explicit product decision: NEVER synthesize Francisca's voice as Wesley's
@@ -78,57 +82,75 @@ export function recoverDisabledPitchQueue(){
 
 export function routeIntroductionReply({leadId,providerId,body='',inboxState='REVIEW',receivedAt=new Date()}={}){
  const item=introductionStatus(leadId);
- // Never pitch an automated responder or an opted-out contact.
  if(inboxState==='AUTO_REPLY'||detectAutomaticReply(body))return {managed:true,queueAi:false,state:'AUTO_REPLY'};
  if(!item)return {managed:false,queueAi:true};
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')
+  return {managed:true,queueAi:false,state:'PAUSED_EMERGENCY'};
+ if(conversationFinished(leadId,item.session_id))return {managed:true,queueAi:false,state:'FINISHED'};
  if(inboxState!=='REVIEW'){
   cancelIntroduction(leadId,'INBOX_'+inboxState);
   return {managed:true,queueAi:false,state:'CANCELLED'};
  }
- const prefersText=/(?:prefiro|quero) (?:em )?texto|(?:nao|não).{0,20}(?:audio|áudio|voz)/i.test(body);
- const wantsVoice=!prefersText&&wantsPortfolioPitchAudio(body);
- const acceptsVoice=!prefersText&&acceptsPortfolioPresentation(body);
- // If a customer specifically asks about the proposal after the greeting,
- // never let a disabled AI voice service monopolize the text reply queue.
- if(wantsVoice||acceptsVoice){
-  if(queueManualPitchReview(leadId,'AWAITING_APPROVED_WESLEY_RECORDING'))
-   return {managed:true,queueAi:false,state:'VOICE_REVIEW'};
- }
+ const intent=classifyOwnerProposalIntent(body);
  const received=new Date(receivedAt),timestamp=Number.isFinite(received.getTime())?received:new Date();
  const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
  const sourceId=String(providerId||'').slice(0,180);
+ // First customer response ALWAYS receives the written Wesley introduction
+ // before any audio consideration, regardless of their wording.
  if(item.stage==='GREETING_SENT'){
-  const next=wantsVoice?'VOICE_WAITING':'WAITING';
-  run("UPDATE prospecting_introductions SET stage=?,first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
-   next,sourceId,timestamp.toISOString(),due,now(),leadId);
-  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,next,voiceRequested:wantsVoice});
-  return {managed:true,queueAi:false,state:next};
- }
- if(item.stage==='WAITING'){
-  if(wantsVoice||acceptsVoice){
-   run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND stage='WAITING'",due,now(),leadId);
-   audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due});
-   return {managed:true,queueAi:false,state:'VOICE_WAITING'};
+  if(intent===OWNER_PROPOSAL_INTENT.DECLINE){
+   cancelIntroduction(leadId,'CUSTOMER_DECLINED');
+   return {managed:true,queueAi:false,state:'CANCELLED'};
   }
+  run("UPDATE prospecting_introductions SET stage='WAITING',first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
+   sourceId,timestamp.toISOString(),due,now(),leadId);
+  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,next:'WAITING',writtenIntroductionFirst:true});
   return {managed:true,queueAi:false,state:'WAITING'};
  }
- if(item.stage==='VOICE_WAITING'||item.stage==='VOICE_REVIEW'){
-  queueManualPitchReview(leadId,'AWAITING_APPROVED_WESLEY_RECORDING');
+ // A second reply before the first text is sent must not skip the script.
+ if(item.stage==='WAITING')return {managed:true,queueAi:false,state:'WAITING'};
+ if(intent===OWNER_PROPOSAL_INTENT.DECLINE){
+  cancelIntroduction(leadId,'CUSTOMER_DECLINED');
+  return {managed:true,queueAi:false,state:'DECLINED'};
+ }
+ const already=ownerPitchStatus(leadId);
+ if(already){
+  if(already.stage==='DONE')return {managed:true,queueAi:true,state:'AUDIO_ALREADY_SENT'};
+  if(already.stage!=='CANCELLED'&&already.stage!=='NEEDS_REVIEW')
+   return {managed:true,queueAi:false,state:already.stage};
+ }
+ // Any clear "pode falar", "beleza", "prossegue" or question about the
+ // proposal after Wesley's text means "yes, tell me the proposal".
+ const positive=intent===OWNER_PROPOSAL_INTENT.ACCEPT||
+  (intent!==OWNER_PROPOSAL_INTENT.TEXT_ONLY&&(wantsPortfolioPitchAudio(body)||acceptsPortfolioPresentation(body)));
+ const hasText=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='out' AND lower(m.status) IN ('sent','delivered','read')",
+  leadId,'intro:'+item.greeting_id);
+ if(['SENT','CONVERSING','VOICE_REVIEW'].includes(item.stage)&&positive){
+  if(!hasText){
+   queueManualPitchReview(leadId,'WESLEY_INTRO_DELIVERY_NOT_RECORDED');
+   return {managed:true,queueAi:false,state:'REVIEW_INTRO'};
+  }
+  if(approvedOwnerRecordingStatus().ready){
+   const result=enqueueOwnerPitch({leadId,sessionId:item.session_id,providerId:sourceId,receivedAt:timestamp});
+   if(['PENDING_AUDIO','AUDIO_ACCEPTED','DONE','ALREADY_QUEUED'].includes(result.state)){
+    run("UPDATE prospecting_introductions SET stage='VOICE_REVIEW',reason='OWNER_AUDIO_QUEUED',due_at=NULL,updated_at=? WHERE lead_id=? AND stage NOT IN ('UNKNOWN','CANCELLED')",
+      now(),leadId);
+    audit('PROSPECT_OWNER_AUDIO_SCHEDULED',leadId,{approvedOriginal:true,afterWrittenIntroduction:true,state:result.state});
+    return {managed:true,queueAi:false,state:'OWNER_AUDIO_QUEUED'};
+   }
+   queueManualPitchReview(leadId,'OWNER_PITCH_QUEUE_'+result.state);
+   return {managed:true,queueAi:false,state:'VOICE_REVIEW'};
+  }
+  queueManualPitchReview(leadId,'OWNER_AUDIO_FILE_NOT_APPROVED');
   return {managed:true,queueAi:false,state:'VOICE_REVIEW'};
  }
- if(['SENT','CONVERSING'].includes(item.stage)&&(wantsVoice||acceptsVoice)){
-  const pitched=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id LIKE 'intro-voice:%' LIMIT 1",leadId);
-  if(!pitched&&item.reason!=='PITCH_AUDIO_550'){
-   const updated=run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage=?",sourceId,timestamp.toISOString(),due,now(),leadId,item.stage);
-   if(updated.changes){audit('PROSPECT_PITCH_VOICE_REQUESTED',leadId,{dueAt:due,afterTextIntro:true,affirmative:acceptsVoice});return {managed:true,queueAi:false,state:'VOICE_WAITING'};}
-  }
- }
+ if(item.stage==='VOICE_REVIEW')return {managed:true,queueAi:false,state:'VOICE_REVIEW'};
  if(item.stage==='SENT'||item.stage==='VOICE_SENT'){
   run('UPDATE prospecting_introductions SET stage=?,updated_at=? WHERE lead_id=? AND stage=?','CONVERSING',now(),leadId,item.stage);
   audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:sourceId,previousStage:item.stage});
-  return {managed:true,queueAi:true,state:'CONVERSING'};
+  return {managed:true,queueAi:intent===OWNER_PROPOSAL_INTENT.TEXT_ONLY,state:'CONVERSING'};
  }
- return {managed:true,queueAi:item.stage==='CONVERSING',state:item.stage};
+ return {managed:true,queueAi:item.stage==='CONVERSING'&&intent===OWNER_PROPOSAL_INTENT.TEXT_ONLY,state:item.stage};
 }
 
 let busy=false;

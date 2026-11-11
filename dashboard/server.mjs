@@ -75,6 +75,8 @@ import {outreachConsentControl,requestOutreachConsentControl} from './outreach-c
 import {tickIntroductions,recoverUnansweredPitchRequests,recoverDisabledPitchQueue} from './prospecting-introduction.mjs';
 import {reconcileApproachedReplies} from './prospect-reply-reconciliation.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
+import {approvedOwnerRecordingStatus,registerOwnerRecording,loadApprovedOwnerRecording,deactivateOwnerRecording} from './owner-approved-pitch.mjs';
+import {tickOwnerPitch} from './owner-pitch-sequence.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
@@ -507,7 +509,28 @@ async function handler(req,res){
    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
-  if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+    // An approved recording is an uploaded ORIGINAL, not an AI-generated sample.
+  if(pathname==='/api/owner/pitch-recording'||pathname==='/api/owner/pitch-recording/preview'){
+   if(process.env.PROSPECTOR_TENANT_ID)return respond(res,403,{error:'Somente a conta principal Consecom'});
+   if(req.method==='GET'&&pathname.endsWith('/preview')){
+    try{
+     const asset=loadApprovedOwnerRecording();
+     res.writeHead(200,{'Content-Type':'audio/ogg','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+     res.end(asset.bytes);return;
+    }catch{return respond(res,404,{error:'Nenhuma gravação aprovada'});}
+   }
+   if(req.method==='GET')return respond(res,200,approvedOwnerRecordingStatus());
+   if(req.method==='POST'){
+    try{
+     const bytes=await body(req,12*1024*1024);
+     const result=registerOwnerRecording(bytes);notify();
+     return respond(res,200,result);
+    }catch(error){return respond(res,422,{error:String(error?.message||error).slice(0,160)});}
+   }
+   if(req.method==='DELETE'){const status=deactivateOwnerRecording();notify();return respond(res,200,status);}
+   return respond(res,405,{error:'Método não permitido'});
+  }
+if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
   if(req.method==='GET'&&pathname==='/api/approvals'){
    try{return respond(res,200,listLeadApprovals({
     status:url.searchParams.get('status')||'PENDING',
@@ -937,6 +960,18 @@ const prospectQueueTimer=setInterval(()=>tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
 }).catch(error=>console.error('[prospect queue]',String(error?.message||error).slice(0,160))),1000);
+const approvedOwnerPitchTimer=setInterval(()=>{
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return;
+ if(process.env.PROSPECTOR_TENANT_ID)return;
+ tickOwnerPitch().then(result=>{
+  if(result.state==='AUDIO_ACCEPTED'||result.state==='DONE'){
+   console.info('[approved owner recording]',JSON.stringify({state:result.state,suffix:result.recipientSuffix,
+    deliveryVerified:false}));
+   notify();
+  }
+  if(result.state==='UNKNOWN')console.warn('[approved owner recording] uncertain send; manual review required');
+ }).catch(error=>console.warn('[approved owner recording]',String(error?.message||error).slice(0,100)));
+},1400);
 const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=>{
  if(['SENT','VOICE_SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='VOICE_SENT')console.info('[prospect introduction] voice gateway accepted',JSON.stringify({recipientSuffix:result.recipientSuffix,verifiedOnPhone:false}));
@@ -1065,4 +1100,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(approvedOwnerPitchTimer);clearInterval(prospectIntroductionTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
