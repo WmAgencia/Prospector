@@ -874,6 +874,15 @@ if(process.env.PROSPECTOR_ENABLE_SAFE_PROSPECTING_NOV03==='true'){
 const invitationQueue=outreachQueueSnapshot();
 console.log('[invitation campaign]',JSON.stringify({...invitationActivation,ready:invitationQueue.ready,waiting:invitationQueue.awaitingConsent,paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false)}));
 console.log('[authorized outreach]',activation.status,'ready='+activation.ready,'waiting='+activation.awaitingConsent);
+if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'){
+ // Persist a real pause: legacy queue workers read database state while
+ // other workers read environment flags. Both must agree after restart.
+ setSetting('paused',true);
+ setSetting('autonomous_outreach_enabled',false);
+ setSetting('sales_followup_enabled',false);
+ setSetting('sales_daily_report_enabled',false);
+ console.warn('[emergency stop] persistent outreach and automated responses disabled; WhatsApp sessions retained');
+}
 let testInstructionError=null;
 let lastQueueReason=null,lastQueueLogAt=0;
 async function reportQueueHealth(){
