@@ -10,6 +10,8 @@ import {classifyInboundAutomation} from './inbound-automation.mjs';
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
 import {routeIntroductionReply} from "./prospecting-introduction.mjs";
 import {queueProspectorFarewell} from "./prospector-farewell.mjs";
+import {captureOwnerAudioInterest} from "./prospector-interest-handoff.mjs";
+import {ownerPitchStatus} from "./owner-pitch-sequence.mjs";
 import {conversationFinished} from "./prospect-terminal-conversation.mjs";
 import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
@@ -128,6 +130,12 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  const thread=getThread(lead.id,jid);
  const firstInbound=!one("SELECT id FROM messages WHERE thread_id=? AND direction=\'in\' LIMIT 1",thread.id);
  addMessage({threadId:thread.id,providerId:unique,direction:"in",body:content,status:"received"});
+ if(identity.role==='PROSPECT_APPROACHED'&&(lead.stage==='INTERESTED'||thread.manual_takeover===1)){
+  const at=now();
+  run("INSERT OR IGNORE INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+   id(),sid,jid,unique,lead.id,content,'HUMAN',at,at);
+  return {status:200,body:{accepted:true,processed:true,ownerTakeover:true,automatedReply:false}};
+ }
  // A polite last message ends the assistant's part permanently.
  // Continue recording customer replies for the owner without generating text.
  if(identity.role==='PROSPECT_APPROACHED'&&conversationFinished(lead.id,sid)){
@@ -167,6 +175,9 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
+ const interested=identity.role==='PROSPECT_APPROACHED'&&state==='REVIEW'
+  ?captureOwnerAudioInterest({leadId:lead.id,sessionId:sid,providerId:unique,body:content}):{handled:false};
+ if(interested.handled)return {status:200,body:{accepted:true,processed:true,ownerTakeover:true,notificationQueued:true}};
  // The owner has already been routed above, including the sandbox exception.
  if(firstInbound&&state==='REVIEW'&&configuredClosing()?.mode!=='complete')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
  const call=identity.role==='PROSPECT_APPROACHED'&&state==='REVIEW'?
@@ -175,6 +186,9 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
   audit('CALL_CUSTOMER_REPLY_ROUTED',lead.id,{state:call.state||'HANDLED'});
   return {status:200,body:{accepted:true,processed:true,callScheduling:true}};
  }
+ if(identity.role==='PROSPECT_APPROACHED'&&
+    ['AUDIO_ACCEPTED','DONE'].includes(ownerPitchStatus(lead.id)?.stage))
+   return {status:200,body:{accepted:true,processed:true,ownerAudioReview:true,automatedReply:false}};
  const introRoute=identity.role==='PROSPECT_APPROACHED'?
   routeIntroductionReply({leadId:lead.id,providerId:unique,body:content,inboxState:state,receivedAt:at}):{managed:false,queueAi:true};
  if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid,sessionId:sid});
