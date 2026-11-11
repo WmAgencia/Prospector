@@ -18,9 +18,12 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Validate period and deduplicated send evidence
-        run: node --test tests/overview-approaches-period.test.mjs tests/overview-dimensions.test.mjs
+        run: node --test tests/overview-approaches-period.test.mjs tests/overview-dimensions.test.mjs tests/approach-cadence.test.mjs tests/owner-even-80-hours.test.mjs tests/owner-daily-80.test.mjs
       - name: Verify syntax
         run: |
           node --check dashboard/server.mjs
           node --check dashboard/overview-approaches.mjs
+          node --check dashboard/approach-cadence.mjs
+          node --check dashboard/client-preferences.mjs
+          node --check dashboard/outreach-window.mjs
           node --input-type=module --check < dashboard/public/simple-app.js
