@@ -33,6 +33,7 @@ db.exec("CREATE TABLE IF NOT EXISTS groq_auto_events(provider_id TEXT PRIMARY KE
 run("UPDATE groq_auto_events SET state='UNKNOWN',error='Interrupted; verify before retry' WHERE state IN ('PROCESSING','SENDING')");
 const digits=s=>String(s||'').replace(/\D/g,'');
 const optedOut=s=>/\b(pare|parar|stop|sair|remover|nao me contate|não me contate|sem interesse|nao tenho interesse)\b/i.test(String(s||''));
+export const ownerApprovedOriginalOffer350=pitch=>pitch?.stage==='DONE';
 export function ownerTarget(){const configured=digits(getSetting('sales_notification_phone','')),normalized=configured.length===11?'55'+configured:configured;if(/^55\d{10,11}$/.test(normalized))return normalized;const preferred=personalPhone();if(preferred)return preferred;const raw=digits(process.env.PROSPECTOR_HOT_LEAD_PHONE);const val=raw.length===11?'55'+raw:raw;return /^55\d{10,11}$/.test(val)?val:null;}
 export function interestNotice(lead,evidence){
  const business=one('SELECT * FROM leads WHERE id=?',lead.lead_id)||lead;
@@ -97,7 +98,7 @@ export async function handleSalesTurn(providerId,deps={}){
  // A completed owner-approved ORIGINAL voice note quotes R$ 350, regardless
  // of the disabled old pitch-audio flag. Treat that real recorded offer as the
  // campaign's price anchor; NEVER respond with the separate R$ 550 offer.
- const originalOwnerAudio350=pendingPitch?.stage==='DONE';
+ const originalOwnerAudio350=ownerApprovedOriginalOffer350(pendingPitch);
  const audioOffer350=originalOwnerAudio350||portfolioAudioSentFor(intro);
  // A Consecom introduction is the campaign ID, independent of whether an
  // older batch selection remains in 'SENT' after its queue progresses.
