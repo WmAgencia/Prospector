@@ -17,7 +17,7 @@ try {
  const evening=at('2026-11-11T20:40:00.000Z');  // 17:40 local
  const before=at('2026-11-11T14:11:00.000Z');   // 11:11 local
  console.log(JSON.stringify({morning,lunch,evening,before}));
- \`.replace(/^\\\`|\\\`$/g,'');
+ `;
  const child=spawnSync(process.execPath,['--input-type=module','-e',script],{
   cwd:process.cwd(),encoding:'utf8',
   env:{...process.env,PROSPECTOR_DATA_DIR:dir,PROSPECTOR_TENANT_ID:''}
