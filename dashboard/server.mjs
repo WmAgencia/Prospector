@@ -4,7 +4,7 @@ import {handlePlatform,isPrimaryClient} from './platform.mjs';
 import {handleTraining} from './training.mjs';
 import {handleFranciscaPanel} from './francisca-panel.mjs';
 import {monthlyProspectingCalendar} from './prospecting-calendar.mjs';
-import {currentScope,scopeOptions,saveScope,getOutreachHours,saveOutreachHours} from './client-preferences.mjs';
+import {currentScope,scopeOptions,saveScope,getOutreachHours,saveOutreachHours,OUTREACH_HARD_MAX} from './client-preferences.mjs';
 import {accessClientKey,createAccessLimiter} from './access-rate-limit.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -67,7 +67,7 @@ import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospec
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,autonomousReadyCount,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROSPECTING_CONTROL_KEYS} from './tenant-prospecting-controls.mjs';
-import {armApprovedOutreach,apply80DailyLimit} from './approval-ready-activation.mjs';
+import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread} from './approval-ready-activation.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
@@ -283,6 +283,7 @@ if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('auto
 const approvalReady=armApprovedOutreach();
 console.info('[approval ready]',JSON.stringify(approvalReady));
 console.info('[daily 80 limit]',JSON.stringify(apply80DailyLimit()));
+console.info('[daily 80 spread]',JSON.stringify(applyOwnerDailySpread()));
 console.info('[proposal voice asset]',JSON.stringify(portfolioPitchAudioHealth()));
 // Read-only future start check. No batch is created and no WhatsApp message is sent.
 const nextStartAt=new Date('2026-11-10T11:00:00.000Z');
@@ -527,8 +528,8 @@ async function handler(req,res){
    if(req.method==='POST'){try{return respond(res,200,saveScope(await json(req)));}catch(e){return respond(res,422,{error:String(e.message).slice(0,200)});}}
   }
   if(pathname==='/api/settings/outreach-hours'){
-   if(req.method==='GET')return respond(res,200,{hours:getOutreachHours(),hardMin:'08:00',hardMax:'17:30'});
-   if(req.method==='POST'){try{return respond(res,200,{hours:saveOutreachHours(await json(req)),hardMin:'08:00',hardMax:'17:30'});}catch(e){return respond(res,422,{error:String(e.message).slice(0,200)});}}
+   if(req.method==='GET')return respond(res,200,{hours:getOutreachHours(),hardMin:'08:00',hardMax:OUTREACH_HARD_MAX});
+   if(req.method==='POST'){try{return respond(res,200,{hours:saveOutreachHours(await json(req)),hardMin:'08:00',hardMax:OUTREACH_HARD_MAX});}catch(e){return respond(res,422,{error:String(e.message).slice(0,200)});}}
   }
   if(req.method==='GET'&&pathname==='/api/google-places/status')return respond(res,200,placesStatus());
   if(req.method==='POST'&&pathname==='/api/google-places/search'){const result=await placesSearch(await json(req));return respond(res,result.status,result.body);}
