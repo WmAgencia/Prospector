@@ -15,8 +15,8 @@ const dateAt=(p,h,m)=>new Date(Date.UTC(p.year,p.month-1,p.day,h+3,m)).toISOStri
 const hhmm=(iso)=>new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(iso));
 const dayKey=(iso)=>{const p=timeParts(new Date(iso));return [p.year,String(p.month).padStart(2,'0'),String(p.day).padStart(2,'0')].join('-');};
 const dayToday=()=>dayKey(new Date().toISOString());
-const validSlot=(iso,at=Date.now())=>typeof iso==='string'&&Number.isFinite(Date.parse(iso))&&dayKey(iso)===dayKey(new Date(at).toISOString())&&Date.parse(iso)>=at+30*60000&&(()=>{const p=timeParts(new Date(iso));return p.hour>=10&&p.hour*60+p.minute<=17*60+30&&p.minute%30===0;})();
-const positive=t=>/^(?:sim|claro|pode|com certeza|beleza|bora|vamos|fechado|combinado|top|ok|pode ser|tenho sim|consigo sim|tenho|tenho tempo|tenho disponibilidade|pode me ligar|me liga|quero sim)(?:[.!?,\s]|$)/i.test(String(t||'').trim());
+const validSlot=(iso,at=Date.now())=>typeof iso==='string'&&Number.isFinite(Date.parse(iso))&&dayKey(iso)===dayKey(new Date(at).toISOString())&&Date.parse(iso)>=at+10*60000&&(()=>{const p=timeParts(new Date(iso));return p.hour>=10&&p.hour*60+p.minute<=17*60+30&&p.minute%30===0;})();
+const positive=t=>/^(?:sim|claro|pode|com certeza|beleza|bora|vamos|fechado|combinado|top|ok|pode ser|tenho sim|consigo sim|tenho|tenho tempo|tenho disponibilidade|pode me ligar|me liga|quero sim)(?:[.!?,\s]|$)/i.test(String(t||'').trim())||/\b(?:vamos conversar|pode ligar|pode me chamar|vamos marcar|pode sim|quero conversar|tenho uns minutinhos)\b/i.test(String(t||''));
 const negative=t=>/^(?:n[aã]o|nao|nesse hor[aá]rio n[aã]o|nao consigo|não consigo|n[aã]o posso|outro hor[aá]rio|hoje n[aã]o)(?:[.!?,\s]|$)/i.test(String(t||'').trim());
 const groupOrOwner=()=>validGroup()?GROUP():(verifiedOwnerPhone()?verifiedOwnerPhone()+'@s.whatsapp.net':null);
 
@@ -47,8 +47,8 @@ function parseSuggestedTime(text,at=Date.now()){
  const found=String(text||'').match(/(?:^|[^\d])(?:[aà]s?\s+|pode ser\s+|por volta d[ae]\s+)?(1[0-7]|[1-9])(?:\s*(?:h|:)\s*(00|30)?|\s*horas?)?(?:\s*(?:da tarde|da manh[aã]))?(?!\d)/i);
  if(!found)return null;
  let h=Number(found[1]),m=found[2]?Number(found[2]):0;
- const p=timeParts(new Date(at)),late=/tarde/i.test(text);
- if(h>=1&&h<=5&&(late||p.hour>=12))h+=12;
+ const p=timeParts(new Date(at));
+ if(h>=1&&h<=5&&!/manh[aã]/i.test(text))h+=12;
  const iso=dateAt(p,h,m);
  return validSlot(iso,at)?iso:null;
 }
@@ -86,6 +86,10 @@ export function routeCustomerCall({leadId,sessionId,providerId,body}={}){
  if(r.state==='WAIT_CLIENT_CONFIRM'){
   // "Pode ser às 16h?" is a counterproposal, NOT an acceptance of 15h.
   const suggested=parseSuggestedTime(text);
+  if(/\b(?:amanh[aã]|outro dia|semana que vem)\b/i.test(text)){
+   run("UPDATE call_scheduling SET state='REVIEW',notice_state='PENDING',updated_at=? WHERE id=?",now(),r.id);
+   return {handled:true,state:'REVIEW'};
+  }
   if(suggested&&suggested!==r.proposed_at){
    run("UPDATE call_scheduling SET state='WAIT_OWNER_ALTERNATIVE',proposed_at=?,slots_json=?,notice_state='PENDING',customer_send_state='NONE',updated_at=? WHERE id=?",suggested,JSON.stringify([suggested]),now(),r.id);
    audit('CALL_CLIENT_ALTERNATIVE_REQUESTED',leadId,{time:suggested});
@@ -94,7 +98,7 @@ export function routeCustomerCall({leadId,sessionId,providerId,body}={}){
   if(negative(text)||/\b(?:n[aã]o d[aá]|n[aã]o consigo|outro hor[aá]rio|prefiro outro|esse hor[aá]rio n[aã]o)\b/i.test(text)){
    setCustomer(r,requestAlternative,'WAIT_CLIENT_ALTERNATIVE');return {handled:true,state:'WAIT_CLIENT_ALTERNATIVE'};
   }
-  if(positive(text)){if(reserveMeeting(r,r.proposed_at))return {handled:true,state:'CONFIRMED'};run("UPDATE call_scheduling SET state='REVIEW',notice_state='PENDING',updated_at=? WHERE id=?",now(),r.id);return {handled:true,state:'REVIEW'};}
+  if(positive(text)&&(!suggested||suggested===r.proposed_at)){if(reserveMeeting(r,r.proposed_at))return {handled:true,state:'CONFIRMED'};run("UPDATE call_scheduling SET state='REVIEW',notice_state='PENDING',updated_at=? WHERE id=?",now(),r.id);return {handled:true,state:'REVIEW'};}
   return {handled:false};
  }
  if(r.state==='WAIT_CLIENT_ALTERNATIVE'){
