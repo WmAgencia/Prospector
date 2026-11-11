@@ -1,9 +1,9 @@
 name: Tests and API smoke
 on:
   push:
-    branches: [main]
+    branches: [main, feature/owner-call-scheduling-20261111]
   pull_request:
-    branches: [main]
+    branches: [main, feature/tenant-bulk-approvals-20261109]
   workflow_dispatch:
 jobs:
   test:
@@ -29,6 +29,8 @@ jobs:
           node --check dashboard/notifications.mjs
           node --check dashboard/studio-sync.mjs
           node --check dashboard/server.mjs
+          node --check dashboard/call-scheduling.mjs
+          node --check dashboard/waakg-bridge.mjs
           node --check dashboard/public/app.js
           node --input-type=module --check < dashboard/public/simple-app.js
           node --check dashboard/prospecting-search.mjs
