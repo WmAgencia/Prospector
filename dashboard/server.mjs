@@ -75,7 +75,7 @@ import {outreachConsentControl,requestOutreachConsentControl} from './outreach-c
 import {tickIntroductions,recoverUnansweredPitchRequests,recoverDisabledPitchQueue} from './prospecting-introduction.mjs';
 import {reconcileApproachedReplies} from './prospect-reply-reconciliation.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
-import {approvedOwnerRecordingStatus,registerOwnerRecording,loadApprovedOwnerRecording,deactivateOwnerRecording} from './owner-approved-pitch.mjs';
+import {approvedOwnerRecordingStatus,registerOwnerRecording,loadApprovedOwnerRecording,deactivateOwnerRecording,bootstrapApprovedOwnerAudioFromEnv} from './owner-approved-pitch.mjs';
 import {recoverApprovedWesleyVoice,approvedVoiceRecoveryStatus} from './owner-audio-whatsapp-recovery.mjs';
 import {tickOwnerPitch} from './owner-pitch-sequence.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
@@ -284,6 +284,7 @@ if(process.env.PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN==='true'&&!getSetting('auto
  audit('AUTONOMOUS_OUTREACH_ENABLED',null,{window:'08:00-17:30 America/Sao_Paulo',minSeconds:90,threeCalendarMonths:true,autoResearch:true,coldFirstApproach:coldFirstApproachEnabled()});
 }
 
+console.info('[owner voice private import]',JSON.stringify(bootstrapApprovedOwnerAudioFromEnv()));
 const approvalReady=armApprovedOutreach();
 console.info('[approval ready]',JSON.stringify(approvalReady));
 console.info('[daily 80 limit]',JSON.stringify(apply80DailyLimit()));
