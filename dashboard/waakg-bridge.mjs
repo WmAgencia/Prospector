@@ -14,6 +14,7 @@ import {queueInboundBrief} from "./personal-concierge.mjs";
 import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {configuredClosing} from "./training-sales-extras.mjs";
 import {recordReceiptMedia} from "./sales-payment-flow.mjs";
+import {routeCustomerCall,routeOwnerCall} from './call-scheduling.mjs';
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 import {isManagedSession,boundLeadSession,leadSession,bindLeadSession} from './waakg-session-registry.mjs';
 
@@ -55,16 +56,24 @@ export async function receiveWebhook(req){
  if(payload.event==="test")return {status:200,body:{accepted:true,test:true}};
  if(payload.event!=="message.received")return {status:200,body:{accepted:true,ignored:true}};
  const data=payload.data||{},key=data.key||{};
- if(data.isGroup===true||key.fromMe===true||data.fromMe===true)return {status:200,body:{accepted:true,ignored:true}};
+ if(key.fromMe===true||data.fromMe===true)return {status:200,body:{accepted:true,ignored:true}};
  const sid=String(payload.sessionId||"");
  if(!isManagedSession(sid))return {status:200,body:{accepted:true,ignored:true}};
+ const contentText=typeof data.content==="string"?data.content:typeof data.content?.text==="string"?data.content.text:"";
+ const interactiveId=String(data.selectedButtonId||data.buttonId||data.content?.selectedButtonId||data.content?.buttonId||data.content?.selectedRowId||data.content?.id||"");
+ if(data.isGroup===true||String(key.remoteJid||'').endsWith('@g.us')){
+  if(!/^[\w-]{5,150}$/.test(String(key.id||data.id||'')))return {status:200,body:{accepted:true,ignored:true}};
+  const decision=routeOwnerCall({jid:String(key.remoteJid||''),sessionId:sid,participant:String(key.participant||data.participant||data.sender||''),providerId:sid+':'+String(key.id||data.id||''),text:contentText,interactiveId});
+  return {status:200,body:{accepted:true,ownerMeetingDecision:decision.handled&&decision.ok===true,ignored:!decision.handled}};
+ }
  const jid=String(key.remoteJid||data.from||"");
  if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid))return {status:200,body:{accepted:true,ignored:true}};
- // Only the confirmed Prospector outbound list is eligible for this customer inbox.
- if(!prospectorChatEligible({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
+ // Owner control messages must be recognized BEFORE the ordinary customer filter.
  const providerId=String(key.id||data.id||"");
  if(!/^[\w\-]{5,150}$/.test(providerId))return {status:200,body:{accepted:true,ignored:true}};
  const unique=sid+":"+providerId;
+ const ownerDecision=routeOwnerCall({jid,sessionId:sid,providerId:unique,text:contentText,interactiveId});
+ if(ownerDecision.handled)return {status:200,body:{accepted:true,ownerMeetingDecision:ownerDecision.ok===true}};
  if(one("SELECT id FROM waakg_inbox WHERE provider_id=?",unique))return {status:200,body:{accepted:true,duplicate:true}};
  if(!prospectorChatEligible({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
  const mediaType=String(data.type||'').toUpperCase();
@@ -155,6 +164,12 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
  // The owner has already been routed above, including the sandbox exception.
  if(firstInbound&&state!=='AUTO_REPLY'&&configuredClosing()?.mode!=='complete')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
+ const call=identity.role==='PROSPECT_APPROACHED'&&state==='REVIEW'?
+  routeCustomerCall({leadId:lead.id,sessionId:sid,providerId:unique,body:content}):{handled:false};
+ if(call.handled){
+  audit('CALL_CUSTOMER_REPLY_ROUTED',lead.id,{state:call.state||'HANDLED'});
+  return {status:200,body:{accepted:true,processed:true,callScheduling:true}};
+ }
  const introRoute=identity.role==='PROSPECT_APPROACHED'?
   routeIntroductionReply({leadId:lead.id,providerId:unique,body:content,inboxState:state,receivedAt:at}):{managed:false,queueAi:true};
  if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid,sessionId:sid});
