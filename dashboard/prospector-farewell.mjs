@@ -4,7 +4,7 @@ import {db,one,run,now,addMessage,audit} from './db.mjs';
 import {waControlStatus,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 import {finishConversation} from './prospect-terminal-conversation.mjs';
-export const PROSPECTOR_FAREWELL='Sem problemas, muito obrigado pela atenção! Se precisar, é só chamar.';
+export const PROSPECTOR_FAREWELL='Beleza, muito obrigado pela atenção! Qualquer coisa, é só chamar.';
 db.exec("CREATE TABLE IF NOT EXISTS prospector_farewell_outbox(lead_id TEXT PRIMARY KEY REFERENCES leads(id),session_id TEXT NOT NULL,jid TEXT NOT NULL,status TEXT NOT NULL,attempted_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 run("UPDATE prospector_farewell_outbox SET status='UNKNOWN',updated_at=? WHERE status='SENDING'",now());
 export function queueProspectorFarewell({leadId,sessionId,jid}={}){
