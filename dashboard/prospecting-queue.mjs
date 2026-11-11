@@ -212,6 +212,7 @@ export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
 
 let locked=false;
 export async function tickApproachQueue(deps={}){
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {status:'PAUSED_EMERGENCY'};
  if(locked)return {status:'BUSY'};
  const {currentTime=()=>Date.now(),getWaStatus=waControlStatus,getSession=selectedWaSession,send=waRequest}=deps;
  locked=true;
