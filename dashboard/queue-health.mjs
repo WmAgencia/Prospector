@@ -53,6 +53,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  else if(!senderReady)reason='SESSION_COOLDOWN';
  else if(autonomous){
   if(!insideApproachWindow(at))reason='OUTSIDE_WINDOW';
+  else if(approachQueueStatus().ownerRecordingReady===false)reason='OWNER_RECORDING_REQUIRED';
   else if(invitationQueue.ready===0)reason=invitationQueue.awaitingConsent>0?'AWAITING_CONSENT':'NO_ELIGIBLE_LEADS';
  }
  else if(!getSetting('auto_initial',false))reason='AUTOMATION_DISABLED';

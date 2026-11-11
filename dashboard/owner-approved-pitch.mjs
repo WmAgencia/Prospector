@@ -41,16 +41,28 @@ export function registerOwnerRecording(raw){
  const digest=sha(raw);
  // Byte-level identity of the original is retained, and audio content is only
  // transcoded to native WhatsApp Opus. No speech synthesis is performed.
- const result=spawnSync('ffmpeg',[
-  '-nostdin','-hide_banner','-loglevel','error','-i','pipe:0','-vn','-map','0:a:0',
-  '-ac','1','-ar','48000','-c:a','libopus','-application','voip','-b:a','32k',
-  '-map_metadata','-1','-f','ogg','pipe:1'
- ],{input:raw,maxBuffer:12*1024*1024,timeout:60000});
- if(result.error||result.status!==0||!Buffer.isBuffer(result.stdout)||
-  result.stdout.length<1024||result.stdout.length>9*1024*1024||
-  result.stdout.toString('ascii',0,4)!=='OggS')
-  throw Error('Arquivo incompatível: envie o áudio original em OGG, MP3, M4A ou WAV');
- const fileBytes=result.stdout;
+ // When the user provides a genuine OGG/Opus WhatsApp voice note, keep
+ // the exact original bytes. Re-encoding would unnecessarily alter the audio
+ // and make source/transport file hashes differ.
+ const verified=spawnSync('ffprobe',[
+  '-v','error','-select_streams','a:0','-show_entries',
+  'stream=codec_name','-of','default=noprint_wrappers=1:nokey=1','pipe:0'
+ ],{input:raw,maxBuffer:128*1024,timeout:15000});
+ const alreadyNative=raw.toString('ascii',0,4)==='OggS'&&
+  verified.status===0&&verified.stdout.toString('utf8').trim()==='opus';
+ let fileBytes=raw;
+ if(!alreadyNative){
+  const result=spawnSync('ffmpeg',[
+   '-nostdin','-hide_banner','-loglevel','error','-i','pipe:0','-vn','-map','0:a:0',
+   '-ac','1','-ar','48000','-c:a','libopus','-application','voip','-b:a','32k',
+   '-map_metadata','-1','-f','ogg','pipe:1'
+  ],{input:raw,maxBuffer:12*1024*1024,timeout:60000});
+  if(result.error||result.status!==0||!Buffer.isBuffer(result.stdout))
+   throw Error('Arquivo incompatível: envie o áudio original em OGG, MP3, M4A ou WAV');
+  fileBytes=result.stdout;
+ }
+ if(fileBytes.length<1024||fileBytes.length>9*1024*1024||fileBytes.toString('ascii',0,4)!=='OggS')
+  throw Error('Áudio não é compatível com OGG/Opus');
  const dir=root();fs.mkdirSync(dir,{recursive:true,mode:0o700});
  const filename=path.join(dir,digest+'.ogg'),temp=filename+'.'+process.pid+'.tmp';
  try{

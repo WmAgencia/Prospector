@@ -47,6 +47,19 @@ test('real uploaded owner audio transcodes to OGG Opus without synthesizing a vo
  assert.equal(OWNER_PREVIEW_DELAY_MS,10000);
  assert.equal(OWNER_PREVIEW_FOLLOWUP,'Se você quiser, posso te enviar aqui uma prévia de como ficaria o site de vocês, pode ser?');
 });
+test('pre-recorded WhatsApp OGG/Opus retains exact original bytes (no re-encoding)',()=>{
+ const native=spawnSync('ffmpeg',['-hide_banner','-loglevel','error',
+  '-f','lavfi','-i','sine=frequency=510:duration=1.5',
+  '-ar','48000','-ac','1','-c:a','libopus','-b:a','32k','-f','ogg','pipe:1'],
+  {maxBuffer:5*1024*1024});
+ assert.equal(native.status,0);
+ const before=native.stdout;
+ const meta=registerOwnerRecording(before);
+ assert.equal(meta.ready,true);
+ const after=loadApprovedOwnerRecording().bytes;
+ assert.deepEqual(after,before,'already-native OGG/Opus must be byte-identical');
+});
+
 test('one exact owner voice then text after 10 s and no other voice',async()=>{
  const x=makeContact('6102');
  const firstReplyAt=new Date(Date.now()-60000).toISOString();

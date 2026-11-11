@@ -17,6 +17,14 @@ export function classifyOwnerProposalIntent(value=''){
   return OWNER_PROPOSAL_INTENT.DECLINE;
  // Short affirmatives remain affirmative even when conversational ("Beleza,
  // pode falar", "Sim, manda", "Pode prosseguir"). Negatives above win.
+ // A short affirmative, contextual question or thumbs-up after Wesley's
+ // written offer is approval to HEAR the proposal. These phrases never authorize
+ // a first unsolicited message; the introduction state gates this classifier.
+ if(/^(?:👍|👍🏻|👍🏼|👍🏽|👍🏾|👍🏿|✅|👌|🙌)(?:[\s.!?]*|[\s.!?]*👍)$/.test(msg))return OWNER_PROPOSAL_INTENT.ACCEPT;
+ if(/^(?:ta|tá|bem|entendi|entendido|ok|okay|beleza|blz|tranquilo|perfeito|certo|pode|manda|fala|siga|continue|prossegue|prossiga)[\s,.:;!]*?(?:pode |pode me |me )?(?:falar|mandar|enviar|explicar|contar|continuar|prosseguir|seguir|apresentar|mostrar|passar)(?:[\s.!?]|$)/.test(msg))
+  return OWNER_PROPOSAL_INTENT.ACCEPT;
+ if(/^(?:do que se trata|sobre o que e|sobre o que seria|o que voce quer propor|e qual a proposta|qual proposta|que proposta|proposta de que|o que seria a proposta)(?:[?.!\s]|$)/.test(msg))
+  return OWNER_PROPOSAL_INTENT.ACCEPT;
  if(msg.length<=160&&/^(?:sim|ss|s|ok|okay|blz|beleza|claro|certo|perfeito|pode sim|pode ser|pode falar|pode mandar|pode prosseguir|pode continuar|prossegue|prossiga|manda|me conta|vamos la|tranquilo|combinado|show|pois nao|ta bom|ta certo|tudo certo|to ouvindo|estou ouvindo|fico no aguardo)(?:[\s,.!?]|$)/.test(msg))
   return OWNER_PROPOSAL_INTENT.ACCEPT;
  const simple=/^(?:sim|ss|s|ok|okay|blz|beleza|claro|certo|perfeito|pode|pode sim|pois nao|com certeza|ta bom|ta|tudo bem|tudo certo|tranquilo|combinado|show|bora|isso|prossegue|prossiga|manda|manda ai|enviar|pode mandar|pode enviar|fale|falar|pode falar|pode prosseguir|pode continuar|continua|continue|pode explicar|me fala|me conta|vamos la|vamos nessa|estou ouvindo|to ouvindo|sou todo ouvidos|pode apresentar|fico no aguardo|no aguardo|manda ver|pode ser|ta certo)(?:[\s!.?,]+(?:pode (?:falar|mandar|prosseguir|enviar|seguir)|manda (?:ai|ver)|sim|claro|ok|blz|por favor|pfv|a proposta|mais detalhes|fique a vontade|me conta|pode explicar|sem problema|beleza))*[.!?\s]*$/;

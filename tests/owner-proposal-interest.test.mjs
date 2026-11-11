@@ -8,6 +8,8 @@ test('positive human responses after the introduction select the owner recording
  'Prossegue', 'Pode explicar', 'Pode mandar', 'Sim, manda',
  'claro', 'pode ser', 'OK', 'blz', 'Manda aí', 'Pode continuar',
  'O que seria sobre a proposta?', 'Que tipo de proposta?', 'Como funciona a proposta?',
+ '👍', '✅', '👌', 'Do que se trata?', 'Qual proposta?', 'Proposta de quê?',
+ 'Tá, pode mandar', 'Entendi, pode falar', 'Beleza, manda', 'Pode passar', 'Fala, pode continuar',
  'Tenho interesse', 'Quero ouvir', 'Me conta mais sobre a oferta',
  'Qual o valor?', 'Gostei da ideia', 'Tô ouvindo', 'Estou ouvindo'
  ];

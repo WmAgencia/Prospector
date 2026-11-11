@@ -13,6 +13,7 @@ import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting
 import {insideApproachWindow,FIRST_APPROACH_WINDOW_LABEL} from './outreach-window.mjs';
 import {isExcludedTestContact} from './test-contact-exclusion.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
+import {approvedOwnerRecordingStatus} from './owner-approved-pitch.mjs';
 import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
 import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
 
@@ -98,7 +99,7 @@ export function approachQueueStatus(){
  const waiting=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='QUEUED'")?.n||0;
  const unknown=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='UNKNOWN'")?.n||0;
  const sent=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE status='SENT'")?.n||0;
- return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:FIRST_APPROACH_WINDOW_LABEL,waiting,sent,unknown,
+ return {active:!!b,batchId:b?.id||null,origin:b?.origin||null,automaticEnabled:getSetting('autonomous_outreach_enabled',false)===true,startDate:process.env.PROSPECTOR_APPROACH_START_DATE||null,window:FIRST_APPROACH_WINDOW_LABEL,waiting,sent,unknown,ownerRecordingReady:!isConsecomOwner()||approvedOwnerRecordingStatus().ready,
   intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE,senderRotation:{mode:'round_robin',sessions:managedSessions().length,lastSession:rotationCursor()},nextEarliestAt:b&&waiting?new Date(Math.max(Date.now(),approachDueAt(clock))).toISOString():null,
   status:b?.status||'IDLE',dailyBudget:dailyApproachBudget(),availableCredits:availableApproachCredits(),repliesIndependent:true,requiresDocumentedOptIn:requiresDocumentedOptIn(),requiresOperatorApproval:false};
 }
@@ -224,6 +225,11 @@ export async function tickApproachQueue(deps={}){
   const expired=closeStaleBatch(new Date(time));
   if(expired)return expired;
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
+  // Never start a Consecom outreach whose next scripted step requires an
+  // approved voice asset that the application cannot actually load.
+  if(isConsecomOwner()&&!approvedOwnerRecordingStatus().ready)
+   return {status:'OWNER_RECORDING_REQUIRED',noMessagesSent:true};
+
   if(dailyApproachBudget(new Date(time)).remaining===0)return {status:'DAILY_LIMIT',limit:dailyApproachBudget(new Date(time)).limit};
   const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);

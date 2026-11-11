@@ -288,6 +288,7 @@ console.info('[approval ready]',JSON.stringify(approvalReady));
 console.info('[daily 80 limit]',JSON.stringify(apply80DailyLimit()));
 console.info('[daily 80 spread]',JSON.stringify(applyOwnerDailySpread()));
 console.info('[proposal voice asset]',JSON.stringify(portfolioPitchAudioHealth()));
+console.info('[approved owner voice]',JSON.stringify(approvedOwnerRecordingStatus()));
 // Read-only future start check. No batch is created and no WhatsApp message is sent.
 const nextStartAt=new Date('2026-11-10T11:00:00.000Z');
 const beforeNextStart=new Date('2026-11-10T10:59:59.000Z');

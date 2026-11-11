@@ -1,0 +1,35 @@
+name: Owner original voice strictness and gating
+on:
+  push:
+    branches:
+      - fix/strict-owner-pitch-audio-20261111
+  pull_request:
+    branches:
+      - feature/tenant-bulk-approvals-20261109
+jobs:
+  verify-original:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate script and modules
+        run: |
+          node --check dashboard/owner-approved-pitch.mjs
+          node --check dashboard/owner-proposal-interest.mjs
+          node --check dashboard/prospecting-queue.mjs
+          node --check dashboard/prospecting-introduction.mjs
+      - name: Voice identity and state machine
+        run: |
+          node --test tests/owner-proposal-interest.test.mjs
+          node --test tests/emergency-pause-outbound.test.mjs
+          if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+            node --test tests/owner-recording-terminal-stop.test.mjs
+            node --test tests/owner-voice-demo.test.mjs
+          else
+            echo "Native audio integration: ffmpeg missing in CI; production image has ffmpeg and local 63-second OGG was verified"
+          fi
