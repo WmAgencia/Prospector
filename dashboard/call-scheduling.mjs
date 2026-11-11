@@ -45,7 +45,7 @@ const clientConfirm=iso=>'Perfeito, marcado para hoje às '+hhmm(iso)+'! Até l�
 const requestAlternative='Sem problemas! Qual horário fica mais fácil pra você hoje?';
 
 export function parseSuggestedTime(text,at=Date.now()){
- if(/\b(?:amanh[aã]|outro dia|semana que vem)\b/i.test(text))return null;
+ if(/(?:amanh[aã]|outro dia|semana que vem)/i.test(text))return null;
  const found=String(text||'').match(/\b(1[0-7]|0?[1-9])(?:(?:h|:)\s*([0-5]\d)|h|\s*horas?)?(?=$|[^\d:])/i);
  if(!found)return null;
  let h=Number(found[1]),m=found[2]?Number(found[2]):0;
@@ -86,7 +86,7 @@ export function routeCustomerCall({leadId,sessionId,providerId,body}={}){
  if(r.state==='WAIT_CLIENT_CONFIRM'){
   // "Pode ser às 16h?" is a counterproposal, NOT an acceptance of 15h.
   const suggested=parseSuggestedTime(text);
-  if(/\b(?:amanh[aã]|outro dia|semana que vem)\b/i.test(text)){
+  if(/(?:amanh[aã]|outro dia|semana que vem)/i.test(text)){
    run("UPDATE call_scheduling SET state='REVIEW',notice_state='PENDING',updated_at=? WHERE id=?",now(),r.id);
    return {handled:true,state:'REVIEW'};
   }
