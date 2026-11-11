@@ -1,6 +1,6 @@
 // Strict Consecom owner-only scripted sales rules. The actual provider sends
 // are controlled by persisted state transitions, NEVER by freeform AI output.
-export const OWNER_CAMPAIGN_RULES_VERSION="consecom-pinned-wesley-voice-20261111-v2";
+export const OWNER_CAMPAIGN_RULES_VERSION="consecom-pinned-wesley-voice-20261111-v3";
 export const OWNER_CAMPAIGN_RULES=`## Regras obrigatórias da proposta Consecom — ${OWNER_CAMPAIGN_RULES_VERSION}
 
 **Somente conta Consecom.** Nunca aplicar a clientes de outros espaços.
@@ -18,6 +18,14 @@ export function mergeConsecomOwnerRules(previous){
  let current=String(previous||'').trim();
  if(!current)return null;
  if(current.includes(OWNER_CAMPAIGN_RULES_VERSION))return current;
+ // Retire a política v2 antes de adicionar a v3: duas versões com preços
+ // conflitantes no mesmo treinamento fariam a IA ignorar a regra mais recente.
+ const previousHeader='## Regras obrigatórias da proposta Consecom — consecom-pinned-wesley-voice-20261111-v2';
+ const oldIndex=current.indexOf(previousHeader);
+ if(oldIndex>=0){
+  const end=current.indexOf('\n\n## ',oldIndex+previousHeader.length);
+  current=(current.slice(0,oldIndex)+(end>=0?current.slice(end+2):'')).trim();
+ }
  const obsolete='## Regras da campanha Consecom: apresentação de site em áudio R$ 350 (consecom-audio-first-2026-11-10-v1)';
  const start=current.indexOf(obsolete);
  if(start>=0){
