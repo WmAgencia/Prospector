@@ -73,6 +73,7 @@ import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions,recoverUnansweredPitchRequests,recoverDisabledPitchQueue} from './prospecting-introduction.mjs';
+import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {reconcileApproachedReplies} from './prospect-reply-reconciliation.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {approvedOwnerRecordingStatus,registerOwnerRecording,loadApprovedOwnerRecording,deactivateOwnerRecording,bootstrapApprovedOwnerAudioFromEnv} from './owner-approved-pitch.mjs';
@@ -1002,6 +1003,13 @@ const prospectIntroductionTimer=setInterval(()=>tickIntroductions().then(result=
  if(result.state==='VOICE_SENT')console.info('[prospect introduction] voice gateway accepted',JSON.stringify({recipientSuffix:result.recipientSuffix,verifiedOnPhone:false}));
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160))),1000);
+const prospectFarewellTimer=setInterval(()=>{
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return;
+ tickProspectorFarewells().then(result=>{
+  if(['SENT','UNKNOWN','EXPIRED','CANCELLED'].includes(result.state))notify();
+  if(result.state==='UNKNOWN')console.warn('[prospect farewell] delivery uncertain; no automatic retry');
+ }).catch(e=>console.warn('[prospect farewell]',String(e?.message||e).slice(0,140)));
+},1800);
 // No synthesized Francisca sales voice is permitted. Migrate previously
 // stalled voice-only jobs to explicit human review before scanning text jobs.
 try{
