@@ -14,10 +14,12 @@ export const OWNER_PREVIEW_DELAY_MS=10_000;
 const ownerOnly=()=>!process.env.PROSPECTOR_TENANT_ID;
 const root=()=>path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','owner-approved-pitch');
 const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
+const expectedSourceHash=()=>process.env.NODE_ENV==='test'&&/^[a-f0-9]{64}$/.test(process.env.PROSPECTOR_TEST_APPROVED_RECORDING_SHA256||'')
+ ?process.env.PROSPECTOR_TEST_APPROVED_RECORDING_SHA256:APPROVED_WESLEY_SOURCE_SHA256;
 export function approvedOwnerRecordingStatus(){
  const meta=getSetting('owner_approved_pitch_recording',null);
  if(!ownerOnly())return {enabled:false,ready:false,reason:'OWNER_ACCOUNT_ONLY'};
- if(!meta?.sha256||meta.sha256!==APPROVED_WESLEY_SOURCE_SHA256||meta.active!==true)
+ if(!meta?.sha256||meta.sha256!==expectedSourceHash()||meta.active!==true)
   return {enabled:false,ready:false,reason:'AWAITING_OWNER_AUDIO_FILE'};
  const file=path.join(root(),meta.sha256+'.ogg');
  try{
@@ -37,14 +39,14 @@ export function loadApprovedOwnerRecording(){
  return {bytes,sourceSha256:state.sourceSha256,outputSha256:state.outputSha256,
   mimetype:'audio/ogg; codecs=opus',type:'voice',source:'OWNER_APPROVED_RECORDING'};
 }
-export function registerOwnerRecording(raw,{testExpectedHash}={}){
+export function registerOwnerRecording(raw){
  if(!ownerOnly())throw Error('OWNER_ACCOUNT_ONLY');
  if(!Buffer.isBuffer(raw)||raw.length<6000||raw.length>12*1024*1024)
   throw Error('Envie o arquivo de áudio original com até 12 MB');
  const digest=sha(raw);
  // In production this can NEVER be overridden by requests, settings or AI.
  // Test-only hash injection permits CI to use synthetic, non-user audio.
- const expected=process.env.NODE_ENV==='test'&&testExpectedHash?testExpectedHash:APPROVED_WESLEY_SOURCE_SHA256;
+ const expected=expectedSourceHash();
  if(digest!==expected)throw Error('Este arquivo não corresponde ao áudio original de 1min03 aprovado pelo Wesley');
  // Byte-level identity of the original is retained, and audio content is only
  // transcoded to native WhatsApp Opus. No speech synthesis is performed.
