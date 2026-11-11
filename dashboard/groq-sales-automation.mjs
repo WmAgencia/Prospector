@@ -94,11 +94,15 @@ export async function handleSalesTurn(providerId,deps={}){
  const salesFollowup=approvedProspectFollowup(identity,r.jid);
  const portfolioAllowed=(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&salesFollowup&&operatorOffer(r.lead_id)==='portfolio';
  const intro=introductionStatus(r.lead_id);
- const audioOffer350=portfolioAudioSentFor(intro);
+ // A completed owner-approved ORIGINAL voice note quotes R$ 350, regardless
+ // of the disabled old pitch-audio flag. Treat that real recorded offer as the
+ // campaign's price anchor; NEVER respond with the separate R$ 550 offer.
+ const originalOwnerAudio350=pendingPitch?.stage==='DONE';
+ const audioOffer350=originalOwnerAudio350||portfolioAudioSentFor(intro);
  // A Consecom introduction is the campaign ID, independent of whether an
  // older batch selection remains in 'SENT' after its queue progresses.
  const campaign350=(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&
-  !!intro&&portfolioPitchAudioEnabled()&&identity.role==='PROSPECT_APPROACHED';
+  !!intro&&(originalOwnerAudio350||portfolioPitchAudioEnabled())&&identity.role==='PROSPECT_APPROACHED';
  if(intro&&intro.stage!=='CONVERSING'&&!conversationAuthorized(r.lead_id))return finish('SKIPPED','INTRO_NOT_COMPLETE');
  if(campaign350&&!audioOffer350)return finish('REVIEW','CAMPAIGN_AUDIO_FIRST_REQUIRED');
  if(!prospectorChatEligible({jid:r.jid,sessionId:r.session_id}))return finish('SKIPPED','NOT_PROSPECTOR_APPROACHED');
@@ -160,7 +164,7 @@ export async function handleSalesTurn(providerId,deps={}){
  }
  const audioPriceQuestion=campaign350&&/(?:quanto|pre[cç]o|valor|custa|r\$ ?350)/i.test(r.body)&&
   !/(?:parcel|pix|cart[aã]o|entrada|pagamento)/i.test(r.body);
- const fixedOffer=portfolioAllowed&&!campaign350&&!buyerCommitment&&(isBaseOfferQuestion(r.body)||isPortfolioFAQ(r.body));
+ const fixedOffer=portfolioAllowed&&!campaign350&&!audioOffer350&&!buyerCommitment&&(isBaseOfferQuestion(r.body)||isPortfolioFAQ(r.body));
  const financial=priceQuestion(r.body)&&!fixedOffer&&!audioPriceQuestion&&!buyerCommitment&&!['EXISTING_CLIENT','OWNER'].includes(identity.role);
  const approval=financial?(deps.requestPriceApproval||requestPriceApproval)({leadId:r.lead_id,providerId,question:r.body,sessionId:r.session_id}):null;
  if(financial&&!approval?.ok)return finish('REVIEW','PRICE_APPROVAL_UNAVAILABLE');
