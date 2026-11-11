@@ -88,6 +88,7 @@ import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
 import {flushPriceApprovals} from './owner-price-approvals.mjs';
+import {flushCallScheduling} from './call-scheduling.mjs';
 
 // Explicitly authorized one-shot production discovery check for Sorocaba mechanics.
 // Writes only sourced business leads, with contact_permission=false; no messages.
@@ -966,6 +967,9 @@ const customerAiTimer=setInterval(()=>{
  try{scheduleReport();}catch(e){console.warn('[daily sales report]',String(e?.message||e).slice(0,70));}
  tickSalesAgent().then(async()=>{const prices=await flushPriceApprovals();return Number(prices.sent||0)+await flushInterestAlerts()+await flushPersonalNotices();}).then(sent=>{if(sent)notify();}).catch(e=>console.warn('[customer ai]',String(e?.message||e).slice(0,130)));
 },6000);
+const callSchedulingTimer=setInterval(()=>flushCallScheduling().then(result=>{
+ if(result.sent)notify();
+}).catch(e=>console.warn('[call scheduling]',String(e?.message||e).slice(0,140))),6000);
 const autonomousQueueTimer=setInterval(()=>{
  try{
   // Cold first approach: monta a fila das 07:00 à primeira abordagem das 08:00.
