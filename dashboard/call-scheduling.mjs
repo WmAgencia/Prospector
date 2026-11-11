@@ -76,7 +76,12 @@ export function routeCustomerCall({leadId,sessionId,providerId,body}={}){
   const last=one("SELECT m.provider_id FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' ORDER BY m.rowid DESC LIMIT 1",leadId);
   if(last?.provider_id!=='owner-preview:'+leadId)return {handled:false};
   const slots=availableCallSlots();
-  if(!slots.length){audit('CALL_NO_SLOTS_TODAY',leadId,{});return {handled:false};}
+  if(!slots.length){
+   const at=now(),flowId=id();
+   run("INSERT INTO call_scheduling(id,lead_id,session_id,phone,state,slots_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",flowId,leadId,sessionId,lead.phone,'REVIEW','[]',at,at);
+   audit('CALL_NO_SLOTS_TODAY',leadId,{handoffToOwner:true});
+   return {handled:true,state:'REVIEW'};
+  }
   const at=now(),flowId=id();
   run("INSERT INTO call_scheduling(id,lead_id,session_id,phone,state,slots_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",flowId,leadId,sessionId,lead.phone,'WAIT_OWNER_SLOT',JSON.stringify(slots),at,at);
   audit('CALL_OWNER_SLOT_REQUESTED',leadId,{flowId,slots:slots.length});
@@ -173,7 +178,7 @@ function noticeText(r,number){
  if(r.state==='WAIT_OWNER_SLOT')return header+'\nCliente aceitou conversar. Escolha um horário para HOJE:\n'+slots.map(s=>'• '+hhmm(s)+' — '+link(number,'HORARIO '+r.id+' '+hhmm(s))).join('\n');
  if(r.state==='WAIT_OWNER_ALTERNATIVE')return header+'\nO cliente sugeriu '+hhmm(r.proposed_at)+'. Você aceita?\n✅ '+link(number,'REUNIAO '+r.id+' ACEITAR')+'\n❌ '+link(number,'REUNIAO '+r.id+' RECUSAR');
  if(r.state==='HANDOFF')return header+'\nHorário recusado. A Francisca não responderá mais. Assuma pelo link acima.';
- if(r.state==='REVIEW')return header+'\nHorário não reconhecido, indisponível ou expirado. Assuma a conversa pelo link acima.';
+ if(r.state==='REVIEW')return header+'\nHorário sem disponibilidade ou fora da janela de hoje. Assuma a conversa pelo link acima.';
  if(r.state==='CONFIRMED')return header+'\n✅ Reunião confirmada para hoje às '+hhmm(r.proposed_at)+'.';
  return '';
 }
