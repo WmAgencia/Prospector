@@ -342,7 +342,7 @@ export async function flushInterestAlerts(deps={}){
    const group=String(process.env.PROSPECTOR_GROUP_IMPORT_JID||'').trim();
    if(toGroup){
     // Never send private prospect data to an unverified group or a personal fallback.
-    if(!/^\\d{8,30}@g\\.us$/.test(group))continue;
+    if(!/^\d{8,30}@g\.us$/.test(group))continue;
     if(one('SELECT stage FROM leads WHERE id=?',entry.lead_id)?.stage!=='INTERESTED')continue;
     try{
      const lookup=await (deps.groupInfo||waRequest)('/api/groups/'+encodeURIComponent(session)+'/'+encodeURIComponent(group));
