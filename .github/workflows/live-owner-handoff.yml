@@ -1,0 +1,42 @@
+name: Live owner audio handoff safety
+on:
+  push:
+    branches: [fix/live-audio-interest-handoff-20261111]
+    paths:
+      - 'dashboard/prospecting-introduction.mjs'
+      - 'dashboard/waakg-bridge.mjs'
+      - 'dashboard/groq-sales-automation.mjs'
+      - 'dashboard/prospector-farewell.mjs'
+      - 'dashboard/prospector-sales-signals.mjs'
+      - 'dashboard/prospector-interest-handoff.mjs'
+      - 'dashboard/prospect-terminal-conversation.mjs'
+      - 'dashboard/server.mjs'
+      - 'tests/prospector-live-owner-handoff.test.mjs'
+  pull_request:
+    branches: [feature/tenant-bulk-approvals-20261109]
+  workflow_dispatch:
+jobs:
+  validate-flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check syntax of every modified server module
+        run: |
+          node --check dashboard/prospecting-introduction.mjs
+          node --check dashboard/waakg-bridge.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/prospector-farewell.mjs
+          node --check dashboard/prospector-sales-signals.mjs
+          node --check dashboard/prospector-interest-handoff.mjs
+          node --check dashboard/prospect-terminal-conversation.mjs
+          node --check dashboard/server.mjs
+      - name: Run mock-only owner handoff and refusal regressions
+        run: node --test tests/prospector-live-owner-handoff.test.mjs
+      - name: Check existing owner permission classifier
+        run: node --test tests/owner-proposal-interest.test.mjs

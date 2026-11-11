@@ -22,7 +22,7 @@ import {enqueueOwnerPitch,ownerPitchStatus} from './owner-pitch-sequence.mjs';
 import {classifyOwnerProposalIntent,OWNER_PROPOSAL_INTENT} from './owner-proposal-interest.mjs';
 
 export const INTRO_DELAY_MS=30_000;
-export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Estou entrando em contato porque queria fazer uma proposta pra vocês.';
+export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Estou entrando em contato porque queria fazer uma proposta pra vocês. Posso te mandar o áudio explicando a ideia?';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
 // Network activity may have succeeded before a process restart. Never retry automatically.
@@ -121,6 +121,11 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  }
  // Any clear "pode falar", "beleza", "prossegue" or question about the
  // proposal after Wesley's text means "yes, tell me the proposal".
+ if(intent===OWNER_PROPOSAL_INTENT.TEXT_ONLY&&['SENT','CONVERSING'].includes(item.stage)){
+  // Do not replace the operator-approved recording with an improvised text offer.
+  queueManualPitchReview(leadId,'CUSTOMER_REQUESTED_TEXT_ONLY');
+  return {managed:true,queueAi:false,state:'VOICE_REVIEW'};
+ }
  const positive=intent===OWNER_PROPOSAL_INTENT.ACCEPT||
   (intent!==OWNER_PROPOSAL_INTENT.TEXT_ONLY&&(wantsPortfolioPitchAudio(body)||acceptsPortfolioPresentation(body)));
  const hasText=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='out' AND lower(m.status) IN ('sent','delivered','read')",
