@@ -49,6 +49,13 @@ test('real uploaded owner audio transcodes to OGG Opus without synthesizing a vo
 });
 test('one exact owner voice then text after 10 s and no other voice',async()=>{
  const x=makeContact('6102');
+ const firstReplyAt=new Date(Date.now()-60000).toISOString();
+ const first=routeIntroductionReply({leadId:x.lead.id,providerId:'greet-6102',body:'Beleza, pode falar',receivedAt:firstReplyAt});
+ assert.equal(first.state,'WAITING','first customer reply must get Wesley written introduction');
+ assert.equal(ownerPitchStatus(x.lead.id),null,'no audio before Wesley text');
+ db.addMessage({threadId:x.thread.id,providerId:'intro:'+x.greetingId,direction:'out',
+  body:'Meu nome é Wesley, sou dono da agência Consecom. Estou entrando em contato porque queria fazer uma proposta pra vocês.',status:'sent'});
+ db.run("UPDATE prospecting_introductions SET stage='SENT',sent_at=?,updated_at=? WHERE lead_id=?",db.now(),db.now(),x.lead.id);
  const inboundId='consecom-principal:INBOUND_6102';
  const inboundAt=new Date(Date.now()-20000).toISOString();
  db.addMessage({threadId:x.thread.id,providerId:inboundId,direction:'in',body:'Que tipo de proposta?',status:'received'});
