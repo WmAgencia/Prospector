@@ -1,0 +1,18 @@
+name: WA-AKG native Opus voice
+on:
+  push:
+    branches:
+      - fix/waakg-native-owner-opus-20261110
+  pull_request:
+    branches:
+      - feature/automatic-meu-prospector-whatsapp-group
+jobs:
+  voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate WA-AKG patch
+        run: python3 -m py_compile waakg-voice/patch.py
+      - name: Docker build pinned WA-AKG with corrected Opus voice
+        run: docker build --progress=plain --file waakg-voice/Dockerfile waakg-voice
