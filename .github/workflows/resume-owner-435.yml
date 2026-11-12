@@ -1,0 +1,20 @@
+name: Verify approved 435-second resume
+on:
+  push:
+    branches:
+      - fix/resume-approved-435s-20261112
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/server.mjs
+      - run: node --check dashboard/approval-ready-activation.mjs
+      - run: node --test tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs tests/owner-daily-80.test.mjs tests/tenant-bulk-approvals.test.mjs
