@@ -3,6 +3,8 @@
 // indicator has been held for the audio's full length (at least 71 seconds).
 import {setTimeout as wait} from 'node:timers/promises';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {EXACT_APPROVED_OWNER_AUDIO_SHA256} from './owner-approved-pitch.mjs';
 import {waRequest} from './waakg-control.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
 
@@ -12,8 +14,13 @@ export const OWNER_RECORDING_MIN_MS=71_000;
 export const PRESENCE_REFRESH_MS=7_000;
 const MAX_OWNER_DURATION_MS=5*60_000;
 
-export function ownerRecordingDurationMs(bytes,{probe=spawnSync}={}){
+export function ownerRecordingDurationMs(bytes,{probe=spawnSync,approvedSha=EXACT_APPROVED_OWNER_AUDIO_SHA256}={}){
  if(!Buffer.isBuffer(bytes)||bytes.length<256)throw Error('OWNER_RECORDING_INVALID_AUDIO');
+ // The private exact approved OGG stream has no stable container duration
+ // for ffprobe. Its SHA-256 identity is verified again here. Never bypass
+ // the 71-second recording wait for this original owner-supplied clip.
+ if(createHash('sha256').update(bytes).digest('hex')===approvedSha)
+  return OWNER_RECORDING_MIN_MS;
  const result=probe('ffprobe',['-v','error','-show_entries','format=duration',
   '-of','default=noprint_wrappers=1:nokey=1','pipe:0'],
   {input:bytes,maxBuffer:128*1024,timeout:10000});
