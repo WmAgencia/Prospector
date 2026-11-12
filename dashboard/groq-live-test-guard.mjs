@@ -16,6 +16,10 @@ export function testGreeting(date=new Date()){
 export function reviewGroqReply({inbound='',draft='',allowAveragePrice=false}={}){
  const s=String(draft||'').trim(),n=normalize(s),inText=normalize(inbound);
  if(!s||s.length>650)return {ok:false,code:'LENGTH'};
+ if(/\b(?:como posso (?:te )?ajudar|em que posso ajudar|posso ajudar sua empresa|posso ajudar seu negocio)\b/.test(n))return {ok:false,code:'GENERIC_HELP_DESK'};
+ if(/\b(?:vou|iremos|vamos) (?:te )?(?:mandar|enviar|encaminhar) (?:o |um |essa |a )?(?:audio|gravacao|proposta)\b/.test(n))return {ok:false,code:'UNVERIFIED_AUDIO_PROMISE'};
+ if(/\b(?:ja|acabei de) (?:mandei|enviei|reenviei) (?:o |um |essa )?(?:audio|gravacao)\b/.test(n))return {ok:false,code:'UNVERIFIED_AUDIO_ACTION'};
+ if(/\b(?:ja encaminhei|ja passei|ja avisei) (?:ao |o |para o )?(?:wesley|responsavel)\b/.test(n))return {ok:false,code:'UNVERIFIED_HANDOFF'};
  if(/[\x00-\x08\x0e-\x1f]/.test(s)||/\x60\x60\x60/.test(s))return {ok:false,code:'FORMAT'};
  if(/^\s*(?:pare|parar|stop|remover|nao me contate|nao quero mensagem)/.test(inText))return {ok:false,code:'INBOUND_OPTOUT'};
  if(/https?:\/\/|www\.|\bwa\.me\//i.test(s))return {ok:false,code:'UNVERIFIED_LINK'};
