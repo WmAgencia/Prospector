@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import {Worker} from 'node:worker_threads';
 import {one,all,run,tx,id,now,addLead,stage,getThread,getSetting,setSetting,audit,phone} from './db.mjs';
 import {providerStatus,scoreLead,recordOrigin,discoverProfiles,verifyWebsiteCandidate} from './discovery.mjs';
 import {setSalesCampaign} from './sales-campaign.mjs';
@@ -91,6 +92,21 @@ import {placesStatus,placesSearch} from './google-places-live.mjs';
 import {flushPriceApprovals} from './owner-price-approvals.mjs';
 import {flushCallScheduling} from './call-scheduling.mjs';
 
+// Single authorized 7336 ↔ 2994 production QA. Parent stays paused throughout.
+// Worker gets its own env copy to exercise approved-only message paths without
+// permitting ANY real queue worker to resume or message other leads.
+if(process.env.RUN_WA_PAIR_QA_ONCE==='true'&&
+   process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'&&
+   !process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(()=>{
+  const worker=new Worker(new URL('./whatsapp-pair-qa.mjs',import.meta.url),{
+   env:{...process.env,PROSPECTOR_FORCE_OUTREACH_PAUSE:'false',QA_PARENT_PAUSED:'true'}
+  });
+  worker.on('message',result=>console.info('[wa-pair-qa parent]',JSON.stringify(result)));
+  worker.on('error',error=>console.warn('[wa-pair-qa parent]',String(error?.message||error).slice(0,180)));
+  worker.on('exit',code=>console.info('[wa-pair-qa parent exit]',code));
+ },14000).unref();
+}
 // Explicitly authorized one-shot production discovery check for Sorocaba mechanics.
 // Writes only sourced business leads, with contact_permission=false; no messages.
 if(process.env.RUN_PROSPECTING_LIVE_SMOKE==='true'){

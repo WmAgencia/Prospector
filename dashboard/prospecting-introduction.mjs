@@ -169,7 +169,9 @@ export async function tickIntroductions(deps={}){
   const at=currentTime();
   // Strictly text-only. Disabled or unapproved voice jobs are reviewed by an
   // operator and NEVER selected, so they cannot starve other replies.
-  const item=one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString());
+  const item=deps.onlyLeadId
+   ?one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? AND p.lead_id=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString(),deps.onlyLeadId)
+   :one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString());
   if(!item)return {state:'IDLE'};
   const voiceRequested=item.stage==='VOICE_WAITING';
   const eligible=()=>{
