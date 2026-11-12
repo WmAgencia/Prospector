@@ -40,7 +40,7 @@ export const TRAINING_SCENARIOS=Object.freeze([
 
 const sanitize=s=>String(s||'').replace(/(?:\+?55)?\d{10,13}/g,'[telefone]').replace(/\s+/g,' ').slice(0,680);
 const lowercase=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-function evaluate(s,answer){
+export function evaluateFranciscaLabReply(s,answer){
  const flags=[],str=lowercase(answer);
  if(!answer||answer.length<10)flags.push('EMPTY_OR_TOO_SHORT');
  if(answer.length>650)flags.push('TOO_LONG');
@@ -59,6 +59,8 @@ function evaluate(s,answer){
  if(s.type==='busy'&&/\?/.test(answer))flags.push('PRESSURE_WHEN_BUSY');
  if((s.type==='human'||s.id==='post-audio-interest')&&/vamos fechar|pode pagar|envie o pix/i.test(str))flags.push('DEAL_CLOSED_BY_BOT');
  if((s.type==='audio')&&/ja (?:reenviei|mandei|enviei) (?:o |um )?audio/.test(str))flags.push('AUDIO_SENT_WITHOUT_ACK');
+ if((s.type==='audio')&&/(?:vou|vamos|iremos) (?:te )?(?:enviar|mandar|encaminhar) (?:o |um )?audio/.test(str))flags.push('AUDIO_PROMISE_WITHOUT_SEND');
+ if(/\b(?:ja avisei|ja passei|ja encaminhei) (?:ao |o |pro |para o )?(?:wesley|responsavel)\b/.test(str))flags.push('UNVERIFIED_HANDOFF');
  if((s.type==='price'||s.type==='commercial')&&/\b(?:fechamos por|consigo por|fa[cç]o por|site por|aceito r\$|pode pagar r\$)\b/.test(str))flags.push('UNAPPROVED_DEAL');
  return flags;
 }
@@ -77,7 +79,7 @@ export async function runFranciscaTrainingBattery(){
   const result=await aiDraft({text:s.question,context:s.prior||'',audience:s.audience||'PROSPECT_APPROACHED',
    dialogueState:{hasAssistantReply:Boolean(s.continuation),turnCount:s.continuation?3:0}});
   const answer=result.ok?result.draft:'';
-  const flags=result.ok?evaluate(s,answer):['MODEL_'+(result.code||'UNAVAILABLE')];
+  const flags=result.ok?evaluateFranciscaLabReply(s,answer):['MODEL_'+(result.code||'UNAVAILABLE')];
   const ok=result.ok&&flags.length===0;
   if(ok)passed++;else {failed++;issues.push({id:s.id,flags});}
   if(!result.ok)providerErrors++;else models.add(result.model);
