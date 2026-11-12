@@ -77,3 +77,41 @@ export function applyOwnerDailySpread(){
  return {status:'UPDATED',window:newHours,intervalSeconds:OWNER_APPROACH_INTERVAL_MS/1000,
   maximumFirstApproachesPerDay:80,paused:getSetting('paused',true)};
 }
+
+ 
+// Explicit 12 Nov 2026 owner request: resume ONLY first approaches to
+// previously consented contacts, at one globally persisted 435-second cadence.
+// A marker ensures an operator's later pause remains respected on restarts.
+export const OWNER_RESUME_435_MARKER='owner_resume_435s_20261112_v1';
+export function resumeApprovedOwnerAt435Seconds(){
+ if(!isConsecomOwner())return {status:'OTHER_TENANT_UNCHANGED'};
+ if(process.env.PROSPECTOR_OWNER_RESUME_435_20261112!=='true')return {status:'NOT_REQUESTED'};
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {status:'EMERGENCY_STOP_ACTIVE'};
+ if(process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true'||process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN!=='true')
+  return {status:'OPT_IN_GUARD_NOT_READY'};
+ if(OWNER_APPROACH_INTERVAL_MS!==435000)return {status:'INVALID_CADENCE'};
+ if(getSetting(OWNER_RESUME_435_MARKER,false)===true)
+  return {status:'ALREADY_APPLIED',paused:getSetting('paused',true),autonomous:getSetting('autonomous_outreach_enabled',false)};
+ const previous={
+  paused:getSetting('paused',true),
+  autonomous:getSetting('autonomous_outreach_enabled',false),
+  dailyLimit:getSetting('daily_limit',80),
+  intervalSeconds:getSetting('initial_interval_seconds',null),
+  hours:getSetting('client_outreach_hours',null)
+ };
+ const controls={
+  daily_limit:80,initial_interval_seconds:435,
+  client_outreach_hours:{start:'08:00',end:'17:40'},
+  cold_first_approach_enabled:false,
+  auto_initial:false,automation_enabled:false,
+  autonomous_outreach_enabled:true,paused:false
+ };
+ for(const [key,value] of Object.entries(controls))setSetting(key,value);
+ setSetting(OWNER_RESUME_435_MARKER,true);
+ audit('OWNER_435_APPROVED_OUTREACH_RESUMED',null,{
+  previous,controls,at:new Date().toISOString(),requireDocumentedConsent:true,
+  minimumGlobalGapSeconds:435,sharedDailyLimit:80,doesNotSendDirectly:true
+ });
+ return {status:'RESUMED_APPROVED_ONLY',paused:false,autonomous:true,
+  intervalSeconds:435,dailyLimit:80,window:'08:00–17:40',contactPermissionRequired:true};
+}
