@@ -4,6 +4,8 @@ import {getSetting,setSetting} from "./db.mjs";
 import {randomUUID} from 'node:crypto';
 import {managedSessions,isManagedSession,registerSession,nextConnectedSession,rotationCursor} from './waakg-session-registry.mjs';
 import {sessionOutreachBudget} from './session-outreach-budget.mjs';
+import {isConsecomOwner} from './approach-cadence.mjs';
+import {selectVerifiedOwnerDuo} from './owner-sender-duo.mjs';
 // Same-project traffic should bypass the public edge: it can rate-limit
 // authentication even while the WA-AKG instance is healthy.
 const publicOrigin="https://wa-akg-production-f9f0.up.railway.app";
@@ -210,11 +212,17 @@ export async function waCreateSession(label){
 }
 export async function selectApproachSender(){
  const pool=await waSessionList(),cursor=rotationCursor();
+ if(isConsecomOwner())return selectVerifiedOwnerDuo(pool.items,cursor);
  const sessionId=nextConnectedSession(managedSessions().map(x=>x.session_id),pool.items.filter(x=>x.connected).map(x=>x.session_id),cursor);
- return {connected:!!sessionId,sessionId,cursor,reason:'OFFLINE'};
+ return {connected:!!sessionId,sessionId,cursor,reason:sessionId?'READY':'OFFLINE'};
 }
 export async function waOperationalStatus(){
  if(managedSessions().length<=1){const status=await waControlStatus();return {...status,approachReady:status.connected};}
  const pool=await waSessionList();
- return {ok:pool.items.some(x=>x.ok),connected:pool.connected,approachReady:pool.connected,status:pool.connected?'CONNECTED':'DISCONNECTED',totalSessions:pool.items.length,sessionId:selectedWaSession()};
+ const duo=isConsecomOwner()?selectVerifiedOwnerDuo(pool.items,rotationCursor()):null;
+ return {ok:pool.items.some(x=>x.ok),connected:pool.connected,
+  approachReady:duo?duo.connected:pool.connected,
+  status:pool.connected?'CONNECTED':'DISCONNECTED',
+  senderHealth:duo?{ready:duo.connected,reason:duo.reason,numberSuffix:duo.numberSuffix||null}:undefined,
+  totalSessions:pool.items.length,sessionId:selectedWaSession()};
 }
