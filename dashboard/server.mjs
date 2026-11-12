@@ -73,6 +73,7 @@ import {readOwnerOutreachIncident} from './owner-outreach-incident.mjs';
 import {inspectOwner7896} from './owner-7896-incident.mjs';
 import {inspectLuciana4047} from './owner-4047-incident.mjs';
 import {recoverLuciana4047} from './owner-4047-safe-recovery.mjs';
+import {resumeConsented4047Audio} from './owner-4047-audio-rescue.mjs';
 import {recoverOwner7896DurationFailure} from './owner-7896-safe-recovery.mjs';
 import {isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
@@ -1027,6 +1028,17 @@ if(process.env.RUN_OWNER_4047_RECOVER_ONCE==='true'&&!process.env.PROSPECTOR_TEN
    lastInbound:a?.inbox?.find(m=>m.state==='REVIEW')?.received_at||null
   }));
  }).catch(e=>console.warn('[owner 4047 recovery verification failed]',String(e?.message||e).slice(0,110))),38000).unref();
+}
+if(process.env.RUN_OWNER_4047_AUDIO_RESCUE_ONCE==='true'&&!process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(()=>resumeConsented4047Audio().then(x=>console.info('[owner 4047 consented audio rescue]',JSON.stringify(x)))
+  .catch(e=>console.warn('[owner 4047 consented audio rescue failed]',String(e?.message||e).slice(0,120))),14000).unref();
+ // Read-only confirmation only; never retrigger a voice or text send.
+ setTimeout(()=>inspectLuciana4047().then(x=>{
+  const p=x.local?.[0]?.pitch;
+  console.info('[owner 4047 audio rescue check]',JSON.stringify({suffix:'4047',matches:x.matchCount,
+   pitchStage:p?.stage||null,audioSentAt:p?.audio_sent_at||null,followupSentAt:p?.followup_sent_at||null,
+   error:p?.last_error||null,providerLast:x.remote?.find(s=>s.session.endsWith('ad45a'))?.last?.at(-1)?.type||null}));
+ }).catch(e=>console.warn('[owner 4047 audio rescue check failed]',String(e?.message||e).slice(0,110))),134000).unref();
 }
 let testInstructionError=null;
 let lastQueueReason=null,lastQueueLogAt=0;
