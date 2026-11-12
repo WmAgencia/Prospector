@@ -113,7 +113,7 @@ export function createTenantGatewayBroker({registry,root,masterSecret,requestGat
    if(policy.kind==='list'){
     if(!loaded)syncOwners();
     const result=await requestGateway('/api/sessions',{method:'GET',brokerTenant:true});
-    return respond(res,200,{...result,data:(result.data||[]).filter(x=>isOwned(client,x.sessionId))});
+    return respond(res,200,{status:result.status!==false,data:(Array.isArray(result.data)?result.data:[]).filter(x=>isOwned(client,x.sessionId))});
    }
    // Binary audio is never sent through the JSON transport. File paths must
    // contain the exact tenant-owned session prefix, and payloads are bounded.
