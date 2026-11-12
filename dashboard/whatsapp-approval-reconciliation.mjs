@@ -18,7 +18,7 @@ export function isPermissionRequest(text){
  if(s.length<12||s.length>1800)return false;
  const proposal=/\b(?:proposta|oferta|orcamento|site|servico|abordagem|contato comercial|apresentacao|apresentar (?:a |uma )?ideia|mensagem comercial)\b/.test(s);
  const ask=/\b(?:posso|podemos|poderia|autoriza|autorizam|permite|permitem|tudo bem se|voce aceita|voces aceitam|gostaria de saber se|podemos entrar em contato|tem interesse em receber)\b/.test(s);
- const send=/\b(?:enviar|mandar|receber|apresentar|fazer|compartilhar|explicar|contar|mostrar|conversar|contato|abordar|detalhes)\b/.test(s);
+ const send=/\b(?:enviar|envie|enviarmos|mandar|mande|receber|receba|apresentar|apresente|fazer|compartilhar|explicar|contar|mostrar|conversar|contato|abordar|detalhes)\b/.test(s);
  return proposal&&ask&&send&&!/\b(?:nao quero|nao autorizo|remova meu numero)\b/.test(s);
 }
 export function explicitConsentReply(text){
