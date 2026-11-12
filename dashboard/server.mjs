@@ -70,6 +70,7 @@ import {approachQueueStatus,autonomousReadyCount,enqueueApprovedApproaches,enrol
 import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROSPECTING_CONTROL_KEYS} from './tenant-prospecting-controls.mjs';
 import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread,resumeApprovedOwnerAt435Seconds} from './approval-ready-activation.mjs';
 import {readOwnerOutreachIncident} from './owner-outreach-incident.mjs';
+import {inspectOwner7896} from './owner-7896-incident.mjs';
 import {isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
@@ -977,6 +978,9 @@ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'){
 console.info('[owner 435 resume]',JSON.stringify(resumeApprovedOwnerAt435Seconds()));
 if(process.env.RUN_OWNER_OUTREACH_INCIDENT_AUDIT_ONCE==='true'){
  setTimeout(()=>readOwnerOutreachIncident().then(x=>console.info('[owner outbound incident]',JSON.stringify(x))).catch(e=>console.warn('[owner outbound incident failed]',String(e.message).slice(0,140))),10000).unref();
+}
+if(process.env.RUN_OWNER_7896_DIAG_ONCE==='true'&&!process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(()=>inspectOwner7896().then(x=>console.info('[owner 7896 incident]',JSON.stringify(x))).catch(e=>console.warn('[owner 7896 incident failed]',String(e.message).slice(0,110))),10000).unref();
 }
 let testInstructionError=null;
 let lastQueueReason=null,lastQueueLogAt=0;
