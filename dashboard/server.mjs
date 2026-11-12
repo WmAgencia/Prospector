@@ -87,6 +87,7 @@ import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mj
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
 import {runFranciscaTrainingBattery} from './francisca-training-battery-v5.mjs';
+import {runFranciscaRefinementCheck} from './francisca-refinement-check-v6.mjs';
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
@@ -136,6 +137,13 @@ if(process.env.RUN_OSM_DISCOVERY_RECOVERY_ONCE==='true'){
  },5000).unref();
 }
 
+// A small, paced retest after refinements. No WhatsApp transport allowed.
+if(process.env.RUN_FRANCISCA_REFINEMENT_V6_ONCE==='true'&&
+   process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'&&
+   !process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(()=>runFranciscaRefinementCheck().catch(e=>
+  console.warn('[francisca-v6-error]',String(e?.message||e).slice(0,110))),9500).unref();
+}
 // Broad synthetic adversarial / natural-language battery. Do not send messages
 // to WhatsApp or modify prospect records. Runs only with emergency pause ACTIVE.
 if(process.env.RUN_FRANCISCA_TRAINING_V5_ONCE==='true'&&
