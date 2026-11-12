@@ -2,7 +2,7 @@
 // No generic AI may replace the approved audio with an improvised text pitch.
 import {salesEnding} from './sales-policy.mjs';
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
-const negative=s=>Boolean(salesEnding(s))||/\b(?:nao|nunca|jamais)\s+(?:quero|gostei|tenho|podem|pode|manda|envie|envia|preciso|estou|estamos|vou)\b/.test(s);
+const negative=s=>Boolean(salesEnding(s))||/\b(?:nao|nunca|jamais)[\s,!.]+(?:quero|gostei|tenho|podem|pode|manda|envie|envia|preciso|estou|estamos|vou)\b/.test(s)||/^nao[,!.](?:\s|$)/.test(s);
 export function acceptsProposalAudio(text=''){
  const s=norm(text);
  if(!s||s.length>280||negative(s))return false;
