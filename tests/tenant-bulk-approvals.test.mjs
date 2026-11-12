@@ -9,23 +9,23 @@ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-bulk-approvals-'));
 const a=path.join(tmp,'tenant-a'),b=path.join(tmp,'tenant-b');
 const operatorPhone='5515988887336';
 const fixture=String.raw`
-const {addLead,one,run,all,db}=await import('./dashboard/db.mjs');
+const {addLead,one,run,all,db,getSetting}=await import('./dashboard/db.mjs');
 const {approveLeadBatch,listLeadApprovals}=await import('./dashboard/lead-approvals.mjs');
-const {armApprovedOutreach,apply250DailyLimit}=await import('./dashboard/approval-ready-activation.mjs');
+const {armApprovedOutreach,apply80DailyLimit}=await import('./dashboard/approval-ready-activation.mjs');
 const input=JSON.parse(process.argv[1]);
 const data={};
 try{
  if(input.action==='cap'){
-  data.result=apply250DailyLimit();
+  data.result=apply80DailyLimit();
   const {getSetting}=await import('./dashboard/db.mjs');
   data.persisted=getSetting('daily_limit');
   data.radar=(await import('./dashboard/radar.mjs')).budgetConfig().limit;
   data.budget=(await import('./dashboard/daily-approach-limit.mjs')).dailyApproachBudget().limit;
-  data.auditEvents=all("SELECT action,detail FROM audit WHERE action='OWNER_DAILY_LIMIT_250'");
+  data.auditEvents=all("SELECT action,detail FROM audit WHERE action='OWNER_DAILY_LIMIT_80'");
  }
  if(input.action==='arm'){
   data.result=armApprovedOutreach();
-  data.controls=Object.fromEntries(['paused','autonomous_outreach_enabled','discovery_auto_enabled','cold_first_approach_enabled','auto_initial','automation_enabled'].map(k=>[k,(await import('./dashboard/db.mjs')).getSetting(k)]));
+  data.controls=Object.fromEntries(['paused','autonomous_outreach_enabled','discovery_auto_enabled','cold_first_approach_enabled','auto_initial','automation_enabled'].map(k=>[k,getSetting(k)]));
   data.activationAudits=all("SELECT action,detail FROM audit WHERE action='APPROVAL_READY_OUTREACH_ARMED'");
  }
  if(input.action==='setControl')(await import('./dashboard/db.mjs')).setSetting(input.key,input.value);
@@ -172,7 +172,8 @@ test('quick selection approves more than 50 contacts without entering repetitive
  }});
  assert.equal(result.result?.approved,123,JSON.stringify(result));
  const state=run(dir,{action:'inspect'});
- assert.equal(state.list.totals.authorized,123);
+ assert.equal(state.list.totals.authorized,0);
+ assert.equal(state.list.totals.pending,123);
  const approvals=state.audits.filter(x=>x.action==='CONSENT_UPDATED');
  assert.equal(approvals.length,123);
  const batches=state.audits.filter(x=>x.action==='CONSENT_BATCH_APPROVED');
@@ -200,8 +201,8 @@ test('select all covers all pending pages, supports exclusions and does not incl
  }});
  assert.equal(result.result?.approved,96,JSON.stringify(result));
  const state=run(dir,{action:'inspect'});
- assert.equal(state.list.totals.authorized,96);
- assert.equal(state.list.totals.pending,3);
+ assert.equal(state.list.totals.authorized,0);
+ assert.equal(state.list.totals.pending,99);
  assert.equal(state.permissions.find(x=>x.id===excluded).contact_permission,0);
 });
 test('quick approval requires confirmation and skips blocked contacts without rejecting the others',()=>{
@@ -219,7 +220,8 @@ test('quick approval requires confirmation and skips blocked contacts without re
  assert.equal(blocked.result?.skipped,1);
  assert.equal(blocked.result?.skippedReasons?.CONTATO_BLOQUEADO,1);
  const state=run(dir,{action:'inspect'});
- assert.equal(state.list.totals.authorized,1);
+ assert.equal(state.list.totals.authorized,0);
+ assert.equal(state.list.totals.pending,1);
  assert.equal(state.audits.filter(x=>x.action==='CONSENT_UPDATED').length,1);
 });
 test('quick approvals remain isolated to the authenticated workspace database',()=>{
@@ -230,7 +232,8 @@ test('quick approvals remain isolated to the authenticated workspace database',(
   quick:true,confirmedByOperator:true,allPending:true,selectionCutoff:snapshot
  }});
  assert.equal(result.result?.approved,2,JSON.stringify(result));
- assert.equal(run(left,{action:'inspect'}).list.totals.authorized,2);
+ assert.equal(run(left,{action:'inspect'}).list.totals.authorized,0);
+ assert.equal(run(left,{action:'inspect'}).list.totals.pending,2);
  assert.equal(run(right,{action:'inspect'}).list.totals.authorized,0);
 });
 
@@ -265,7 +268,11 @@ test('automatic queue reaches older approved contact behind 130 newer unapproved
  const oldest=run(dir,{action:'seedOldApproved'}).approvedId;
  const arm=run(dir,{action:'arm',primary:true});
  assert.equal(arm.result?.status,'READY_FOR_APPROVED_LEADS');
- const approved=run(dir,{action:'approve',payload:{quick:true,leadIds:[oldest],confirmedByOperator:true}});
+ const attested=run(dir,{action:'approve',payload:{quick:true,leadIds:[oldest],confirmedByOperator:true}});
+ assert.equal(attested.result?.approved,1);
+ const notYet=run(dir,{action:'enroll'});
+ assert.equal(notYet.result?.status,'NO_ELIGIBLE_LEADS',JSON.stringify(notYet));
+ const approved=run(dir,{action:'approve',payload:{confirmedByOperator:true,items:[entry(oldest)]}});
  assert.equal(approved.result?.approved,1);
  const enrolled=run(dir,{action:'enroll'});
  assert.equal(enrolled.result?.status,'QUEUED',JSON.stringify(enrolled));
@@ -280,20 +287,21 @@ test('select all with more than 500 pending contacts works in one transaction',(
   allPending:true,selectionCutoff:snapshot,excludedLeadIds:[]}});
  assert.equal(result.result?.approved,513,JSON.stringify(result));
  assert.equal(result.result?.skipped,0);
- assert.equal(run(dir,{action:'inspect'}).list.totals.authorized,513);
+ assert.equal(run(dir,{action:'inspect'}).list.totals.authorized,0);
+ assert.equal(run(dir,{action:'inspect'}).list.totals.pending,513);
 });
-test('daily 250 persists and is respected by both scheduler budget and dashboard',()=>{
- const dir=path.join(tmp,'daily250');
+test('daily 80 persists and is respected by both scheduler budget and dashboard',()=>{
+ const dir=path.join(tmp,'daily80');
  const first=run(dir,{action:'cap',primary:true});
- assert.equal(first.result?.status,'UPDATED');
- assert.equal(first.persisted,250);
- assert.equal(first.radar,250);
- assert.equal(first.budget,250);
+ assert.equal(first.result?.status,'UPDATED',JSON.stringify(first));
+ assert.equal(first.persisted,80);
+ assert.equal(first.radar,80);
+ assert.equal(first.budget,80);
  assert.equal(first.auditEvents.length,1);
  const again=run(dir,{action:'cap',primary:true});
  assert.equal(again.result?.status,'ALREADY_APPLIED');
  assert.equal(again.auditEvents.length,1);
- const other=run(path.join(tmp,'daily250-other'),{action:'cap'});
+ const other=run(path.join(tmp,'daily80-other'),{action:'cap'});
  assert.equal(other.result?.status,'OTHER_TENANT_UNCHANGED');
 });
 
@@ -306,7 +314,7 @@ test('exclude test contact 7336 from approvals and outbound without deleting his
  const result=run(dir,{action:'approve',payload:{quick:true,allPending:true,selectionCutoff:list.snapshotAt,confirmedByOperator:true}});
  assert.equal(result.result?.approved,1,JSON.stringify(result));
  const view=run(dir,{action:'inspect'});
- assert.equal(view.list.totals.authorized,1);
+ assert.equal(view.list.totals.authorized,0);
  assert.equal(view.permissions.length,2);
  const reject=run(dir,{action:'approve',payload:{quick:true,leadIds:[ids.testId],confirmedByOperator:true}});
  assert.equal(reject.result?.approved,0);
@@ -316,7 +324,9 @@ test('08:00 on Nov 10 makes an eligible queue; fake sender proves dispatch path 
  const dir=path.join(tmp,'nextday-08');
  const ids=run(dir,{action:'testAndLead',simulateSend:true});
  run(dir,{action:'arm',primary:true,simulateSend:true});
- const approved=run(dir,{action:'approve',simulateSend:true,payload:{quick:true,confirmedByOperator:true,leadIds:[ids.realId]}});
+ const attested=run(dir,{action:'approve',simulateSend:true,payload:{quick:true,confirmedByOperator:true,leadIds:[ids.realId]}});
+ assert.equal(attested.result?.approved,1);
+ const approved=run(dir,{action:'approve',simulateSend:true,payload:{confirmedByOperator:true,items:[entry(ids.realId)]}});
  assert.equal(approved.result?.approved,1);
  const r=run(dir,{action:'windowDryRun',simulateSend:true});
  assert.equal(r.beforeWindow,false);
@@ -325,8 +335,8 @@ test('08:00 on Nov 10 makes an eligible queue; fake sender proves dispatch path 
  assert.equal(r.at?.status,'QUEUED',JSON.stringify(r));
  assert.equal(r.queued?.length,1);
  assert.equal(r.queued?.[0]?.phone,'5515991001100');
- assert.equal(r.tick?.status,'SENT',JSON.stringify(r));
- assert.equal(r.fakeSendCount,1);
+ assert.equal(r.tick?.status,'OWNER_RECORDING_REQUIRED',JSON.stringify(r));
+ assert.equal(r.fakeSendCount,0,'must not send without exact approved owner recording');
 });
 test('approval action is in the top toolbar, not a second bottom panel',()=>{
  const page=fs.readFileSync(path.join(process.cwd(),'dashboard/public/simple-app.js'),'utf8');

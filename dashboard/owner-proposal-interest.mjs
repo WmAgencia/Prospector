@@ -12,7 +12,7 @@ export function classifyOwnerProposalIntent(value=''){
  // Hard precedence: NEVER interpret a negative with an embedded positive
  // word as affirmative ("não, obrigado, pode deixar").
  if(/(?:^|\b)(?:obrigado,? mas nao|obrigada,? mas nao|nao[,!. ]+obrigad[oa]|nao quero saber|nao quero receber propostas)(?:\b|[,.!?]|$)/.test(msg))return OWNER_PROPOSAL_INTENT.DECLINE;
- if(/(?:^|\b)(?:nao tenho interesse|sem interesse|nao quero|nao me mande|para de mandar|pare de enviar|me exclua|me remova|nao pode|nao vou|nao[, ]+obrigado|prefiro nao|nao quero ouvir|depois|agora nao|nao e o momento|nao estou interessado|nao me liga|nao quero proposta)(?:\b|[,.!?]|$)/.test(msg))
+ if(/(?:^|\b)(?:nao tenho interesse|sem interesse|nao quero|nao me mande|para de mandar|pare de enviar|me exclua|me remova|nao pode|nao vou|nao[, ]+obrigado|prefiro nao|nao quero ouvir|depois|agora nao|por enquanto nao|nao e o momento|nao estou interessado|nao me liga|nao quero proposta)(?:\b|[,.!?]|$)/.test(msg))
   return OWNER_PROPOSAL_INTENT.DECLINE;
  if(/(?:\b(?:estou ocupado|to ocupado|sem tempo|mais tarde|amanha|outro dia|agora nao|nao agora|me chama depois|pode deixar para depois)\b)/.test(msg))
   return OWNER_PROPOSAL_INTENT.DECLINE;

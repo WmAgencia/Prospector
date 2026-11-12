@@ -4,32 +4,38 @@ import {all,one} from './db.mjs';
 import {invitationEnabled} from './permission-invitation.mjs';
 import {verifiedOwnerPhone,hasExistingClientRelationship} from './whatsapp-roles.mjs';
 import {excludedTestPhoneSql,isExcludedTestContact} from './test-contact-exclusion.mjs';
+import {individualConsentSql,validIndividualConsent} from './verified-consent.mjs';
 const OWNER=verifiedOwnerPhone();
 const OWNER_EXCLUSION=OWNER?" AND l.phone<>'"+OWNER+"'":'';
 const BASE=`l.stage='DISCOVERED'
  AND NOT EXISTS (SELECT 1 FROM initial_contacts ic WHERE ic.lead_id=l.id OR (l.phone IS NOT NULL AND ic.phone=l.phone))
  AND NOT EXISTS (SELECT 1 FROM executions ex WHERE ex.lead_id=l.id)
  AND NOT EXISTS (SELECT 1 FROM contact_relationships cr WHERE cr.phone=l.phone AND cr.kind='EXISTING_CLIENT')${OWNER_EXCLUSION}${excludedTestPhoneSql('l')}`;
-const proof=`EXISTS(SELECT 1 FROM audit a WHERE a.lead_id=l.id AND a.action='CONSENT_UPDATED' AND json_extract(a.detail,'$.permitted')=1 AND COALESCE(json_extract(a.detail,'$.evidence'),'')<>'')`;
+const proof=individualConsentSql('l');
 export const autoOutreachCandidateSql=`SELECT l.id FROM leads l WHERE ${BASE}
  AND l.contact_permission=1 AND l.phone IS NOT NULL
  AND ${proof}
  AND NOT EXISTS (SELECT 1 FROM suppressions s WHERE s.phone=l.phone)
  ORDER BY l.created_at ASC LIMIT 1`;
 export function automaticCandidateSql(){
- return invitationEnabled()?`SELECT l.id FROM leads l WHERE ${BASE} AND l.phone IS NOT NULL AND NOT EXISTS (SELECT 1 FROM suppressions s WHERE s.phone=l.phone) ORDER BY l.created_at ASC LIMIT 1`:autoOutreachCandidateSql;
+ // A permission invitation is itself an outbound message; no unsolicited
+ // WhatsApp may be initiated without the recipient's documented opt-in.
+ return autoOutreachCandidateSql;
 }
 export function documentedOptIn(leadId){
  const lead=one('SELECT id,phone,contact_permission FROM leads WHERE id=?',leadId);
- if(!lead||lead.contact_permission!==1||!lead.phone||lead.phone===verifiedOwnerPhone()||isExcludedTestContact(lead.phone)||hasExistingClientRelationship(lead.phone))return false;
- return !!one("SELECT id FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' ORDER BY at DESC LIMIT 1",leadId);
+ if(!lead||lead.contact_permission!==1||!lead.phone||lead.phone===verifiedOwnerPhone()||isExcludedTestContact(lead.phone)||hasExistingClientRelationship(lead.phone)||one('SELECT phone FROM suppressions WHERE phone=?',lead.phone))return false;
+ const last=one("SELECT detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' ORDER BY rowid DESC LIMIT 1",leadId);
+ if(!last)return false;
+ let detail={};try{detail=JSON.parse(last.detail)}catch{return false;}
+ return validIndividualConsent(detail);
 }
 export function outreachQueueSnapshot(){
  const invitation=invitationEnabled();
  const active=all(`SELECT l.id,l.phone,l.contact_permission,l.created_at,
  CASE WHEN l.phone IS NULL THEN 'NO_WHATSAPP'
  WHEN EXISTS(SELECT 1 FROM suppressions s WHERE s.phone=l.phone) THEN 'SUPPRESSED'
- WHEN ${invitation?'1=1':`l.contact_permission=1 AND ${proof}`} THEN 'READY'
+ WHEN l.contact_permission=1 AND ${proof} THEN 'READY'
  ELSE 'AWAITING_OPT_IN' END AS queue_status
  FROM leads l WHERE ${BASE} ORDER BY l.created_at ASC LIMIT 5000`);
  const count=key=>active.filter(x=>x.queue_status===key).length;

@@ -4,9 +4,10 @@
 import {all,one,run,tx,id,audit} from './db.mjs';
 import {verifiedOwnerPhone} from './whatsapp-roles.mjs';
 import {isExcludedTestContact,excludedTestPhoneSql} from './test-contact-exclusion.mjs';
+import {individualConsentSql,validIndividualConsent} from './verified-consent.mjs';
 
 const CHANNELS=new Set(['PERSONAL_WHATSAPP','PHONE_CALL','OTHER']);
-const PROOF_SQL="EXISTS(SELECT 1 FROM audit a WHERE a.lead_id=l.id AND a.action='CONSENT_UPDATED' AND json_extract(a.detail,'$.permitted')=1 AND COALESCE(json_extract(a.detail,'$.evidence'),'')<>'')";
+const PROOF_SQL=individualConsentSql('l');
 const STATUS_SQL="CASE "+
  "WHEN EXISTS(SELECT 1 FROM suppressions s WHERE s.phone=l.phone) THEN 'BLOCKED' "+
  "WHEN EXISTS(SELECT 1 FROM contact_relationships cr WHERE cr.phone=l.phone AND cr.kind='EXISTING_CLIENT') THEN 'BLOCKED' "+
@@ -28,7 +29,14 @@ export function listLeadApprovals({status='PENDING',limit=40,offset=0}={}){
   :all("SELECT * FROM ("+BASE_SQL+") WHERE approval_status=? ORDER BY created_at DESC LIMIT ? OFFSET ?",status,size,skip);
  return {totals,total,status,limit:size,offset:skip,snapshotAt:new Date().toISOString(),
   items:rows.map(({contact_permission,...lead})=>{
-   if(lead.approval_status!=='AUTHORIZED')return lead;
+   if(lead.approval_status!=='AUTHORIZED'){
+    const previous=one("SELECT at,detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' ORDER BY rowid DESC LIMIT 1",lead.id);
+    let detail={};try{detail=JSON.parse(previous?.detail||'{}')}catch{}
+    return {...lead,needsIndividualEvidence:detail.method==='manual_quick_approval',
+     approvalExplanation:detail.method==='manual_quick_approval'
+      ?'Declaração rápida registrada; falta comprovante individual para permitir envio.'
+      :'Aguardando autorização individual com comprovante.'};
+   }
    const last=one("SELECT at,detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' ORDER BY at DESC LIMIT 1",lead.id);
    if(!last)return lead;
    let details={};try{details=JSON.parse(last.detail);}catch{}
@@ -80,7 +88,7 @@ function quickConsentBatch(input){
    else if(isExcludedTestContact(lead.phone))reason='CONTATO_DE_TESTE';
    else if(one('SELECT 1 FROM suppressions WHERE phone=?',lead.phone))reason='CONTATO_BLOQUEADO';
    else if(one("SELECT 1 FROM contact_relationships WHERE phone=? AND kind='EXISTING_CLIENT'",lead.phone))reason='CLIENTE_EXISTENTE';
-   else if(lead.contact_permission===1&&one("SELECT 1 FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' LIMIT 1",lead.id))reason='JA_AUTORIZADO';
+   else if(lead.contact_permission===1&&one("SELECT 1 FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' ORDER BY rowid DESC LIMIT 1",lead.id))reason='JA_REGISTRADO_PENDENTE_DE_COMPROVANTE';
    if(reason)skipped.push({leadId,reason});
    else approved.push(leadId);
   }
@@ -105,6 +113,8 @@ function quickConsentBatch(input){
    method:'manual_quick_approval',workspace:process.env.PROSPECTOR_TENANT_ID||'PRIMARY'
   });
   return {ok:true,batchId,approved:approved.length,skipped:skipped.length,
+   needsDocumentation:approved.length,outreachEligible:0,
+   note:'Declaração rápida registrada; somente comprovantes individuais habilitam o envio.',
    skippedReasons,skippedItems:skipped,selection:allPending?'ALL_PENDING':'SELECTED'};
  });
 }
@@ -123,7 +133,7 @@ export function approveLeadBatch(input={}){
   const sourcePhone=String(item?.operatorPhone||'').replace(/\D/g,'');
   const consentAt=String(item?.consentAt||'');
   const evidenceReference=String(item?.evidenceReference||'').trim();
-  if(evidenceReference.length>500)throw Error('Referência de evidência muito longa');
+  if(evidenceReference.length<3||evidenceReference.length>500)throw Error('Informe referência individual de comprovante (mensagem, link ou arquivo)');
   const consentTime=Date.parse(consentAt);
   if(!/^[\da-f-]{36}$/i.test(leadId)||ids.has(leadId))throw Error('Contato inválido ou duplicado no lote');
   ids.add(leadId);
@@ -141,7 +151,9 @@ export function approveLeadBatch(input={}){
    if(lead.phone===verifiedOwnerPhone()||isExcludedTestContact(lead.phone))throw Error('Contato de teste/proprietário excluído da prospecção');
    if(one('SELECT phone FROM suppressions WHERE phone=?',lead.phone))throw Error('Contato bloqueado para novas mensagens');
    if(one("SELECT phone FROM contact_relationships WHERE phone=? AND kind='EXISTING_CLIENT'",lead.phone))throw Error('Cliente existente não pode ser aprovado como prospecção');
-   if(lead.contact_permission===1&&one("SELECT id FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' LIMIT 1",lead.id))throw Error('Um dos contatos já está autorizado. Atualize a lista');
+   const previous=one("SELECT detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' ORDER BY rowid DESC LIMIT 1",lead.id);
+   let prior={};try{prior=JSON.parse(previous?.detail||'{}')}catch{}
+   if(lead.contact_permission===1&&validIndividualConsent(prior))throw Error('Este contato já tem comprovante individual válido');
   }
   for(const item of approved){
    run('UPDATE leads SET contact_permission=1 WHERE id=?',item.leadId);

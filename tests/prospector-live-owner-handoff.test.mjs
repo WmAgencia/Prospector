@@ -22,7 +22,7 @@ let counter=10;
 function makeContact(){
  const number='551198899'+String(counter++).padStart(4,'0');
  const lead=db.addLead({business:'Empresa Teste '+counter,name:'João',phone:number,source:'maps_extension',contact_permission:true}).lead;
- db.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Fictitious authorized contact'});
+ db.audit('CONSENT_UPDATED',lead.id,{permitted:true,method:'manual_batch_curation',channel:'PERSONAL_WHATSAPP',sourcePhone:'5515988887336',consentAt:new Date().toISOString(),evidence:'Synthetic test client expressly opted in',evidenceReference:'synthetic fixture receipt '+lead.id});
  const jid=number+'@s.whatsapp.net',thread=db.getThread(lead.id,jid),greetingId=db.id();
  db.addMessage({threadId:thread.id,providerId:'prospect-queue:'+greetingId,direction:'out',body:'Olá, bom dia! Tudo bem?',status:'sent'});
  bindLeadSession(lead.id,'consecom-principal');

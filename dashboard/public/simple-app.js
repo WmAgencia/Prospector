@@ -833,7 +833,7 @@ function approvalsView(){
  const totals=data.totals||{pending:0,authorized:0,blocked:0};
  const button=(status,text,count)=>'<button type="button" class="approval-filter '+(approvalStatus===status?'active':'')+'" data-action="approval-filter" data-status="'+status+'" aria-pressed="'+(approvalStatus===status)+'">'+text+' <strong>'+count+'</strong></button>';
  const items=data.items||[],count=approvalSelectAll?Math.max(0,totals.pending-approvalExcludedIds.size):approvalSelection.size;
- const approveAction=approvalStatus==='PENDING'?'<button type="button" class="primary compact" data-action="approval-submit" '+(!count||approvalBusy?'disabled':'')+'>'+(approvalBusy?'Aprovando...':'Aprovar '+count+' contato(s)')+'</button>':'';
+ const approveAction=approvalStatus==='PENDING'?'<button type="button" class="primary compact" data-action="approval-submit" '+(!count||approvalBusy?'disabled':'')+'>'+(approvalBusy?'Registrando...':'Aprovar declaração de '+count+' contato(s)')+'</button>':'';
  const cards=items.map(lead=>{
   const selectable=lead.approval_status==='PENDING';
   const chosen=selectable&&(approvalSelectAll?!approvalExcludedIds.has(lead.id):approvalSelection.has(lead.id));
@@ -842,14 +842,25 @@ function approvalsView(){
   const proof=record?(record.evidenceType==='OPERATOR_ATTESTATION'
    ?'<div class="approval-audit"><strong>Confirmação pelo operador</strong><p>O responsável declarou que este contato aceitou receber mensagens. Não foi anexado comprovante da conversa.</p><small>Registrado: '+stamp(record.recordedAt)+' · Lote: '+esc(record.batchId||'individual')+'</small></div>'
    :'<div class="approval-audit"><strong>Autorização registrada</strong><p>'+esc(record.evidence)+'</p><small>Autorização: '+stamp(record.consentAt)+' · Registro: '+stamp(record.recordedAt)+'</small>'+(record.batchId?'<small>Lote: '+esc(record.batchId)+'</small>':'')+'</div>'):'';
+  const individualForm=selectable?
+   '<details class="approval-proof-entry"><summary>Comprovar autorização individual</summary>'+
+   '<form class="stack-form" data-approval-proof-form="true">'+
+   '<input type="hidden" name="leadId" value="'+esc(lead.id)+'">'+
+   '<label>Canal<select name="channel" required><option value="PERSONAL_WHATSAPP">WhatsApp pessoal</option><option value="PHONE_CALL">Ligação</option><option value="OTHER">Outro canal com prova</option></select></label>'+
+   '<label>Número utilizado para pedir autorização<input name="operatorPhone" inputmode="tel" required minlength="12" maxlength="15" placeholder="5515999999999"></label>'+
+   '<label>Data da autorização<input name="consentAt" type="datetime-local" required></label>'+
+   '<label>Referência do comprovante (ID ou link)<input name="evidenceReference" required minlength="3" maxlength="500" placeholder="ID da mensagem ou referência ao registro"></label>'+
+   '<label>Texto exato do aceite<textarea name="evidence" rows="2" required minlength="3" maxlength="1000" placeholder="Registre o aceite real, sem inventar consentimento"></textarea></label>'+
+   '<label class="training-consent-check"><input type="checkbox" name="confirmed" required> Confirmo que este contato autorizou mensagens comerciais.</label>'+
+   '<button type="submit" class="secondary compact">Salvar comprovação</button></form></details>':'';
   return '<article class="approval-contact '+(chosen?'chosen':'')+'">'+
    '<div class="approval-contact-heading">'+(selectable?'<label class="approval-pick"><input type="checkbox" data-approval-check="'+esc(lead.id)+'" '+(chosen?'checked':'')+' aria-label="Selecionar '+esc(lead.business)+'"></label>':'<span class="approval-spacer" aria-hidden="true"></span>')+
    '<div class="approval-person"><strong>'+esc(lead.business)+'</strong><span>'+esc(lead.name||lead.city||'Empresa')+' · '+esc(lead.phone||'')+'</span><small>Origem: '+esc(lead.source||'Não informada')+'</small></div>'+
    '<span class="approval-status '+(lead.approval_status==='AUTHORIZED'?'ok':lead.approval_status==='BLOCKED'?'blocked':'')+'">'+statusText+'</span></div>'+
-   proof+'</article>';
+   proof+(selectable&&lead.needsIndividualEvidence?'<p class="footnote">Declaração rápida registrada; falta comprovação individual.</p>':'')+individualForm+'</article>';
  }).join('');
  const next=approvalOffset+40;
- return '<div class="workspace-head"><div><span class="kicker">CURADORIA / WHATSAPP</span><h2>Aprovações</h2><p>Confira pelo seu celular quem aceitou receber mensagens. Depois selecione os contatos e aprove em um único clique.</p></div></div>'+
+ return '<div class="workspace-head"><div><span class="kicker">CURADORIA / WHATSAPP</span><h2>Aprovações</h2><p>Somente comprovantes individuais habilitam abordagens automáticas. A seleção em lote registra declarações, mas não substitui a prova do aceite.</p></div></div>'+
   '<section class="approval-stat-grid"><div><small>Pendentes</small><strong>'+totals.pending+'</strong></div><div><small>Autorizados</small><strong>'+totals.authorized+'</strong></div><div><small>Bloqueados</small><strong>'+totals.blocked+'</strong></div></section>'+
   '<section class="panel approvals-panel"><div class="approval-toolbar"><div class="approval-filters">'+button('PENDING','Pendentes',totals.pending)+button('AUTHORIZED','Autorizados',totals.authorized)+button('BLOCKED','Bloqueados',totals.blocked)+'</div><div class="approval-toolbar-actions"><button type="button" class="secondary compact" data-action="approval-refresh">Atualizar</button>'+approveAction+'</div></div>'+
   (approvalFeedback?'<p class="approval-result" role="status" aria-live="polite">'+esc(approvalFeedback)+'</p>':'')+
@@ -872,7 +883,7 @@ async function submitApprovals(){
   const result=await post('/api/approvals/batch',payload);
   approvalSelection.clear();approvalExcludedIds.clear();approvalSelectAll=false;approvalSelectionCutoff='';
   await loadApprovals();
-  approvalFeedback=result.approved+' contato(s) aprovado(s) com declaração individual registrada.'+
+  approvalFeedback=result.approved+' declaração(ões) registradas. Cada contato ainda exige comprovação individual para permitir abordagens.'+
    (result.skipped?' '+result.skipped+' ignorado(s): '+Object.entries(result.skippedReasons||{}).map(([reason,count])=>reason+': '+count).join(', ')+'.':'');
   n(approvalFeedback);
  }catch(e){approvalFeedback='Aprovação não concluída: '+e.message;n(approvalFeedback);}
@@ -1276,6 +1287,24 @@ document.addEventListener("submit",async ev=>{
    n('Conta ativada com sucesso. Seu convite inicial perdeu a validade.');
    render();
   }catch(error){n(error.message);}
+  return;
+ }
+ if(ev.target.dataset.approvalProofForm){
+  const data=Object.fromEntries(new FormData(ev.target));
+  if(data.confirmed!=='on'){n('Confirme que o contato realmente autorizou as mensagens.');return;}
+  const date=new Date(data.consentAt);
+  if(!Number.isFinite(date.getTime())){n('Informe a data e hora da autorização.');return;}
+  const button=ev.target.querySelector('[type="submit"]');if(button)button.disabled=true;
+  try{
+   await post('/api/approvals/batch',{confirmedByOperator:true,items:[{
+    leadId:data.leadId,evidence:data.evidence,evidenceReference:data.evidenceReference,
+    channel:data.channel,operatorPhone:data.operatorPhone,consentAt:date.toISOString()
+   }]});
+   await loadApprovals();
+   approvalFeedback='Comprovação individual registrada. Este contato poderá entrar na fila autorizada.';
+   n(approvalFeedback);render();
+  }catch(error){n('Não foi possível registrar o comprovante: '+error.message);}
+  finally{if(button)button.disabled=false;}
   return;
  }
  if(ev.target.id==='owner-recording-form'){await submitOwnerRecording();return;}

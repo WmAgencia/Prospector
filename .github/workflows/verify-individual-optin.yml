@@ -1,0 +1,30 @@
+name: Verify individual consent before Prospector outreach
+on:
+  push:
+    branches:
+      - fix/strict-documented-optin-before-go-live-20261112
+  pull_request:
+    branches:
+      - feature/tenant-bulk-approvals-20261109
+  workflow_dispatch:
+jobs:
+  test-verified-optin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: JavaScript syntax
+        run: |
+          node --check dashboard/verified-consent.mjs
+          node --check dashboard/outreach-queue.mjs
+          node --check dashboard/prospecting-queue.mjs
+          node --check dashboard/lead-approvals.mjs
+          node --check dashboard/server.mjs
+          node --input-type=module --check < dashboard/public/simple-app.js
+      - name: Consent and existing sales flow regression
+        run: node --test tests/strict-individual-consent.test.mjs tests/tenant-bulk-approvals.test.mjs tests/prospector-live-owner-handoff.test.mjs tests/francisca-many-scenarios.test.mjs

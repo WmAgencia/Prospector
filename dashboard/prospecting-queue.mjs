@@ -8,6 +8,7 @@ import {reserveApproachCredit,settleApproachCredit,availableApproachCredits} fro
 import {APPROACH_CADENCE,chooseApproachInterval,approachDueAt,isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {operatorSelected,recordOperatorSelection} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
+import {individualConsentSql} from './verified-consent.mjs';
 import {coldFirstApproachEnabled as tenantColdFirstApproachEnabled} from './tenant-prospecting-controls.mjs';
 import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting-recontact.mjs';
 import {insideApproachWindow,FIRST_APPROACH_WINDOW_LABEL} from './outreach-window.mjs';
@@ -19,7 +20,7 @@ import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './
 
 export const APPROACH_INTERVAL_MS=90_000;
 // Railway production always requires documented permission; tests may opt in explicitly.
-export const requiresDocumentedOptIn=()=>process.env.PROSPECTOR_COLD_FIRST_APPROACH!=='true'&&(process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true'||process.env.NODE_ENV==='production'||!!process.env.RAILWAY_ENVIRONMENT);
+export const requiresDocumentedOptIn=()=>true; // Outbound opt-in cannot be disabled by environment flags.
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batches(id TEXT PRIMARY KEY,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batch_items(id TEXT PRIMARY KEY,batch_id TEXT NOT NULL REFERENCES prospecting_batches(id),lead_id TEXT NOT NULL REFERENCES leads(id),phone TEXT NOT NULL,status TEXT NOT NULL,attempt_at TEXT,error TEXT,created_at TEXT NOT NULL,UNIQUE(batch_id,lead_id))");
 db.exec("CREATE INDEX IF NOT EXISTS idx_prospecting_batch_items ON prospecting_batch_items(status,batch_id,created_at)");
@@ -44,8 +45,8 @@ function eligibleLead(leadId,ignoreQueueItemId='',operatorApproved=false,automat
  if(!recontactDecision(l,Date.now(),ignoreQueueItemId).eligible)return null;
  // Production safeguard: public business contact details and operator selection
  // are NOT evidence of WhatsApp marketing permission. Validate again at send time.
- // Abordagem fria liberada pelo operador dispensa opt-in prévio (nome vem da empresa).
- if(requiresDocumentedOptIn()&&!documentedOptIn(l.id))return null;
+ // Every first promotional approach needs individual consent, verified again before sending.
+ if(!documentedOptIn(l.id))return null;
  if(!documentedOptIn(l.id)&&!operatorApproved&&!automaticApproved&&!(ignoreQueueItemId&&operatorSelected(l.id)))return null;
  if(one('SELECT phone FROM suppressions WHERE phone=?',l.phone))return null;
 
@@ -156,9 +157,7 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
  const atMs=at.getTime();
  // Filter documented consent at SQL level before applying maxBatch. Otherwise
  // dozens of newer unapproved leads can starve an older approved one forever.
- const optInFilter=requiresDocumentedOptIn()
-  ? " AND l.contact_permission=1 AND EXISTS(SELECT 1 FROM audit a WHERE a.lead_id=l.id AND a.action='CONSENT_UPDATED' AND json_extract(a.detail,'$.permitted')=1 AND COALESCE(json_extract(a.detail,'$.evidence'),'')<>'')"
-  : "";
+ const optInFilter=" AND l.contact_permission=1 AND "+individualConsentSql('l');
  const rows=all("SELECT l.id,l.business,l.city,l.phone,l.stage,l.contact_permission FROM leads l WHERE l.phone IS NOT NULL"+optInFilter+" ORDER BY l.created_at DESC LIMIT 6000");
  const byIdentity=new Map();
  for(const lead of rows){const key=businessIdentity(lead);if(key){if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(lead);}}
