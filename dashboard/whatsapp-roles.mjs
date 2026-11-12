@@ -41,8 +41,8 @@ export function classifyContact({jid,sessionId}={}){
 // Discovery, imported numbers, manual chats, opt-in and AI feature flags do NOT qualify.
 // Trusted record of a sent Prospector first approach; never count discovery or a personal message.
 export function prospectorLeadEligible(leadId){
- const lead=one('SELECT id,phone FROM leads WHERE id=?',String(leadId||''));
- if(!lead?.phone||lead.phone===verifiedOwnerPhone())return false;
+ const lead=one('SELECT id,phone,source FROM leads WHERE id=?',String(leadId||''));
+ if(!lead?.phone||lead.source==='WA_PAIR_QA'||lead.phone===verifiedOwnerPhone())return false;
  if(one("SELECT 1 FROM initial_contacts WHERE lead_id=? AND phone=? AND status='SENT'",lead.id,lead.phone))return true;
  if(one("SELECT 1 FROM jobs WHERE lead_id=? AND status='SENT' AND step_index=0 AND execution_id IS NOT NULL LIMIT 1",lead.id))return true;
  if(one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='prospecting_batch_items'")&&

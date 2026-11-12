@@ -26,7 +26,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  COALESCE(SUM(CASE WHEN l.stage='CONTACTED' THEN 1 ELSE 0 END),0) AS contacted,
  COALESCE(SUM(CASE WHEN l.stage='REPLIED' THEN 1 ELSE 0 END),0) AS replied,
  COALESCE(SUM(CASE WHEN l.stage='INTERESTED' THEN 1 ELSE 0 END),0) AS interested
- FROM leads l`);
+ FROM leads l WHERE l.source<>'WA_PAIR_QA'`);
  let invitationQueue=outreachQueueSnapshot();
  const discovery=radarSnapshot(at);
  const autonomous=getSetting('autonomous_outreach_enabled',false)===true;
