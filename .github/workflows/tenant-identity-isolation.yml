@@ -1,0 +1,26 @@
+name: Tenant identity isolation regression
+on:
+  push:
+    branches: [fix/tenant-identity-isolation-20261112]
+  pull_request:
+    branches: [fix/4047-human-yes-owner-audio-20261112]
+jobs:
+  tenant-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check syntax of changed production modules
+        run: |
+          node --check dashboard/ai-groq.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/francisca-chat-coach.mjs
+          node --check tests/tenant-brand-isolation.test.mjs
+      - name: Test tenant brand, private training and WhatsApp safety without sends
+        run: |
+          node --test tests/tenant-brand-isolation.test.mjs tests/platform-isolation.test.mjs tests/tenant-prospecting-controls.test.mjs tests/role-routing-groq.test.mjs
