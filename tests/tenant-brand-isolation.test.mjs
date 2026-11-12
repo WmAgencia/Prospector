@@ -47,7 +47,7 @@ test('client A uses only its own brand and commercial documentation',()=>{
  const a=scenario({business:'Oficina Aurora'});
  assert.match(a.context,/assistente virtual da Oficina Aurora/i);
  assert.match(a.context,/manual comercial privado/i);
- assert.doesNotMatch(a.context,/Consecom|Wesley|R\\$\\s*550|R\\$\\s*350/i);
+ assert.doesNotMatch(a.context,/Consecom|Wesley|R\$\s*550|R\$\s*350/i);
  assert.match(a.history,/Assistente:/);
  assert.doesNotMatch(a.history,/Consecom:/);
 });
@@ -55,7 +55,7 @@ test('client A uses only its own brand and commercial documentation',()=>{
 test('client B cannot inherit company A or Consecom instructions',()=>{
  const b=scenario({business:'Clínica Exemplo'});
  assert.match(b.context,/assistente virtual da Clínica Exemplo/i);
- assert.doesNotMatch(b.context,/Oficina Aurora|Consecom|Wesley|R\\$\\s*550|R\\$\\s*350/i);
+ assert.doesNotMatch(b.context,/Oficina Aurora|Consecom|Wesley|R\$\s*550|R\$\s*350/i);
  assert.doesNotMatch(b.history,/Consecom:/);
 });
 
@@ -75,6 +75,6 @@ test('Consecom internal workspace retains original owner-only campaign guidance'
 
 test('production sales automation labels tenant conversation history neutrally',()=>{
  const sales=fs.readFileSync(new URL('../dashboard/groq-sales-automation.mjs',import.meta.url),'utf8');
- assert.match(sales,/const assistantLabel=externalTenant\\?'Assistente':'Consecom'/);
- assert.match(sales,/compactChatHistory\\(recentTurns,3100,assistantLabel\\)/);
+ assert.match(sales,/const assistantLabel=externalTenant\?'Assistente':'Consecom'/);
+ assert.match(sales,/compactChatHistory\(recentTurns,3100,assistantLabel\)/);
 });
