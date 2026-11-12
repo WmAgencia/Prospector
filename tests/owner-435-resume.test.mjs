@@ -47,4 +47,20 @@ test('later manual pause is preserved across app restart / repeated activation',
  assert.equal(getSetting('paused'),true);
  assert.equal(all("SELECT action FROM audit WHERE action='OWNER_435_APPROVED_OUTREACH_RESUMED'").length,1);
 });
+
+test('post-incident resume is one-shot and never reverses a later operator pause',()=>{
+ process.env.PROSPECTOR_OWNER_RESUME_435_20261112='false';
+ process.env.PROSPECTOR_OWNER_RESUME_AFTER_VERIFIED_INCIDENT_20261112='true';
+ setSetting('paused',true);
+ setSetting('autonomous_outreach_enabled',false);
+ const once=resumeApprovedOwnerAt435Seconds();
+ assert.equal(once.status,'RESUMED_APPROVED_ONLY');
+ assert.equal(getSetting('paused'),false);
+ assert.equal(getSetting('initial_interval_seconds'),435);
+ setSetting('paused',true);
+ const again=resumeApprovedOwnerAt435Seconds();
+ assert.equal(again.status,'ALREADY_APPLIED');
+ assert.equal(getSetting('paused'),true);
+});
+
 test.after(()=>{db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
