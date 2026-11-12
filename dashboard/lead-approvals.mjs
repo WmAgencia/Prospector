@@ -29,7 +29,14 @@ export function listLeadApprovals({status='PENDING',limit=40,offset=0}={}){
   :all("SELECT * FROM ("+BASE_SQL+") WHERE approval_status=? ORDER BY created_at DESC LIMIT ? OFFSET ?",status,size,skip);
  return {totals,total,status,limit:size,offset:skip,snapshotAt:new Date().toISOString(),
   items:rows.map(({contact_permission,...lead})=>{
-   if(lead.approval_status!=='AUTHORIZED')return lead;
+   if(lead.approval_status!=='AUTHORIZED'){
+    const previous=one("SELECT at,detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' ORDER BY rowid DESC LIMIT 1",lead.id);
+    let detail={};try{detail=JSON.parse(previous?.detail||'{}')}catch{}
+    return {...lead,needsIndividualEvidence:detail.method==='manual_quick_approval',
+     approvalExplanation:detail.method==='manual_quick_approval'
+      ?'Declaração rápida registrada; falta comprovante individual para permitir envio.'
+      :'Aguardando autorização individual com comprovante.'};
+   }
    const last=one("SELECT at,detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' AND json_extract(detail,'$.permitted')=1 AND COALESCE(json_extract(detail,'$.evidence'),'')<>'' ORDER BY at DESC LIMIT 1",lead.id);
    if(!last)return lead;
    let details={};try{details=JSON.parse(last.detail);}catch{}
@@ -106,6 +113,8 @@ function quickConsentBatch(input){
    method:'manual_quick_approval',workspace:process.env.PROSPECTOR_TENANT_ID||'PRIMARY'
   });
   return {ok:true,batchId,approved:approved.length,skipped:skipped.length,
+   needsDocumentation:approved.length,outreachEligible:0,
+   note:'Declaração rápida registrada; somente comprovantes individuais habilitam o envio.',
    skippedReasons,skippedItems:skipped,selection:allPending?'ALL_PENDING':'SELECTED'};
  });
 }
