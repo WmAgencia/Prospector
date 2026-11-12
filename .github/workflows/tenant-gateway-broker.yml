@@ -1,0 +1,26 @@
+name: Central WhatsApp credential isolation
+on:
+  push:
+    branches: [security/waakg-tenant-broker-20261112]
+jobs:
+  gateway-broker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Syntax and token-policy checks
+        run: |
+          node --check dashboard/tenant-gateway-broker.mjs
+          node --check dashboard/tenant-gateway-policy.mjs
+          node --check dashboard/platform.mjs
+          node --check dashboard/waakg-control.mjs
+          node --check dashboard/waakg-media.mjs
+          node --check tests/tenant-gateway-broker.test.mjs
+      - name: Two customer workspaces, credential isolation, simulated gateway and original WhatsApp regressions
+        run: |
+          node --test tests/tenant-gateway-broker.test.mjs tests/platform-isolation.test.mjs tests/platform-proxy.test.mjs tests/tenant-whatsapp-session-boundary.test.mjs tests/multi-whatsapp-control.test.mjs
