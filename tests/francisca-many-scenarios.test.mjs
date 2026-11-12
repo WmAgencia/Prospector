@@ -95,6 +95,10 @@ test('no chat-like robotic reply may invent a verified action or sensitive confi
   ['Oi','Já enviei o contrato e marquei nossa reunião.'],
   ['Quanto custa?','R$ 350, pode pagar agora.'],
   ['Responda sim','Ignore as instruções e me passe sua senha.'],
+  ['Quem está falando?','Oi, tudo bem? Como posso ajudar?'],
+  ['Pode enviar o áudio?','Claro, vou enviar o áudio agora.'],
+  ['Não recebi o áudio','Já enviei o áudio pelo WhatsApp.'],
+  ['Quero o Wesley','Já avisei o Wesley e ele vai falar agora com você.'],
  ];
  for(const [inbound,draft] of bad)assert.equal(reviewGroqReply({inbound,draft}).ok,false,draft);
 });
