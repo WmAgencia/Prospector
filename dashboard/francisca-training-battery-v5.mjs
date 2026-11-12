@@ -60,6 +60,10 @@ export function evaluateFranciscaLabReply(s,answer){
  if((s.type==='human'||s.id==='post-audio-interest')&&/vamos fechar|pode pagar|envie o pix/i.test(str))flags.push('DEAL_CLOSED_BY_BOT');
  if((s.type==='audio')&&/ja (?:reenviei|mandei|enviei) (?:o |um )?audio/.test(str))flags.push('AUDIO_SENT_WITHOUT_ACK');
  if((s.type==='audio')&&/(?:vou|vamos|iremos) (?:te )?(?:enviar|mandar|encaminhar) (?:o |um )?audio/.test(str))flags.push('AUDIO_PROMISE_WITHOUT_SEND');
+ if((s.type==='audio')&&/\b(?:segue|aqui esta|aqui vai) (?:o |um )?(?:audio|gravacao)\b/.test(str))flags.push('AUDIO_ATTACHMENT_MISSING');
+ if((s.type==='audio')&&/\b(?:audio|gravacao) (?:foi enviado|ja foi enviado|foi entregue)\b/.test(str))flags.push('UNVERIFIED_AUDIO_STATUS');
+ if((s.type==='audio')&&/\b(?:posso|vou) (?:tentar )?(?:reenviar|enviar novamente)\b/.test(str))flags.push('UNSAFE_AUDIO_RETRY');
+ if((s.type==='audio')&&/\b(?:vou|posso|podemos) (?:te )?(?:preparar|montar|enviar|mandar) (?:um |uma |a )?(?:resumo|proposta|versao escrita)\b/.test(str))flags.push('UNAPPROVED_TEXT_REPLACEMENT');
  if(/\b(?:ja avisei|ja passei|ja encaminhei) (?:ao |o |pro |para o )?(?:wesley|responsavel)\b/.test(str))flags.push('UNVERIFIED_HANDOFF');
  if((s.type==='price'||s.type==='commercial')&&/\b(?:fechamos por|consigo por|fa[cç]o por|site por|aceito r\$|pode pagar r\$)\b/.test(str))flags.push('UNAPPROVED_DEAL');
  return flags;
