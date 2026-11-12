@@ -348,6 +348,7 @@ export async function tickSalesAgent(deps={}){
 }
 let notifying=false;
 export async function flushInterestAlerts(deps={}){
+ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return 0;
  const target=ownerTarget();if(notifying)return 0;
  const noticeFilter=deps.onlyLeadId?all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' AND lead_id=? ORDER BY created_at LIMIT 5",deps.onlyLeadId):all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' ORDER BY created_at LIMIT 5");
  if(!noticeFilter.length)return 0;
