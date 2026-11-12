@@ -1,0 +1,23 @@
+name: Verify strict dual WhatsApp rotation and resume
+on:
+  push:
+    branches:
+      - fix/strict-dual-whatsapp-resume-20261112
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/server.mjs
+      - run: node --check dashboard/waakg-control.mjs
+      - run: node --check dashboard/owner-sender-duo.mjs
+      - run: node --check dashboard/approval-ready-activation.mjs
+      - run: node --check dashboard/waakg-voice-presence.mjs
+      - run: node --test tests/owner-strict-duo-resume.test.mjs tests/owner-voice-presence-71s.test.mjs tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs tests/owner-daily-80.test.mjs
