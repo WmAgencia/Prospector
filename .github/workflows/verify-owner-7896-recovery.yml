@@ -1,0 +1,21 @@
+name: Verify 7896 voice duration and targeted recovery
+on:
+  push:
+    branches:
+      - fix/7896-approved-audio-duration-recovery-20261112
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/server.mjs
+      - run: node --check dashboard/waakg-voice-presence.mjs
+      - run: node --check dashboard/owner-7896-safe-recovery.mjs
+      - run: node --test tests/owner-voice-presence-71s.test.mjs tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs
