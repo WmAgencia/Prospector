@@ -53,7 +53,18 @@ function primaryMode(req,client){
 
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const port=s.address().port;await new Promise(r=>s.close(r));return port;}
 export function workerEnvironment(client,port){
- const allowed=['PATH','Path','SystemRoot','TEMP','TMP','HOME','NODE_ENV','GROQ_API_KEY','GROQ_MODEL','WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD','FRANCISCA_PYTHON','EDGE_TTS_PYTHON','FRANCISCA_TTS_ENABLED','PUBLIC_BASE_URL'];
+ // Client workers share approved providers, but never owner-only campaign
+ // recordings, personal notifications, operator controls or smoke flags.
+ // Runtime feature switches must reach each process so the dashboard
+ // accurately reflects capabilities configured on Railway.
+ const allowed=[
+  'PATH','Path','SystemRoot','TEMP','TMP','HOME','NODE_ENV',
+  'GROQ_API_KEY','GROQ_MODEL',
+  'WA_AKG_BASE_URL','WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD',
+  'PROSPECTOR_MAPS_BASE_URL','PROSPECTOR_MAPS_KEY',
+  'FRANCISCA_PYTHON','EDGE_TTS_PYTHON','FRANCISCA_TTS_ENABLED',
+  'AUDIO_TRANSCRIPTION_ENABLED','AUDIO_RESPONSE_ENABLED','PUBLIC_BASE_URL'
+ ];
  const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]));
  return {...env,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
   PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
