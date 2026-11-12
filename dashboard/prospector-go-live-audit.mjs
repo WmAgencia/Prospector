@@ -19,18 +19,16 @@ function consentAudit(at){
  let documented=0,quickAttestations=0,individualEvidence=0,legacyEvidence=0,unknownOrExpired=0,missingProof=0;
  const types={};
  for(const item of candidates){
-  if(!documentedOptIn(item.id)||!recontactDecision(item,at.getTime()).eligible){unknownOrExpired++;continue;}
-  documented++;
+  if(!recontactDecision(item,at.getTime()).eligible){unknownOrExpired++;continue;}
   let record={};try{record=JSON.parse(item.detail||'{}')}catch{}
   const method=normalize(record.method),type=normalize(record.evidenceType);
-  const quick=method==='manual_quick_approval'||type==='OPERATOR_ATTESTATION'||record.evidenceVerified===false;
-  const individual=method==='manual_batch_curation'&&Boolean(record.sourcePhone)&&
-   Boolean(record.consentAt)&&Boolean(record.channel)&&normalize(record.evidence).length>=3;
-  if(quick)quickAttestations++;
-  else if(individual)individualEvidence++;
-  else legacyEvidence++;
   types[method||'UNSPECIFIED']=(types[method||'UNSPECIFIED']||0)+1;
   if(!record.evidence)missingProof++;
+  const quick=method==='manual_quick_approval'||type==='OPERATOR_ATTESTATION'||record.evidenceVerified===false;
+  if(quick){quickAttestations++;continue;}
+  if(documentedOptIn(item.id)){
+   documented++;individualEvidence++;
+  }else legacyEvidence++;
  }
  return {candidates:candidates.length,currentlyEligible:documented,
    individuallyDocumented:individualEvidence,quickOperatorAttestations:quickAttestations,
