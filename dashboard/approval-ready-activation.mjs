@@ -83,14 +83,17 @@ export function applyOwnerDailySpread(){
 // previously consented contacts, at one globally persisted 435-second cadence.
 // A marker ensures an operator's later pause remains respected on restarts.
 export const OWNER_RESUME_435_MARKER='owner_resume_435s_20261112_v1';
+export const OWNER_POST_INCIDENT_RESUME_MARKER='owner_435_after_incident_20261112_v1';
 export function resumeApprovedOwnerAt435Seconds(){
  if(!isConsecomOwner())return {status:'OTHER_TENANT_UNCHANGED'};
- if(process.env.PROSPECTOR_OWNER_RESUME_435_20261112!=='true')return {status:'NOT_REQUESTED'};
+ const postIncident=process.env.PROSPECTOR_OWNER_RESUME_AFTER_VERIFIED_INCIDENT_20261112==='true';
+ if(!postIncident&&process.env.PROSPECTOR_OWNER_RESUME_435_20261112!=='true')return {status:'NOT_REQUESTED'};
+ const resumeMarker=postIncident?OWNER_POST_INCIDENT_RESUME_MARKER:OWNER_RESUME_435_MARKER;
  if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {status:'EMERGENCY_STOP_ACTIVE'};
  if(process.env.PROSPECTOR_COLD_FIRST_APPROACH==='true'||process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN!=='true')
   return {status:'OPT_IN_GUARD_NOT_READY'};
  if(OWNER_APPROACH_INTERVAL_MS!==435000)return {status:'INVALID_CADENCE'};
- if(getSetting(OWNER_RESUME_435_MARKER,false)===true)
+ if(getSetting(resumeMarker,false)===true)
   return {status:'ALREADY_APPLIED',paused:getSetting('paused',true),autonomous:getSetting('autonomous_outreach_enabled',false)};
  const previous={
   paused:getSetting('paused',true),
@@ -107,7 +110,7 @@ export function resumeApprovedOwnerAt435Seconds(){
   autonomous_outreach_enabled:true,paused:false
  };
  for(const [key,value] of Object.entries(controls))setSetting(key,value);
- setSetting(OWNER_RESUME_435_MARKER,true);
+ setSetting(resumeMarker,true);
  audit('OWNER_435_APPROVED_OUTREACH_RESUMED',null,{
   previous,controls,at:new Date().toISOString(),requireDocumentedConsent:true,
   minimumGlobalGapSeconds:435,sharedDailyLimit:80,doesNotSendDirectly:true
