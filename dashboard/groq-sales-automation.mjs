@@ -148,7 +148,9 @@ export async function handleSalesTurn(providerId,deps={}){
  run("UPDATE groq_auto_events SET state='PROCESSING' WHERE provider_id=?",providerId);
  const recentTurns=all("SELECT direction,body,at FROM messages WHERE thread_id=? ORDER BY at DESC,rowid DESC LIMIT 22",r.thread_id).reverse();
  const offerAlreadyExplained=recentTurns.some(m=>m.direction==='out'&&/R\$\s*550/i.test(String(m.body||'')));
- const history=recentTurns.slice(-8).map(m=>(m.direction==='in'?'Cliente: ':'Consecom: ')+String(m.body||'').slice(0,220)).join('\n');
+ const externalTenant=!!process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true';
+ const assistantLabel=externalTenant?'Assistente':'Consecom';
+ const history=recentTurns.slice(-8).map(m=>(m.direction==='in'?'Cliente: ':assistantLabel+': ')+String(m.body||'').slice(0,220)).join('\n');
  // A chat is a continuous exchange. Read the real server-side thread rather
  // than asking the model to infer whether it has greeted the contact before.
  const hasOutbound=!!one("SELECT 1 FROM messages WHERE thread_id=? AND direction='out' LIMIT 1",r.thread_id);
@@ -219,7 +221,7 @@ export async function handleSalesTurn(providerId,deps={}){
  const draft=audioPriceQuestion?{ok:true,
   draft:audioOffer350?'A proposta especial que te enviei em áudio fica em R$ 350 para esse site de portfólio. Antes de começar, a gente alinha direitinho o escopo e o pagamento. Faz sentido pra vocês?':'Nesta campanha, a proposta é um site profissional por R$ 350, em condição especial pra entrar no portfólio da Consecom. Posso enviar a apresentação em áudio ou explicar por aqui.',
   model:'APPROVED_CAMPAIGN_350'}:scripted?{ok:true,draft:scripted.text,model:'CONSECOM_SITE_SCRIPT'}:fixedOffer?{ok:true,draft:(offerAlreadyExplained||isPortfolioFAQ(r.body))?fixedOfferFollowup(r.body):portfolioQuestion(r.body)&&!/\b(?:quanto|preco|valor|custa|r\$)/i.test(r.body)?fixedOfferPitch({business:r.business,segment:r.segment}):fixedOfferPriceReply(),model:'APPROVED_PORTFOLIO_550'}:financial?{ok:true,draft:'Vou confirmar a proposta para o seu negócio com o responsável e já te retorno por aqui.',model:'OWNER_PRICE_APPROVAL'}:incoming.intro&&!salesFollowup&&!hasOutbound?{ok:true,draft:firstGreeting(),model:'RULE_BASED_GREETING'}:
-   await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns)+'\n'+
+   await (deps.draft||aiDraft)({text:r.body,audience:identity.role,dialogueState:dialogue,context:compactChatHistory(recentTurns,3100,assistantLabel)+'\n'+
      '\nEste é um contato recebido via WhatsApp. Você não possui permissões administrativas. '+
      (audioOffer350?'Este contato recebeu o áudio ORIGINAL da proposta de portfólio por R$ 350. A condição desse áudio substitui a oferta padrão de R$ 550 SOMENTE nesta conversa. Nunca informe R$ 550, nunca invente desconto ou outro prazo, nem ofereça PIX/entrada não aprovados. Se o contato quiser contratar, encaminhe para o Wesley confirmar escopo e pagamento. ':'')+
      (campaign350?'A oferta já é definida: site profissional em campanha especial por R$ 350 para compor o portfólio da Consecom. Não pergunte ao cliente de que serviço precisa, como quer melhorar presença online, qual automação busca ou como podemos ajudar; explique a oferta, respeite recusas e a disponibilidade do responsável. ':'Se não estiver claro, pergunte o que a pessoa precisa. ')+
