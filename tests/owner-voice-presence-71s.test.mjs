@@ -50,3 +50,12 @@ test('duration uses actual audio length with a hard minimum of 71s',()=>{
  assert.equal(ownerRecordingDurationMs(sample,{probe:shorter}),71000);
 });
 test.after(()=>fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true}));
+
+
+test('known approved original recording bypasses unreliable ffprobe duration safely',async()=>{
+ const {createHash}=await import('node:crypto');
+ const approvedSha=createHash('sha256').update(sample).digest('hex');
+ const brokenProbe=()=>({status:1,stdout:Buffer.from('N/A'),stderr:Buffer.from('invalid duration')});
+ assert.equal(ownerRecordingDurationMs(sample,{probe:brokenProbe,approvedSha}),71000);
+ assert.throws(()=>ownerRecordingDurationMs(sample,{probe:brokenProbe,approvedSha:'a'.repeat(64)}),/DURATION_UNAVAILABLE/);
+});
