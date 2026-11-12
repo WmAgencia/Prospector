@@ -1,6 +1,19 @@
 // Typed media bridge to WA-AKG. No arbitrary URLs or external hosts.
 import {getGatewayApiKey,selectedWaSession} from './waakg-control.mjs';
 const base=String(process.env.WA_AKG_BASE_URL||'https://wa-akg-production-f9f0.up.railway.app').replace(/\/$/,'');
+const externalTenant=Boolean(process.env.PROSPECTOR_TENANT_ID)&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true';
+function tenantMediaRequest(path){
+ if(!externalTenant)return null;
+ const broker=String(process.env.PROSPECTOR_GATEWAY_BROKER_URL||'');
+ const token=String(process.env.PROSPECTOR_GATEWAY_BROKER_TOKEN||'');
+ if(!/^http:\/\/127\.0\.0\.1:\d{2,5}\/api\/internal\/tenant-gateway$/.test(broker)||token.length!==64)
+  throw Error('TENANT_GATEWAY_BROKER_REQUIRED');
+ return {url:broker+path,headers:{
+  'X-Prospector-Tenant-Id':process.env.PROSPECTOR_TENANT_ID,
+  'X-Prospector-Broker-Token':token
+ }};
+}
+
 export const MAX_MEDIA_BYTES=15*1024*1024;
 const mediaFile=/^\/api\/media\/[A-Za-z0-9_-]{3,140}\.(?:mp3|m4a|mp4|ogg|opus|wav|webm)$/i;
 const jidAllowed=j=>/^\d{10,15}@s\.whatsapp\.net$/.test(j);
@@ -26,8 +39,9 @@ async function readLimited(response,limit=MAX_MEDIA_BYTES){
 export async function fetchPrivateAudio(urlPath,{fetchFn=fetch,apiKey,session=selectedWaSession()}={}){
  const path=safeMediaPath(urlPath);
  if(!path||!session||!path.split('/').at(-1).startsWith(session+'-'))throw Error('INVALID_AUDIO_PATH');
- const key=apiKey||await getGatewayApiKey();
- const res=await fetchFn(base+path,{headers:{'X-API-Key':key,Accept:'audio/*'},signal:AbortSignal.timeout(18000),redirect:'error'});
+ const broker=tenantMediaRequest(path);
+ const key=broker?null:apiKey||await getGatewayApiKey();
+ const res=await fetchFn(broker?.url||base+path,{headers:{...(broker?broker.headers:{'X-API-Key':key}),Accept:'audio/*'},signal:AbortSignal.timeout(18000),redirect:'error'});
  if(!res.ok)throw Error('MEDIA_HTTP_'+res.status);
  const type=String(res.headers.get('content-type')||'').split(';')[0].toLowerCase();
  if(type&&!(type.startsWith('audio/')||type==='application/octet-stream'))throw Error('NOT_AUDIO');
@@ -45,11 +59,13 @@ export async function sendVoiceMedia({jid,bytes,session=selectedWaSession(),fetc
  const form=new FormData();
  form.append('type','voice');
  form.append('file',new Blob([bytes],{type:opus?'audio/ogg; codecs=opus':'audio/mp4'}),opus?'wesley-approved.ogg':'francisca.m4a');
- const key=apiKey||await getGatewayApiKey();
- // WA-AKG's own handler expects multipart form data, not JSON, and uses
- // type=voice to send a WhatsApp push-to-talk message.
- const res=await fetchFn(base+'/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(jid)+'/media',{
-  method:'POST',headers:{'X-API-Key':key,Accept:'application/json'},body:form,signal:AbortSignal.timeout(30000)});
+ const route='/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(jid)+'/media';
+ const broker=tenantMediaRequest(route);
+ const key=broker?null:apiKey||await getGatewayApiKey();
+ // Multipart body is forwarded as-is by the trusted parent broker.
+ const res=await fetchFn(broker?.url||base+route,{
+  method:'POST',headers:{...(broker?broker.headers:{'X-API-Key':key}),Accept:'application/json'},
+  body:form,signal:AbortSignal.timeout(35000)});
  const reply=await res.json().catch(()=>({}));
  if(!res.ok||reply.status!==true)throw Error('VOICE_SEND_UNKNOWN');
  return {accepted:true,verifiedOnPhone:false};
