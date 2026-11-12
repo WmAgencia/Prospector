@@ -94,7 +94,14 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  if(isWorker){
   if(url.pathname==='/api/platform/context'&&authorized(req)){respond(res,200,{role:'client',name:process.env.PROSPECTOR_TENANT_NAME});return true;}
   const allowed=/^\/api\/(?:training(?:\/|$)|state$|events$|kanban$|sales\/(?:status|outcomes)$|whatsapp\/(?:sessions|status|qr|connect|disconnect|chats|chat-messages|handoff|reply|reply-remote)$|prospecting(?:\/|$)|outreach\/consent-policy$|approvals(?:\/|$)|ai\/(?:status|francisca-turn|francisca-speak)$|settings(?:\/|$)|maps(?:\/|$)|import$|threads\/[^/]+\/(?:messages|read)$|wa-akg\/webhook$)/;
-  if(url.pathname.startsWith('/api/')&&!allowed.test(url.pathname)&&url.pathname!=='/api/auth/exchange'){respond(res,403,{error:'Recurso indisponível neste espaço de trabalho'});return true;}
+  // Only portfolio images/PDFs and read-only overview data are added to client workspaces.
+  // The worker's own credentials, SQLite database and media directory isolate clients.
+  const mediaRead=req.method==='GET'&&/^\/api\/media\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(url.pathname);
+  const mediaWrite=req.method==='POST'&&url.pathname==='/api/media'&&['image','document'].includes(url.searchParams.get('kind'));
+  const overviewRead=req.method==='GET'&&['/api/overview/dimensions','/api/overview/approaches'].includes(url.pathname);
+  if(url.pathname.startsWith('/api/')&&!allowed.test(url.pathname)&&!mediaRead&&!mediaWrite&&!overviewRead&&url.pathname!=='/api/auth/exchange'){
+   respond(res,403,{error:'Recurso indisponível neste espaço de trabalho'});return true;
+  }
   return false;
  }
  const p=url.pathname;
