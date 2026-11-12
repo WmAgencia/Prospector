@@ -88,12 +88,21 @@ import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
 import {runFranciscaTrainingBattery} from './francisca-training-battery-v5.mjs';
 import {runFranciscaRefinementCheck} from './francisca-refinement-check-v6.mjs';
+import {assessProspectorGoLive} from './prospector-go-live-audit.mjs';
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
 import {flushPriceApprovals} from './owner-price-approvals.mjs';
 import {flushCallScheduling} from './call-scheduling.mjs';
 
+// Owner-only audit of real session status, group, consent and tomorrow's dry-run.
+// No send or mutation; opt-in via a one-time Railway environment flag.
+if(process.env.RUN_PROSPECTOR_READINESS_AUDIT_ONCE==='true'&&
+   process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'&&
+   !process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(()=>assessProspectorGoLive()
+   .catch(error=>console.warn('[prospector-go-live-audit-error]',String(error?.message||error).slice(0,180))),11000).unref();
+}
 // Single authorized 7336 ↔ 2994 production QA. Parent stays paused throughout.
 // Worker gets its own env copy to exercise approved-only message paths without
 // permitting ANY real queue worker to resume or message other leads.
