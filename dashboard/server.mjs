@@ -68,7 +68,7 @@ import {classifyContact,setExistingClientRelationship,verifiedOwnerPhone,prospec
 import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,autonomousReadyCount,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROSPECTING_CONTROL_KEYS} from './tenant-prospecting-controls.mjs';
-import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread} from './approval-ready-activation.mjs';
+import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread,resumeApprovedOwnerAt435Seconds} from './approval-ready-activation.mjs';
 import {isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
@@ -972,6 +972,8 @@ if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'){
  setSetting('sales_daily_report_enabled',false);
  console.warn('[emergency stop] persistent outreach and automated responses disabled; WhatsApp sessions retained');
 }
+// A one-shot resume cannot bypass an active emergency pause or undocumented opt-in.
+console.info('[owner 435 resume]',JSON.stringify(resumeApprovedOwnerAt435Seconds()));
 let testInstructionError=null;
 let lastQueueReason=null,lastQueueLogAt=0;
 async function reportQueueHealth(){
