@@ -81,7 +81,7 @@ export function recoverDisabledPitchQueue(){
 }
 
 export function routeIntroductionReply({leadId,providerId,body='',inboxState='REVIEW',receivedAt=new Date()}={}){
- const item=introductionStatus(leadId);
+ let item=introductionStatus(leadId);
  if(inboxState==='AUTO_REPLY'||detectAutomaticReply(body))return {managed:true,queueAi:false,state:'AUTO_REPLY'};
  if(!item)return {managed:false,queueAi:true};
  if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')
@@ -95,6 +95,23 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  const received=new Date(receivedAt),timestamp=Number.isFinite(received.getTime())?received:new Date();
  const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
  const sourceId=String(providerId||'').slice(0,180);
+ // A prior automatic-reply cancellation must not permanently silence a lead
+ // who subsequently sends an actual human reply. Only a fresh, latest,
+ // consented inbound can reopen a text introduction that was never attempted.
+ if(item.stage==='CANCELLED'&&item.reason==='ELIGIBILITY_CHANGED'&&!item.attempt_at&&!item.sent_at&&
+   conversationAuthorized(leadId)&&timestamp.getTime()>Date.parse(item.updated_at||'')){
+  const last=one('SELECT provider_id FROM waakg_inbox WHERE lead_id=? ORDER BY rowid DESC LIMIT 1',leadId);
+  const newerOutbound=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.direction='out' AND m.at>=? LIMIT 1",
+   leadId,timestamp.toISOString());
+  if(last?.provider_id===sourceId&&!newerOutbound){
+   const changed=run("UPDATE prospecting_introductions SET stage='GREETING_SENT',reason=NULL,first_reply_id=NULL,first_reply_at=NULL,due_at=NULL,updated_at=? WHERE lead_id=? AND stage='CANCELLED' AND reason='ELIGIBILITY_CHANGED' AND attempt_at IS NULL AND sent_at IS NULL",
+    now(),leadId).changes;
+   if(changed){
+    audit('PROSPECT_AUTO_REPLY_CANCEL_RECOVERED',leadId,{freshHumanInbound:true,priorStage:'CANCELLED',noPriorIntroduction:true});
+    item=introductionStatus(leadId);
+   }
+  }
+ }
  // First customer response ALWAYS receives the written Wesley introduction
  // before any audio consideration, regardless of their wording.
  if(item.stage==='GREETING_SENT'){
@@ -158,6 +175,14 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  return {managed:true,queueAi:item.stage==='CONVERSING'&&intent===OWNER_PROPOSAL_INTENT.TEXT_ONLY,state:item.stage};
 }
 
+function waitForGenuineHumanAfterAutoReply(item){
+ const latest=one('SELECT state,body FROM waakg_inbox WHERE lead_id=? ORDER BY rowid DESC LIMIT 1',item.lead_id);
+ if(!latest||(latest.state!=='AUTO_REPLY'&&!detectAutomaticReply(latest.body)))return false;
+ const changed=run("UPDATE prospecting_introductions SET stage='GREETING_SENT',reason='AWAITING_HUMAN_AFTER_AUTO_REPLY',first_reply_id=NULL,first_reply_at=NULL,due_at=NULL,updated_at=? WHERE lead_id=? AND stage='WAITING' AND sent_at IS NULL AND attempt_at IS NULL",
+  now(),item.lead_id).changes;
+ if(changed)audit('PROSPECT_INTRO_WAITING_FOR_HUMAN',item.lead_id,{automaticReplyIgnored:true,noMessageSent:true});
+ return changed>0;
+}
 let busy=false;
 export async function tickIntroductions(deps={}){
  if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {state:'PAUSED_EMERGENCY'};
@@ -208,7 +233,10 @@ export async function tickIntroductions(deps={}){
    }
    return true;
   };
-  if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
+  if(!eligible()){
+   if(waitForGenuineHumanAfterAutoReply(item))return {state:'WAITING_FOR_HUMAN'};
+   cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};
+  }
   // Validate/transcode the audio before claiming the send. When missing,
   // keep the job pending instead of sending a different offer as plain text.
   let voice=null;
@@ -225,7 +253,10 @@ export async function tickIntroductions(deps={}){
   }
   const wa=await status(item.session_id);
   if(!wa.connected)return {state:'OFFLINE'};
-  if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
+  if(!eligible()){
+   if(waitForGenuineHumanAfterAutoReply(item))return {state:'WAITING_FOR_HUMAN'};
+   cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};
+  }
   // Reserve before attempting network transport; UNKNOWN never auto-retries.
   if(!run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND stage=? AND due_at<=?",
    new Date(at).toISOString(),now(),item.lead_id,item.stage,new Date(at).toISOString()).changes)return {state:'BUSY'};
