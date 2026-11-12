@@ -5,6 +5,8 @@ import {CAMPAIGN_NAME,CAMPAIGN_INTRO,buildConsecomSteps} from './consecom-flow.m
 import {personalName} from './classifier.mjs';
 import {DatabaseSync} from 'node:sqlite';
 const dir=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data');
+// Consecom's historic campaigns and commercial prices must never be seeded into external workspaces.
+const consecomWorkspace=!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
 fs.mkdirSync(dir,{recursive:true});
 export const db=new DatabaseSync(path.join(dir,'prospector.sqlite'));
 db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
@@ -53,7 +55,7 @@ const initialSteps=[{id:'a',type:'message',text:'Olá, {{business_name}}! Tudo b
 if(!one('SELECT id FROM workflows LIMIT 1'))run('INSERT INTO workflows(id,name,is_default,version,steps,created_at,updated_at) VALUES(?,?,?,?,?,?,?)','default','Abordagem padrão',1,1,JSON.stringify(initialSteps),now(),now());
 export function getSetting(key,fallback=null){const x=one('SELECT value FROM settings WHERE key=?',key);if(!x)return fallback;try{return JSON.parse(x.value);}catch{return fallback;}}
 export function setSetting(key,value){run('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',key,JSON.stringify(value));}
-for(const [key,value] of Object.entries({paused:true,auto_initial:false,min_minutes:5,daily_limit:150,business_start:8,business_end:18,initial_interval_seconds:240,discovery_target_daily:150,discovery_start_hour:5,autonomous_campaign_id:'',automation_enabled:true,segments:'psicólogo,nutricionista,massoterapeuta,quiropraxista,fisioterapeuta,esteticista,clínica,estética,advogado,arquiteto',cities:'Sorocaba,Votorantim,Campinas',discovery_auto_enabled:true,discovery_sources:{osm:true,web_search:true,cnpj:true,cnes:true,meta_ads:false,instagram_search:false,instagram_hashtags:false,instagram_related:false},discovery_priority:'no_website',discovery_brazil_wide:false,score_weights:{noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusiness:2,prioritySegment:2,location:1,businessName:1},owner_phone_a:'',owner_phone_b:'',owner_notifications_enabled:false,owner_report_hour:20,campaign_offer_expiry:'',campaign_offer_price:350,site_average_price_brl:550,sales_followup_enabled:true,sales_daily_report_enabled:true}))if(!one('SELECT key FROM settings WHERE key=?',key))setSetting(key,value);
+for(const [key,value] of Object.entries({paused:true,auto_initial:false,min_minutes:5,daily_limit:150,business_start:8,business_end:18,initial_interval_seconds:240,discovery_target_daily:150,discovery_start_hour:5,autonomous_campaign_id:'',automation_enabled:true,segments:'psicólogo,nutricionista,massoterapeuta,quiropraxista,fisioterapeuta,esteticista,clínica,estética,advogado,arquiteto',cities:'Sorocaba,Votorantim,Campinas',discovery_auto_enabled:true,discovery_sources:{osm:true,web_search:true,cnpj:true,cnes:true,meta_ads:false,instagram_search:false,instagram_hashtags:false,instagram_related:false},discovery_priority:'no_website',discovery_brazil_wide:false,score_weights:{noWebsite:4,activeAd:3,publicWhatsapp:2,activeBusiness:2,prioritySegment:2,location:1,businessName:1},owner_phone_a:'',owner_phone_b:'',owner_notifications_enabled:false,owner_report_hour:20,campaign_offer_expiry:'',campaign_offer_price:consecomWorkspace?350:null,site_average_price_brl:consecomWorkspace?550:null,sales_followup_enabled:true,sales_daily_report_enabled:true}))if(!one('SELECT key FROM settings WHERE key=?',key))setSetting(key,value);
 // O operador solicitou explicitamente o novo teto e janela. Aplicação única e auditável.
 if(!getSetting('outreach_200_rollout_applied',false)){
  for(const [key,value] of Object.entries({daily_limit:200,business_start:12,business_end:18,initial_interval_seconds:108}))setSetting(key,value);
@@ -99,7 +101,7 @@ if(!getSetting('osm_only_decision_engine_v2_applied',false)){
  audit('OSM_ONLY_ENGINE_V2_CONFIGURED',null,{cityCount:18,nicheCount:35});
 }
 // Rascunho persistente da campanha Consecom; não cria mídias nem inicia envios.
-if(!getSetting('consecom_350_seeded_v1',false)){
+if(consecomWorkspace&&!getSetting('consecom_350_seeded_v1',false)){
  const existing=one('SELECT id FROM workflows WHERE name=? ORDER BY updated_at DESC LIMIT 1','Consecom | Site profissional R$ 350 | Áudio + vídeo');
  if(existing){setSetting('consecom_campaign_seed_id',existing.id);}
  else{
@@ -112,7 +114,7 @@ if(!getSetting('consecom_350_seeded_v1',false)){
 }
 // V2: atualiza rascunho e campanha ativa para novos contatos, preservando mídias,
 // o status ativo/desativado e execuções já em andamento (snapshots históricos).
-if(!getSetting('consecom_350_flow_v2',false)){
+if(consecomWorkspace&&!getSetting('consecom_350_flow_v2',false)){
  const candidates=[getSetting('autonomous_campaign_id',''),getSetting('campaign_bundle_workflow',''),getSetting('consecom_campaign_seed_id','')].filter(Boolean);
  let workflow=null;
  for(const candidate of candidates){
@@ -129,7 +131,7 @@ if(!getSetting('consecom_350_flow_v2',false)){
 }
 // V3: altera apenas a abordagem de novas execuções da campanha Consecom.
 // Preserva mídias, tempos, seleção, pausa e snapshots das conversas já abertas.
-if(!getSetting('consecom_350_intro_v3',false)){
+if(consecomWorkspace&&!getSetting('consecom_350_intro_v3',false)){
  tx(()=>{
   const candidates=[getSetting('autonomous_campaign_id',''),getSetting('campaign_bundle_workflow',''),getSetting('consecom_campaign_seed_id','')].filter(Boolean);
   let workflow=candidates.map(candidate=>one('SELECT * FROM workflows WHERE id=?',candidate)).find(item=>item?.name===CAMPAIGN_NAME);
@@ -141,6 +143,27 @@ if(!getSetting('consecom_350_intro_v3',false)){
    run('UPDATE workflows SET steps=?,version=version+1,updated_at=? WHERE id=?',JSON.stringify(steps),now(),workflow.id);
   }
   setSetting('consecom_350_intro_v3',true);
+ });
+}
+// A pre-pilot version mistakenly inserted the (disabled) Consecom campaign
+// into external tenant databases. Remove only the exact, untouched seed if
+// it was never selected or executed. Never erase customer-created workflows.
+if(!consecomWorkspace&&!getSetting('tenant_commercial_seed_isolated_v1',false)){
+ tx(()=>{
+  const seededId=String(getSetting('consecom_campaign_seed_id','')||'');
+  const row=seededId?one('SELECT id,name,is_default,enabled FROM workflows WHERE id=?',seededId):null;
+  const selected=[getSetting('autonomous_campaign_id',''),getSetting('campaign_bundle_workflow','')];
+  const unreferenced=row&&!one('SELECT 1 FROM executions WHERE workflow_id=? LIMIT 1',seededId);
+  if(row?.name===CAMPAIGN_NAME&&row.is_default===0&&row.enabled===0&&
+     !selected.includes(seededId)&&unreferenced){
+   run('DELETE FROM workflows WHERE id=?',seededId);
+   setSetting('consecom_campaign_seed_id','');
+  }
+  // The two fallback prices were automatically seeded by the same legacy
+  // initialization, not approved by the customer's training.
+  if(getSetting('campaign_offer_price',null)===350)setSetting('campaign_offer_price',null);
+  if(getSetting('site_average_price_brl',null)===550)setSetting('site_average_price_brl',null);
+  setSetting('tenant_commercial_seed_isolated_v1',true);
  });
 }
 export function audit(action,lead_id=null,detail={}){run('INSERT INTO audit VALUES(?,?,?,?,?)',id(),now(),action,lead_id,JSON.stringify(detail));}
