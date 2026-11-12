@@ -54,7 +54,7 @@ const script=`
  await assert.rejects(waDisconnect(foreign),/verificar o WhatsApp/i);
  assert.equal(calls,prior,'foreign QR and logout must not call provider');
  const ownedQR=await waGetQR(owned);
- assert.match(ownedQR.qr||'',/^data:image\/png;base64,/);
+ assert.ok(String(ownedQR.qr||'').startsWith('data:image/png;base64,'));
  console.log('VERIFY='+JSON.stringify({owned,listed:listed.data.map(x=>x.sessionId),foreignBlocked:foreignPaths.length,
   invalidCreateBlocked:true,foreignGetRequests:0,ownedQrAllowed:true}));
 `;
