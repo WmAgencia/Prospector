@@ -22,6 +22,7 @@ export function reviewGroqReply({inbound='',draft='',allowAveragePrice=false}={}
  if(/\b(?:ja encaminhei|ja passei|ja avisei) (?:ao |o |para o )?(?:wesley|responsavel)\b/.test(n))return {ok:false,code:'UNVERIFIED_HANDOFF'};
  if(/\b(?:vou|vamos|iremos) (?:encaminhar|passar|avisar|chamar) (?:a |o |sua |seu )?(?:mensagem|solicitacao|pedido|interesse) (?:ao|para o|pro) (?:wesley|responsavel)\b/.test(n))return {ok:false,code:'UNVERIFIED_HANDOFF_PROMISE'};
  if(/\b(?:ele|wesley|responsavel|a equipe) (?:vai|ira|entrara) (?:te )?(?:ligar|falar com voce|entrar em contato)(?: em breve| hoje| amanha)?\b/.test(n))return {ok:false,code:'UNVERIFIED_OWNER_CALLBACK'};
+ if(/\b(?:ele|wesley|responsavel) entrara (?:em contato|em contato com voce)(?: em breve)?\b/.test(n))return {ok:false,code:'UNVERIFIED_OWNER_CALLBACK'};
  // A text draft is NOT an attachment, an ACK, or an authorized retry.
  if(/\b(?:segue|aqui esta|aqui vai|em anexo) (?:o |um |esse |a )?(?:audio|gravacao)\b/.test(n))return {ok:false,code:'AUDIO_ATTACHMENT_NOT_PRESENT'};
  if(/\b(?:(?:o |esse |um )?(?:audio|gravacao) (?:ja )?(?:foi enviad[oa]|foi encaminhad[oa]|esta enviad[oa]|foi entregue)|(?:entrega|recebimento) (?:do |da )?(?:audio|gravacao) (?:foi |esta )?confirmad[oa])\b/.test(n))
