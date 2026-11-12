@@ -12,6 +12,8 @@ import {CREDIT_PACKAGES} from './credit-packages.mjs';
 import {masterAnalytics} from './platform-analytics.mjs';
 import {billingReady,checkoutForRequest,handleStripeWebhook} from './stripe-billing.mjs';
 import {createAccessLimiter,accessClientKey} from './access-rate-limit.mjs';
+import {createTenantGatewayBroker,brokerWorkerToken} from './tenant-gateway-broker.mjs';
+import {TENANT_GATEWAY_BROKER_PATH} from './tenant-gateway-policy.mjs';
 const isWorker=!!process.env.PROSPECTOR_TENANT_ID;
 const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform');
 let store;
@@ -22,6 +24,7 @@ const accountPasswordLimiter=createAccessLimiter({limit:10});
 const cookieName='ps_client';
 const secret=process.env.ADMIN_SESSION_SECRET||'local-development-secret';
 const sign=s=>crypto.createHmac('sha256',secret).update(s).digest('base64url');
+const tenantGatewayBroker=!isWorker?createTenantGatewayBroker({registry,root,masterSecret:secret}):null;
 export function clientCookie(client){
  const p=Buffer.from(JSON.stringify({id:client.id,v:client.token_hash,exp:Date.now()+7*86400000})).toString('base64url');
  return cookieName+'='+p+'.'+sign(p)+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800';
@@ -66,7 +69,19 @@ export function workerEnvironment(client,port){
   'AUDIO_TRANSCRIPTION_ENABLED','AUDIO_RESPONSE_ENABLED','PUBLIC_BASE_URL'
  ];
  const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]));
- return {...env,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
+ // Only Consecom's internal worker retains direct gateway access for legacy
+ // original-audio flows. External accounts get no admin identity or API key.
+ const external=client.is_internal!==1;
+ if(external){
+  delete env.WA_AKG_API_KEY;
+  delete env.WA_AKG_ADMIN_EMAIL;
+  delete env.WA_AKG_ADMIN_PASSWORD;
+ }
+ const gatewayAccess=external?{
+  PROSPECTOR_GATEWAY_BROKER_URL:'http://127.0.0.1:'+String(process.env.PORT||3000)+TENANT_GATEWAY_BROKER_PATH,
+  PROSPECTOR_GATEWAY_BROKER_TOKEN:brokerWorkerToken(client,secret)
+ }:{};
+ return {...env,...gatewayAccess,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
   PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
   PROSPECTOR_SESSION_DIR:path.join(root,'clients',client.id,'wa-session'),
   ADMIN_ACCESS_TOKEN:client.secret,ADMIN_SESSION_SECRET:client.secret,WA_AKG_WEBHOOK_SECRET:client.secret,
@@ -116,6 +131,9 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
   return false;
  }
  const p=url.pathname;
+ if(p.startsWith(TENANT_GATEWAY_BROKER_PATH)){
+  await tenantGatewayBroker(req,res);return true;
+ }
  if(p==='/api/platform/billing/webhook'){await handleStripeWebhook(req,res,{respond,ledger:registry()});return true;}
  if(req.method==='GET'&&(p==='/conheca'||p==='/cadastro'||p==='/entrar'||p==='/'&&!authorized(req)&&!clientFromRequest(req))){
   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});

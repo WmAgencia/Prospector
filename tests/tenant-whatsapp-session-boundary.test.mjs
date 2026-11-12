@@ -19,7 +19,7 @@ const script=`
  registerSession(owned,'WhatsApp piloto autorizado');
  globalThis.fetch=async (u,options={})=>{
   calls++;
-  const pathname=new URL(u).pathname;
+  const pathname=new URL(u).pathname.replace('/api/internal/tenant-gateway','');
   if(pathname==='/api/sessions')return Response.json({status:true,data:[
    {sessionId:owned,status:'CONNECTED',name:'Titular'},
    {sessionId:foreign,status:'CONNECTED',name:'Outra Empresa'},
@@ -62,6 +62,8 @@ function run(name,owned,foreign){
  const env={...process.env,PROSPECTOR_TENANT_ID:crypto.randomUUID(),
   PROSPECTOR_DATA_DIR:path.join(root,name),PROSPECTOR_TENANT_INTERNAL:'false',
   WA_AKG_API_KEY:'mock-only-not-real',WA_AKG_SESSION_ID:'',WA_AKG_BASE_URL:'https://wa-akg-production-f9f0.up.railway.app',
+  PROSPECTOR_GATEWAY_BROKER_URL:'http://127.0.0.1:39999/api/internal/tenant-gateway',
+  PROSPECTOR_GATEWAY_BROKER_TOKEN:'t'.repeat(64),
   WA_AKG_ADMIN_EMAIL:'',WA_AKG_ADMIN_PASSWORD:'',OWNED_SESSION:owned,FOREIGN_SESSION:foreign,
   GROQ_API_KEY:'',RUN_MAPS_SMOKE:'false'};
  for(const k of Object.keys(env))if(k.startsWith('RUN_'))delete env[k];
