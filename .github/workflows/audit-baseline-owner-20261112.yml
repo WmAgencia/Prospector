@@ -1,0 +1,17 @@
+name: Baseline owner regressions (audit only)
+on:
+  push:
+    branches: [audit/owner-regression-baseline-20261112]
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Run pre-existing owner/role suites on unmodified production commit
+        run: node --test tests/role-routing-groq.test.mjs tests/prospecting-owner-audio-pitch.test.mjs
