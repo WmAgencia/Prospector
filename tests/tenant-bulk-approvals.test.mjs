@@ -293,7 +293,7 @@ test('select all with more than 500 pending contacts works in one transaction',(
 test('daily 80 persists and is respected by both scheduler budget and dashboard',()=>{
  const dir=path.join(tmp,'daily80');
  const first=run(dir,{action:'cap',primary:true});
- assert.equal(first.result?.status,'UPDATED');
+ assert.equal(first.result?.status,'UPDATED',JSON.stringify(first));
  assert.equal(first.persisted,80);
  assert.equal(first.radar,80);
  assert.equal(first.budget,80);
@@ -335,8 +335,8 @@ test('08:00 on Nov 10 makes an eligible queue; fake sender proves dispatch path 
  assert.equal(r.at?.status,'QUEUED',JSON.stringify(r));
  assert.equal(r.queued?.length,1);
  assert.equal(r.queued?.[0]?.phone,'5515991001100');
- assert.equal(r.tick?.status,'SENT',JSON.stringify(r));
- assert.equal(r.fakeSendCount,1);
+ assert.equal(r.tick?.status,'OWNER_RECORDING_REQUIRED',JSON.stringify(r));
+ assert.equal(r.fakeSendCount,0,'must not send without exact approved owner recording');
 });
 test('approval action is in the top toolbar, not a second bottom panel',()=>{
  const page=fs.readFileSync(path.join(process.cwd(),'dashboard/public/simple-app.js'),'utf8');
