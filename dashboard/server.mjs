@@ -71,6 +71,7 @@ import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROS
 import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread} from './approval-ready-activation.mjs';
 import {isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
+import {runApprovalReconciliation,approvalSyncStatus} from './whatsapp-approval-sync-job.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {tickIntroductions,recoverUnansweredPitchRequests,recoverDisabledPitchQueue} from './prospecting-introduction.mjs';
@@ -95,6 +96,15 @@ import {placesStatus,placesSearch} from './google-places-live.mjs';
 import {flushPriceApprovals} from './owner-price-approvals.mjs';
 import {flushCallScheduling} from './call-scheduling.mjs';
 
+// One-time reconciliation reads existing WhatsApp 2994 chats only and converts
+// matching affirmative replies into individually sourced approval audit records.
+// Sending messages and changing the production pause are never part of this job.
+if(process.env.RUN_WA_APPROVAL_RECONCILE_ONCE==='true'&&
+   process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'&&
+   !process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(()=>runApprovalReconciliation().catch(error=>
+  console.warn('[approval-history-sync-error]',String(error?.message||error).slice(0,160))),14000).unref();
+}
 // Owner-only audit of real session status, group, consent and tomorrow's dry-run.
 // No send or mutation; opt-in via a one-time Railway environment flag.
 if(process.env.RUN_PROSPECTOR_READINESS_AUDIT_ONCE==='true'&&
@@ -603,6 +613,15 @@ if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot()
     limit:Number(url.searchParams.get('limit')||40),
     offset:Number(url.searchParams.get('offset')||0)
    }));}catch(e){return respond(res,422,{error:String(e.message).slice(0,220)});}
+  }
+  if(pathname==='/api/approvals/sync-whatsapp'){
+   if(process.env.PROSPECTOR_TENANT_ID)return respond(res,403,{error:'Somente a conta principal Consecom'});
+   if(req.method==='GET')return respond(res,200,approvalSyncStatus());
+   if(req.method==='POST'){
+    try{const outcome=await runApprovalReconciliation();return respond(res,202,outcome);}
+    catch(error){return respond(res,422,{error:String(error?.message||error).slice(0,200)});}
+   }
+   return respond(res,405,{error:'Método não permitido'});
   }
   if(req.method==='POST'&&pathname==='/api/approvals/batch'){
    try{const result=approveLeadBatch(await json(req));notify();return respond(res,200,result);}
