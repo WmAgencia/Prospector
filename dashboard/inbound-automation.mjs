@@ -19,5 +19,11 @@ export function classifyInboundAutomation(value=''){
  if(/(?:agradece|agradecemos|obrigad[oa] pelo).{0,35}(?:seu|o) contato/.test(n)&&
     /(?:horario de funcionamento|horario comercial|assim que possivel|em breve|retornarem?os|responderemos|irei te responder)/.test(n))return result('CANNED_GREETING');
  if(/(?:seja(?:m)? (?:muito )?bem[ -]?vind[oa]s?|agradece(?:mos)? (?:o |seu |o seu )?contato|obrigad[oa] pelo (?:seu )?contato).{0,180}(?:como (?:podemos|posso) ajudar|em que (?:podemos|posso) ajudar|retornaremos|horario de atendimento)/.test(n))return result('CANNED_GREETING');
+ // Clinic welcome templates may impersonate a human receptionist but are
+ // canned automated messages; do not advance the commercial script for them.
+ if(/seja muito bem[ -]?vindo\s*\([ao]\)/.test(n)&&
+    /\bme chamo\b/.test(n)&&
+    /vou te acompanhar neste atendimento/.test(n))
+  return result('CANNED_CLINIC_WELCOME');
  return {blocked:false,reason:'NO_AUTOMATION_SIGNAL',action:'CONTINUE'};
 }
