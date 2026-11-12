@@ -348,13 +348,15 @@ export async function tickSalesAgent(deps={}){
 }
 let notifying=false;
 export async function flushInterestAlerts(deps={}){
- const target=ownerTarget();if(notifying||!one("SELECT id FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' LIMIT 1"))return 0;
+ const target=ownerTarget();if(notifying)return 0;
+ const noticeFilter=deps.onlyLeadId?all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' AND lead_id=? ORDER BY created_at LIMIT 5",deps.onlyLeadId):all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' ORDER BY created_at LIMIT 5");
+ if(!noticeFilter.length)return 0;
  notifying=true;
  try{
   const wa=deps.status?await deps.status():await waControlStatus(),session=selectedWaSession()||wa.sessionId;
   if(!wa.connected||!session)return 0;
   let delivered=0;
-  for(const entry of all("SELECT * FROM owner_notices WHERE kind IN ('GROQ_HOT_LEAD','SALES_OUTCOME','DAILY_REPORT','PAYMENT_RECEIPT') AND status='PENDING' ORDER BY created_at LIMIT 5")){
+  for(const entry of noticeFilter){
    const toGroup=entry.kind==='GROQ_HOT_LEAD';
    const group=String(process.env.PROSPECTOR_GROUP_IMPORT_JID||'').trim();
    if(toGroup){
