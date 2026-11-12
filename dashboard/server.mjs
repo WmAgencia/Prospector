@@ -71,6 +71,7 @@ import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROS
 import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread,resumeApprovedOwnerAt435Seconds} from './approval-ready-activation.mjs';
 import {readOwnerOutreachIncident} from './owner-outreach-incident.mjs';
 import {inspectOwner7896} from './owner-7896-incident.mjs';
+import {inspectLuciana4047} from './owner-4047-incident.mjs';
 import {recoverOwner7896DurationFailure} from './owner-7896-safe-recovery.mjs';
 import {isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
@@ -995,6 +996,9 @@ if(process.env.RUN_OWNER_7896_SAFE_RECOVERY_ONCE==='true'&&!process.env.PROSPECT
     followupSentAt:x.contacts[0].pitch?.followup_sent_at||null,
     error:x.contacts[0].pitch?.last_error||null}:null}));
  }).catch(e=>console.warn('[owner 7896 recovery verification failed]',String(e?.message||e).slice(0,100))),110000).unref();
+}
+if(process.env.RUN_OWNER_4047_DIAG_ONCE==='true'&&!process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(()=>inspectLuciana4047().then(x=>console.info('[owner 4047 incident]',JSON.stringify(x))).catch(e=>console.warn('[owner 4047 incident error]',String(e?.message||e).slice(0,140))),11000).unref();
 }
 let testInstructionError=null;
 let lastQueueReason=null,lastQueueLogAt=0;
