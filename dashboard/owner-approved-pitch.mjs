@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {getSetting,setSetting,now,audit} from './db.mjs';
 
-export const OWNER_PREVIEW_FOLLOWUP='Você teria uns minutinhos pra gente conversar por chamada? Queria te explicar melhor a ideia e te mostrar como pensei essa parceria.';
+export const OWNER_PREVIEW_FOLLOWUP='Se você quiser, posso te enviar uma prévia de como ficaria o site. O que você acha?';
 export const OWNER_PREVIEW_DELAY_MS=10_000;
 const ownerOnly=()=>!process.env.PROSPECTOR_TENANT_ID;
 const root=()=>path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','owner-approved-pitch');
