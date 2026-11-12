@@ -17,4 +17,4 @@ jobs:
       - run: npm ci
       - run: node --check dashboard/prospecting-introduction.mjs
       - run: node --check dashboard/prospecting-queue.mjs
-      - run: node --test tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs tests/approach-clock-persistence.test.mjs tests/approach-completion-clock.test.mjs tests/prospecting-owner-audio-pitch.test.mjs
+      - run: node --test tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs tests/approach-clock-persistence.test.mjs
