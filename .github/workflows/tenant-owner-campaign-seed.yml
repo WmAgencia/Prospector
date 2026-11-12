@@ -1,0 +1,19 @@
+name: Tenant commercial seed isolation
+on:
+  push:
+    branches: [fix/tenant-owner-campaign-seeding-20261112]
+jobs:
+  client-defaults:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/db.mjs
+      - run: node --check dashboard/server.mjs
+      - run: node --check tests/tenant-owner-campaign-seed.test.mjs
+      - run: node --test tests/tenant-owner-campaign-seed.test.mjs tests/platform-isolation.test.mjs tests/tenant-media-overview.test.mjs
