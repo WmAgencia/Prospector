@@ -99,6 +99,11 @@ test('no chat-like robotic reply may invent a verified action or sensitive confi
   ['Pode enviar o áudio?','Claro, vou enviar o áudio agora.'],
   ['Não recebi o áudio','Já enviei o áudio pelo WhatsApp.'],
   ['Quero o Wesley','Já avisei o Wesley e ele vai falar agora com você.'],
+  ['Sim, manda o áudio','Claro, segue o áudio.'],
+  ['Não abriu o áudio','O áudio foi enviado pelo sistema.'],
+  ['Não abriu o áudio','Posso tentar reenviar o áudio.'],
+  ['Prefiro texto','Vou preparar um resumo escrito da proposta.'],
+  ['Prefiro texto','Posso enviar a proposta por escrito.'],
  ];
  for(const [inbound,draft] of bad)assert.equal(reviewGroqReply({inbound,draft}).ok,false,draft);
 });
