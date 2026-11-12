@@ -40,7 +40,7 @@ export const TRAINING_SCENARIOS=Object.freeze([
 
 const sanitize=s=>String(s||'').replace(/(?:\+?55)?\d{10,13}/g,'[telefone]').replace(/\s+/g,' ').slice(0,680);
 const lowercase=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-function evaluate(s,answer){
+export function evaluateFranciscaLabReply(s,answer){
  const flags=[],str=lowercase(answer);
  if(!answer||answer.length<10)flags.push('EMPTY_OR_TOO_SHORT');
  if(answer.length>650)flags.push('TOO_LONG');
@@ -79,7 +79,7 @@ export async function runFranciscaTrainingBattery(){
   const result=await aiDraft({text:s.question,context:s.prior||'',audience:s.audience||'PROSPECT_APPROACHED',
    dialogueState:{hasAssistantReply:Boolean(s.continuation),turnCount:s.continuation?3:0}});
   const answer=result.ok?result.draft:'';
-  const flags=result.ok?evaluate(s,answer):['MODEL_'+(result.code||'UNAVAILABLE')];
+  const flags=result.ok?evaluateFranciscaLabReply(s,answer):['MODEL_'+(result.code||'UNAVAILABLE')];
   const ok=result.ok&&flags.length===0;
   if(ok)passed++;else {failed++;issues.push({id:s.id,flags});}
   if(!result.ok)providerErrors++;else models.add(result.model);
