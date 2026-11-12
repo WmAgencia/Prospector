@@ -20,6 +20,7 @@ import {conversationFinished} from './prospect-terminal-conversation.mjs';
 import {approvedOwnerRecordingStatus} from './owner-approved-pitch.mjs';
 import {enqueueOwnerPitch,ownerPitchStatus} from './owner-pitch-sequence.mjs';
 import {classifyOwnerProposalIntent,OWNER_PROPOSAL_INTENT} from './owner-proposal-interest.mjs';
+import {introductionDispatchDecision} from './introduction-dispatch-safety.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Estou entrando em contato porque queria fazer uma proposta pra vocês. Posso te mandar o áudio explicando a ideia?';
@@ -173,6 +174,25 @@ export async function tickIntroductions(deps={}){
    ?one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? AND p.lead_id=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString(),deps.onlyLeadId)
    :one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString());
   if(!item)return {state:'IDLE'};
+  // Responses from yesterday must not become unscheduled commercial texts
+  // when Railway restarts. Keep a human-review trace instead.
+  const previousIntro=one("SELECT MAX(attempt_at) AS at FROM prospecting_introductions WHERE attempt_at IS NOT NULL");
+  const pacing=introductionDispatchDecision({nowMs:at,dueAt:item.due_at,lastAttemptAt:previousIntro?.at});
+  if(pacing.state==='STALE_REVIEW'){
+   const affected=run("UPDATE prospecting_introductions SET stage='VOICE_REVIEW',reason='STALE_INTRO_REQUIRES_REVIEW',due_at=NULL,updated_at=? WHERE lead_id=? AND stage='WAITING'",
+    now(),item.lead_id).changes;
+   if(affected){
+    audit('PROSPECT_INTRO_STALE_REVIEW',item.lead_id,{
+     phoneSuffix:String(item.phone).slice(-4),sessionId:item.session_id,
+     firstReplyAt:item.first_reply_at,dueAt:item.due_at,overdueMs:pacing.overdueMs||null,
+     reason:pacing.reason,automaticMessageSent:false
+    });
+    queueNotice('stale-intro:'+item.lead_id,'OWNER_PITCH_REVIEW',
+     'Conversa com final '+String(item.phone).slice(-4)+' teve apresentação atrasada. Confira a resposta anterior e decida manualmente se deve prosseguir.',item.lead_id);
+   }
+   return {state:'STALE_REVIEW',manualReview:true,automaticMessageSent:false};
+  }
+  if(pacing.state!=='READY')return pacing;
   const voiceRequested=item.stage==='VOICE_WAITING';
   const eligible=()=>{
    const current=introductionStatus(item.lead_id);
