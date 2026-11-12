@@ -24,7 +24,7 @@ export function automaticCandidateSql(){
 }
 export function documentedOptIn(leadId){
  const lead=one('SELECT id,phone,contact_permission FROM leads WHERE id=?',leadId);
- if(!lead||lead.contact_permission!==1||!lead.phone||lead.phone===verifiedOwnerPhone()||isExcludedTestContact(lead.phone)||hasExistingClientRelationship(lead.phone))return false;
+ if(!lead||lead.contact_permission!==1||!lead.phone||lead.phone===verifiedOwnerPhone()||isExcludedTestContact(lead.phone)||hasExistingClientRelationship(lead.phone)||one('SELECT phone FROM suppressions WHERE phone=?',lead.phone))return false;
  const last=one("SELECT detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' ORDER BY rowid DESC LIMIT 1",leadId);
  if(!last)return false;
  let detail={};try{detail=JSON.parse(last.detail)}catch{return false;}
