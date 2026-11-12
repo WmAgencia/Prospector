@@ -15,6 +15,7 @@ if(!/^https:\/\//.test(base)&&!/^http:\/\/wa-akg\.railway\.internal:3000$/.test(
 const sessionKey="waakg_primary_session_id";
 let cachedKey="",pendingKey=null,nextLoginAt=0,lastAuthFailure="";
 const safeId=v=>/^[a-zA-Z0-9_-]{3,70}$/.test(String(v||""));
+export const validNewTenantSessionId=v=>/^prospector-[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(String(v||''));
 export function selectedWaSession(){const s=process.env.WA_AKG_SESSION_ID||getSetting(sessionKey,"");return safeId(s)?s:"";}
 function errorFrom(res,data){
  const detail=String(data?.message||data?.error||"indisponível").slice(0,110);
@@ -77,7 +78,7 @@ export async function waRequest(path,{method="GET",data}={}){
  if(process.env.PROSPECTOR_TENANT_ID){
   const parts=path.split('/').map(decodeURIComponent);
   if(path==='/api/sessions'&&method==='POST'){
-   if(!String(data?.sessionId||'').startsWith('prospector-'))throw Error('Sessão inválida');
+   if(!validNewTenantSessionId(data?.sessionId))throw Error('Sessão inválida');
   }else if(path!=='/api/sessions'&&!isManagedSession(parts[3]))throw Error('Canal não pertence a esta conta');
  }
  const apiKey=await getGatewayApiKey();

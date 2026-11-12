@@ -1,0 +1,18 @@
+name: Multi-tenant WhatsApp session boundary
+on:
+  push:
+    branches: [fix/tenant-whatsapp-session-boundary-20261112]
+jobs:
+  whatsapp-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/waakg-control.mjs
+      - run: node --check tests/tenant-whatsapp-session-boundary.test.mjs
+      - run: node --test tests/tenant-whatsapp-session-boundary.test.mjs tests/multi-whatsapp-control.test.mjs tests/platform-isolation.test.mjs
