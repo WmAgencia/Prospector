@@ -86,6 +86,7 @@ import {conversationHandoffStatus,changeConversationHandoff} from './conversatio
 import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
+import {runFranciscaTrainingBattery} from './francisca-training-battery-v5.mjs';
 import {ownerStatus} from './groq-owner.mjs';
 import {agentTools,runAgentTool} from './groq-owner-tools.mjs';
 import {placesStatus,placesSearch} from './google-places-live.mjs';
@@ -135,6 +136,14 @@ if(process.env.RUN_OSM_DISCOVERY_RECOVERY_ONCE==='true'){
  },5000).unref();
 }
 
+// Broad synthetic adversarial / natural-language battery. Do not send messages
+// to WhatsApp or modify prospect records. Runs only with emergency pause ACTIVE.
+if(process.env.RUN_FRANCISCA_TRAINING_V5_ONCE==='true'&&
+   process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'&&
+   !process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(()=>runFranciscaTrainingBattery()
+  .catch(e=>console.warn('[francisca-training-v5-error]',String(e?.message||e).slice(0,130))),9500).unref();
+}
 // One-shot in-process Francisca sales benchmark. Only synthetic customers,
 // no WA transport. Operator opt-in is required through the Railway environment.
 if(process.env.RUN_FRANCISCA_SALES_SMOKE==='true'){
