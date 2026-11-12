@@ -1,0 +1,21 @@
+name: Clinic human reply after auto responder
+on:
+  push:
+    branches:
+      - fix/4047-auto-reply-recovery-20261112
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/server.mjs
+      - run: node --check dashboard/prospecting-introduction.mjs
+      - run: node --check dashboard/owner-4047-safe-recovery.mjs
+      - run: node --test tests/clinic-auto-reply-rescue.test.mjs tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs
