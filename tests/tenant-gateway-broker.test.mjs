@@ -109,14 +109,28 @@ test('a tenant cannot logout, send messages or read another tenant media',async(
 });
 
 test('tenant cannot create a forged, duplicate or Consecom WhatsApp session',async()=>{
- for(const id of ['consecom-principal','prospector-other-account',sidB]){
+ for(const id of ['consecom-principal','prospector-other-account']){
   assert.equal((await call(a,'/api/sessions',{method:'POST',data:{sessionId:id,name:'Falso'}})).status,403);
  }
+ assert.equal((await call(a,'/api/sessions',{method:'POST',data:{sessionId:sidB,name:'Falso'}})).status,409,
+  'existing session owned by another tenant must not be acquired');
  const fresh='prospector-'+crypto.randomUUID();
  const ok=await call(a,'/api/sessions',{method:'POST',data:{sessionId:fresh,name:'Novo número de teste'}});
  assert.equal(ok.status,200);
  assert.equal((await call(b,'/api/sessions/'+fresh)).status,403);
  assert.equal((await call(a,'/api/sessions/'+fresh)).status,200);
+});
+
+test('recording indicator is permitted for only the owned session with a limited presence value',async()=>{
+ assert.equal((await call(a,'/api/chat/'+sidA+'/5511999999999@s.whatsapp.net/presence',{
+  method:'POST',data:{presence:'recording'}
+ })).status,200);
+ assert.equal((await call(a,'/api/chat/'+sidA+'/5511999999999@s.whatsapp.net/presence',{
+  method:'POST',data:{presence:'invalid'}
+ })).status,403);
+ assert.equal((await call(a,'/api/chat/'+sidB+'/5511999999999@s.whatsapp.net/presence',{
+  method:'POST',data:{presence:'recording'}
+ })).status,403);
 });
 
 test('tenant webhook and bot settings cannot point to arbitrary destinations',async()=>{
