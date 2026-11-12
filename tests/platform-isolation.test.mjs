@@ -31,6 +31,9 @@ test('master creates clients; client APIs use separate processes and cannot acce
  await call('/api/training/business',{name:'Somente A',description:'Descrição privada A'},ca);
  assert.equal((await call('/api/training',undefined,ca)).body.business.name,'Somente A');
  assert.equal((await call('/api/training',undefined,cb)).body.business.name,'Fictícia B');
+ assert.equal((await call('/api/sales/status',undefined,ca)).body.priceReferenceBrl,null,'client A cannot inherit Consecom base offer');
+ assert.equal((await call('/api/sales/status',undefined,cb)).body.priceReferenceBrl,null,'client B cannot inherit Consecom base offer');
+ assert.equal((await call('/api/sales/status',undefined,primaryCookie)).body.priceReferenceBrl,550,'Consecom offer remains internal');
  assert.equal((await call('/api/whatsapp/status?sessionId=consecom-principal',undefined,ca)).body.status,'UNAUTHORIZED_SESSION');
  assert.equal((await call('/api/groq/owner',undefined,ca)).status,403);
  await call('/api/platform/clients/'+a.client.id+'/credits',{amount:250,reference:'payment',reason:'Recarga'});

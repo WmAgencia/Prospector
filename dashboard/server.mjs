@@ -677,7 +677,7 @@ if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot()
    catch(e){return respond(res,422,{error:String(e?.message||e).slice(0,130)});}
   }
   if(req.method==='GET'&&pathname==='/api/sales/outcomes')return respond(res,200,salesOutcomes({limit:80}));
-  if(req.method==='GET'&&pathname==='/api/sales/status')return respond(res,200,{priceReferenceBrl:SITE_AVERAGE_PRICE_BRL,agent:agentStatus(),queue:approachQueueStatus()});
+  if(req.method==='GET'&&pathname==='/api/sales/status')return respond(res,200,{priceReferenceBrl:process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true'?null:SITE_AVERAGE_PRICE_BRL,agent:agentStatus(),queue:approachQueueStatus()});
   if(req.method==='GET'&&pathname==='/api/whatsapp/contact-role'){
    const p=phone(url.searchParams.get('phone')||'');
    if(!p)return respond(res,400,{error:'Número inválido'});
