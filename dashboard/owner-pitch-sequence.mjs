@@ -75,13 +75,15 @@ function allowed(item,{beforeAudio=false}={}){
 }
 let working=false;
 export async function tickOwnerPitch({clock=()=>Date.now(),status=waControlStatus,
- sendAudio=sendVoiceWithRecording,sendText=waRequest,load=loadApprovedOwnerRecording}={}){
+ sendAudio=sendVoiceWithRecording,sendText=waRequest,load=loadApprovedOwnerRecording,onlyLeadId=null}={}){
  if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return {state:'PAUSED_EMERGENCY'};
  if(working)return {state:'BUSY'};
  working=true;
  try{
   const due=new Date(clock()).toISOString();
-  const item=one("SELECT * FROM owner_pitch_sequences WHERE stage IN ('PENDING_AUDIO','AUDIO_ACCEPTED') AND due_at<=? ORDER BY due_at LIMIT 1",due);
+   const item=onlyLeadId
+    ?one("SELECT * FROM owner_pitch_sequences WHERE stage IN ('PENDING_AUDIO','AUDIO_ACCEPTED') AND due_at<=? AND lead_id=? ORDER BY due_at LIMIT 1",due,onlyLeadId)
+    :one("SELECT * FROM owner_pitch_sequences WHERE stage IN ('PENDING_AUDIO','AUDIO_ACCEPTED') AND due_at<=? ORDER BY due_at LIMIT 1",due);
   if(!item)return {state:'IDLE'};
   const audioStep=item.stage==='PENDING_AUDIO';
   if(!audioStep&&clock()-Date.parse(item.due_at)>120000){
