@@ -71,6 +71,7 @@ import {prospectingControls,coldFirstApproachEnabled,saveProspectingControl,PROS
 import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread,resumeApprovedOwnerAt435Seconds} from './approval-ready-activation.mjs';
 import {readOwnerOutreachIncident} from './owner-outreach-incident.mjs';
 import {inspectOwner7896} from './owner-7896-incident.mjs';
+import {recoverOwner7896DurationFailure} from './owner-7896-safe-recovery.mjs';
 import {isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
@@ -981,6 +982,19 @@ if(process.env.RUN_OWNER_OUTREACH_INCIDENT_AUDIT_ONCE==='true'){
 }
 if(process.env.RUN_OWNER_7896_DIAG_ONCE==='true'&&!process.env.PROSPECTOR_TENANT_ID){
  setTimeout(()=>inspectOwner7896().then(x=>console.info('[owner 7896 incident]',JSON.stringify(x))).catch(e=>console.warn('[owner 7896 incident failed]',String(e.message).slice(0,110))),10000).unref();
+}
+if(process.env.RUN_OWNER_7896_SAFE_RECOVERY_ONCE==='true'&&!process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(()=>recoverOwner7896DurationFailure().then(x=>console.info('[owner 7896 safe recovery]',JSON.stringify(x))).catch(e=>console.warn('[owner 7896 safe recovery failed]',String(e?.message||e).slice(0,130))),14000).unref();
+ // Read-only confirmation once the 71s indicator and 10s follow-up could
+ // have completed. Never trigger an extra message for the audit.
+ setTimeout(()=>inspectOwner7896().then(x=>{
+  console.info('[owner 7896 recovery verification]',JSON.stringify({at:x.at,matches:x.matches,
+   contact:x.contacts?.[0]?{suffix:x.contacts[0].suffix,
+    pitchStage:x.contacts[0].pitch?.stage||null,
+    audioSentAt:x.contacts[0].pitch?.audio_sent_at||null,
+    followupSentAt:x.contacts[0].pitch?.followup_sent_at||null,
+    error:x.contacts[0].pitch?.last_error||null}:null}));
+ }).catch(e=>console.warn('[owner 7896 recovery verification failed]',String(e?.message||e).slice(0,100))),110000).unref();
 }
 let testInstructionError=null;
 let lastQueueReason=null,lastQueueLogAt=0;
