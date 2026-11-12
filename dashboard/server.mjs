@@ -1,6 +1,7 @@
 import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
 import {handlePlatform,isPrimaryClient} from './platform.mjs';
+import {evaluateTenantMediaQuota,tenantMediaQuotaMessage} from './tenant-media-quota.mjs';
 import {handleTraining} from './training.mjs';
 import {handleFranciscaPanel} from './francisca-panel.mjs';
 import {monthlyProspectingCalendar} from './prospecting-calendar.mjs';
@@ -481,6 +482,18 @@ async function upload(req,url,res){
  if(kind==='audio'&&mime==='audio/ogg'&&buf.toString('ascii',0,4)!=='OggS')throw Error('OGG inválido');
  if(kind==='image'&&mime==='image/png'&&buf.toString('hex',0,8)!=='89504e470d0a1a0a')throw Error('PNG inválido');
  if(kind==='image'&&mime==='image/jpeg'&&buf.toString('hex',0,3)!=='ffd8ff')throw Error('JPEG inválido');
+ if(process.env.PROSPECTOR_TENANT_ID){
+  // Defense-in-depth: only images/PDFs for customer workspaces.
+  if(!['image','document'].includes(kind))return respond(res,403,{error:'Formato indisponível nesta conta'});
+  const totals=one('SELECT COUNT(*) files,COALESCE(SUM(bytes),0) totalBytes FROM media')||{};
+  const minute=new Date(Date.now()-60000).toISOString();
+  const recent=one('SELECT COUNT(*) n FROM media WHERE created_at>=?',minute)?.n||0;
+  const check=evaluateTenantMediaQuota({
+   files:Number(totals.files||0),totalBytes:Number(totals.totalBytes||0),
+   uploadsLastMinute:Number(recent),incomingBytes:buf.length
+  });
+  if(!check.ok)return respond(res,check.status,{error:tenantMediaQuotaMessage(check.code),code:check.code});
+ }
  const extByMime={'video/mp4':'.mp4','audio/ogg':'.ogg','audio/mpeg':'.mp3','audio/mp4':'.m4a','audio/x-m4a':'.m4a','audio/opus':'.opus','image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp','application/pdf':'.pdf'};
  const itemId=id(),fileName=itemId+extByMime[mime],target=path.join(mediaDir,fileName);
  fs.writeFileSync(target,buf,{flag:'wx'});
