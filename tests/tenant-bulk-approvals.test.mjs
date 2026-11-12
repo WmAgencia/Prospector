@@ -9,7 +9,7 @@ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-bulk-approvals-'));
 const a=path.join(tmp,'tenant-a'),b=path.join(tmp,'tenant-b');
 const operatorPhone='5515988887336';
 const fixture=String.raw`
-const {addLead,one,run,all,db}=await import('./dashboard/db.mjs');
+const {addLead,one,run,all,db,getSetting}=await import('./dashboard/db.mjs');
 const {approveLeadBatch,listLeadApprovals}=await import('./dashboard/lead-approvals.mjs');
 const {armApprovedOutreach,apply80DailyLimit}=await import('./dashboard/approval-ready-activation.mjs');
 const input=JSON.parse(process.argv[1]);
@@ -25,7 +25,7 @@ try{
  }
  if(input.action==='arm'){
   data.result=armApprovedOutreach();
-  data.controls=Object.fromEntries(['paused','autonomous_outreach_enabled','discovery_auto_enabled','cold_first_approach_enabled','auto_initial','automation_enabled'].map(k=>[k,(await import('./dashboard/db.mjs')).getSetting(k)]));
+  data.controls=Object.fromEntries(['paused','autonomous_outreach_enabled','discovery_auto_enabled','cold_first_approach_enabled','auto_initial','automation_enabled'].map(k=>[k,getSetting(k)]));
   data.activationAudits=all("SELECT action,detail FROM audit WHERE action='APPROVAL_READY_OUTREACH_ARMED'");
  }
  if(input.action==='setControl')(await import('./dashboard/db.mjs')).setSetting(input.key,input.value);
