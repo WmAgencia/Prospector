@@ -19,7 +19,7 @@ const script=`
  registerSession(owned,'WhatsApp piloto autorizado');
  globalThis.fetch=async (u,options={})=>{
   calls++;
-  const pathname=new URL(u).pathname.replace(/^\/api\/internal\/tenant-gateway/,'');
+  const pathname=new URL(u).pathname.replace('/api/internal/tenant-gateway','');
   if(pathname==='/api/sessions')return Response.json({status:true,data:[
    {sessionId:owned,status:'CONNECTED',name:'Titular'},
    {sessionId:foreign,status:'CONNECTED',name:'Outra Empresa'},
