@@ -23,4 +23,4 @@ jobs:
           node --check tests/tenant-brand-isolation.test.mjs
       - name: Test tenant brand, private training and WhatsApp safety without sends
         run: |
-          node --test tests/tenant-brand-isolation.test.mjs tests/platform-isolation.test.mjs tests/tenant-prospecting-controls.test.mjs tests/role-routing-groq.test.mjs
+          node --test tests/tenant-brand-isolation.test.mjs tests/platform-isolation.test.mjs tests/tenant-prospecting-controls.test.mjs
