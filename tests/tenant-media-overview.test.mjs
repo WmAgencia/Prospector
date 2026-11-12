@@ -64,6 +64,24 @@ test('client portfolio upload, private media and overview contract',async t=>{
   assert.equal((await call('/api/media/'+imageDoc.id)).status,403,'no client cookie is not sufficient');
  });
 
+ await t.test('uploads are rate limited within each tenant independently',async()=>{
+  // Client A already has two successful uploads from the previous test.
+  for(let i=0;i<8;i++){
+   const response=await call('/api/media?kind=image&name=Pilot-'+i,{
+    method:'POST',cookie:cookieA,mime:'image/png',body:png
+   });
+   assert.equal(response.status,201,'small authorized uploads stay functional until the limit');
+  }
+  const throttled=await call('/api/media?kind=image&name=TooMany',{
+   method:'POST',cookie:cookieA,mime:'image/png',body:png
+  });
+  assert.equal(throttled.status,429,'client A cannot send an unlimited burst');
+  const acceptedOther=await call('/api/media?kind=image&name=OtherCompany',{
+   method:'POST',cookie:cookieB,mime:'image/png',body:png
+  });
+  assert.equal(acceptedOther.status,201,'client B keeps an independent quota');
+ });
+
  await t.test('read-only overview endpoints work for each client',async()=>{
   for(const cookie of [cookieA,cookieB]){
    const dimensions=await call('/api/overview/dimensions',{cookie});
