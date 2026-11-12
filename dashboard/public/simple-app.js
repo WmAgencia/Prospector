@@ -34,7 +34,7 @@ let prospectCalendar=null,scopeInfo=null,scopeMode='all',scopeNicheInput='',scop
 let trainingStep=0,trainingWizardReopen=false,trainingRecorder=null,trainingRecording=false,trainingRecordedText='';
 let outreachHours={start:'08:00',end:'17:30'},outreachHardMax='17:30';
 let ownerRecordingStatus=null,ownerRecordingBusy=false;
-let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalSelectAll=false,approvalExcludedIds=new Set(),approvalSelectionCutoff='',approvalBusy=false,approvalFeedback='';
+let approvalData=null,approvalStatus='PENDING',approvalOffset=0,approvalSelection=new Set(),approvalSelectAll=false,approvalExcludedIds=new Set(),approvalSelectionCutoff='',approvalBusy=false,approvalFeedback='',approvalSyncBusy=false,approvalSyncProgress=null;
 let trainingRecordTimeout=null,franciscaOpen=false,franciscaHistory=[],franciscaBusy=false,franciscaAudio=null,franciscaAudioObjectURL=null,franciscaAudioResolve=null,franciscaConversationId=crypto.randomUUID();
 let franciscaVoiceActive=false,franciscaVoiceState='off',franciscaVoiceSession=null,franciscaVoiceFailure='';
 let noticeTimer=null,noticeToken=0;
@@ -862,7 +862,8 @@ function approvalsView(){
  const next=approvalOffset+40;
  return '<div class="workspace-head"><div><span class="kicker">CURADORIA / WHATSAPP</span><h2>Aprovações</h2><p>Somente comprovantes individuais habilitam abordagens automáticas. A seleção em lote registra declarações, mas não substitui a prova do aceite.</p></div></div>'+
   '<section class="approval-stat-grid"><div><small>Pendentes</small><strong>'+totals.pending+'</strong></div><div><small>Autorizados</small><strong>'+totals.authorized+'</strong></div><div><small>Bloqueados</small><strong>'+totals.blocked+'</strong></div></section>'+
-  '<section class="panel approvals-panel"><div class="approval-toolbar"><div class="approval-filters">'+button('PENDING','Pendentes',totals.pending)+button('AUTHORIZED','Autorizados',totals.authorized)+button('BLOCKED','Bloqueados',totals.blocked)+'</div><div class="approval-toolbar-actions"><button type="button" class="secondary compact" data-action="approval-refresh">Atualizar</button>'+approveAction+'</div></div>'+
+  '<section class="panel approvals-panel"><div class="approval-toolbar"><div class="approval-filters">'+button('PENDING','Pendentes',totals.pending)+button('AUTHORIZED','Autorizados',totals.authorized)+button('BLOCKED','Bloqueados',totals.blocked)+'</div><div class="approval-toolbar-actions"><button type="button" class="secondary compact" data-action="approval-refresh">Atualizar</button><button type="button" class="secondary compact" data-action="approval-sync-whatsapp" '+(approvalSyncBusy?'disabled':'')+'>'+(approvalSyncBusy?'Verificando WhatsApp...':'Sincronizar aceites do WhatsApp 2994')+'</button>'+approveAction+'</div></div>'+
+  (approvalSyncProgress?'<p class="approval-result" role="status" aria-live="polite">'+esc(approvalSyncProgress)+'</p>':'')+
   (approvalFeedback?'<p class="approval-result" role="status" aria-live="polite">'+esc(approvalFeedback)+'</p>':'')+
   (approvalStatus==='PENDING'?'<div class="approval-select-bar"><label class="approval-all"><input type="checkbox" data-approval-all="true" '+(approvalSelectAll&&approvalExcludedIds.size===0?'checked':'')+' '+(!totals.pending?'disabled':'')+'> Selecionar todos os '+totals.pending+' pendentes (todas as páginas)</label><span>'+count+' selecionado(s)</span></div>':'')+
   '<div class="approval-contacts">'+(cards||'<div class="empty"><h3>Nenhum contato nesta categoria</h3><p>Os contatos aparecerão conforme forem encontrados ou autorizados.</p></div>')+'</div>'+
@@ -883,13 +884,43 @@ async function submitApprovals(){
   const result=await post('/api/approvals/batch',payload);
   approvalSelection.clear();approvalExcludedIds.clear();approvalSelectAll=false;approvalSelectionCutoff='';
   await loadApprovals();
-  approvalFeedback=result.approved+' declaração(ões) registradas. Cada contato ainda exige comprovação individual para permitir abordagens.'+
-   (result.skipped?' '+result.skipped+' ignorado(s): '+Object.entries(result.skippedReasons||{}).map(([reason,count])=>reason+': '+count).join(', ')+'.':'');
+  const already=Number(result.alreadyDeclared||0),newly=Number(result.approved||0);
+  approvalFeedback=(newly?newly+' declaração(ões) novas registradas. ':'')+
+   (already?already+' contato(s) já tinham declaração e foram preservados, sem duplicar. ':'')+
+   (!newly&&!already?'Nenhuma declaração nova. ':'')+
+   'Para liberar um contato, sincronize o aceite no WhatsApp 2994 ou anexe o comprovante individual.'+
+   (result.skipped?' '+result.skipped+' contato(s) indisponível(is) ou bloqueado(s).':'');
   n(approvalFeedback);
  }catch(e){approvalFeedback='Aprovação não concluída: '+e.message;n(approvalFeedback);}
  finally{approvalBusy=false;if(view==='approvals')render();}
 }
 
+async function syncApprovalsWhatsapp(){
+ if(approvalSyncBusy)return;
+ approvalSyncBusy=true;approvalSyncProgress='Consultando o histórico do WhatsApp 2994 sem enviar mensagens.';
+ render();
+ try{
+  await post('/api/approvals/sync-whatsapp',{});
+  for(let i=0;i<200;i++){
+   const status=await api('/api/approvals/sync-whatsapp');
+   approvalSyncProgress='Contatos verificados: '+Number(status.scanned||0)+
+    ' · Aceites comprovados: '+Number(status.approved||0)+
+    ' · Sem confirmação identificada: '+Number(status.unverified||0)+
+    ' · Falhas de leitura: '+Number(status.errors||0)+'.';
+   if(['COMPLETED','SOURCE_UNAVAILABLE','SOURCE_ERROR','PARTIAL','ERROR'].includes(status.state)){
+    approvalSyncProgress+=(status.state==='COMPLETED'
+      ?' Sincronização concluída. Só contatos com aceite comprovado foram autorizados.'
+      :' Sincronização interrompida: '+String(status.note||'verifique a conexão do WhatsApp 2994')+'.');
+    break;
+   }
+   if(i%4===0){await loadApprovals();render();}
+   await new Promise(resolve=>setTimeout(resolve,1500));
+  }
+  await loadApprovals();
+ }catch(error){
+  approvalSyncProgress='Não foi possível verificar as autorizações: '+error.message;
+ }finally{approvalSyncBusy=false;render();}
+}
 function settings(){
  if(platformContext.role==='master')return masterSettings();
  const hours=outreachHours||{start:'08:00',end:outreachHardMax};
@@ -1172,6 +1203,7 @@ document.addEventListener("click",async ev=>{
   if(action==='approval-prev'){approvalOffset=Math.max(0,approvalOffset-40);await loadApprovals();return;}
   if(action==='approval-next'){approvalOffset+=40;await loadApprovals();return;}
   if(action==='approval-submit'){await submitApprovals();return;}
+  if(action==='approval-sync-whatsapp'){await syncApprovalsWhatsapp();return;}
   if(action==='switch-workspace'){
     const mode=platformContext.role==='master'?'production':'master';
     const response=await post('/api/platform/workspace',{mode});
