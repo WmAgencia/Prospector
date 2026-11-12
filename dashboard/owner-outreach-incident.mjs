@@ -10,11 +10,11 @@ export async function readOwnerOutreachIncident(){
  const rawInitial=rows(`SELECT q.attempt_at,q.status,q.phone,r.session_id
   FROM prospecting_batch_items q LEFT JOIN lead_whatsapp_routes r ON r.lead_id=q.lead_id
   WHERE q.attempt_at IS NOT NULL ORDER BY q.attempt_at DESC LIMIT 20`);
- const rawIntro=rows(`SELECT p.attempt_at,p.sent_at,p.stage,p.phone,p.session_id
+ const rawIntro=rows(`SELECT p.attempt_at,p.sent_at,p.first_reply_at,p.due_at,p.stage,p.phone,p.session_id
   FROM prospecting_introductions p WHERE p.attempt_at IS NOT NULL
   ORDER BY p.attempt_at DESC LIMIT 20`);
  const initial=Array.isArray(rawInitial)?rawInitial.map(x=>({at:x.attempt_at,status:x.status,phoneSuffix:suffix(x.phone),sessionId:x.session_id||null})):rawInitial;
- const intros=Array.isArray(rawIntro)?rawIntro.map(x=>({attemptedAt:x.attempt_at,sentAt:x.sent_at,stage:x.stage,phoneSuffix:suffix(x.phone),sessionId:x.session_id})):rawIntro;
+ const intros=Array.isArray(rawIntro)?rawIntro.map(x=>({attemptedAt:x.attempt_at,sentAt:x.sent_at,firstReplyAt:x.first_reply_at,dueAt:x.due_at,stage:x.stage,phoneSuffix:suffix(x.phone),sessionId:x.session_id})):rawIntro;
  const successful=Array.isArray(rawInitial)?rawInitial.filter(x=>x.status==='SENT').sort((a,b)=>Date.parse(a.attempt_at)-Date.parse(b.attempt_at)):[];
  const gaps=successful.slice(1).map((x,i)=>({seconds:Math.round((Date.parse(x.attempt_at)-Date.parse(successful[i].attempt_at))/1000),
   first:suffix(successful[i].phone),second:suffix(x.phone)}));
