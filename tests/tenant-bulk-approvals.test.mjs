@@ -16,7 +16,7 @@ const input=JSON.parse(process.argv[1]);
 const data={};
 try{
  if(input.action==='cap'){
-  data.result=apply250DailyLimit();
+  data.result=apply80DailyLimit();
   const {getSetting}=await import('./dashboard/db.mjs');
   data.persisted=getSetting('daily_limit');
   data.radar=(await import('./dashboard/radar.mjs')).budgetConfig().limit;
