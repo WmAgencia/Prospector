@@ -18,7 +18,9 @@ export const autoOutreachCandidateSql=`SELECT l.id FROM leads l WHERE ${BASE}
  AND NOT EXISTS (SELECT 1 FROM suppressions s WHERE s.phone=l.phone)
  ORDER BY l.created_at ASC LIMIT 1`;
 export function automaticCandidateSql(){
- return invitationEnabled()?`SELECT l.id FROM leads l WHERE ${BASE} AND l.phone IS NOT NULL AND NOT EXISTS (SELECT 1 FROM suppressions s WHERE s.phone=l.phone) ORDER BY l.created_at ASC LIMIT 1`:autoOutreachCandidateSql;
+ // A permission invitation is itself an outbound message; no unsolicited
+ // WhatsApp may be initiated without the recipient's documented opt-in.
+ return autoOutreachCandidateSql;
 }
 export function documentedOptIn(leadId){
  const lead=one('SELECT id,phone,contact_permission FROM leads WHERE id=?',leadId);
@@ -33,7 +35,7 @@ export function outreachQueueSnapshot(){
  const active=all(`SELECT l.id,l.phone,l.contact_permission,l.created_at,
  CASE WHEN l.phone IS NULL THEN 'NO_WHATSAPP'
  WHEN EXISTS(SELECT 1 FROM suppressions s WHERE s.phone=l.phone) THEN 'SUPPRESSED'
- WHEN ${invitation?'1=1':`l.contact_permission=1 AND ${proof}`} THEN 'READY'
+ WHEN l.contact_permission=1 AND ${proof} THEN 'READY'
  ELSE 'AWAITING_OPT_IN' END AS queue_status
  FROM leads l WHERE ${BASE} ORDER BY l.created_at ASC LIMIT 5000`);
  const count=key=>active.filter(x=>x.queue_status===key).length;
