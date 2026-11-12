@@ -1,0 +1,29 @@
+name: Prelaunch multitenant audit (non-production)
+on:
+  push:
+    branches: [audit/prelaunch-multitenant-20261112]
+  workflow_dispatch:
+jobs:
+  tenant-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check critical production modules
+        run: |
+          node --check dashboard/platform.mjs
+          node --check dashboard/platform-store.mjs
+          node --check dashboard/waakg-control.mjs
+          node --check dashboard/waakg-bridge.mjs
+          node --check dashboard/training.mjs
+          node --check dashboard/training-markdown.mjs
+          node --check dashboard/tenant-approach.mjs
+          node --check dashboard/server.mjs
+      - name: Run isolated synthetic security and onboarding regressions (no WhatsApp sends)
+        run: |
+          node --test tests/platform-isolation.test.mjs tests/platform-proxy.test.mjs tests/platform-store.test.mjs tests/landing-signup.test.mjs tests/training.test.mjs tests/tenant-prospecting-controls.test.mjs tests/multi-whatsapp-control.test.mjs tests/access-rate-limit.test.mjs
