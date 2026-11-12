@@ -20,6 +20,14 @@ export function reviewGroqReply({inbound='',draft='',allowAveragePrice=false}={}
  if(/\b(?:vou|iremos|vamos) (?:te )?(?:mandar|enviar|encaminhar) (?:o |um |essa |a )?(?:audio|gravacao|proposta)\b/.test(n))return {ok:false,code:'UNVERIFIED_AUDIO_PROMISE'};
  if(/\b(?:ja|acabei de) (?:mandei|enviei|reenviei) (?:o |um |essa )?(?:audio|gravacao)\b/.test(n))return {ok:false,code:'UNVERIFIED_AUDIO_ACTION'};
  if(/\b(?:ja encaminhei|ja passei|ja avisei) (?:ao |o |para o )?(?:wesley|responsavel)\b/.test(n))return {ok:false,code:'UNVERIFIED_HANDOFF'};
+ if(/\b(?:vou|vamos|iremos) (?:encaminhar|passar|avisar|chamar) (?:a |o |sua |seu )?(?:mensagem|solicitacao|pedido|interesse) (?:ao|para o|pro) (?:wesley|responsavel)\b/.test(n))return {ok:false,code:'UNVERIFIED_HANDOFF_PROMISE'};
+ if(/\b(?:ele|wesley|responsavel|a equipe) (?:vai|ira|entrara) (?:te )?(?:ligar|falar com voce|entrar em contato)(?: em breve| hoje| amanha)?\b/.test(n))return {ok:false,code:'UNVERIFIED_OWNER_CALLBACK'};
+ // A text draft is NOT an attachment, an ACK, or an authorized retry.
+ if(/\b(?:segue|aqui esta|aqui vai|em anexo) (?:o |um |esse |a )?(?:audio|gravacao)\b/.test(n))return {ok:false,code:'AUDIO_ATTACHMENT_NOT_PRESENT'};
+ if(/\b(?:(?:o |esse |um )?(?:audio|gravacao) (?:ja )?(?:foi enviad[oa]|foi encaminhad[oa]|esta enviad[oa]|foi entregue)|(?:entrega|recebimento) (?:do |da )?(?:audio|gravacao) (?:foi |esta )?confirmad[oa])\b/.test(n))
+  return {ok:false,code:'UNVERIFIED_AUDIO_DELIVERY'};
+ if(/\b(?:posso|vou|podemos|iremos) (?:tentar )?(?:reenviar|repassar|mandar novamente|enviar novamente)(?: (?:o|um|a) (?:audio|gravacao|proposta))?\b/.test(n))return {ok:false,code:'AUDIO_RETRY_UNAUTHORIZED'};
+ if(/\b(?:vou|iremos|podemos|posso) (?:te )?(?:preparar|montar|escrever|criar|enviar|mandar) (?:um |uma |o |a )?(?:resumo|versao escrita|proposta|texto)\b/.test(n))return {ok:false,code:'UNAPPROVED_TEXT_PROPOSAL'};
  if(/[\x00-\x08\x0e-\x1f]/.test(s)||/\x60\x60\x60/.test(s))return {ok:false,code:'FORMAT'};
  if(/^\s*(?:pare|parar|stop|remover|nao me contate|nao quero mensagem)/.test(inText))return {ok:false,code:'INBOUND_OPTOUT'};
  if(/https?:\/\/|www\.|\bwa\.me\//i.test(s))return {ok:false,code:'UNVERIFIED_LINK'};
