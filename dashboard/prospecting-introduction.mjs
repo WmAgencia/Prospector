@@ -2,8 +2,7 @@
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
 // After the introduction, every incoming reply can continue the sales conversation.
 // No public listing is ever treated as documented WhatsApp opt-in.
-import {db,one,all,run,tx,now,audit,addMessage} from './db.mjs';
-import {isConsecomOwner,approachDueAt,chooseApproachInterval} from './approach-cadence.mjs';
+import {db,one,all,run,now,audit,addMessage} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
@@ -174,16 +173,19 @@ export async function tickIntroductions(deps={}){
    ?one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? AND p.lead_id=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString(),deps.onlyLeadId)
    :one("SELECT p.*,l.stage lead_stage,l.contact_permission,l.id id,t.manual_takeover FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id LEFT JOIN threads t ON t.lead_id=l.id WHERE p.stage='WAITING' AND p.due_at<=? ORDER BY p.due_at LIMIT 1",new Date(at).toISOString());
   if(!item)return {state:'IDLE'};
-  // Never replay an old reply when Railway restarts.
+  // Do not replay a delayed, hours-old customer reply after restart.
   if(!deps.onlyLeadId&&at-Date.parse(item.due_at)>15*60_000){
    if(run("UPDATE prospecting_introductions SET stage='VOICE_REVIEW',reason='STALE_INTRO_REQUIRES_REVIEW',due_at=NULL,updated_at=? WHERE lead_id=? AND stage='WAITING'",now(),item.lead_id).changes)
     audit('PROSPECT_INTRO_STALE_REVIEW',item.lead_id,{phoneSuffix:String(item.phone).slice(-4),automaticMessageSent:false});
    return {state:'STALE_REVIEW',automaticMessageSent:false};
   }
-  if(isConsecomOwner()){
-   const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
-   if(!clock)return {state:'CLOCK_UNAVAILABLE'};
-   if(at<approachDueAt(clock))return {state:'WAITING_CADENCE',remainingMs:approachDueAt(clock)-at};
+  // One global 7m15s gap between Wesley presentations to distinct leads.
+  // The initial greeting clock is separate: an individual customer's reply
+  // should still be answered without delaying the conversation by 7m15s.
+  if(!deps.onlyLeadId){
+   const last=one("SELECT MAX(attempt_at) at FROM prospecting_introductions WHERE attempt_at IS NOT NULL");
+   const prior=Date.parse(last?.at||'');
+   if(Number.isFinite(prior)&&at-prior<435000)return {state:'WAITING_CADENCE',remainingMs:435000-(at-prior)};
   }
   const voiceRequested=item.stage==='VOICE_WAITING';
   const eligible=()=>{
@@ -224,22 +226,9 @@ export async function tickIntroductions(deps={}){
   const wa=await status(item.session_id);
   if(!wa.connected)return {state:'OFFLINE'};
   if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
-  // Atomically reserve the same durable clock used by first approaches.
-  const reserved=tx(()=>{
-   const attemptAt=currentTime();
-   if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true')return 'PAUSED_EMERGENCY';
-   if(isConsecomOwner()){
-    const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
-    if(!clock)return 'CLOCK_UNAVAILABLE';
-    if(attemptAt<approachDueAt(clock))return 'WAITING_CADENCE';
-   }
-   const updated=run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND stage=? AND due_at<=?",
-    new Date(attemptAt).toISOString(),now(),item.lead_id,item.stage,new Date(attemptAt).toISOString()).changes;
-   if(!updated)return 'BUSY';
-   if(isConsecomOwner())run('UPDATE prospecting_send_clock SET last_attempt_ms=?,interval_ms=? WHERE id=1',attemptAt,chooseApproachInterval());
-   return 'RESERVED';
-  });
-  if(reserved!=='RESERVED')return {state:reserved};
+  // Reserve before attempting network transport; UNKNOWN never auto-retries.
+  if(!run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND stage=? AND due_at<=?",
+   new Date(at).toISOString(),now(),item.lead_id,item.stage,new Date(at).toISOString()).changes)return {state:'BUSY'};
   try{
    if(voiceRequested){
     const ack=await sendAudio({jid:item.phone+'@s.whatsapp.net',session:item.session_id,bytes:voice.bytes});
@@ -249,7 +238,6 @@ export async function tickIntroductions(deps={}){
      {method:'POST',data:{message:{text:WESLEY_INTRO}}});
     if(ack.status!==true)throw Error('TEXT_UNCONFIRMED');
    }
-   if(isConsecomOwner())run('UPDATE prospecting_send_clock SET last_finished_ms=MAX(last_finished_ms,?) WHERE id=1',currentTime());
    const nextStage=voiceRequested?'VOICE_SENT':'SENT';
    run("UPDATE prospecting_introductions SET stage=?,reason=?,sent_at=?,updated_at=? WHERE lead_id=? AND stage='SENDING'",
     nextStage,voiceRequested?'PITCH_AUDIO_550':null,now(),now(),item.lead_id);
@@ -263,7 +251,6 @@ export async function tickIntroductions(deps={}){
      gatewayAccepted:true,verifiedOnPhone:false}:{delaySeconds:30});
    return {state:nextStage,leadId:item.lead_id,recipientSuffix:String(item.phone).slice(-4),verifiedOnPhone:false};
   }catch{
-   if(isConsecomOwner())run('UPDATE prospecting_send_clock SET last_finished_ms=MAX(last_finished_ms,?) WHERE id=1',currentTime());
    run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Uncertain delivery; verify WhatsApp',updated_at=? WHERE lead_id=? AND stage='SENDING'",now(),item.lead_id);
    audit('PROSPECT_INTRO_UNKNOWN',item.lead_id,{manualReview:true,voice:voiceRequested});
    return {state:'UNKNOWN'};
