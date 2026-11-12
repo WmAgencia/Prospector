@@ -104,6 +104,9 @@ test('no chat-like robotic reply may invent a verified action or sensitive confi
   ['Não abriu o áudio','Posso tentar reenviar o áudio.'],
   ['Prefiro texto','Vou preparar um resumo escrito da proposta.'],
   ['Prefiro texto','Posso enviar a proposta por escrito.'],
+  ['Quero falar com o Wesley','Vou encaminhar sua solicitação ao Wesley.'],
+  ['Gostei da proposta','Ele entrará em contato em breve.'],
+  ['Gostei da proposta','Vou encaminhar sua mensagem para o Wesley.'],
  ];
  for(const [inbound,draft] of bad)assert.equal(reviewGroqReply({inbound,draft}).ok,false,draft);
 });
