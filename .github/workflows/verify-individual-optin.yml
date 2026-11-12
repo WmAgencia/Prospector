@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - fix/strict-documented-optin-before-go-live-20261112
+      - fix/approval-reconciliation-wa-history-20261112
   pull_request:
     branches:
       - feature/tenant-bulk-approvals-20261109
@@ -24,7 +25,9 @@ jobs:
           node --check dashboard/outreach-queue.mjs
           node --check dashboard/prospecting-queue.mjs
           node --check dashboard/lead-approvals.mjs
+          node --check dashboard/whatsapp-approval-reconciliation.mjs
+          node --check dashboard/whatsapp-approval-sync-job.mjs
           node --check dashboard/server.mjs
           node --input-type=module --check < dashboard/public/simple-app.js
       - name: Consent and existing sales flow regression
-        run: node --test tests/strict-individual-consent.test.mjs tests/tenant-bulk-approvals.test.mjs tests/prospector-live-owner-handoff.test.mjs tests/francisca-many-scenarios.test.mjs
+        run: node --test tests/whatsapp-approval-reconciliation.test.mjs tests/strict-individual-consent.test.mjs tests/tenant-bulk-approvals.test.mjs tests/prospector-live-owner-handoff.test.mjs tests/francisca-many-scenarios.test.mjs

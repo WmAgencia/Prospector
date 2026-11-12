@@ -77,7 +77,7 @@ function quickConsentBatch(input){
    :[...selected].map(leadId=>({id:leadId}));
   const leadIds=candidates.map(x=>x.id).filter(leadId=>!allPending||!selected.has(leadId));
   if(!leadIds.length)throw Error('Nenhum contato da seleção foi encontrado. Atualize a lista e tente novamente');
-  const approved=[],skipped=[],ownerPhone=verifiedOwnerPhone();
+  const approved=[],skipped=[],alreadyDeclared=[],alreadyDocumented=[],ownerPhone=verifiedOwnerPhone();
   // A single ineligible lead never blocks the remaining, individually audited
   // declarations. Existing clients, opt-outs and the owner's phone stay excluded.
   for(const leadId of leadIds){
@@ -88,7 +88,15 @@ function quickConsentBatch(input){
    else if(isExcludedTestContact(lead.phone))reason='CONTATO_DE_TESTE';
    else if(one('SELECT 1 FROM suppressions WHERE phone=?',lead.phone))reason='CONTATO_BLOQUEADO';
    else if(one("SELECT 1 FROM contact_relationships WHERE phone=? AND kind='EXISTING_CLIENT'",lead.phone))reason='CLIENTE_EXISTENTE';
-   else if(lead.contact_permission===1&&one("SELECT 1 FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' ORDER BY rowid DESC LIMIT 1",lead.id))reason='JA_REGISTRADO_PENDENTE_DE_COMPROVANTE';
+   else if(lead.contact_permission===1){
+    const prior=one("SELECT detail FROM audit WHERE lead_id=? AND action='CONSENT_UPDATED' ORDER BY rowid DESC LIMIT 1",lead.id);
+    if(prior){
+     let detail={};try{detail=JSON.parse(prior.detail||'{}')}catch{}
+     if(validIndividualConsent(detail))alreadyDocumented.push(leadId);
+     else alreadyDeclared.push(leadId);
+     continue;
+    }
+   }
    if(reason)skipped.push({leadId,reason});
    else approved.push(leadId);
   }
@@ -106,15 +114,16 @@ function quickConsentBatch(input){
   const skippedReasons={};
   for(const item of skipped)skippedReasons[item.reason]=(skippedReasons[item.reason]||0)+1;
   audit('CONSENT_BATCH_APPROVED',null,{
-   batchId,quantity:approved.length,skipped:skipped.length,skippedReasons,
+   batchId,quantity:approved.length,alreadyDeclared:alreadyDeclared.length,alreadyDocumented:alreadyDocumented.length,skipped:skipped.length,skippedReasons,
    selection:allPending?'ALL_PENDING':'SELECTED',selectionCutoff,
    excludedCount:allPending?selected.size:0,
    evidenceType:'OPERATOR_ATTESTATION',actor:'AUTHENTICATED_WORKSPACE_OPERATOR',
    method:'manual_quick_approval',workspace:process.env.PROSPECTOR_TENANT_ID||'PRIMARY'
   });
   return {ok:true,batchId,approved:approved.length,skipped:skipped.length,
-   needsDocumentation:approved.length,outreachEligible:0,
-   note:'Declaração rápida registrada; somente comprovantes individuais habilitam o envio.',
+   alreadyDeclared:alreadyDeclared.length,alreadyDocumented:alreadyDocumented.length,
+   needsDocumentation:approved.length+alreadyDeclared.length,outreachEligible:alreadyDocumented.length,
+   note:'Declarações existentes preservadas. Use Sincronizar aceites ou Comprovar autorização individual para habilitar contatos.',
    skippedReasons,skippedItems:skipped,selection:allPending?'ALL_PENDING':'SELECTED'};
  });
 }
