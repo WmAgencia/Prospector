@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import {spawn} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
 import {brokerWorkerToken,createTenantGatewayBroker} from '../dashboard/tenant-gateway-broker.mjs';
 import {classifyTenantGatewayRequest,TENANT_GATEWAY_BROKER_PATH} from '../dashboard/tenant-gateway-policy.mjs';
@@ -161,6 +162,45 @@ test('voice media is proxied with the parent key and never exposes it to the ten
  assert.equal(mediaCalls.length,2);
  assert.ok(mediaCalls.every(x=>x.headers['X-API-Key']==='parent-gateway-api-key-not-exposed'));
  assert.ok(mediaCalls.every(x=>!('X-Prospector-Broker-Token' in x.headers)));
+});
+
+
+test('real tenant child process uses the broker for sessions and media without admin access',async()=>{
+ const script=`
+  import assert from 'node:assert/strict';
+  import {waRequest,getGatewayApiKey} from './dashboard/waakg-control.mjs';
+  import {fetchPrivateAudio,sendVoiceMedia} from './dashboard/waakg-media.mjs';
+  const own=process.env.OWN_SESSION,foreign=process.env.OTHER_SESSION;
+  await assert.rejects(getGatewayApiKey(),/GATEWAY_ADMIN_CREDENTIALS_NOT_AVAILABLE_TO_TENANT/);
+  const sessions=await waRequest('/api/sessions');
+  assert.deepEqual(sessions.data.map(x=>x.sessionId),[own]);
+  await assert.rejects(waRequest('/api/sessions/'+foreign),/Canal não pertence a esta conta/);
+  const audio=await fetchPrivateAudio('/api/media/'+own+'-demo.ogg',{session:own});
+  assert.equal(audio.buffer.length,240);
+  const voice=await sendVoiceMedia({session:own,jid:'5511999999999@s.whatsapp.net',bytes:Buffer.alloc(400,1)});
+  assert.equal(voice.accepted,true);
+  console.log('TENANT_BROKER_OK='+own);
+ `;
+ async function run(client,session,other){
+  const env={...process.env,PROSPECTOR_TENANT_ID:client.id,PROSPECTOR_TENANT_INTERNAL:'false',
+   PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
+   PROSPECTOR_GATEWAY_BROKER_URL:base,
+   PROSPECTOR_GATEWAY_BROKER_TOKEN:brokerWorkerToken(client,secret),
+   WA_AKG_API_KEY:'even-if-accidentally-provided-this-must-not-be-used',
+   WA_AKG_ADMIN_EMAIL:'',WA_AKG_ADMIN_PASSWORD:'',WA_AKG_SESSION_ID:'',
+   GROQ_API_KEY:'',OWN_SESSION:session,OTHER_SESSION:other};
+  for(const k of Object.keys(env))if(k.startsWith('RUN_'))delete env[k];
+  const child=spawn(process.execPath,['--input-type=module','-e',script],
+   {cwd:process.cwd(),env,stdio:['ignore','pipe','pipe']});
+  let output='',error='';
+  child.stdout.on('data',d=>output+=d.toString());
+  child.stderr.on('data',d=>error+=d.toString());
+  const status=await new Promise(resolve=>child.on('close',resolve));
+  assert.equal(status,0,error.slice(0,1500));
+  assert.match(output,new RegExp('TENANT_BROKER_OK='+session));
+ }
+ await run(a,sidA,sidB);
+ await run(b,sidB,sidA);
 });
 
 test('strict path whitelist rejects other providers, groups, traversal and arbitrary routes',()=>{
