@@ -19,6 +19,9 @@ export function classifyTenantGatewayRequest(method,rawPath){
  ))return {kind:m[2]||'session',sessionId:m[1],media:false};
  m=path.match(/^\/api\/webhooks\/([^/]+)$/);
  if(m&&safeSession(m[1])&&['GET','POST'].includes(requestMethod))return {kind:'webhook',sessionId:m[1],media:false};
+ m=path.match(/^\/api\/chat\/([^/]+)\/([^/]+)\/presence$/);
+ if(m&&requestMethod==='POST'&&safeSession(m[1])&&safeJid(m[2]))
+  return {kind:'presence',sessionId:m[1],media:false};
  m=path.match(/^\/api\/chat\/([^/]+)(?:\/([^/]+))?$/);
  if(m&&requestMethod==='GET'&&safeSession(m[1])&&(!m[2]||safeJid(m[2])))return {kind:'chat',sessionId:m[1],media:false};
  m=path.match(/^\/api\/messages\/([^/]+)\/([^/]+)\/(send|media|interactive)$/);
@@ -42,6 +45,7 @@ export function validateBrokerPostBody({kind,body,tenantId,secret}){
   return Boolean(body&&body.url===expected&&body.secret===secret&&Array.isArray(body.events)&&body.events.length===3&&
    ['message.received','message.sent','connection.update'].every(x=>body.events.includes(x)));
  }
+ if(kind==='presence')return Boolean(body&&['recording','paused','composing'].includes(body.presence)&&Object.keys(body).length===1);
  if(kind==='bot-config'){
   return Boolean(body&&body.botMode==='SPECIFIC'&&body.autoReplyMode==='SPECIFIC'&&
    Array.isArray(body.botAllowedJids)&&body.botAllowedJids.length===0&&
