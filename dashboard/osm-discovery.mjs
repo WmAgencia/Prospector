@@ -5,6 +5,7 @@ import {one,all,run,id,now,phone,addLead,getSetting,audit} from './db.mjs';
 import {recordOrigin} from './discovery.mjs';
 import {upsertBusinessMeta} from './lead-catalog.mjs';
 import {daySP,hourSP,radarSnapshot} from './radar.mjs';
+import {dailyRefillBudget} from './discovery-stock.mjs';
 
 export const LOCATIONS={
   sorocaba:{label:'Sorocaba',lat:-23.5015,lon:-47.4526,radius:9500},
@@ -182,7 +183,9 @@ export async function discoverLocal(payload={},automatic=false){
   if(data.remark)throw Error('A API pública não concluiu a pesquisa: '+String(data.remark).slice(0,120));
   if(!Array.isArray(data.elements))throw Error('A fonte não retornou uma lista válida');
   let added=0,examined=0,withPhone=0;
-  const quota=automatic?Math.max(0,Math.min(150,Number(getSetting('discovery_target_daily',150))||150)-radarSnapshot().foundToday):70;
+  const stockMode=automatic&&getSetting('discovery_stock_replenishment_enabled',false)===true;
+ const inventory=stockMode?dailyRefillBudget():null;
+ const quota=automatic?(inventory?inventory.missing:Math.max(0,Math.min(150,Number(getSetting('discovery_target_daily',150))||150)-radarSnapshot().foundToday)):70;
   const candidates=prioritizeOSMResults(data.elements.slice(0,200));
   for(const item of candidates){
    if(added>=quota)break;
@@ -194,6 +197,9 @@ export async function discoverLocal(payload={},automatic=false){
    const existing=one("SELECT lead_id FROM lead_origins WHERE source='osm' AND identity=?",url);
    if(existing)continue;
    const p=extractPhone(tags),instagram=extractInstagram(tags);
+   // A stock slot must represent a business number. Leads without phones
+   // can later be processed by the separate CNPJ enrichment candidate queue.
+   if(stockMode&&!p)continue;
    if(p)withPhone++;
    const website=String(tags['contact:website']||tags.website||'').trim().slice(0,500);
    let safeWebsite=null;
@@ -236,8 +242,9 @@ export function discoveryWindow(input=new Date(),startHour=DISCOVERY_START_HOUR)
  const hour=hourSP(input),start=Number(startHour);
  return {hour,start,allowed:Number.isInteger(start)&&start>=0&&start<=23&&hour>=start};
 }
-// Pesquisa progressiva: somente serviços realmente configurados, respeitando limite
-// da API comunitária e interrompendo-se ao atingir 150 leads únicos/dia.
+// Pesquisa progressiva: somente serviços configurados, respeitando limites da API.
+// Legacy mode caps NEW leads per day; stock mode refills only missing
+// unapproached business contacts, up to a configurable maximum of 250.
 export async function dailyLocalDiscovery(input=new Date()){
  if(autoBusy)return {status:'BUSY'};
  if(getSetting('discovery_auto_enabled',true)===false||getSetting('discovery_sources',{}).osm===false)return {status:'DISABLED'};
@@ -245,9 +252,12 @@ export async function dailyLocalDiscovery(input=new Date()){
  if(!window.allowed)return {status:'BEFORE_START',startHour:window.start};
  // O horário de envio/pausa não interrompe as pesquisas de empresas.
  // Respeitamos os limites da fonte pública mesmo quando a meta não é alcançada.
- const target=Math.min(150,Math.max(1,Number(getSetting('discovery_target_daily',150))||150));
+ const stockMode=getSetting('discovery_stock_replenishment_enabled',false)===true;
+ const stock=stockMode?dailyRefillBudget(input):null;
+ const target=stock?stock.fundedTarget:Math.min(150,Math.max(1,Number(getSetting('discovery_target_daily',150))||150));
  const snapshot=radarSnapshot(input);
- if(snapshot.foundToday>=target)return {status:'TARGET_REACHED',foundToday:snapshot.foundToday,target};
+ if(stock&&stock.missing===0)return {status:stock.credits===0?'NO_CREDITS':'STOCK_FULL',stock,target};
+ if(!stock&&snapshot.foundToday>=target)return {status:'TARGET_REACHED',foundToday:snapshot.foundToday,target};
  const today=daySP(input);
  const rows=all("SELECT query,at FROM discoveries WHERE query LIKE 'osm:%' ORDER BY at DESC LIMIT 100");
  const attempts=rows.filter(x=>daySP(new Date(x.at))===today);
@@ -278,7 +288,7 @@ export async function dailyLocalDiscovery(input=new Date()){
   run("INSERT INTO settings(key,value) VALUES('osm_auto_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(cursor+1));
   const segmentId=Object.keys(SEGMENTS).find(k=>SEGMENTS[k]===choice.segment);
   const result=await discoverLocal({city:choice.city.label,segment:segmentId},true);
-  return {...result,target,foundToday:radarSnapshot().foundToday};
+  return {...result,target,foundToday:radarSnapshot().foundToday,...(stockMode?{stock:dailyRefillBudget()}: {})};
  }catch(e){
   audit('DISCOVERY_AUTO_REVIEW',null,{provider:'osm',message:String(e.message).slice(0,180)});
   return {status:'SOURCE_ERROR',error:String(e.message).slice(0,180)};
