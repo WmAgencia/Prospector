@@ -53,6 +53,7 @@ import {authorizeCallBridge,processCallBridge,callBridgeStatus} from './francisc
 import {voiceMetricsSummary} from './francisca-call-observability.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
 import {waRequest,waControlStatus,waOperationalStatus,waSessionList,waCreateSession,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
+import {reconcilePrivateGroup} from './prospector-private-group.mjs';
 import {gatewayConnectionView,refreshGatewayConnection} from './waakg-live-status.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {processProspectingSchedule} from './francisca-panel-actions.mjs';
@@ -866,6 +867,28 @@ if(process.env.WHATSAPP_TRANSPORT==='waakg'){
  let lastDisplayedWaConnected=null,lastDisplayedWaStatus='';
  setInterval(watch,15000).unref();
  setTimeout(watch,2000).unref();
+}
+// Automatic per-customer 'Meu Prospector' WhatsApp group lifecycle.
+// Registration alone cannot create it: the worker waits until the QR pairing
+// confirms at least one real number. This is not tied to outreach permissions.
+if((process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_DEMO_MODE!=='true')||(!process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_GROUP_IMPORT_JID)){
+ let lastPrivateGroupState='';
+ const checkPrivateGroup=()=>{
+  reconcilePrivateGroup().then(result=>{
+   if(result.state!==lastPrivateGroupState){
+    if(typeof process.send==='function')process.send({type:'PRIVATE_GROUP_STATUS',state:result.state,
+     members:Number.isInteger(result.members)?result.members:null,missing:Number.isInteger(result.missing)?result.missing:0});
+    else console.info('[private group]',JSON.stringify({state:result.state,members:Number.isInteger(result.members)?result.members:null,missing:Number.isInteger(result.missing)?result.missing:0}));
+   }
+   lastPrivateGroupState=result.state;
+  }).catch(error=>{
+   console.warn('[private group]',String(error?.message||error).slice(0,120));
+   if(typeof process.send==='function')process.send({type:'PRIVATE_GROUP_STATUS',state:'ERROR',members:null,missing:0});
+  });
+ };
+ const privateGroupTimer=setInterval(checkPrivateGroup,60*1000);
+ privateGroupTimer.unref();
+ setTimeout(checkPrivateGroup,12*1000).unref();
 }
 const activation=enableAuthorizedOutreach();
 const invitationActivation=enableInvitationCampaign();

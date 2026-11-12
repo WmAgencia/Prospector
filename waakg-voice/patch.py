@@ -80,3 +80,36 @@ migration_source = (
 )
 migrate.write_text(migration_source)
 print("WA-AKG runtime skips redundant User enum ALTER TABLE on already-current schema")
+
+# The Prospector group starts with the creator only. The WA-AKG group-create
+# route already calls Baileys groupCreate(subject, participants), but its Zod
+# schema currently forbids an empty array. Permit [] for group creation only;
+# member-update routes retain their own non-empty validation.
+group_validation = Path("/app/src/lib/validations.ts")
+validation_source = group_validation.read_text()
+old_validation = 'participants: z.array(z.string().regex(/@s\\.whatsapp\\.net$/, "Invalid participant JID")).min(1, "At least one participant required")'
+new_validation = 'participants: z.array(z.string().regex(/@s\\.whatsapp\\.net$/, "Invalid participant JID")).default([])'
+assert validation_source.count(old_validation) == 1, "WA-AKG group-create schema anchor changed"
+group_validation.write_text(validation_source.replace(old_validation,new_validation))
+print("WA-AKG allows creator-only groups (participants: [])")
+
+
+# Native WhatsApp voice notes must contain REAL OGG/Opus audio. The upstream
+# transport hard-codes audio/mp4 even when the caller uploads a valid .ogg file
+# and requests type=voice; change only the voice MIME branch.
+chat=Path("/app/src/modules/whatsapp/chat.service.ts")
+source=chat.read_text()
+old_voice="content = { audio: buffer, mimetype: 'audio/mp4', ptt: true };"
+new_voice="""const isNativeOpus = mimetype?.startsWith('audio/ogg') && buffer.toString('ascii',0,4) === 'OggS';
+            content = { audio: buffer, mimetype: isNativeOpus ? 'audio/ogg; codecs=opus' : 'audio/mp4', ptt: true };"""
+assert source.count(old_voice)==1, "WA-AKG native voice media branch changed upstream"
+source=source.replace(old_voice,new_voice)
+old_notice="webhookMsg.message = { audioMessage: { mimetype: 'audio/mp4', ptt: type === 'voice' } };"
+new_notice="""webhookMsg.message = { audioMessage: {
+                    mimetype: type === 'voice' && mimetype?.startsWith('audio/ogg') && buffer.toString('ascii',0,4) === 'OggS'
+                        ? 'audio/ogg; codecs=opus' : 'audio/mp4',
+                    ptt: type === 'voice' } };"""
+assert source.count(old_notice)==1, "WA-AKG sent voice webhook MIME branch changed upstream"
+source=source.replace(old_notice,new_notice)
+chat.write_text(source)
+print("WA-AKG: verified OGG/Opus push-to-talk messages use native audio/ogg MIME")

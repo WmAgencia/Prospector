@@ -61,7 +61,10 @@ export function workerEnvironment(client,port){
  const demo=client.is_demo===1;
  const env=Object.fromEntries(allowed.filter(k=>process.env[k]!==undefined&&(!demo||!['WA_AKG_API_KEY','WA_AKG_ADMIN_EMAIL','WA_AKG_ADMIN_PASSWORD'].includes(k))).map(k=>[k,process.env[k]]));
  return {...env,NODE_ENV:'production',HOST:'127.0.0.1',PORT:String(port),PROSPECTOR_TENANT_ID:client.id,
-  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_DEMO_MODE:client.is_demo===1?'true':'false',PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
+  PROSPECTOR_TENANT_NAME:client.name,PROSPECTOR_TENANT_INTERNAL:client.is_internal===1?'true':'false',PROSPECTOR_DEMO_MODE:client.is_demo===1?'true':'false',
+  // An authenticated one-time group import is scoped solely to the Consecom internal tenant.
+  PROSPECTOR_GROUP_IMPORT_JID:client.is_internal===1?(process.env.PROSPECTOR_GROUP_IMPORT_JID||''):'',
+  PROSPECTOR_PLATFORM_DIR:root,PROSPECTOR_DATA_DIR:path.join(root,'clients',client.id),
   PROSPECTOR_SESSION_DIR:path.join(root,'clients',client.id,'wa-session'),
   ADMIN_ACCESS_TOKEN:client.secret,ADMIN_SESSION_SECRET:client.secret,WA_AKG_WEBHOOK_SECRET:client.secret,
   WHATSAPP_TRANSPORT:'waakg',PROSPECTOR_INBOUND_AUTOREPLY_ENABLED:demo?'false':'true',AI_CONVERSATION_AUTOSEND:demo?'false':'true',
@@ -73,7 +76,17 @@ async function worker(client){
  if(starting.has(client.id))return starting.get(client.id);
  const pending=(async()=>{
   const port=await freePort();fs.mkdirSync(path.join(root,'clients',client.id),{recursive:true});
-  const child=spawn(process.execPath,[fileURLToPath(new URL('./server.mjs',import.meta.url))],{env:workerEnvironment(client,port),stdio:['ignore','ignore','ignore'],windowsHide:true});
+  const child=spawn(process.execPath,[fileURLToPath(new URL('./server.mjs',import.meta.url))],{env:workerEnvironment(client,port),stdio:['ignore','ignore','ignore','ipc'],windowsHide:true});
+  // Never forward arbitrary child output. Relay only sanitized status values
+  // from the WhatsApp group lifecycle for operational proof and troubleshooting.
+  child.on('message',value=>{
+   if(value?.type!=='PRIVATE_GROUP_STATUS'||typeof value.state!=='string')return;
+   const accepted=new Set(['CREATED','READY','RECOVERED','MEMBERSHIP_PENDING','GROUP_MATCH_AMBIGUOUS','UNEXPECTED_GROUP_MEMBER','CREATION_RETRY','GROUP_METADATA_UNAVAILABLE','WAITING_WHATSAPP','WAITING_OWNER_WHATSAPP','GROUP_LOOKUP_UNAVAILABLE','OWNER_IDENTITY_CHANGED','GROUP_NOT_VISIBLE','GROUP_RENAMED','MEMBERSHIP_NOT_YET_SYNCED','MEMBERSHIP_REVIEW_REQUIRED','OWNER_NOT_IN_GROUP','ERROR','DISABLED']);
+   if(!accepted.has(value.state))return;
+   console.info('[tenant private group]',JSON.stringify({state:value.state,
+    members:Number.isInteger(value.members)?value.members:null,
+    missing:Number.isInteger(value.missing)?value.missing:0}));
+  });
   const entry={port,child};workers.set(client.id,entry);child.on('exit',()=>{if(workers.get(client.id)===entry)workers.delete(client.id);});child.on('error',()=>workers.delete(client.id));
   for(let i=0;i<100;i++){
    if(child.exitCode!==null)throw Error('Não foi possível iniciar este espaço de trabalho');
