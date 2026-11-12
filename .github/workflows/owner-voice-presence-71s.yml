@@ -1,0 +1,21 @@
+name: Owner audio 71-second presence verification
+on:
+  push:
+    branches:
+      - fix/owner-recording-presence-71s-20261112
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/waakg-voice-presence.mjs
+      - run: node --check dashboard/owner-pitch-sequence.mjs
+      - run: node --check dashboard/owner-approved-pitch.mjs
+      - run: node --test tests/owner-voice-presence-71s.test.mjs tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs
