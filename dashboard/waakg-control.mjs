@@ -13,6 +13,7 @@ const base=String(process.env.WA_AKG_BASE_URL||publicOrigin).replace(/\/$/,'');
 if(!/^https:\/\//.test(base)&&!/^http:\/\/wa-akg\.railway\.internal:3000$/.test(base))
  throw Error('WA_AKG_BASE_URL must be HTTPS or the exact Railway private service endpoint');
 const sessionKey="waakg_primary_session_id";
+const externalTenant=Boolean(process.env.PROSPECTOR_TENANT_ID)&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true';
 let cachedKey="",pendingKey=null,nextLoginAt=0,lastAuthFailure="";
 const safeId=v=>/^[a-zA-Z0-9_-]{3,70}$/.test(String(v||""));
 export const validNewTenantSessionId=v=>/^prospector-[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(String(v||''));
@@ -55,6 +56,7 @@ async function loginAndKey(){
  return key;
 }
 export async function getGatewayApiKey(){
+ if(externalTenant)throw Error('GATEWAY_ADMIN_CREDENTIALS_NOT_AVAILABLE_TO_TENANT');
  if(process.env.WA_AKG_API_KEY)return process.env.WA_AKG_API_KEY;
  if(cachedKey)return cachedKey;
  // A transient 429/502 must never trigger one new login per queue tick.
@@ -69,17 +71,34 @@ export async function getGatewayApiKey(){
  }).finally(()=>pendingKey=null);
  return pendingKey;
 }
-export async function waRequest(path,{method="GET",data}={}){
+export async function waRequest(path,{method="GET",data,brokerTenant=false}={}){
  if(!path.startsWith("/api/")||path.includes(".."))throw Error("Rota interna inválida");
  // Production emergency-stop: deny all outbound WhatsApp message operations
  // at the shared transport, regardless of persistent queue settings.
- if(process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'&&method!=='GET'&&/^\/api\/messages\/[^/]+\/[^/]+\/(?:send|media|interactive|forward|react|reply)(?:\/|$)/.test(path))
+ if(!brokerTenant&&process.env.PROSPECTOR_FORCE_OUTREACH_PAUSE==='true'&&method!=='GET'&&/^\/api\/messages\/[^/]+\/[^/]+\/(?:send|media|interactive|forward|react|reply)(?:\/|$)/.test(path))
   throw Error('PROSPECTOR_EMERGENCY_ALL_OUTBOUND_PAUSED');
  if(process.env.PROSPECTOR_TENANT_ID){
   const parts=path.split('/').map(decodeURIComponent);
   if(path==='/api/sessions'&&method==='POST'){
    if(!validNewTenantSessionId(data?.sessionId))throw Error('Sessão inválida');
   }else if(path!=='/api/sessions'&&!isManagedSession(parts[3]))throw Error('Canal não pertence a esta conta');
+ }
+ if(externalTenant){
+  // Fail closed: child processes can never fall back to the shared admin login.
+  const broker=String(process.env.PROSPECTOR_GATEWAY_BROKER_URL||'');
+  const token=String(process.env.PROSPECTOR_GATEWAY_BROKER_TOKEN||'');
+  if(!/^http:\/\/127\.0\.0\.1:\d{2,5}\/api\/internal\/tenant-gateway$/.test(broker)||token.length!==64)
+   throw Error('TENANT_GATEWAY_BROKER_REQUIRED');
+  const response=await fetch(broker+path,{method,headers:{
+   'X-Prospector-Tenant-Id':process.env.PROSPECTOR_TENANT_ID,
+   'X-Prospector-Broker-Token':token,Accept:'application/json',
+   ...(data!==undefined?{'Content-Type':'application/json'}:{})
+  },body:data!==undefined?JSON.stringify(data):undefined,signal:AbortSignal.timeout(18000)});
+  const json=await response.json().catch(()=>({}));
+  if(!response.ok||json?.status===false)throw errorFrom(response,json);
+  if(path==='/api/sessions'&&method==='GET')
+   return {...json,data:(json.data||[]).filter(x=>isManagedSession(x.sessionId))};
+  return json;
  }
  const apiKey=await getGatewayApiKey();
  async function send(k){
