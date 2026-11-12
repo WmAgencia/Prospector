@@ -72,6 +72,7 @@ import {armApprovedOutreach,apply80DailyLimit,applyOwnerDailySpread,resumeApprov
 import {readOwnerOutreachIncident} from './owner-outreach-incident.mjs';
 import {inspectOwner7896} from './owner-7896-incident.mjs';
 import {inspectLuciana4047} from './owner-4047-incident.mjs';
+import {recoverLuciana4047} from './owner-4047-safe-recovery.mjs';
 import {recoverOwner7896DurationFailure} from './owner-7896-safe-recovery.mjs';
 import {isConsecomOwner,OWNER_APPROACH_INTERVAL_MS} from './approach-cadence.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
@@ -999,6 +1000,33 @@ if(process.env.RUN_OWNER_7896_SAFE_RECOVERY_ONCE==='true'&&!process.env.PROSPECT
 }
 if(process.env.RUN_OWNER_4047_DIAG_ONCE==='true'&&!process.env.PROSPECTOR_TENANT_ID){
  setTimeout(()=>inspectLuciana4047().then(x=>console.info('[owner 4047 incident]',JSON.stringify(x))).catch(e=>console.warn('[owner 4047 incident error]',String(e?.message||e).slice(0,140))),11000).unref();
+}
+if(process.env.RUN_OWNER_4047_RECOVER_ONCE==='true'&&!process.env.PROSPECTOR_TENANT_ID){
+ setTimeout(async()=>{
+  try{
+   const result=await recoverLuciana4047();
+   console.info('[owner 4047 safe recovery]',JSON.stringify({state:result.state,suffix:result.contactSuffix||'4047'}));
+   if(result.state==='REQUEUED_INTRODUCTION'){
+    setTimeout(async()=>{
+     try{
+      const sent=await tickIntroductions({onlyLeadId:result.leadId});
+      console.info('[owner 4047 targeted introduction]',JSON.stringify({
+       state:sent.state,suffix:sent.recipientSuffix||'4047',gatewayVerified:sent.verifiedOnPhone===true
+      }));
+     }catch(error){console.warn('[owner 4047 targeted introduction failed]',String(error?.message||error).slice(0,120))}
+    },5000).unref();
+   }
+  }catch(error){console.warn('[owner 4047 safe recovery failed]',String(error?.message||error).slice(0,130))}
+ },14000).unref();
+ setTimeout(()=>inspectLuciana4047().then(x=>{
+  const a=x.local?.[0];
+  console.info('[owner 4047 recovery verification]',JSON.stringify({
+   targetSuffix:'4047',matches:x.matchCount,introStage:a?.intro?.stage||null,
+   introSentAt:a?.intro?.sent_at||null,reason:a?.intro?.reason||null,
+   lastOutbound:a?.localMessages?.find(m=>m.direction==='out')?.at||null,
+   lastInbound:a?.inbox?.find(m=>m.state==='REVIEW')?.received_at||null
+  }));
+ }).catch(e=>console.warn('[owner 4047 recovery verification failed]',String(e?.message||e).slice(0,110))),38000).unref();
 }
 let testInstructionError=null;
 let lastQueueReason=null,lastQueueLogAt=0;
