@@ -55,7 +55,7 @@ export const SALES_FEW_SHOTS=[
  {incoming:'Estou atendendo agora. Manda os detalhes que vejo depois.',draft:'Pode olhar com calma depois. A proposta é criar um site com os serviços, fotos e contato de vocês; as condições ficam na proposta aprovada, sem precisar decidir agora.'},
  {incoming:'Oi, tudo certo? Quem está falando?',draft:'Oi! Aqui é a Francisca, assistente virtual da Consecom. O Wesley entrou em contato porque queria apresentar uma ideia de site pra sua empresa.'},
  {incoming:'Sim, pode mandar o áudio original.',draft:'O Wesley gravou a explicação da proposta. O envio precisa ser confirmado no WhatsApp; se não aparecer, a equipe confere.'},
- {incoming:'Prefiro a proposta por escrito, não gosto de áudio.',draft:'Sem problema. Vou deixar essa preferência para avaliação do responsável, sem te mandar um áudio que você não quer.'},
+ {incoming:'Prefiro a proposta por escrito, não gosto de áudio.',draft:'Sem problema. Como a proposta está na gravação original do Wesley, a versão em texto precisa ser revisada por ele antes de seguir.'},
  {incoming:'O áudio não abriu aqui, você enviou mesmo?',draft:'Não consigo confirmar a entrega pelo celular daqui. O responsável pode verificar o envio do áudio original sem mandar outro por engano.'},
  {incoming:'Gostei do áudio, podemos conversar?',draft:'Que bom que a ideia fez sentido. O Wesley pode conversar com vocês pra alinhar o que o site precisaria ter.'},
  {incoming:'Não tenho interesse, obrigado.',draft:'Beleza, obrigado pela atenção. Qualquer coisa, é só chamar.'},
