@@ -26,4 +26,17 @@ jobs:
           node --check dashboard/server.mjs
       - name: Run isolated synthetic security and onboarding regressions (no WhatsApp sends)
         run: |
-          node --test tests/platform-isolation.test.mjs tests/platform-proxy.test.mjs tests/platform-store.test.mjs tests/landing-signup.test.mjs tests/training.test.mjs tests/tenant-prospecting-controls.test.mjs tests/multi-whatsapp-control.test.mjs tests/access-rate-limit.test.mjs
+          node --test tests/platform-isolation.test.mjs tests/platform-proxy.test.mjs tests/platform-store.test.mjs tests/landing-signup.test.mjs tests/tenant-prospecting-controls.test.mjs tests/multi-whatsapp-control.test.mjs tests/access-rate-limit.test.mjs
+
+  tenant-onboarding-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Client interview and media/overview contract
+        run: node --test tests/audit-tenant-onboarding-contract.test.mjs
