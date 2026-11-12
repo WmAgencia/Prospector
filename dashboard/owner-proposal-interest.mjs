@@ -26,6 +26,12 @@ export function classifyOwnerProposalIntent(value=''){
   return OWNER_PROPOSAL_INTENT.ACCEPT;
  if(/^(?:do que se trata|sobre o que e|sobre o que seria|o que voce quer propor|e qual a proposta|qual proposta|que proposta|proposta de que|o que seria a proposta)(?:[?.!\s]|$)/.test(msg))
   return OWNER_PROPOSAL_INTENT.ACCEPT;
+ // Customer may greet Wesley before clearly accepting the voice note.
+ // Maintain decline/text-only precedence above, and require explicit
+ // acceptance after a short greeting (not just a salutation).
+ if(msg.length<=180&&/^(?:oi|ola|opa|bom dia|boa tarde|boa noite)\b/.test(msg)&&
+   /\b(?:pode sim|pode mandar|pode enviar|pode falar|pode explicar|pode prosseguir|pode continuar|sim[, ]+pode|claro[, ]+pode|sim[, ]+manda)\b/.test(msg))
+  return OWNER_PROPOSAL_INTENT.ACCEPT;
  if(msg.length<=160&&/^(?:sim|ss|s|ok|okay|blz|beleza|claro|certo|perfeito|pode sim|pode ser|pode falar|pode mandar|pode prosseguir|pode continuar|prossegue|prossiga|manda|me conta|vamos la|tranquilo|combinado|show|pois nao|ta bom|ta certo|tudo certo|to ouvindo|estou ouvindo|fico no aguardo)(?:[\s,.!?]|$)/.test(msg))
   return OWNER_PROPOSAL_INTENT.ACCEPT;
  const simple=/^(?:sim|ss|s|ok|okay|blz|beleza|claro|certo|perfeito|pode|pode sim|pois nao|com certeza|ta bom|ta|tudo bem|tudo certo|tranquilo|combinado|show|bora|isso|prossegue|prossiga|manda|manda ai|enviar|pode mandar|pode enviar|fale|falar|pode falar|pode prosseguir|pode continuar|continua|continue|pode explicar|me fala|me conta|vamos la|vamos nessa|estou ouvindo|to ouvindo|sou todo ouvidos|pode apresentar|fico no aguardo|no aguardo|manda ver|pode ser|ta certo)(?:[\s!.?,]+(?:pode (?:falar|mandar|prosseguir|enviar|seguir)|manda (?:ai|ver)|sim|claro|ok|blz|por favor|pfv|a proposta|mais detalhes|fique a vontade|me conta|pode explicar|sem problema|beleza))*[.!?\s]*$/;
