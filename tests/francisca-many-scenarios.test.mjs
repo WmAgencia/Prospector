@@ -99,7 +99,7 @@ test('no chat-like robotic reply may invent a verified action or sensitive confi
  for(const [inbound,draft] of bad)assert.equal(reviewGroqReply({inbound,draft}).ok,false,draft);
 });
 test('training guidance explicitly protects identity, money, repeated greeting, consent and short messages',()=>{
- for(const feature of ['IDENTIDADE','NUNCA','CONSENTIMENTO','SAUDAÇÃO','CONDIÇÕES EXATAS']){
+ for(const feature of ['IDENTIDADE','LACUNAS','COMPLIANCE','SAUDAÇÃO','CONDIÇÕES EXATAS']){
   assert.match(SALES_STYLE,new RegExp(feature,'i'));
  }
  assert.ok(TRAINING_SCENARIOS.length>=25);
