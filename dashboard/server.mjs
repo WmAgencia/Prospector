@@ -53,7 +53,9 @@ import {authorizeCallBridge,processCallBridge,callBridgeStatus} from './francisc
 import {voiceMetricsSummary} from './francisca-call-observability.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
 import {waRequest,waControlStatus,waOperationalStatus,waSessionList,waCreateSession,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
-import {reconcilePrivateGroup} from './prospector-private-group.mjs';
+import {reconcilePrivateGroup,privateGroupState} from './prospector-private-group.mjs';
+import {applyDefaultGroupAvatar} from './prospector-group-avatar.mjs';
+import {processGroupCommands,processGroupAudio,scheduledGroupReport,ensureGroupWebhookSubscriptions} from './prospector-group-assistant.mjs';
 import {gatewayConnectionView,refreshGatewayConnection} from './waakg-live-status.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {processProspectingSchedule} from './francisca-panel-actions.mjs';
@@ -853,7 +855,9 @@ if(process.env.WHATSAPP_TRANSPORT==='waakg'){
 // Automatic per-customer 'Meu Prospector' WhatsApp group lifecycle.
 // Registration alone cannot create it: the worker waits until the QR pairing
 // confirms at least one real number. This is not tied to outreach permissions.
-if((process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_DEMO_MODE!=='true')||(!process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_GROUP_IMPORT_JID)){
+if(process.env.PROSPECTOR_AUTO_GROUP_ENABLED!=='false'&&
+ ((process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_DEMO_MODE!=='true')||
+ (!process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_GROUP_IMPORT_JID))){
  let lastPrivateGroupState='';
  const checkPrivateGroup=()=>{
   reconcilePrivateGroup().then(result=>{
@@ -871,6 +875,37 @@ if((process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_DEMO_MODE!=='true')
  const privateGroupTimer=setInterval(checkPrivateGroup,60*1000);
  privateGroupTimer.unref();
  setTimeout(checkPrivateGroup,12*1000).unref();
+ const groupCommandTimer=setInterval(()=>{
+  processGroupCommands().catch(e=>console.warn('[group commands]',String(e?.message||e).slice(0,85)));
+ },4000);
+ groupCommandTimer.unref();
+ const groupAudioTimer=setInterval(()=>{
+  processGroupAudio().catch(e=>console.warn('[group audio]',String(e?.message||e).slice(0,85)));
+ },5000);
+ groupAudioTimer.unref();
+ const groupReportTimer=setInterval(()=>{
+  scheduledGroupReport().then(result=>{
+   if(result.state==='SENT'||result.state==='UNKNOWN')console.info('[group daily report]',JSON.stringify(result));
+  }).catch(e=>console.warn('[group report]',String(e?.message||e).slice(0,85)));
+ },30000);
+ groupReportTimer.unref();
+ const groupMaintenanceTimer=setInterval(async()=>{
+  try{
+   const group=privateGroupState();
+   if(!group?.group_jid||!['READY','MEMBERSHIP_PENDING'].includes(group.state))return;
+   const avatar=await applyDefaultGroupAvatar({sessionId:group.owner_session,groupJid:group.group_jid});
+   if(avatar.status==='DONE')console.info('[group avatar]',JSON.stringify({status:'DONE'}));
+   await ensureGroupWebhookSubscriptions();
+  }catch(e){console.warn('[group setup]',String(e?.message||e).slice(0,85));}
+ },60000);
+ groupMaintenanceTimer.unref();
+ setTimeout(()=>{
+  const group=privateGroupState();
+  if(group?.group_jid){
+   void applyDefaultGroupAvatar({sessionId:group.owner_session,groupJid:group.group_jid}).catch(()=>{});
+   void ensureGroupWebhookSubscriptions().catch(()=>{});
+  }
+ },18000).unref();
 }
 const activation=enableAuthorizedOutreach();
 const invitationActivation=enableInvitationCampaign();

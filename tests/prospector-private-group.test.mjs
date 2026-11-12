@@ -177,7 +177,7 @@ test('does not adopt unrelated same-name groups or add unknown people',async()=>
  assert.equal(privateGroupState(),null);
  assert.equal(create,0);
 });
-test('an existing group with an unknown member is blocked from further updates',async()=>{
+test('a manually invited collaborator does not block addition of managed WhatsApps',async()=>{
  let created=false;
  const request=async(url,opts)=>{
   if(opts?.method==='POST'){created=true;return {status:true,data:{group:{id:jid}}};}
@@ -191,7 +191,7 @@ test('an existing group with an unknown member is blocked from further updates',
    return request(url);
   },at:date('12:04:00')
  });
- assert.equal(result.state,'UNEXPECTED_GROUP_MEMBER');
+ assert.equal(result.state,'MEMBERSHIP_PENDING');
 });
 test('disconnect/reconnect of owner does not lead to another group creation',async()=>{
  let create=0;

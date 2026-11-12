@@ -1,0 +1,34 @@
+name: Prospector private group assistant
+on:
+  pull_request:
+    paths:
+      - 'dashboard/prospector-group-assistant.mjs'
+      - 'dashboard/prospector-group-avatar.mjs'
+      - 'dashboard/prospector-private-group.mjs'
+      - 'dashboard/notifications.mjs'
+      - 'dashboard/waakg-bridge.mjs'
+      - 'dashboard/server.mjs'
+      - 'tests/prospector-group-assistant.test.mjs'
+      - '.github/workflows/group-assistant.yml'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Syntax-check backend group modules
+        run: |
+          node --check dashboard/prospector-group-assistant.mjs
+          node --check dashboard/prospector-group-avatar.mjs
+          node --check dashboard/prospector-private-group.mjs
+          node --check dashboard/notifications.mjs
+          node --check dashboard/waakg-bridge.mjs
+          node --check dashboard/server.mjs
+      - name: Test group permissions, audio commands, 8am reports, avatar
+        run: node --test tests/prospector-group-assistant.test.mjs tests/prospector-private-group.test.mjs
