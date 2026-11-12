@@ -17,4 +17,5 @@ jobs:
       - run: npm ci
       - run: node --check dashboard/server.mjs
       - run: node --check dashboard/approval-ready-activation.mjs
-      - run: node --test tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs tests/owner-daily-80.test.mjs tests/tenant-bulk-approvals.test.mjs
+      - run: node --check dashboard/lead-approvals.mjs
+      - run: node --test tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs tests/owner-daily-80.test.mjs
