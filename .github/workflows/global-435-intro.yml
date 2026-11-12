@@ -1,0 +1,20 @@
+name: Verify global commercial send cadence
+on:
+  push:
+    branches:
+      - fix/global-intro-435-cadence-20261112
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/prospecting-introduction.mjs
+      - run: node --check dashboard/prospecting-queue.mjs
+      - run: node --test tests/owner-435-resume.test.mjs tests/approach-cadence.test.mjs tests/approach-clock-persistence.test.mjs tests/approach-completion-clock.test.mjs tests/prospecting-owner-audio-pitch.test.mjs
