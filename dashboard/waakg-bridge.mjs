@@ -22,6 +22,7 @@ import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 import {isManagedSession,boundLeadSession,leadSession,bindLeadSession} from './waakg-session-registry.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+db.exec('CREATE INDEX IF NOT EXISTS idx_waakg_inbox_session_jid ON waakg_inbox(session_id,jid)');
 db.exec("CREATE TABLE IF NOT EXISTS waakg_manual_outbox(id TEXT PRIMARY KEY,inbox_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,requested_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT)");
 const base=(process.env.WA_AKG_BASE_URL||"").replace(/\/$/,"");
 const configuredBase=base==="https://wa-akg-production-f9f0.up.railway.app";
