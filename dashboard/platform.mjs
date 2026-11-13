@@ -14,6 +14,7 @@ import {billingReady,checkoutForRequest,handleStripeWebhook} from './stripe-bill
 import {createAccessLimiter,accessClientKey} from './access-rate-limit.mjs';
 import {createTenantGatewayBroker,brokerWorkerToken} from './tenant-gateway-broker.mjs';
 import {TENANT_GATEWAY_BROKER_PATH} from './tenant-gateway-policy.mjs';
+import {auditExternalWhatsappLive} from './tenant-live-whatsapp-audit.mjs';
 const isWorker=!!process.env.PROSPECTOR_TENANT_ID;
 const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','platform');
 let store;
@@ -167,6 +168,24 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  const client=clientFromRequest(req);
  const primary=client?.is_internal===1;
  const ownerMaster=primary&&primaryMode(req,client)==='master';
+ if(req.method==='GET'&&(p==='/pilot-check'||p==='/api/platform/pilot-readiness')){
+  // Never expose even aggregated inventory to tenant-facing users.
+  if(!primary&&!authorized(req)){respond(res,403,{error:'Acesso exclusivo do proprietário'});return true;}
+  if(p==='/pilot-check'){
+   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer',
+    'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'});
+   fs.createReadStream(fileURLToPath(new URL('./public/pilot-readiness.html',import.meta.url))).pipe(res);
+   return true;
+  }
+  try{
+   const report=await auditExternalWhatsappLive({maxDetailChecks:24});
+   respond(res,200,{...report,checkedAt:new Date().toISOString()});
+  }catch(e){
+   console.warn('[pilot readiness read-only]',String(e?.message||e).slice(0,120));
+   respond(res,503,{error:'Não foi possível verificar o piloto agora.'});
+  }
+  return true;
+ }
  if(p==='/master'&&req.method==='GET'){
   if(primary){
    res.writeHead(302,{'Location':'/#/clients','Set-Cookie':primaryModeCookie(client,'master'),'Cache-Control':'no-store'});
