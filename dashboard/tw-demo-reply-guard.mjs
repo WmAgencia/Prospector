@@ -7,7 +7,7 @@ export function twDemoReplyAllowed({jid,sessionId}={}){
  if(!guard?.enabled)return {allowed:true,restricted:false};
  const valid=process.env.PROSPECTOR_TENANT_ID&&
   process.env.PROSPECTOR_TENANT_INTERNAL!=='true'&&
-  /^55\\d{10,11}@s\\.whatsapp\\.net$/.test(String(jid||''))&&
+  /^55\d{10,11}@s\.whatsapp\.net$/.test(String(jid||''))&&
   /^prospector-[0-9a-f-]{36}$/i.test(String(sessionId||''));
  return {allowed:Boolean(valid&&guard.senderJid===jid&&guard.sessionId===sessionId),
   restricted:true,reason:'DEMO_TEST_SENDER_ONLY'};
