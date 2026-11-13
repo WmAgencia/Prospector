@@ -955,7 +955,7 @@ async function refreshWa(redraw=true){
    if(w.connected&&waModalOpen&&!waModalCloseTimer){waModalCloseTimer=setTimeout(()=>{waModalOpen=false;waModalCloseTimer=null;if(view==='connections')render();},2500);}
    if(!w.connected&&waModalCloseTimer){clearTimeout(waModalCloseTimer);waModalCloseTimer=null;}
    if(w.connected)qrResult=null;
-   else if(view==="connections"&&w.hasSession&&["SCAN_QR","CONNECTING","INITIALIZING"].includes(w.status)){
+   else if(view==="connections"&&w.hasSession&&(waModalOpen||["SCAN_QR","CONNECTING","INITIALIZING"].includes(w.status))){
     qrResult=await api("/api/whatsapp/qr"+waSessionQuery()).catch(e=>({qr:null,message:e.message}));
    }else if(view==="connections")qrResult=null;
    if(redraw&&(changed||(view==="connections"&&oldQr!==(qrResult?.qr||null))))render();

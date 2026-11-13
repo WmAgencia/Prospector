@@ -1,0 +1,22 @@
+name: Pilot WhatsApp pairing E2E
+on:
+  push:
+    branches: [fix/tenant-wa-pairing-readiness-20261113]
+jobs:
+  tenant-pairing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check connection flow and QR code
+        run: |
+          node --check dashboard/waakg-control.mjs
+          node --check dashboard/tenant-gateway-broker.mjs
+          node --check tests/tenant-wa-pairing-e2e.test.mjs
+      - name: Simulate two distinct clients pairing and independent logout
+        run: node --test --test-concurrency=1 tests/tenant-wa-pairing-e2e.test.mjs tests/tenant-gateway-broker.test.mjs tests/tenant-whatsapp-session-boundary.test.mjs tests/platform-isolation.test.mjs
