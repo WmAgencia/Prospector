@@ -3,7 +3,7 @@
 import crypto from "node:crypto";
 import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
-import {classifyContact,prospectorChatEligible,prospectorLeadEligible} from "./whatsapp-roles.mjs";
+import {classifyContact,prospectorChatEligible,prospectorLeadEligible,tenantInboundReceiveAllowed} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {classifyInboundAutomation} from './inbound-automation.mjs';
@@ -78,7 +78,7 @@ export async function receiveWebhook(req){
  const ownerDecision=routeOwnerCall({jid,sessionId:sid,providerId:unique,text:contentText,interactiveId});
  if(ownerDecision.handled)return {status:200,body:{accepted:true,ownerMeetingDecision:ownerDecision.ok===true}};
  if(one("SELECT id FROM waakg_inbox WHERE provider_id=?",unique))return {status:200,body:{accepted:true,duplicate:true}};
- if(!prospectorChatEligible({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
+ if(!prospectorChatEligible({jid,sessionId:sid})&&!tenantInboundReceiveAllowed({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
  const mediaType=String(data.type||'').toUpperCase();
  if(['IMAGE','DOCUMENT','PDF'].includes(mediaType)){
   const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
