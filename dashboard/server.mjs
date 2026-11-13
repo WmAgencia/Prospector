@@ -3,6 +3,7 @@ import http from 'node:http';
 import {handlePlatform,isPrimaryClient} from './platform.mjs';
 import {auditExternalWhatsappLive} from './tenant-live-whatsapp-audit.mjs';
 import {tenantSupportReadiness} from './tenant-live-support-readiness.mjs';
+import {installTwDemoTraining} from './tw-demo-training-orchestrator.mjs';
 import {runControlledTenantLiveQa} from './controlled-tenant-live-qa.mjs';
 import {evaluateTenantMediaQuota,tenantMediaQuotaMessage} from './tenant-media-quota.mjs';
 import {handleTraining} from './training.mjs';
@@ -963,6 +964,13 @@ if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot()
 }
 const host=process.env.HOST||(envIsProd?'0.0.0.0':'127.0.0.1'),port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
+if(!process.env.PROSPECTOR_TENANT_ID&&process.env.RUN_TW_DEMO_TRAINING_ONCE==='true'){
+ setTimeout(()=>installTwDemoTraining().then(result=>{
+  console.info('[TW demo training]',JSON.stringify(result));
+ }).catch(error=>{
+  console.warn('[TW demo training]',JSON.stringify({status:'ERROR_NOT_RETRIED',reason:String(error?.message||error).slice(0,125)}));
+ }),16000).unref();
+}
 if(!process.env.PROSPECTOR_TENANT_ID&&process.env.RUN_DEMO_3900_INBOUND_QA_ONCE==='true'){
  setTimeout(()=>runControlledTenantLiveQa().then(result=>{
   console.info('[controlled live 7336-3900 QA]',JSON.stringify(result));

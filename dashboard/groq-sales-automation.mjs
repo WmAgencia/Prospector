@@ -22,6 +22,7 @@ import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-ch
 import {classifyContact,prospectorChatEligible} from './whatsapp-roles.mjs';
 import {makeFranciscaVoice} from './francisca-tts.mjs';
 import {readActiveTrainingMarkdown} from './training.mjs';
+import {twDemoReplyAllowed} from './tw-demo-reply-guard.mjs';
 import {configuredClosing} from './training-sales-extras.mjs';
 import {paymentProposalForIncoming,reservePaymentProposal,paymentProposalSent,paymentDeliveryUnknown,paymentIntentStatus} from './sales-payment-flow.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
@@ -53,6 +54,8 @@ function approvedProspectFollowup(identity,jid){
 }
 export function queueInboundTurn({providerId,jid,sessionId}={}){
  if(!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
+ // A live demo is not a public customer-support bot: only its approved sender can receive an automatic reply.
+ if(!twDemoReplyAllowed({jid,sessionId}).allowed)return false;
  // Do not queue pre-training customer messages for later replay after approval.
  if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true'&&!readActiveTrainingMarkdown())return false;
  const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
@@ -98,6 +101,7 @@ export async function handleSalesTurn(providerId,deps={}){
  }
  const replyStartedAt=(deps.replyNow||Date.now)();
  const finish=(status,error='')=>{run('UPDATE groq_auto_events SET state=?,error=? WHERE provider_id=?',status,error,providerId);return {state:status};};
+ if(!twDemoReplyAllowed({jid:r.jid,sessionId:r.session_id}).allowed)return finish('REVIEW','DEMO_SENDER_NOT_APPROVED');
  const identity=classifyContact({jid:r.jid,sessionId:r.session_id});
  const allowTest=false; // Personal, owner and sandbox messages never join automated sales replies.
  const salesFollowup=approvedProspectFollowup(identity,r.jid);
