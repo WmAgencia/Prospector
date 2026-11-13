@@ -36,10 +36,10 @@ test('pilot readiness monitoring is owner-only and read-only',async t=>{
  async function request(route,{method='GET',cookie,body}={}){
   const response=await fetch(url+route,{method,headers:{
    ...(cookie?{Cookie:cookie}:{}),...(body?{'Content-Type':'application/json'}:{})
-  },body:body?JSON.stringify(body):undefined});
+  },body:body?JSON.stringify(body):undefined,redirect:'manual'});
   const raw=await response.text();
   let parsed=null;try{parsed=JSON.parse(raw);}catch{}
-  return {status:response.status,body:parsed,text:raw,cookie:response.headers.get('set-cookie')?.split(';')[0]};
+  return {status:response.status,body:parsed,text:raw,cookie:response.headers.get('set-cookie')?.split(';')[0],location:response.headers.get('location')};
  }
  const admin=await request('/api/auth/exchange',{method:'POST',
   body:{token:'test-admin-token-not-production-'+ 'k'.repeat(36)}});
@@ -56,8 +56,13 @@ test('pilot readiness monitoring is owner-only and read-only',async t=>{
   'unauthenticated visitors must not see pilot inventory');
  assert.equal((await request('/api/platform/pilot-readiness',{cookie:external.cookie})).status,403,
   'customer cookie must not see pilot inventory');
- assert.equal((await request('/pilot-check',{cookie:external.cookie})).status,403,
-  'customer cookie must not access owner page');
+ const unauthenticatedPage=await request('/pilot-check');
+ const customerPage=await request('/pilot-check',{cookie:external.cookie});
+ for(const response of [unauthenticatedPage,customerPage]){
+  assert.equal(response.status,302,'visitors and clients must be sent to owner UI, not given metrics');
+  assert.equal(response.location,'https://prospector-ui-production.up.railway.app/pilot-check');
+  assert.equal(response.body,null,'redirect does not include private inventory');
+ }
 
  const configured=await request('/api/platform/primary-client',{cookie:admin.cookie,method:'POST',
   body:{name:'Conta interna',email:'internal@example.test',phone:'11999998877',password:'internal-password-for-test-123'}});
