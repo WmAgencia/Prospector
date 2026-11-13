@@ -37,6 +37,23 @@ export function classifyContact({jid,sessionId}={}){
  if(contacted)return {role:'PROSPECT_APPROACHED',authorized:false,ownerTools:false,reason:'VERIFIED_INITIAL_OUTREACH'};
  return {role:'INBOUND_NEW',authorized:false,ownerTools:false,reason:lead?'NO_VERIFIED_OUTREACH':'FIRST_CONTACT'};
 }
+// External tenants may receive first-contact customer messages on their own number.
+// This is not permission to prospect: preflight is invoked only after an HMAC
+// authenticated WhatsApp webhook, never from a public browser action.
+export const tenantInboundEnabled=()=>Boolean(process.env.PROSPECTOR_TENANT_ID)&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true';
+export function tenantInboundReceiveAllowed({jid,sessionId}={}){
+ if(!tenantInboundEnabled()||!/^55\d{10,11}@s\.whatsapp\.net$/.test(String(jid||''))||!isManagedSession(sessionId))return false;
+ const number=fullPhone(String(jid).split('@')[0]);
+ if(!number||number===verifiedOwnerPhone())return false;
+ const lead=one('SELECT id FROM leads WHERE phone=?',number);
+ const bound=lead?boundLeadSession(lead.id):'';
+ return !bound||bound===sessionId;
+}
+export function tenantInboundRecorded({jid,sessionId}={}){
+ if(!tenantInboundReceiveAllowed({jid,sessionId}))return false;
+ if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='waakg_inbox'"))return false;
+ return !!one('SELECT id FROM waakg_inbox WHERE jid=? AND session_id=? LIMIT 1',jid,sessionId);
+}
 // Strict inbound boundary: only an acknowledged prospecting-first message qualifies.
 // Discovery, imported numbers, manual chats, opt-in and AI feature flags do NOT qualify.
 // Trusted record of a sent Prospector first approach; never count discovery or a personal message.
@@ -52,6 +69,7 @@ export function prospectorLeadEligible(leadId){
 // Old successful prospecting threads remain visible after conversion into a customer.
 export function prospectorChatVisible({jid,sessionId}={}){
  if(!/^\d{10,15}@s\.whatsapp\.net$/.test(String(jid||''))||!isManagedSession(sessionId))return false;
+ if(tenantInboundRecorded({jid,sessionId}))return true;
  const normalized=fullPhone(String(jid).split('@')[0]);
  const lead=normalized?one('SELECT id FROM leads WHERE phone=?',normalized):null;
  if(!lead||!prospectorLeadEligible(lead.id))return false;
@@ -60,7 +78,12 @@ export function prospectorChatVisible({jid,sessionId}={}){
 }
 // Autoreply is stricter than visibility. Converted customers and opted-out contacts are not auto-replied.
 export function prospectorChatEligible({jid,sessionId}={}){
- return prospectorChatVisible({jid,sessionId})&&classifyContact({jid,sessionId}).role==='PROSPECT_APPROACHED';
+ if(!prospectorChatVisible({jid,sessionId}))return false;
+ const role=classifyContact({jid,sessionId}).role;
+ const number=fullPhone(String(jid||'').split('@')[0]);
+ if(number&&one('SELECT 1 FROM suppressions WHERE phone=?',number))return false;
+ return role==='PROSPECT_APPROACHED'||
+  (tenantInboundRecorded({jid,sessionId})&&['INBOUND_NEW','EXISTING_CLIENT'].includes(role));
 }
 export function hasExistingClientRelationship(number){
  const p=fullPhone(number);
