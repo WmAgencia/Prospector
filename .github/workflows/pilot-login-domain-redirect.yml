@@ -1,0 +1,17 @@
+name: Pilot check login and domain redirects
+on:
+  push:
+    branches: [fix/pilot-check-login-domain-20261113]
+jobs:
+  protected-redirect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/platform.mjs
+      - run: node --test tests/pilot-readiness-page.test.mjs tests/platform-isolation.test.mjs tests/tenant-live-whatsapp-audit.test.mjs
