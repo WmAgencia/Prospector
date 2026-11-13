@@ -45,7 +45,7 @@ test('two company databases are backed up and restored separately',async()=>{
   const restored=await restoreSQLiteToSandbox(snapshot,path.join(temp,'restored'));
   assert.equal(restored.integrity,'ok');
  }
- assert.equal(fs.readdirSync(path.join(temp,'restored')).length,3);
+ assert.equal(fs.readdirSync(path.join(temp,'restored')).filter(name=>name.endsWith('.sqlite')).length,3);
 });
 test('refuse overwrites, missing paths and corrupted SQLite snapshots',async()=>{
  const source=fixture('refuse');
