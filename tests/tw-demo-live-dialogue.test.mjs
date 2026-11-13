@@ -41,7 +41,7 @@ let sends=0;
 const provider=async(route,{method='GET',data}={})=>{
  if(route==='/api/sessions/consecom-principal')return {status:true,data:live(owner)};
  if(route==='/api/sessions/'+sid)return {status:true,data:live(testNumber)};
- if(method==='POST'&&route==='/api/messages/consecom-principal/'+testNumber+'@s.whatsapp.net/send'){
+ if(method==='POST'&&route==='/api/messages/consecom-principal/'+encodeURIComponent(testNumber+'@s.whatsapp.net')+'/send'){
   sends++;
   assert.equal(data.message.text,'Onde fica a oficina TW & CO em Sorocaba? Preciso do endereço, por favor.');
   const work=new DatabaseSync(dbFile);
