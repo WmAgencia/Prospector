@@ -1,7 +1,7 @@
 // Async Gosom Google Maps integration. All provider calls remain server-side.
 // Jobs are never mistaken for completed results; importing requires explicit user action.
 import {db,one,all,run,id,now,addLead,audit,getSetting,setSetting} from './db.mjs';
-import {daySP,hourSP} from './radar.mjs';
+import {daySP,hourSP,radarSnapshot} from './radar.mjs';
 import {recordOrigin} from './discovery.mjs';
 import {prospectingList} from './prospecting-search.mjs';
 import {RESEARCH_NICHES,actionableLeadInventory,chooseResearchTarget,recordResearchPlan,researchIntelligenceStatus} from './autonomous-prospecting.mjs';
@@ -196,7 +196,7 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
  if(autoMapsLocked)return {status:'BUSY'};
  if(process.env.PROSPECTOR_AUTO_MAPS_DISCOVERY_ENABLED!=='true')return {status:'DISABLED'};
  if(!configured())return {status:'NOT_CONFIGURED'};
- if(getSetting('discovery_auto_enabled',false)!==true)return {status:'DISABLED_BY_OPERATOR'};
+ if(getSetting('discovery_auto_enabled',true)===false)return {status:'DISABLED_BY_OPERATOR'};
  if(hourSP(at)<5)return {status:'BEFORE_START'};
  autoMapsLocked=true;
  try{
@@ -222,14 +222,11 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
    return {status:state.status,error:state.error||null};
   }
   if(hourSP(at)>=18)return {status:'OUTSIDE_RESEARCH_WINDOW'};
+  // A full outreach queue does not replace the daily goal of finding new businesses.
+  // Research never grants WhatsApp permission, regardless of existing stock.
+  const dailyProgress=radarSnapshot(at);
+  if(dailyProgress.foundToday>=dailyProgress.discoveryTarget)return {status:'TARGET_REACHED',foundToday:dailyProgress.foundToday,target:dailyProgress.discoveryTarget};
   const stock=actionableLeadInventory({at:at.getTime()});
-  // Search and send use different eligibility. Business listings alone are
-  // research inventory, never permission to send a WhatsApp message.
-  // In production continue bounded research when all existing stock lacks
-  // documented permission, rather than treating it as a send-ready pipeline.
-  const permissionGate=process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true'||process.env.NODE_ENV==='production'||Boolean(process.env.RAILWAY_ENVIRONMENT);
-  const usableStock=permissionGate?stock.contactReady:stock.ready;
-  if(usableStock>=stock.target)return {status:'STOCK_OK',ready:stock.ready,contactReady:stock.contactReady,target:stock.target,permissionGate};
   const today=daySP(at);
   const recent=all("SELECT status,created_at FROM maps_scraper_jobs WHERE auto_discovery=1 ORDER BY created_at DESC LIMIT 50");
   const daily=recent.filter(x=>Number.isFinite(Date.parse(x.created_at))&&daySP(new Date(x.created_at))===today).length;
