@@ -1,0 +1,18 @@
+name: Pilot readiness access and WhatsApp isolation
+on:
+  push:
+    branches: [feature/pilot-readiness-monitor-20261112]
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/platform.mjs
+      - run: node --check tests/pilot-readiness-page.test.mjs
+      - run: node --test tests/pilot-readiness-page.test.mjs tests/tenant-live-whatsapp-audit.test.mjs tests/platform-isolation.test.mjs tests/tenant-gateway-broker.test.mjs
