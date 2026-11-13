@@ -19,4 +19,4 @@ jobs:
           node --check dashboard/tenant-gateway-broker.mjs
           node --check tests/tenant-wa-pairing-e2e.test.mjs
       - name: Simulate two distinct clients pairing and independent logout
-        run: node --test tests/tenant-wa-pairing-e2e.test.mjs tests/tenant-gateway-broker.test.mjs tests/tenant-whatsapp-session-boundary.test.mjs tests/platform-isolation.test.mjs
+        run: node --test --test-concurrency=1 tests/tenant-wa-pairing-e2e.test.mjs tests/tenant-gateway-broker.test.mjs tests/tenant-whatsapp-session-boundary.test.mjs tests/platform-isolation.test.mjs
