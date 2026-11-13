@@ -1,0 +1,18 @@
+name: Read-only customer WhatsApp readiness audit
+on:
+  push:
+    branches: [audit/live-external-whatsapp-inventory-20261112]
+jobs:
+  privacy-safe-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/server.mjs
+      - run: node --check dashboard/tenant-live-whatsapp-audit.mjs
+      - run: node --test tests/tenant-live-whatsapp-audit.test.mjs tests/platform-isolation.test.mjs tests/tenant-gateway-broker.test.mjs
