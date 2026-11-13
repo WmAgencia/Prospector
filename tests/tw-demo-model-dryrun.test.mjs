@@ -53,7 +53,7 @@ test('the QA reports fabricated prices and unsafe replies rather than claiming s
   'É apenas uma demonstração, não o canal oficial.'
  ];
  const result=await evaluateTwDemoModels({draft:async()=>({ok:true,draft:drafts[i++]})});
- assert.equal(result.status,'PARTIAL_PASS');
+ assert.equal(result.status,'REVIEW_REQUIRED');
  assert.equal(result.passed,3);
  assert.equal(result.failed,3);
  assert.equal(result.realWhatsappMessagesSent,0);
