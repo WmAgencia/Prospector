@@ -3,6 +3,7 @@ import http from 'node:http';
 import {handlePlatform,isPrimaryClient} from './platform.mjs';
 import {auditExternalWhatsappLive} from './tenant-live-whatsapp-audit.mjs';
 import {tenantSupportReadiness} from './tenant-live-support-readiness.mjs';
+import {runControlledTenantLiveQa} from './controlled-tenant-live-qa.mjs';
 import {evaluateTenantMediaQuota,tenantMediaQuotaMessage} from './tenant-media-quota.mjs';
 import {handleTraining} from './training.mjs';
 import {handleFranciscaPanel} from './francisca-panel.mjs';
@@ -962,6 +963,13 @@ if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot()
 }
 const host=process.env.HOST||(envIsProd?'0.0.0.0':'127.0.0.1'),port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
+if(!process.env.PROSPECTOR_TENANT_ID&&process.env.RUN_DEMO_3900_INBOUND_QA_ONCE==='true'){
+ setTimeout(()=>runControlledTenantLiveQa().then(result=>{
+  console.info('[controlled live 7336-3900 QA]',JSON.stringify(result));
+ }).catch(err=>{
+  console.warn('[controlled live 7336-3900 QA]',JSON.stringify({status:'QA_ERROR_NO_RETRY',reason:String(err?.message||err).slice(0,95)}));
+ }),18000).unref();
+}
 if(!process.env.PROSPECTOR_TENANT_ID&&process.env.RUN_TENANT_SUPPORT_READ_ONLY_AUDIT_ONCE==='true'){
  setTimeout(()=>{
   try{console.info('[tenant support read-only audit]',JSON.stringify(tenantSupportReadiness()));}
