@@ -3,7 +3,7 @@
 import crypto from "node:crypto";
 import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
-import {classifyContact,prospectorChatEligible,prospectorLeadEligible} from "./whatsapp-roles.mjs";
+import {classifyContact,prospectorChatEligible,prospectorLeadEligible,tenantInboundReceiveAllowed} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
 import {classifyInboundAutomation} from './inbound-automation.mjs';
@@ -22,6 +22,7 @@ import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 import {isManagedSession,boundLeadSession,leadSession,bindLeadSession} from './waakg-session-registry.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+db.exec('CREATE INDEX IF NOT EXISTS idx_waakg_inbox_session_jid ON waakg_inbox(session_id,jid)');
 db.exec("CREATE TABLE IF NOT EXISTS waakg_manual_outbox(id TEXT PRIMARY KEY,inbox_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,requested_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT)");
 const base=(process.env.WA_AKG_BASE_URL||"").replace(/\/$/,"");
 const configuredBase=base==="https://wa-akg-production-f9f0.up.railway.app";
@@ -78,7 +79,7 @@ export async function receiveWebhook(req){
  const ownerDecision=routeOwnerCall({jid,sessionId:sid,providerId:unique,text:contentText,interactiveId});
  if(ownerDecision.handled)return {status:200,body:{accepted:true,ownerMeetingDecision:ownerDecision.ok===true}};
  if(one("SELECT id FROM waakg_inbox WHERE provider_id=?",unique))return {status:200,body:{accepted:true,duplicate:true}};
- if(!prospectorChatEligible({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
+ if(!prospectorChatEligible({jid,sessionId:sid})&&!tenantInboundReceiveAllowed({jid,sessionId:sid}))return {status:200,body:{accepted:true,ignored:true,reason:'NOT_PROSPECTOR_APPROACHED'}};
  const mediaType=String(data.type||'').toUpperCase();
  if(['IMAGE','DOCUMENT','PDF'].includes(mediaType)){
   const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);

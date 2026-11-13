@@ -2,6 +2,7 @@ import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
 import {handlePlatform,isPrimaryClient} from './platform.mjs';
 import {auditExternalWhatsappLive} from './tenant-live-whatsapp-audit.mjs';
+import {tenantSupportReadiness} from './tenant-live-support-readiness.mjs';
 import {evaluateTenantMediaQuota,tenantMediaQuotaMessage} from './tenant-media-quota.mjs';
 import {handleTraining} from './training.mjs';
 import {handleFranciscaPanel} from './francisca-panel.mjs';
@@ -961,6 +962,12 @@ if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot()
 }
 const host=process.env.HOST||(envIsProd?'0.0.0.0':'127.0.0.1'),port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
+if(!process.env.PROSPECTOR_TENANT_ID&&process.env.RUN_TENANT_SUPPORT_READ_ONLY_AUDIT_ONCE==='true'){
+ setTimeout(()=>{
+  try{console.info('[tenant support read-only audit]',JSON.stringify(tenantSupportReadiness()));}
+  catch(error){console.warn('[tenant support read-only audit]',JSON.stringify({ok:false,reason:String(error?.message||error).slice(0,100)}));}
+ },14000).unref();
+}
 if(!process.env.PROSPECTOR_TENANT_ID&&process.env.RUN_EXTERNAL_TENANT_WHATSAPP_AUDIT_ONCE==='true'){
  setTimeout(()=>auditExternalWhatsappLive().then(summary=>{
   console.info('[tenant live whatsapp read-only audit]',JSON.stringify(summary));
