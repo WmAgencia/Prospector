@@ -170,7 +170,18 @@ export async function handlePlatform(req,res,url,{authorized,json,respond}){
  const ownerMaster=primary&&primaryMode(req,client)==='master';
  if(req.method==='GET'&&(p==='/pilot-check'||p==='/api/platform/pilot-readiness')){
   // Never expose even aggregated inventory to tenant-facing users.
-  if(!primary&&!authorized(req)){respond(res,403,{error:'Acesso exclusivo do proprietário'});return true;}
+  if(!primary&&!authorized(req)){
+   if(p==='/pilot-check'){
+    // The administrator logs in on the public UI host, not the operational API host.
+    // Redirect only the HTML navigation, never the privileged JSON endpoint.
+    res.writeHead(302,{
+     Location:'https://prospector-ui-production.up.railway.app/pilot-check',
+     'Cache-Control':'no-store','Referrer-Policy':'no-referrer'
+    });
+    res.end();return true;
+   }
+   respond(res,403,{error:'Acesso exclusivo do proprietário'});return true;
+  }
   if(p==='/pilot-check'){
    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer',
     'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'});
