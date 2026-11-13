@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Validação do piloto — Prospector</title>
+<style>
+:root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#202926;background:#f4f7f5}
+*{box-sizing:border-box}body{margin:0;padding:28px 20px 64px}main{max-width:900px;margin:auto}
+h1{font-size:clamp(26px,4vw,36px);letter-spacing:-1px;margin:12px 0 8px}
+p{line-height:1.65;color:#65766e}.top{display:flex;justify-content:space-between;align-items:center;gap:16px}
+a{color:#1b7657;text-decoration:none;font-weight:650}
+button{border:0;border-radius:12px;background:#156347;color:white;cursor:pointer;padding:12px 20px;font-weight:650}
+button:disabled{opacity:.5;cursor:wait}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:22px}
+article{border:1px solid #dfe7e1;background:white;border-radius:18px;padding:20px;min-height:115px;box-shadow:0 1px 3px #1b332206}
+article span{font-size:13px;color:#68786e}article strong{font-size:32px;display:block;margin-top:12px;font-variant-numeric:tabular-nums}
+#result{margin-top:20px;border:1px solid #d8e6d9;background:white;border-radius:16px;padding:20px;font-weight:650}
+#detail{margin-top:12px;font-size:14px;color:#64776b}ol{padding-left:22px;line-height:1.9}li{padding-left:4px}
+.small{font-size:13px;color:#637368}section{margin-top:26px}
+@media(max-width:650px){.grid{grid-template-columns:1fr 1fr}.top{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body><main>
+<div class="top"><a href="/master">Prospector / Painel Master</a><button id="refresh" type="button">Atualizar situação</button></div>
+<h1>Validação do piloto multiempresa</h1>
+<p>O diagnóstico consulta somente o cadastro e o estado das sessões WhatsApp dos clientes. Não lê mensagens, não envia abordagens e não desconecta números.</p>
+<div class="grid">
+<article><span>Empresas externas ativas</span><strong id="accounts">—</strong></article>
+<article><span>Empresas com WhatsApp conectado</span><strong id="connected">—</strong></article>
+<article><span>Sessões externas registradas</span><strong id="sessions">—</strong></article>
+<article><span>Bancos de clientes inicializados</span><strong id="databases">—</strong></article>
+<article><span>Conflitos de sessão</span><strong id="conflicts">—</strong></article>
+<article><span>Conexões verificadas pelo gateway</span><strong id="verified">—</strong></article>
+</div>
+<div id="result" role="status" aria-live="polite">Consultando as conexões...</div>
+<div id="detail"></div>
+<section>
+<h2>Como concluir o teste real</h2>
+<ol>
+<li>Peça a duas empresas distintas que acessem seus próprios cadastros no Prospector.</li>
+<li>Cada titular deve conectar seu próprio WhatsApp pelo QR Code no respectivo painel.</li>
+<li>Atualize este diagnóstico até aparecerem duas empresas externas efetivamente conectadas.</li>
+<li>Com autorização de cada titular, valide mensagens de teste, respostas, transferência de atendimento e desconexão independente.</li>
+</ol>
+<p class="small">Os números internos da Consecom não são contabilizados. Este painel não envia mensagens nem executa desconexões.</p>
+</section>
+</main><script>
+const get=id=>document.getElementById(id);
+async function refresh(){
+const button=get('refresh');button.disabled=true;get('result').textContent='Verificando sessões...';
+try{
+const response=await fetch('/api/platform/pilot-readiness',{cache:'no-store',credentials:'same-origin'});
+if(!response.ok)throw Error(response.status===403?'Acesso exclusivo do proprietário ou Master.':'Falha na consulta: HTTP '+response.status);
+const x=await response.json();
+get('accounts').textContent=x.activeExternalAccounts??'—';
+get('connected').textContent=x.activeExternalConnected??'Não verificado';
+get('sessions').textContent=x.externalSessionRecords??'—';
+get('databases').textContent=x.externalDatabasesFound??'—';
+get('conflicts').textContent=x.sessionOwnershipConflicts??'—';
+get('verified').textContent=x.liveConnectedExternalSessions??'Não verificado';
+const messages={
+NO_EXTERNAL_SESSION_RECORDS:'Nenhum cliente conectou um WhatsApp ainda.',
+TWO_EXTERNAL_ACCOUNTS_CONNECTED:'Duas ou mais empresas têm sessões autenticadas. Próxima etapa: testes autorizados com os titulares.',
+FEWER_THAN_TWO_ACTIVE_EXTERNAL_ACCOUNTS:'Há menos de duas contas externas ativas.',
+NO_LIVE_EXTERNAL_WHATSAPP_CONNECTIONS:'Nenhum WhatsApp externo foi autenticado no gateway.',
+FEWER_THAN_TWO_CONNECTED_EXTERNAL_ACCOUNTS:'Ainda faltam empresas externas com WhatsApp conectado.',
+GATEWAY_READ_UNAVAILABLE:'O gateway não confirmou a disponibilidade. Não é possível concluir o estado das conexões.',
+SESSION_OWNERSHIP_CONFLICT:'Atenção: conflito de titularidade das sessões. Não execute testes reais antes de corrigir.'
+};
+get('result').textContent=messages[x.verdict]||'Verificação concluída: '+x.verdict;
+get('detail').textContent='Consulta somente leitura. Última conferência: '+new Date(x.checkedAt).toLocaleString('pt-BR')+
+'. Nenhuma mensagem enviada ou número desconectado.';
+}catch(err){get('result').textContent=String(err.message||err);get('detail').textContent='';}
+finally{button.disabled=false;}
+}
+get('refresh').addEventListener('click',refresh);refresh();
+</script></body></html>
