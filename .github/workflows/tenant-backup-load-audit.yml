@@ -1,0 +1,29 @@
+name: Multi-tenant backup-restore and capacity drill
+on:
+  push:
+    branches: [audit/backup-restore-load-20261112]
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check dashboard/sqlite-backup-verify.mjs
+      - run: node --test tests/backup-restore-audit.test.mjs
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Six concurrent independent customer environments, no real network messages
+        run: node --test tests/tenant-concurrent-load-audit.test.mjs
