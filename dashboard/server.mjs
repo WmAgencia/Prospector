@@ -5,6 +5,7 @@ import {auditExternalWhatsappLive} from './tenant-live-whatsapp-audit.mjs';
 import {tenantSupportReadiness} from './tenant-live-support-readiness.mjs';
 import {installTwDemoTraining} from './tw-demo-training-orchestrator.mjs';
 import {runTwDemoModelAudit} from './tw-demo-model-orchestrator.mjs';
+import {runTwLiveDialogue} from './tw-demo-live-dialogue.mjs';
 import {runControlledTenantLiveQa} from './controlled-tenant-live-qa.mjs';
 import {evaluateTenantMediaQuota,tenantMediaQuotaMessage} from './tenant-media-quota.mjs';
 import {handleTraining} from './training.mjs';
@@ -965,6 +966,13 @@ if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot()
 }
 const host=process.env.HOST||(envIsProd?'0.0.0.0':'127.0.0.1'),port=Number(process.env.PORT||3030);
 const server=http.createServer(handler);
+if(!process.env.PROSPECTOR_TENANT_ID&&process.env.RUN_TW_REAL_DIALOGUE_ONCE==='true'){
+ setTimeout(()=>runTwLiveDialogue().then(result=>{
+  console.info('[TW demo live dialogue]',JSON.stringify(result));
+ }).catch(error=>{
+  console.warn('[TW demo live dialogue]',JSON.stringify({status:'ERROR_DO_NOT_RETRY',reason:String(error?.message||error).slice(0,125)}));
+ }),16000).unref();
+}
 if(!process.env.PROSPECTOR_TENANT_ID&&process.env.RUN_TW_DEMO_MODEL_DRYRUN_ONCE==='true'){
  setTimeout(()=>runTwDemoModelAudit().then(result=>{
   console.info('[TW demo real-model dryrun]',JSON.stringify(result));
