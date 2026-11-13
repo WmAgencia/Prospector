@@ -1,0 +1,21 @@
+name: Controlled one-time live WhatsApp receipt safety gate
+on:
+  push:
+    branches: [audit/controlled-real-whatsapp-qa-20261113]
+jobs:
+  demo-qa-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify no real message sends from CI
+        run: |
+          node --check dashboard/controlled-tenant-live-qa.mjs
+          node --check tests/controlled-tenant-live-qa.test.mjs
+          node --check dashboard/server.mjs
+          node --test --test-concurrency=1 tests/controlled-tenant-live-qa.test.mjs tests/tenant-inbound-support-e2e.test.mjs tests/tenant-live-support-readiness.test.mjs
