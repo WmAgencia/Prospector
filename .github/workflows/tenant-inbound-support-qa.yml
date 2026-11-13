@@ -1,0 +1,24 @@
+name: Multi-tenant inbound and Francisca acceptance
+on:
+  push:
+    branches: [fix/tenant-inbound-support-qa-20261113]
+jobs:
+  tenant-inbound-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check syntax
+        run: |
+          node --check dashboard/whatsapp-roles.mjs
+          node --check dashboard/waakg-bridge.mjs
+          node --check dashboard/groq-sales-automation.mjs
+          node --check dashboard/conversation-handoff.mjs
+          node --check tests/tenant-inbound-support-e2e.test.mjs
+      - name: Signed WhatsApp inbound webhook, training approval, mocked IA, handoff and isolation
+        run: node --test --test-concurrency=1 tests/tenant-inbound-support-e2e.test.mjs tests/conversation-handoff.test.mjs tests/inbound-automation-flow.test.mjs tests/platform-isolation.test.mjs tests/tenant-brand-isolation.test.mjs tests/tenant-gateway-broker.test.mjs
