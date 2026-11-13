@@ -53,6 +53,8 @@ function approvedProspectFollowup(identity,jid){
 }
 export function queueInboundTurn({providerId,jid,sessionId}={}){
  if(!providerId||!/^\d{12,15}@s\.whatsapp\.net$/.test(jid||''))return false;
+ // Do not queue pre-training customer messages for later replay after approval.
+ if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true'&&!readActiveTrainingMarkdown())return false;
  const lead=one('SELECT id FROM leads WHERE phone=?',String(jid).split('@')[0]);
  const boundSession=sessionId||(lead?leadSession(lead.id):selectedWaSession());
  if(lead&&conversationFinished(lead.id,boundSession))return false;
@@ -73,7 +75,12 @@ export function queueInboundTurn({providerId,jid,sessionId}={}){
 }
 const active=new Set();
 export async function handleSalesTurn(providerId,deps={}){
- if(process.env.PROSPECTOR_TENANT_ID&&!readActiveTrainingMarkdown())return {state:'TRAINING_REVIEW_REQUIRED'};
+ if(process.env.PROSPECTOR_TENANT_ID&&!readActiveTrainingMarkdown()){
+  // Historical messages are never eligible for automatic replay when a manual
+  // gets approved: force pending queue items to REVIEW instead of leaving them.
+  run("UPDATE groq_auto_events SET state='REVIEW',error='TRAINING_REVIEW_REQUIRED' WHERE provider_id=? AND state='PENDING'",providerId);
+  return {state:'TRAINING_REVIEW_REQUIRED'};
+ }
  const r=one("SELECT e.*,i.body,i.state inbox_state,i.lead_id,i.session_id,l.business,l.segment,l.phone,l.stage,t.id thread_id,t.manual_takeover FROM groq_auto_events e JOIN waakg_inbox i ON i.provider_id=e.provider_id JOIN leads l ON l.id=i.lead_id JOIN threads t ON t.lead_id=l.id WHERE e.provider_id=? AND e.state='PENDING'",providerId);
  if(!r)return {state:'SKIP'};
  if(conversationFinished(r.lead_id,r.session_id)){
