@@ -13,9 +13,9 @@ test('pilot readiness monitoring is owner-only and read-only',async t=>{
  const port=portListener.address().port;
  await new Promise(r=>portListener.close(r));
  const env={...process.env,PROSPECTOR_DATA_DIR:dir,PORT:String(port),
-  NODE_ENV:'test',WHATSAPP_TRANSPORT:'waakg',GROQ_API_KEY:'',
+  NODE_ENV:'production',WHATSAPP_TRANSPORT:'waakg',GROQ_API_KEY:'',
   WA_AKG_API_KEY:'',WA_AKG_ADMIN_EMAIL:'',WA_AKG_ADMIN_PASSWORD:'',
-  WA_AKG_SESSION_ID:'',ADMIN_SESSION_SECRET:'pilot-monitor-test-secret',
+  WA_AKG_SESSION_ID:'',ADMIN_SESSION_SECRET:'p'.repeat(64),ADMIN_ACCESS_TOKEN:'test-admin-token-not-production-'+ 'k'.repeat(36),
   PROSPECTOR_FORCE_OUTREACH_PAUSE:'true',PROSPECTOR_AUTONOMOUS_OUTREACH_OPT_IN:'false'};
  for(const key of Object.keys(env))if(key.startsWith('RUN_')||key.includes('DEMO'))delete env[key];
  const child=spawn(process.execPath,['dashboard/server.mjs'],{env,stdio:'ignore'});
@@ -41,7 +41,11 @@ test('pilot readiness monitoring is owner-only and read-only',async t=>{
   let parsed=null;try{parsed=JSON.parse(raw);}catch{}
   return {status:response.status,body:parsed,text:raw,cookie:response.headers.get('set-cookie')?.split(';')[0]};
  }
- const signup=await request('/api/platform/clients',{method:'POST',
+ const admin=await request('/api/auth/exchange',{method:'POST',
+  body:{token:'test-admin-token-not-production-'+ 'k'.repeat(36)}});
+ assert.equal(admin.status,200);
+ assert.ok(admin.cookie);
+ const signup=await request('/api/platform/clients',{cookie:admin.cookie,method:'POST',
   body:{name:'Empresa Piloto de Teste',email:'pilot@example.test'}});
  assert.equal(signup.status,201);
  const external=await request('/api/platform/login',{method:'POST',
@@ -55,7 +59,7 @@ test('pilot readiness monitoring is owner-only and read-only',async t=>{
  assert.equal((await request('/pilot-check',{cookie:external.cookie})).status,403,
   'customer cookie must not access owner page');
 
- const configured=await request('/api/platform/primary-client',{method:'POST',
+ const configured=await request('/api/platform/primary-client',{cookie:admin.cookie,method:'POST',
   body:{name:'Conta interna',email:'internal@example.test',phone:'11999998877',password:'internal-password-for-test-123'}});
  assert.equal(configured.status,200);
  const auth=await request('/api/platform/signin',{method:'POST',
