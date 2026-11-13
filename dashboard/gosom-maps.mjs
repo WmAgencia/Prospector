@@ -222,17 +222,11 @@ export async function automaticMapsDiscovery({at=new Date()}={}){
    return {status:state.status,error:state.error||null};
   }
   if(hourSP(at)>=18)return {status:'OUTSIDE_RESEARCH_WINDOW'};
-  const stock=actionableLeadInventory({at:at.getTime()});
-  // Search and send use different eligibility. Business listings alone are
-  // research inventory, never permission to send a WhatsApp message.
-  // In production continue bounded research when all existing stock lacks
-  // documented permission, rather than treating it as a send-ready pipeline.
-  const permissionGate=process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN==='true'||process.env.NODE_ENV==='production'||Boolean(process.env.RAILWAY_ENVIRONMENT);
-  const usableStock=permissionGate?stock.contactReady:stock.ready;
   // A full outreach queue does not replace the daily goal of finding new businesses.
-  // Independently of sending permissions, search until the shared daily discovery cap.
+  // Research never grants WhatsApp permission, regardless of existing stock.
   const dailyProgress=radarSnapshot(at);
-  if(dailyProgress.foundToday>=dailyProgress.discoveryTarget)return {status:'TARGET_REACHED',foundToday:dailyProgress.foundToday,target:dailyProgress.discoveryTarget,ready:stock.ready,contactReady:stock.contactReady};
+  if(dailyProgress.foundToday>=dailyProgress.discoveryTarget)return {status:'TARGET_REACHED',foundToday:dailyProgress.foundToday,target:dailyProgress.discoveryTarget};
+  const stock=actionableLeadInventory({at:at.getTime()});
   const today=daySP(at);
   const recent=all("SELECT status,created_at FROM maps_scraper_jobs WHERE auto_discovery=1 ORDER BY created_at DESC LIMIT 50");
   const daily=recent.filter(x=>Number.isFinite(Date.parse(x.created_at))&&daySP(new Date(x.created_at))===today).length;
