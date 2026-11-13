@@ -4,7 +4,8 @@ import {one,run,now,audit,phone,addLead,getThread} from './db.mjs';
 import {getSetting} from './db.mjs';
 import {conversationAuthorized} from './operator-outreach.mjs';
 import {introductionStatus} from './prospecting-introduction.mjs';
-import {classifyContact,prospectorChatVisible} from './whatsapp-roles.mjs';
+import {classifyContact,prospectorChatVisible,tenantInboundEnabled,tenantInboundRecorded} from './whatsapp-roles.mjs';
+import {readActiveTrainingMarkdown} from './training.mjs';
 import {selectedWaSession,waControlStatus} from './waakg-control.mjs';
 import {leadSession} from './waakg-session-registry.mjs';
 import {remoteChats} from './waakg-conversations.mjs';
@@ -38,8 +39,15 @@ export function conversationHandoffStatus(chatId){
  const eligibleStage=!['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(row.lead?.stage);
  // Generic AI flags may not expand the contact list beyond a documented Prospector approach.
  const intro=row.lead?introductionStatus(row.lead.id):null;
- const approved=role.role==='PROSPECT_APPROACHED'&&row.lead&&conversationAuthorized(row.lead.id,{ignoreTakeover:true})&&
+ const previouslyApproached=role.role==='PROSPECT_APPROACHED'&&row.lead&&conversationAuthorized(row.lead.id,{ignoreTakeover:true})&&
   getSetting('sales_followup_enabled',true)===true&&(!intro||intro.stage==='CONVERSING');
+ // For a non-owner tenant, a verified incoming customer message is sufficient
+ // to permit returning that already-established dialogue to the trained IA.
+ const inboundSupport=tenantInboundEnabled()&&row.lead&&
+  ['INBOUND_NEW','EXISTING_CLIENT'].includes(role.role)&&
+  tenantInboundRecorded({jid:row.jid,sessionId:leadSession(row.lead.id)})&&
+  !!readActiveTrainingMarkdown()&&process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true';
+ const approved=previouslyApproached||inboundSupport;
  const canTakeover=valid&&role.role!=='OWNER'&&role.role!=='UNVERIFIED'&&!suppressed;
  const canDeliverToAi=!!(canTakeover&&eligibleStage&&approved&&process.env.GROQ_API_KEY);
  const reason=!valid?'UNSUPPORTED_CHAT':role.role==='OWNER'?'OWNER_PRIVATE':role.role==='UNVERIFIED'?'UNVERIFIED':
