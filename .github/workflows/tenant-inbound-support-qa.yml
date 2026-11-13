@@ -21,4 +21,4 @@ jobs:
           node --check dashboard/conversation-handoff.mjs
           node --check tests/tenant-inbound-support-e2e.test.mjs
       - name: Signed WhatsApp inbound webhook, training approval, mocked IA, handoff and isolation
-        run: node --test --test-concurrency=1 tests/tenant-inbound-support-e2e.test.mjs tests/conversation-handoff.test.mjs tests/inbound-automation-flow.test.mjs tests/platform-isolation.test.mjs tests/tenant-brand-isolation.test.mjs tests/tenant-gateway-broker.test.mjs
+        run: node --test --test-concurrency=1 tests/tenant-inbound-support-e2e.test.mjs tests/platform-isolation.test.mjs tests/tenant-brand-isolation.test.mjs tests/tenant-gateway-broker.test.mjs tests/tenant-wa-pairing-e2e.test.mjs tests/tenant-live-whatsapp-audit.test.mjs tests/tenant-media-overview.test.mjs tests/tenant-media-quota.test.mjs tests/tenant-runtime-env.test.mjs tests/tenant-prospecting-controls.test.mjs
