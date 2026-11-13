@@ -1,0 +1,16 @@
+name: Legacy owner conversation baseline before tenant inbound change
+on:
+  push:
+    branches: [audit/tenant-inbound-legacy-baseline-20261113]
+jobs:
+  unchanged-production-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test --test-concurrency=1 tests/conversation-handoff.test.mjs tests/inbound-automation-flow.test.mjs
