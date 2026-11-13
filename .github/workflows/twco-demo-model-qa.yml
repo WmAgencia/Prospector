@@ -1,0 +1,22 @@
+name: TW demo Groq model safety validation
+on:
+  push:
+    branches: [test/twco-live-model-validation-20261113]
+jobs:
+  model-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Syntax checks
+        run: |
+          node --check dashboard/tw-demo-model-dryrun.mjs
+          node --check dashboard/tw-demo-model-orchestrator.mjs
+          node --check dashboard/server.mjs
+      - name: TW safety and tenant isolation tests
+        run: node --test --test-concurrency=1 tests/tw-demo-model-dryrun.test.mjs tests/tw-demo-training-e2e.test.mjs tests/tenant-brand-isolation.test.mjs tests/tenant-gateway-broker.test.mjs
