@@ -1,5 +1,6 @@
 // Typed media bridge to WA-AKG. No arbitrary URLs or external hosts.
 import {getGatewayApiKey,selectedWaSession} from './waakg-control.mjs';
+import {registerApiOutboundIntent} from './waakg-outbound-intents.mjs';
 const base='https://wa-akg-production-f9f0.up.railway.app';
 export const MAX_MEDIA_BYTES=15*1024*1024;
 const mediaFile=/^\/api\/media\/[A-Za-z0-9_-]{3,140}\.(?:mp3|m4a|mp4|ogg|opus|wav|webm)$/i;
@@ -41,6 +42,7 @@ export async function sendVoiceMedia({jid,bytes,session=selectedWaSession(),fetc
  form.append('type','voice');
  form.append('file',new Blob([bytes],{type:'audio/mp4'}),'francisca.m4a');
  const key=apiKey||await getGatewayApiKey();
+ registerApiOutboundIntent({session,jid,type:'AUDIO'});
  // WA-AKG's own handler expects multipart form data, not JSON, and uses
  // type=voice to send a WhatsApp push-to-talk message.
  const res=await fetchFn(base+'/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(jid)+'/media',{
@@ -58,6 +60,7 @@ export async function sendVoiceMedia({jid,bytes,session=selectedWaSession(),fetc
   form.append('type','voice');
   form.append('file',new Blob([bytes],{type:'audio/ogg'}),'consecom-proposta-original.ogg');
   const key=apiKey||await getGatewayApiKey();
+  registerApiOutboundIntent({session,jid,type:'AUDIO'});
   const res=await fetchFn(base+'/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(jid)+'/media',{
    method:'POST',headers:{'X-API-Key':key,Accept:'application/json'},body:form,signal:AbortSignal.timeout(30000)});
   const reply=await res.json().catch(()=>({}));
