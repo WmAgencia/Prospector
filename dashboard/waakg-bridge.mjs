@@ -15,7 +15,9 @@ import {queueInboundAudio} from "./waakg-audio-inbound.mjs";
 import {configuredClosing} from "./training-sales-extras.mjs";
 import {recordReceiptMedia} from "./sales-payment-flow.mjs";
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
-import {isManagedSession,boundLeadSession,leadSession,bindLeadSession} from './waakg-session-registry.mjs';
+import {isManagedSession,boundLeadSession,leadSession,bindLeadSession,managedSessions} from './waakg-session-registry.mjs';
+import {isApiOutboundEcho} from './waakg-outbound-intents.mjs';
+import {takeover} from './runtime.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS waakg_manual_outbox(id TEXT PRIMARY KEY,inbox_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,requested_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT)");
@@ -53,6 +55,7 @@ export async function receiveWebhook(req){
  if(!safeEq(req.headers["x-webhook-signature"],expected))return {status:401,body:{accepted:false,reason:"BAD_SIGNATURE"}};
  let payload;try{payload=JSON.parse(raw.toString("utf8"));}catch{return {status:400,body:{accepted:false,reason:"BAD_JSON"}};}
  if(payload.event==="test")return {status:200,body:{accepted:true,test:true}};
+ if(payload.event==="message.sent")return recordOwnerOutboundEvent(payload);
  if(payload.event!=="message.received")return {status:200,body:{accepted:true,ignored:true}};
  const data=payload.data||{},key=data.key||{};
  if(data.isGroup===true||key.fromMe===true||data.fromMe===true)return {status:200,body:{accepted:true,ignored:true}};
@@ -144,12 +147,15 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
   if(state==='NO_INTEREST'&&lead.stage!=='NO_INTEREST')queueProspectorFarewell({leadId:lead.id,sessionId:sid,jid});
   if(state==='REVIEW'&&process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true')grantAutonomousFirstReply(lead.id,content);
  }
+ // A human-owned conversation must never enqueue an introduction or an AI turn.
+ if(one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover===1&&state==='REVIEW')state='HUMAN';
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
  // The owner has already been routed above, including the sandbox exception.
  if(firstInbound&&state==='REVIEW'&&configuredClosing()?.mode!=='complete')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
- const introRoute=identity.role==='PROSPECT_APPROACHED'?
+ const introRoute=state==='HUMAN'?{managed:true,queueAi:false,state:'HUMAN'}:
+  identity.role==='PROSPECT_APPROACHED'?
   routeIntroductionReply({leadId:lead.id,providerId:unique,body:content,inboxState:state,receivedAt:at}):{managed:false,queueAi:true};
  if(state==="REVIEW"&&introRoute.queueAi)queueInboundTurn({providerId:unique,jid,sessionId:sid});
  return {status:200,body:{accepted:true,processed:true}};
@@ -246,4 +252,67 @@ export async function sendChatMessage(input={}){
   audit("WA_AKG_CHAT_MESSAGE_SENT",thread.lead_id,{thread:threadId,manual:true});
   return {status:200,body:{ok:true,delivery:"ACCEPTED",message:"Enviado ao WA-AKG"}};
  }catch(e){return {status:502,body:{error:"Falha ou resultado incerto no WhatsApp. Confira a conversa antes de tentar novamente.",delivery:"UNKNOWN"}};}
+}
+
+const WEBHOOK_URL='https://prospector-operacional-production.up.railway.app/api/wa-akg/webhook';
+db.exec("CREATE TABLE IF NOT EXISTS waakg_owner_sent_events(provider_id TEXT PRIMARY KEY,lead_id TEXT NOT NULL,received_at TEXT NOT NULL)");
+export function recordOwnerOutboundEvent(payload={}){
+ const data=payload.data||{},key=data.key||{},sid=String(payload.sessionId||'');
+ if(!isManagedSession(sid)||data.isGroup===true||key.fromMe!==true)return {status:200,body:{accepted:true,ignored:true}};
+ const jid=String(key.remoteJid||data.receiver||'');
+ if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid)||!prospectorChatEligible({jid,sessionId:sid}))
+  return {status:200,body:{accepted:true,ignored:true}};
+ const id=String(key.id||data.id||'');
+ if(!/^[\w-]{5,150}$/.test(id))return {status:200,body:{accepted:true,ignored:true}};
+ const unique=sid+':'+id;
+ if(one('SELECT provider_id FROM waakg_owner_sent_events WHERE provider_id=?',unique))return {status:200,body:{accepted:true,duplicate:true}};
+ const type=String(data.type||'').toUpperCase();
+ const content=typeof data.content==='string'?data.content:typeof data.content?.text==='string'?data.content.text:'';
+ if(isApiOutboundEcho({session:sid,jid,type,text:content}))
+  return {status:200,body:{accepted:true,automatedEcho:true}};
+ const lead=one('SELECT id,phone FROM leads WHERE phone=?',jid.split('@')[0]);
+ if(!lead||boundLeadSession(lead.id)&&boundLeadSession(lead.id)!==sid)
+  return {status:200,body:{accepted:true,ignored:true}};
+ const thread=getThread(lead.id,jid);
+ run('INSERT OR IGNORE INTO waakg_owner_sent_events(provider_id,lead_id,received_at) VALUES(?,?,?)',unique,lead.id,now());
+ const body=type==='TEXT'?content.slice(0,2000):'['+(type==='AUDIO'?'Áudio':'Mídia')+' enviado manualmente pelo proprietário]';
+ addMessage({threadId:thread.id,providerId:'owner-whatsapp:'+unique,direction:'out',body,status:'sent'});
+ // Persistent, conversation-scoped manual takeover; cancels queued audio and follow-ups.
+ takeover(thread.id,true);
+ audit('WHATSAPP_OWNER_MANUAL_MESSAGE',lead.id,{session:sid,kind:type,autoRepliesStopped:true});
+ return {status:200,body:{accepted:true,manualTakeover:true}};
+}
+let checkingHooks=false;
+export async function ensureOwnerHandoffWebhooks(){
+ if(checkingHooks)return {status:'BUSY'};
+ checkingHooks=true;
+ try{
+  const secret=process.env.WA_AKG_WEBHOOK_SECRET||'';
+  if(secret.length<40)return {status:'NOT_CONFIGURED'};
+  const results=[];
+  for(const s of managedSessions()){
+   try{
+    const sid=s.session_id;
+    const found=await waRequest('/api/webhooks/'+encodeURIComponent(sid));
+    const existing=(Array.isArray(found.data)?found.data:[]).find(x=>x.url===WEBHOOK_URL);
+    const required=['message.received','message.sent'];
+    if(existing){
+     const events=[...new Set([...(Array.isArray(existing.events)?existing.events:[]),...required])];
+     if(existing.isActive!==false&&existing.events?.includes('message.sent')&&existing.events?.includes('message.received')&&existing.secret===secret){
+      results.push('READY');continue;
+     }
+     await waRequest('/api/webhooks/'+encodeURIComponent(sid)+'/'+encodeURIComponent(existing.id),
+       {method:'PUT',data:{events,secret,isActive:true}});
+     results.push('UPDATED');
+    }else{
+     await waRequest('/api/webhooks/'+encodeURIComponent(sid),{method:'POST',
+      data:{name:'Prospector - mensagens e atendimento humano',url:WEBHOOK_URL,secret,events:required}});
+     results.push('CREATED');
+    }
+   }catch(error){results.push('ERROR:'+String(error?.message||'unavailable').slice(0,90));}
+  }
+  return {status:results.every(x=>x==='READY')?'READY':results.some(x=>x.startsWith('ERROR'))?'PARTIAL':'CONFIGURED',
+   total:results.length,ready:results.filter(x=>x==='READY').length,updated:results.filter(x=>x==='UPDATED').length,
+   created:results.filter(x=>x==='CREATED').length,errors:results.filter(x=>x.startsWith('ERROR')).map(x=>x.slice(6))};
+ }finally{checkingHooks=false;}
 }
