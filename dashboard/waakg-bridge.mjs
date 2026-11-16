@@ -261,7 +261,7 @@ export function recordOwnerOutboundEvent(payload={}){
  const data=payload.data||{},key=data.key||{},sid=String(payload.sessionId||'');
  if(!isManagedSession(sid)||data.isGroup===true||key.fromMe!==true)return {status:200,body:{accepted:true,ignored:true}};
  const jid=String(key.remoteJid||data.receiver||'');
- if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid)||!prospectorChatEligible({jid,sessionId:sid}))
+ if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid))
   return {status:200,body:{accepted:true,ignored:true}};
  const id=String(key.id||data.id||'');
  if(!/^[\w-]{5,150}$/.test(id))return {status:200,body:{accepted:true,ignored:true}};
