@@ -474,6 +474,7 @@ export function manualJob(leadId,text,type='message',mediaId=null){
  if(suppressed(lead.phone)||!lead.contact_permission)throw Error('Contato bloqueado ou sem autorização de envio');
  const t=getThread(leadId);
  const jobId=id();run("INSERT INTO jobs(id,lead_id,type,text,media_id,key,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'PENDING',?,?)",jobId,leadId,type,String(text||''),mediaId,'manual:'+jobId,now(),now());
+ takeover(t.id,true);
  audit('MANUAL_MESSAGE_QUEUED',leadId,{type});publish();return jobId;
 }
 // Central human-ownership gate used by the panel AND native WhatsApp events.
