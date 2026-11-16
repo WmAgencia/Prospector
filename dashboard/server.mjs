@@ -71,7 +71,8 @@ import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} 
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
-import {tickIntroductions} from './prospecting-introduction.mjs';
+import {tickIntroductions,tickPitchFollowup} from './prospecting-introduction.mjs';
+import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
@@ -936,6 +937,13 @@ const prospectIntroductionTimer=setInterval(()=>{if(ownerProspectionPaused())ret
  if(['SENT','VOICE_SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
  if(result.state==='UNKNOWN')console.warn('[prospect introduction] uncertain delivery; manual review required');
 }).catch(e=>console.error('[prospect introduction]',String(e?.message||e).slice(0,160)));},1000);
+const pitchPreviewTimer=setInterval(()=>{
+ if(ownerProspectionPaused())return;
+ tickPitchFollowup().then(result=>{
+  if(['SENT','UNKNOWN','CANCELLED'].includes(result.state))notify();
+  if(result.state==='UNKNOWN')console.warn('[pitch preview] delivery uncertain; manual review');
+ }).catch(error=>console.error('[pitch preview]',String(error?.message||error).slice(0,140)));
+},1000);
 const prospectFarewellTimer=setInterval(()=>{
  if(ownerProspectionPaused())return;
  tickProspectorFarewells().then(result=>{
@@ -995,6 +1003,10 @@ const mapsStatusTimer=setInterval(checkMapsJobs,2*60_000);
 setTimeout(checkOSMDiscovery,process.env.RUN_OSM_DISCOVERY_RECOVERY_ONCE==='true'?55000:12000).unref();
 setTimeout(checkMapsJobs,25000).unref();
 const syncInterval=setInterval(()=>syncPublishedSamples().then(r=>{if(r.ready)notify()}).catch(e=>console.error('[studio sync]',e.message)),60_000);
+setTimeout(()=>{
+ try{console.info('[pitch audio readiness]',JSON.stringify(portfolioPitchAudioHealth()));}
+ catch(error){console.warn('[pitch audio readiness]',String(error?.message||error).slice(0,100));}
+},8000).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
 if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
