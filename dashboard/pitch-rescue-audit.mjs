@@ -1,5 +1,5 @@
 // Read-only targeted rescue preflight. Never sends or changes a lead.
-import {all,one} from './db.mjs';
+import {all,one,run,now,audit} from './db.mjs';
 import {waSessionList,waRequest} from './waakg-control.mjs';
 import {boundLeadSession} from './waakg-session-registry.mjs';
 import {conversationAuthorized} from './operator-outreach.mjs';
@@ -58,4 +58,53 @@ export async function auditPitchRescue(){
   out.push(obj);
  }
  return {sender7336Connected:active.length===1,registered7336Matches:active.length,results:out};
+}
+
+let rescueBusy=false;
+// The operator explicitly selected these five existing, replied-to conversations.
+// Only queues the approved existing sequence. The established workers send the
+// original recorded audio and the 10s preview, with manual takeover guards.
+export async function queueVerifiedPitchRescue(){
+ if(rescueBusy)return {state:'BUSY'};
+ rescueBusy=true;
+ try{
+  const auditResult=await auditPitchRescue(),items=[];
+  if(auditResult.sender7336Connected!==true||auditResult.registered7336Matches!==1)
+   return {state:'ABORT',reason:'SENDER_7336_NOT_UNIQUE'};
+  // Exact five only, no suffix fuzzy-matching; fail closed if a conversation
+  // changed, was manually taken over, or WhatsApp history is inaccessible.
+  const list=auditResult.results;
+  const ok=list.length===5&&list.every(r=>RESCUE_SUFFIXES.includes(r.suffix)&&r.scopedMatches===1&&
+    r.status==='ELIGIBLE_MISSING_AUDIO'&&r.repliedAfterTextIntro===true&&
+    r.canSendAudio===true&&r.canSendPreview===true&&r.intro==='SENT');
+  if(!ok)return {state:'ABORT',reason:'PREFLIGHT_NOT_ALL_ELIGIBLE',results:list.map(r=>({suffix:r.suffix,status:r.status,replied:r.repliedAfterTextIntro||false,intro:r.intro}))};
+  const sessions=await waSessionList(),sender=sessions.items.find(s=>s.connected&&s.numberSuffix==='7336');
+  if(!sender)return {state:'ABORT',reason:'SENDER_DISCONNECTED'};
+  // Reserve in the same transaction. No worker can pick a partial batch.
+  const stamp=now(),due=new Date().toISOString();
+  const records=[];
+  for(const suffix of RESCUE_SUFFIXES){
+   const rows=all("SELECT p.lead_id,l.phone,t.manual_takeover,p.stage FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id JOIN threads t ON t.lead_id=l.id WHERE substr(l.phone,-4)=? AND p.session_id=?",suffix,sender.session_id);
+   if(rows.length!==1||rows[0].stage!=='SENT'||rows[0].manual_takeover===1) return {state:'ABORT',reason:'ROW_CHANGED',suffix};
+   records.push({...rows[0],suffix});
+  }
+  // One last guard immediately before reservation.
+  if(records.some(r=>!conversationAuthorized(r.lead_id)||boundLeadSession(r.lead_id)!==sender.session_id))
+   return {state:'ABORT',reason:'AUTHORIZATION_CHANGED'};
+  let queued=0;
+  for(const r of records){
+   const written=run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,first_reply_at=COALESCE(first_reply_at,?),reason='ONE_TIME_OWNER_RESCUE',updated_at=? WHERE lead_id=? AND stage='SENT' AND session_id=? AND EXISTS (SELECT 1 FROM threads t WHERE t.lead_id=? AND t.manual_takeover=0)",
+    due,stamp,stamp,r.lead_id,sender.session_id,r.lead_id).changes;
+   if(written===1){queued++;audit('OWNER_PITCH_RESCUE_QUEUED',r.lead_id,{recipientSuffix:r.suffix,senderSuffix:'7336',previewDelaySeconds:10});}
+   items.push({suffix:r.suffix,queued:written===1});
+  }
+  return {state:queued===5?'QUEUED':'PARTIAL',queued,items};
+ }finally{rescueBusy=false;}
+}
+export function pitchRescueLiveStatus(){
+ const rows=RESCUE_SUFFIXES.map(suffix=>{
+  const records=all("SELECT p.stage,p.reason,p.followup_status,p.sent_at,p.followup_sent_at FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id WHERE substr(l.phone,-4)=? AND p.session_id IN (SELECT session_id FROM managed_whatsapp_sessions UNION SELECT value FROM settings WHERE key='waakg_primary_session_id')",suffix);
+  return {suffix,count:records.length,stages:records.map(r=>({stage:r.stage,reason:r.reason,followup:r.followup_status,audioAccepted:!!r.sent_at,previewAccepted:!!r.followup_sent_at}))};
+ });
+ return rows;
 }
