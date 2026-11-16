@@ -78,7 +78,7 @@ import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshAct
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
 import {recoverPreWebhookManualChat} from './owner-manual-recovery.mjs';
-import {auditPitchRescue} from './pitch-rescue-audit.mjs';
+import {auditPitchRescue,queueVerifiedPitchRescue,pitchRescueLiveStatus} from './pitch-rescue-audit.mjs';
 import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
@@ -1023,6 +1023,22 @@ setTimeout(()=>{
  recoverPreWebhookManualChat().then(x=>{if(x.status!=='DISABLED')console.info('[manual recovery]',JSON.stringify(x));})
   .catch(e=>console.warn('[manual recovery]',String(e?.message||e).slice(0,130)));
 },9000).unref();
+if(process.env.PROSPECTOR_PITCH_RESCUE_QUEUE==='true'){
+ setTimeout(async()=>{
+  try{
+   const result=await queueVerifiedPitchRescue();
+   console.info('[targeted pitch rescue queue]',JSON.stringify(result));
+   if(result.state==='QUEUED'){
+    let remaining=25;
+    const observe=setInterval(()=>{
+     try{console.info('[targeted pitch rescue progress]',JSON.stringify(pitchRescueLiveStatus()));}
+     catch(error){console.warn('[targeted pitch rescue progress]',String(error?.message||error).slice(0,80));}
+     if(--remaining<=0)clearInterval(observe);
+    },10_000);
+   }
+  }catch(error){console.warn('[targeted pitch rescue queue]',String(error?.message||error).slice(0,140));}
+ },15_000).unref();
+}
 if(process.env.PROSPECTOR_PITCH_RESCUE_AUDIT==='true')
  setTimeout(()=>auditPitchRescue().then(x=>console.info('[targeted pitch rescue audit]',JSON.stringify(x)))
   .catch(e=>console.warn('[targeted pitch rescue audit]',String(e?.message||e).slice(0,150))),12000).unref();
