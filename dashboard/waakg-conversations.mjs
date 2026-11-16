@@ -3,6 +3,7 @@ import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 import {db,one,all,run,now,phone,addLead,getThread,addMessage,audit,stage} from "./db.mjs";
 import {leadSession} from './waakg-session-registry.mjs';
 import {prospectorChatVisible} from './whatsapp-roles.mjs';
+import {takeover} from './runtime.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS waakg_remote_outbox(id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL)");
 const jidAllowed=j=>/^\d{10,15}@s\.whatsapp\.net$/.test(j);
 function currentId(jid){const lead=jid?one('SELECT id FROM leads WHERE phone=?',phone(jid.split('@')[0])):null;const s=lead?leadSession(lead.id):selectedWaSession();if(!s)throw Error("Conecte seu WhatsApp em Conexões");return encodeURIComponent(s);}
@@ -51,6 +52,8 @@ export async function sendRemoteReply(input={}){
  if(!remote.some(m=>m.direction==="in"))return {status:403,body:{error:"Envio permitido apenas como resposta a conversa iniciada pelo contato"}};
  const recent=remote.filter(m=>m.direction==="in").slice(-1)[0]?.body||"";
  if(/^\s*(parar|pare|stop|remover|não me contate|nao me contate)\b/i.test(recent))return {status:403,body:{error:"O contato solicitou não receber mensagens"}};
+ const existing=one('SELECT t.id FROM threads t JOIN leads l ON l.id=t.lead_id WHERE l.phone=?',normalized);
+ if(existing)takeover(existing.id,true);
  run("INSERT INTO waakg_remote_outbox(id,jid,state,created_at) VALUES(?,?,?,?)",requestId,jid,"UNKNOWN",now());
  try{
   const result=await waRequest("/api/messages/"+currentId(jid)+"/"+encodeURIComponent(jid)+"/send",{method:"POST",data:{message:{text}}});
@@ -60,7 +63,7 @@ export async function sendRemoteReply(input={}){
   const thread=getThread(lead.id,jid);
   addMessage({threadId:thread.id,providerId:"remote-operator:"+requestId,direction:"out",body:text,status:"sent"});
   stage(lead.id,"CONVERSING","OPERATOR_REMOTE_REPLY");
-  run("UPDATE threads SET manual_takeover=1 WHERE id=?",thread.id);
+  takeover(thread.id,true);
   audit("WA_AKG_OPERATOR_REPLY",lead.id,{manual:true});
   return {status:200,body:{ok:true,delivery:"ACCEPTED"}};
  }catch{return {status:502,body:{error:"Envio incerto; confira o WhatsApp antes de tentar novamente",delivery:"UNKNOWN"}};}
