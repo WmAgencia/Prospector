@@ -4,6 +4,7 @@ import {getSetting,setSetting} from "./db.mjs";
 import {randomUUID} from 'node:crypto';
 import {managedSessions,isManagedSession,registerSession,nextConnectedSession,rotationCursor} from './waakg-session-registry.mjs';
 import {sessionOutreachBudget} from './session-outreach-budget.mjs';
+import {registerApiOutboundIntent} from './waakg-outbound-intents.mjs';
 const base="https://wa-akg-production-f9f0.up.railway.app";
 const sessionKey="waakg_primary_session_id";
 let cachedKey="",pendingKey=null;
@@ -62,6 +63,10 @@ export async function waRequest(path,{method="GET",data}={}){
  }
  const apiKey=await getGatewayApiKey();
  async function send(k){
+  // Mark a Prospector API call before the gateway can echo message.sent.
+  const parts=path.split('/');
+  if(method==='POST'&&parts[1]==='api'&&parts[2]==='messages'&&parts[5]==='send'&&typeof data?.message?.text==='string')
+   registerApiOutboundIntent({session:decodeURIComponent(parts[3]),jid:decodeURIComponent(parts[4]),type:'TEXT',text:data.message.text});
   const res=await fetch(base+path,{method,headers:{"X-API-Key":k,"Accept":"application/json",...(data!==undefined?{"Content-Type":"application/json"}:{})},body:data!==undefined?JSON.stringify(data):undefined,signal:AbortSignal.timeout(14000)});
   const json=await res.json().catch(()=>({}));
   return {res,json};
