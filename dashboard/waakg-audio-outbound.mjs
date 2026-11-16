@@ -4,6 +4,7 @@ import {selectedWaSession,waControlStatus} from './waakg-control.mjs';
 import {leadSession} from './waakg-session-registry.mjs';
 import {makeFranciscaVoice,voiceStatus,checkVoiceText} from './francisca-tts.mjs';
 import {sendVoiceMedia} from './waakg-media.mjs';
+import {takeover} from './runtime.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS waakg_voice_outbox(id TEXT PRIMARY KEY,jid TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 export async function voicePreview(text,deps={}){
  const item=await (deps.synthesize||makeFranciscaVoice)(checkVoiceText(text));
@@ -23,6 +24,7 @@ export async function sendApprovedVoice(input={},deps={}){
  const session=leadSession(lead.id),remote=deps.status?await deps.status(session):await waControlStatus(session);
  if(!remote.connected||!session)return {status:503,body:{error:'WhatsApp não conectado'}};
  run('INSERT INTO waakg_voice_outbox(id,jid,status,created_at,updated_at) VALUES(?,?,?,?,?)',requestId,jid,'UNKNOWN',now(),now());
+ takeover(getThread(lead.id,jid).id,true);
  try{
   const voice=await (deps.synthesize||makeFranciscaVoice)(text);
   const result=await (deps.send||sendVoiceMedia)({jid,session,bytes:voice.bytes});
@@ -31,7 +33,6 @@ export async function sendApprovedVoice(input={},deps={}){
   const thread=getThread(lead.id,jid);
   addMessage({threadId:thread.id,providerId:'voice-manual:'+requestId,direction:'out',body:'[Áudio Francisca] '+text,status:'accepted'});
   stage(lead.id,'CONVERSING','OPERATOR_FRANCISCA_AUDIO');
-  run('UPDATE threads SET manual_takeover=1 WHERE id=?',thread.id);
   audit('FRANCISCA_VOICE_ACCEPTED',lead.id,{manual:true,chars:text.length});
   return {status:200,body:{ok:true,delivery:'UNVERIFIED_ON_PHONE',voice:voiceStatus().voice}};
  }catch(error){
