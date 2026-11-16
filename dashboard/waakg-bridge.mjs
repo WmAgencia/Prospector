@@ -212,6 +212,7 @@ export async function sendApproved(input){
  if(one("SELECT id FROM waakg_manual_outbox WHERE inbox_id=?",inboxId))return {status:409,body:{error:"Já houve tentativa de envio; não repetir automaticamente"}};
  const mid=id(),at=now();
  run("INSERT INTO waakg_manual_outbox(id,inbox_id,state,requested_at,updated_at) VALUES(?,?,?,?,?)",mid,inboxId,"UNKNOWN",at,at);
+ takeover(getThread(lead.id,item.jid).id,true);
  const url=base+"/api/messages/"+encodeURIComponent(session)+"/"+encodeURIComponent(item.jid)+"/send";
  try{
   const res=await fetch(url,{method:"POST",headers:{"X-API-Key":apiKey,"Content-Type":"application/json"},body:JSON.stringify({message:{text}}),signal:AbortSignal.timeout(8500)});
@@ -242,13 +243,13 @@ export async function sendChatMessage(input={}){
  const at=now();
  // UNKNOWN is deliberate: after a timeout the provider may have delivered the message.
  run("INSERT INTO waakg_operator_outbox(id,thread_id,state,created_at,updated_at) VALUES(?,?,?,?,?)",requestId,threadId,"UNKNOWN",at,at);
+ takeover(threadId,true);
  try{
   const result=await waRequest("/api/messages/"+encodeURIComponent(session)+"/"+encodeURIComponent(thread.jid)+"/send",{method:"POST",data:{message:{text}}});
   if(result.status!==true)return {status:502,body:{error:"Envio não confirmado. Não tente repetir automaticamente."}};
   run("UPDATE waakg_operator_outbox SET state='SENT',updated_at=? WHERE id=?",now(),requestId);
   addMessage({threadId,providerId:"operator:"+requestId,direction:"out",body:text,status:"sent"});
   stage(thread.lead_id,"CONVERSING","OPERATOR_CHAT_MESSAGE");
-  run("UPDATE threads SET manual_takeover=1 WHERE id=?",threadId);
   audit("WA_AKG_CHAT_MESSAGE_SENT",thread.lead_id,{thread:threadId,manual:true});
   return {status:200,body:{ok:true,delivery:"ACCEPTED",message:"Enviado ao WA-AKG"}};
  }catch(e){return {status:502,body:{error:"Falha ou resultado incerto no WhatsApp. Confira a conversa antes de tentar novamente.",delivery:"UNKNOWN"}};}
