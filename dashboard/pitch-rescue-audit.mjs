@@ -5,7 +5,7 @@ import {boundLeadSession} from './waakg-session-registry.mjs';
 import {conversationAuthorized} from './operator-outreach.mjs';
 import {wantsPortfolioPitchAudio} from './portfolio-pitch-audio.mjs';
 import {acceptsProposalAudio} from './prospector-sales-signals.mjs';
-import {asksAboutProposal,PITCH_PREVIEW_TEXT} from './prospecting-introduction.mjs';
+import {asksAboutProposal,WESLEY_INTRO,PITCH_PREVIEW_TEXT} from './prospecting-introduction.mjs';
 
 export const RESCUE_SUFFIXES=['4772','7156','5150','0556','3668'];
 const safeText=s=>String(s||'').replace(/\s+/g,' ').trim();
@@ -19,8 +19,11 @@ export async function auditPitchRescue(){
  for(const suffix of RESCUE_SUFFIXES){
   const leads=all("SELECT l.id,l.phone,l.stage,l.contact_permission,t.id AS thread_id,t.manual_takeover,p.stage AS intro_stage,p.reason AS intro_reason,p.created_at AS intro_at,p.sent_at AS intro_sent,p.followup_status FROM leads l LEFT JOIN threads t ON t.lead_id=l.id LEFT JOIN prospecting_introductions p ON p.lead_id=l.id WHERE substr(l.phone,-4)=?",suffix);
   const obj={suffix,matchCount:leads.length,senderMatches:active.length};
-  if(leads.length!==1){out.push({...obj,status:'AMBIGUOUS_OR_MISSING'});continue;}
-  const lead=leads[0],session=active[0];
+  const session=active[0];
+  const scoped=leads.filter(l=>session&&boundLeadSession(l.id)===session.session_id);
+  obj.scopedMatches=scoped.length;
+  if(scoped.length!==1){out.push({...obj,status:'AMBIGUOUS_OR_MISSING_7336'});continue;}
+  const lead=scoped[0];
   if(!session){out.push({...obj,status:'SENDER_7336_NOT_CONNECTED'});continue;}
   obj.stage=lead.stage;obj.intro=lead.intro_stage||null;obj.manual=lead.manual_takeover===1;
   const bound=boundLeadSession(lead.id);
@@ -31,7 +34,8 @@ export async function auditPitchRescue(){
   const latestInbound=one("SELECT body,at FROM messages WHERE thread_id=? AND direction='in' ORDER BY rowid DESC LIMIT 1",lead.thread_id);
   const accepted=latestInbound&&(wantsPortfolioPitchAudio(latestInbound.body)||acceptsProposalAudio(latestInbound.body)||asksAboutProposal(latestInbound.body));
   obj.proposalRequested=!!accepted;
-  if(!accepted){out.push({...obj,status:'NO_CLEAR_REQUEST_FOR_AUDIO'});continue;}
+  const lastIntro=one("SELECT at FROM messages WHERE thread_id=? AND provider_id LIKE 'intro:%' ORDER BY rowid DESC LIMIT 1",lead.thread_id);
+  obj.repliedAfterTextIntro=!!(latestInbound&&lastIntro&&asMs(latestInbound.at)>asMs(lastIntro.at));
   const jid=lead.phone+'@s.whatsapp.net';
   let messages;
   try{
@@ -45,7 +49,7 @@ export async function auditPitchRescue(){
   const audio=recent.filter(m=>m.fromMe===true&&voiceLike(m));
   const preview=recent.filter(m=>m.fromMe===true&&safeText(m.content)===PITCH_PREVIEW_TEXT);
   const recentManual=recent.filter(m=>m.fromMe===true&&asMs(m.timestamp||m.createdAt)>inboundAt&& !voiceLike(m) &&
-   safeText(m.content)!==PITCH_PREVIEW_TEXT);
+   safeText(m.content)!==PITCH_PREVIEW_TEXT&&safeText(m.content)!==WESLEY_INTRO);
   const localAudio=one("SELECT 1 FROM messages WHERE thread_id=? AND direction='out' AND (provider_id LIKE 'intro-voice:%' OR type='audio' OR body LIKE '%Áudio original%' OR provider_id LIKE 'owner-whatsapp:%') LIMIT 1",lead.thread_id);
   obj.remoteMessages=recent.length;obj.remoteAudio=audio.length;obj.remotePreview=preview.length;obj.extraOutboundAfterLatestReply=recentManual.length;obj.localAudioRecord=!!localAudio;
   obj.canSendAudio=audio.length===0&&!localAudio&&recentManual.length===0;
