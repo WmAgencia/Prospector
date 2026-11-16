@@ -72,7 +72,6 @@ import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {tickIntroductions,tickPitchFollowup} from './prospecting-introduction.mjs';
-import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
