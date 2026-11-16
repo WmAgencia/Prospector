@@ -476,15 +476,30 @@ export function manualJob(leadId,text,type='message',mediaId=null){
  const jobId=id();run("INSERT INTO jobs(id,lead_id,type,text,media_id,key,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'PENDING',?,?)",jobId,leadId,type,String(text||''),mediaId,'manual:'+jobId,now(),now());
  audit('MANUAL_MESSAGE_QUEUED',leadId,{type});publish();return jobId;
 }
+// Central human-ownership gate used by the panel AND native WhatsApp events.
 export function takeover(threadId,value){
  const t=one('SELECT * FROM threads WHERE id=?',threadId);if(!t)throw Error('Conversa inexistente');
- run('UPDATE threads SET manual_takeover=? WHERE id=?',value?1:0,threadId);
- if(value){
-  run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE lead_id=? AND status='PENDING' AND execution_id IS NOT NULL",now(),t.lead_id);
-  run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE lead_id=? AND state NOT IN ('COMPLETE','CANCELLED')",now(),t.lead_id);
+ const manual=value===true,stamp=now();
+ run('UPDATE threads SET manual_takeover=? WHERE id=?',manual?1:0,threadId);
+ if(manual){
+  run("UPDATE jobs SET status='CANCELLED',updated_at=? WHERE lead_id=? AND status='PENDING' AND execution_id IS NOT NULL",stamp,t.lead_id);
+  run("UPDATE executions SET state='NEEDS_REVIEW',updated_at=? WHERE lead_id=? AND state NOT IN ('COMPLETE','CANCELLED')",stamp,t.lead_id);
+  const table=name=>!!one("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",name);
+  if(table('prospecting_introductions'))
+   run("UPDATE prospecting_introductions SET stage=CASE WHEN stage IN ('GREETING_SENT','WAITING','VOICE_WAITING','SENT','VOICE_SENT') THEN 'CONVERSING' ELSE stage END,followup_status=CASE WHEN followup_status='WAITING' THEN 'CANCELLED' ELSE followup_status END,reason=CASE WHEN stage IN ('GREETING_SENT','WAITING','VOICE_WAITING','SENT','VOICE_SENT') THEN 'MANUAL_TAKEOVER' ELSE reason END,updated_at=? WHERE lead_id=?",
+    stamp,t.lead_id);
+  if(table('consecom_offer_references'))
+   run("UPDATE consecom_offer_references SET state='CANCELLED',reason='MANUAL_TAKEOVER',updated_at=? WHERE lead_id=? AND state IN ('HELD','WAITING')",stamp,t.lead_id);
+  if(table('groq_auto_events')&&table('waakg_inbox'))
+   run("UPDATE groq_auto_events SET state='HANDOFF',error='MANUAL_TAKEOVER' WHERE state='PENDING' AND provider_id IN (SELECT provider_id FROM waakg_inbox WHERE lead_id=?)",t.lead_id);
+  if(table('waakg_inbox'))
+   run("UPDATE waakg_inbox SET state='HUMAN',updated_at=? WHERE lead_id=? AND state IN ('REVIEW','DRAFTED')",stamp,t.lead_id);
+  if(table('prospector_farewell_outbox'))
+   run("UPDATE prospector_farewell_outbox SET status='CANCELLED',updated_at=? WHERE lead_id=? AND status='PENDING'",stamp,t.lead_id);
  }
- audit('TAKEOVER',t.lead_id,{enabled:value});publish();
+ audit('TAKEOVER',t.lead_id,{enabled:manual});publish();
 }
+
 function canInitial(){return canSendInitial();}
 async function send(job,lead){
  if(waStatus!=='CONNECTED'||!sock)throw Error('WhatsApp desconectado');
