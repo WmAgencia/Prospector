@@ -13,7 +13,8 @@ export async function sendVoiceWithRecording({
  sendAudio=sendVoiceMedia,
  sendPresence=waRequest,
  sleep=wait,
- holdMs=4200
+ holdMs=4200,
+ shouldSend=()=>true
 }={}){
  if(!validJid(jid)||!validSession(session)||!Buffer.isBuffer(bytes)||bytes.length<256)
   throw Error('VOICE_PRESENCE_INVALID_DESTINATION');
@@ -26,6 +27,7 @@ export async function sendVoiceWithRecording({
  // WhatsApp recording presence can expire quickly; keep it visible briefly.
  if(recording)await sleep(Math.min(7000,Math.max(1000,holdMs)));
  try{
+  if(!shouldSend())throw Error('VOICE_OWNER_TAKEOVER');
   const sent=await sendAudio({jid,session,bytes});
   return {...sent,recordingPresenceAccepted:recording};
  }finally{
