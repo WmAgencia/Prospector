@@ -43,7 +43,7 @@ import {syncPublishedSamples} from './studio-sync.mjs';
 import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsAppSession,startWorkflow,drive,manualJob,takeover,resume,tick,saveWorkflow,setDefaultWorkflow,setNotifier} from './runtime.mjs';
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
-import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
+import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,ensureOwnerHandoffWebhooks,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
 import {recordInboundTranscript} from './waakg-bridge.mjs';
 import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inbound.mjs';
 import {voiceStatus,makeFranciscaVoice,makeFranciscaCallPcm} from './francisca-tts.mjs';
@@ -1006,6 +1006,17 @@ setTimeout(()=>{
  try{console.info('[pitch audio readiness]',JSON.stringify(portfolioPitchAudioHealth()));}
  catch(error){console.warn('[pitch audio readiness]',String(error?.message||error).slice(0,100));}
 },8000).unref();
+// Ensure gateway sends signed native-outbound events to the same private receiver.
+const ownerHandoffWebhookTimer=setInterval(()=>{
+ if(process.env.WHATSAPP_TRANSPORT==='waakg')
+  ensureOwnerHandoffWebhooks().then(x=>{if(x.updated||x.created||x.errors?.length)console.info('[human handoff webhook]',JSON.stringify(x));})
+   .catch(e=>console.warn('[human handoff webhook]',String(e?.message||e).slice(0,100)));
+},2*60_000);
+setTimeout(()=>{
+ if(process.env.WHATSAPP_TRANSPORT==='waakg')
+  ensureOwnerHandoffWebhooks().then(x=>console.info('[human handoff webhook]',JSON.stringify(x)))
+   .catch(e=>console.warn('[human handoff webhook]',String(e?.message||e).slice(0,100)));
+},6500).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
 if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
@@ -1028,4 +1039,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(ownerHandoffWebhookTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
