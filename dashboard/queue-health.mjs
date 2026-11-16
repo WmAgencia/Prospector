@@ -9,6 +9,12 @@ import {coldFirstApproachEnabled,autonomousReadyCount,approachQueueStatus} from 
 export const INITIAL_PENDING_MAX_AGE_MINUTES=8;
 export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,senderReady=true}={}){
  const b=initialBudget(at),hour=hourSP(at);
+ // Modern outreach uses prospecting_batch_items, not legacy workflow jobs.
+ const approach=approachQueueStatus();
+ const approachStates=Object.fromEntries(all("SELECT status,COUNT(*) n FROM prospecting_batch_items WHERE attempt_at IS NOT NULL AND date(attempt_at,'-3 hours')=date('now','-3 hours') GROUP BY status").map(x=>[x.status,x.n]));
+ const approachAccepted=approachStates.SENT||0;
+ const approachUnknown=approachStates.UNKNOWN||0;
+ const approachSending=approachStates.SENDING||0;
  const selected=String(getSetting('autonomous_campaign_id','')||'');
  const campaign=selected?one('SELECT id,name,enabled FROM workflows WHERE id=?',selected):null;
  const jobStates=Object.fromEntries(all('SELECT status,COUNT(*) n FROM jobs GROUP BY status').map(x=>[x.status,x.n]));
@@ -69,7 +75,12 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
   at:at.toISOString(),reason,autonomousMode:autonomous,alert:dormant?'STALE_INITIAL_PENDING':null,
   allowedNow:reason==='READY',campaignSelected:!!campaign?.enabled,waConnected:waStatus==='CONNECTED',
   paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false),
-  initialToday:{sent:b.confirmed,uncertain:b.uncertain,inFlight:b.sending,counted:b.counted,limit:b.limit,nextAt:b.nextAt},
+  initialToday:{sent:b.confirmed+approachAccepted,uncertain:b.uncertain+approachUnknown,inFlight:b.sending+approachSending,
+   counted:autonomous?approach.dailyBudget.counted:b.counted,limit:autonomous?approach.dailyBudget.limit:b.limit,
+   nextAt:autonomous?approach.nextEarliestAt:b.nextAt,interpretation:'GATEWAY_ACCEPTED_NOT_DELIVERED'},
+  approachToday:{accepted:approachAccepted,unknown:approachUnknown,sending:approachSending,
+   counted:approach.dailyBudget.counted,limit:approach.dailyBudget.limit,queued:approach.waiting,
+   deliveryMustBeVerified:true},
   eligibleWaiting:!!eligible,initialPending:pending.length,oldestPendingMinutes:pendingAge,
   invalidPending:invalidPending.length,unknownInitial:initial.filter(x=>x.status==='UNKNOWN').length,
   lastConfirmedInitialAt,lastConfirmedMinutes,
