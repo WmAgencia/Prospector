@@ -80,6 +80,7 @@ import {conversationHandoffStatus,changeConversationHandoff} from './conversatio
 import {recoverPreWebhookManualChat} from './owner-manual-recovery.mjs';
 import {auditPitchRescue,queueVerifiedPitchRescue,pitchRescueLiveStatus} from './pitch-rescue-audit.mjs';
 import {inspectGatewayDelivery} from './delivery-diagnostics.mjs';
+import {recoverStoppedWhatsAppOnce} from './waakg-stopped-recovery.mjs';
 import {interactivePreview,sendApprovedInteractive} from './waakg-interactive.mjs';
 import {groqCatalog,groqChat} from './groq-models.mjs';
 import {runFranciscaSalesSmoke} from './francisca-sales-smoke.mjs';
@@ -1043,6 +1044,9 @@ if(process.env.PROSPECTOR_PITCH_RESCUE_QUEUE==='true'){
 if(process.env.PROSPECTOR_PITCH_RESCUE_AUDIT==='true')
  setTimeout(()=>auditPitchRescue().then(x=>console.info('[targeted pitch rescue audit]',JSON.stringify(x)))
   .catch(e=>console.warn('[targeted pitch rescue audit]',String(e?.message||e).slice(0,150))),12000).unref();
+if(process.env.PROSPECTOR_RESTORE_STOPPED_WA==='true')
+ setTimeout(()=>recoverStoppedWhatsAppOnce().then(x=>console.info('[wa stopped recovery]',JSON.stringify(x)))
+  .catch(e=>console.warn('[wa stopped recovery]',String(e?.message||e).slice(0,150))),18_000).unref();
 if(process.env.PROSPECTOR_DELIVERY_DIAGNOSTIC==='true')
  setTimeout(()=>inspectGatewayDelivery({max:65}).then(x=>console.info('[verified gateway delivery audit]',JSON.stringify(x)))
   .catch(e=>console.warn('[verified gateway delivery audit]',String(e?.message||e).slice(0,160))),10_000).unref();
