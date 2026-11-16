@@ -3,7 +3,7 @@ import {ownerProspectionPaused} from './prospection-pause.mjs';
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
 // After the introduction, every incoming reply can continue the sales conversation.
 // No public listing is ever treated as documented WhatsApp opt-in.
-import {db,one,run,now,audit,addMessage} from './db.mjs';
+import {db,one,run,now,audit,addMessage,getSetting} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
@@ -18,9 +18,16 @@ import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAu
 import {acceptsProposalAudio} from './prospector-sales-signals.mjs';
 
 export const INTRO_DELAY_MS=30_000;
+export const PITCH_PREVIEW_DELAY_MS=10_000;
+export const PITCH_PREVIEW_TEXT='Se você quiser, posso te enviar uma prévia de como ficaria o site. O que você acha?';
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês. Posso te mandar um áudio explicando a ideia?';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
+for(const column of ['followup_due_at','followup_status','followup_attempt_at','followup_sent_at']){
+ if(!db.prepare('PRAGMA table_info(prospecting_introductions)').all().some(x=>x.name===column))
+  db.exec('ALTER TABLE prospecting_introductions ADD COLUMN '+column+' TEXT');
+}
+run("UPDATE prospecting_introductions SET followup_status='UNKNOWN' WHERE followup_status='SENDING'");
 // Network activity may have succeeded before a process restart. Never retry automatically.
 run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Process interrupted during send; verify WhatsApp',updated_at=? WHERE stage='SENDING'",now());
 
@@ -48,7 +55,7 @@ export function registerGreeting({leadId,greetingId,sessionId}={}){
   const eligibleAt=threeMonthsAfter(previous.created_at);
   if(previous.greeting_id===greetingId||['SENDING','UNKNOWN'].includes(previous.stage)||!eligibleAt||Date.parse(eligibleAt)>Date.parse(timestamp))return false;
  }
- return run("INSERT OR IGNORE INTO prospecting_introductions(lead_id,phone,session_id,greeting_id,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(lead_id) DO UPDATE SET phone=excluded.phone,session_id=excluded.session_id,greeting_id=excluded.greeting_id,stage=excluded.stage,first_reply_id=NULL,first_reply_at=NULL,due_at=NULL,attempt_at=NULL,sent_at=NULL,reason=NULL,created_at=excluded.created_at,updated_at=excluded.updated_at WHERE prospecting_introductions.greeting_id<>excluded.greeting_id AND prospecting_introductions.stage NOT IN ('SENDING','UNKNOWN') AND prospecting_introductions.created_at=?",
+ return run("INSERT OR IGNORE INTO prospecting_introductions(lead_id,phone,session_id,greeting_id,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(lead_id) DO UPDATE SET phone=excluded.phone,session_id=excluded.session_id,greeting_id=excluded.greeting_id,stage=excluded.stage,first_reply_id=NULL,first_reply_at=NULL,due_at=NULL,attempt_at=NULL,sent_at=NULL,reason=NULL,followup_due_at=NULL,followup_status=NULL,followup_attempt_at=NULL,followup_sent_at=NULL,created_at=excluded.created_at,updated_at=excluded.updated_at WHERE prospecting_introductions.greeting_id<>excluded.greeting_id AND prospecting_introductions.stage NOT IN ('SENDING','UNKNOWN') AND prospecting_introductions.created_at=?",
   leadId,lead.phone,sessionId,greetingId,'GREETING_SENT',timestamp,timestamp,previous?.created_at||'').changes===1;
 }
 export function cancelIntroduction(leadId,reason='CONTACT_DECLINED'){
@@ -71,11 +78,12 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  const due=new Date(timestamp.getTime()+INTRO_DELAY_MS).toISOString();
  const sourceId=String(providerId||'').slice(0,180);
  if(item.stage==='GREETING_SENT'){
-  // First reply only unlocks Wesley's written permission question, never skips straight to audio.
-  const next='WAITING';
+  // A direct question about the proposal is a request for the approved audio.
+  // A simple greeting still receives Wesley's permission question first.
+  const next=portfolioPitchAudioEnabled()&&(asksAboutProposal(body)||acceptsProposalAudio(body))?'VOICE_WAITING':'WAITING';
   run("UPDATE prospecting_introductions SET stage=?,first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
    next,sourceId,timestamp.toISOString(),due,now(),leadId);
-  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,next,voiceRequested:false});
+  audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,next,voiceRequested:next==='VOICE_WAITING'});
   return {managed:true,queueAi:false,state:next};
  }
  if(item.stage==='WAITING')return {managed:true,queueAi:false,state:'WAITING'};
@@ -87,7 +95,7 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  }
  if(item.stage==='SENT')return {managed:true,queueAi:false,state:'AWAITING_AUDIO_PERMISSION'};
  if(item.stage==='VOICE_SENT'){
-  run('UPDATE prospecting_introductions SET stage=?,updated_at=? WHERE lead_id=? AND stage=?','CONVERSING',now(),leadId,item.stage);
+  run("UPDATE prospecting_introductions SET stage='CONVERSING',followup_status=CASE WHEN followup_status='WAITING' THEN 'CANCELLED' ELSE followup_status END,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT'",now(),leadId);
   audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:sourceId,previousStage:item.stage});
   return {managed:true,queueAi:true,state:'CONVERSING'};
  }
@@ -152,8 +160,10 @@ export async function tickIntroductions(deps={}){
     if(ack.status!==true)throw Error('TEXT_UNCONFIRMED');
    }
    const nextStage=voiceRequested?'VOICE_SENT':'SENT';
-   run("UPDATE prospecting_introductions SET stage=?,reason=?,sent_at=?,updated_at=? WHERE lead_id=? AND stage='SENDING'",
-    nextStage,voiceRequested?'PITCH_AUDIO_350':null,now(),now(),item.lead_id);
+   const acceptedAt=now();
+   const followupDue=voiceRequested?new Date(Date.now()+PITCH_PREVIEW_DELAY_MS).toISOString():null;
+   run("UPDATE prospecting_introductions SET stage=?,reason=?,sent_at=?,followup_due_at=?,followup_status=?,updated_at=? WHERE lead_id=? AND stage='SENDING'",
+    nextStage,voiceRequested?'PITCH_AUDIO_350':null,acceptedAt,followupDue,voiceRequested?'WAITING':null,acceptedAt,item.lead_id);
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
    if(thread)addMessage({threadId:thread.id,
     providerId:(voiceRequested?'intro-voice:':'intro:')+item.greeting_id,direction:'out',
@@ -169,4 +179,63 @@ export async function tickIntroductions(deps={}){
    return {state:'UNKNOWN'};
   }
  }finally{busy=false;}
+}
+
+
+// Persistent one-time preview question after the owner's confirmed original audio.
+// Only brand-new automated audio acknowledgments schedule this; past/manual audios
+// are not backfilled. Uncertain sends are NEVER automatically retried.
+let pitchFollowupBusy=false;
+export async function tickPitchFollowup(deps={}){
+ if(ownerProspectionPaused()||getSetting('paused',true))return {state:'PAUSED'};
+ if(pitchFollowupBusy)return {state:'BUSY'};
+ const {currentTime=()=>Date.now(),status=waControlStatus,send=waRequest}=deps;
+ pitchFollowupBusy=true;
+ try{
+  const at=currentTime(),atIso=new Date(at).toISOString();
+  const p=one("SELECT * FROM prospecting_introductions WHERE stage='VOICE_SENT' AND followup_status='WAITING' AND followup_due_at<=? ORDER BY followup_due_at LIMIT 1",atIso);
+  if(!p)return {state:'IDLE'};
+  const cancel=reason=>{
+   run("UPDATE prospecting_introductions SET followup_status='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT' AND followup_status='WAITING'",
+    reason,now(),p.lead_id);
+   audit('PROSPECT_PITCH_PREVIEW_CANCELLED',p.lead_id,{reason});
+   return {state:'CANCELLED',reason};
+  };
+  if(at-Date.parse(p.followup_due_at)>90_000)return cancel('FOLLOWUP_WINDOW_EXPIRED');
+  const lead=one("SELECT l.phone,l.stage,t.manual_takeover FROM leads l LEFT JOIN threads t ON t.lead_id=l.id WHERE l.id=?",p.lead_id);
+  if(!lead||lead.phone!==p.phone||lead.manual_takeover===1||
+   ['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)||
+   p.reason!=='PITCH_AUDIO_350'||!p.sent_at||
+   !isManagedSession(p.session_id)||leadSession(p.lead_id)!==p.session_id||
+   !conversationAuthorized(p.lead_id)||
+   one('SELECT 1 FROM suppressions WHERE phone=?',p.phone))
+   return cancel('CONTACT_NOT_ELIGIBLE');
+  // Do not interrupt a conversation or duplicate a manually sent second message.
+  const audioMessage=one("SELECT m.rowid FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='out' ORDER BY m.rowid DESC LIMIT 1",
+   p.lead_id,'intro-voice:'+p.greeting_id);
+  if(!audioMessage)return cancel('AUDIO_NOT_RECORDED');
+  const nextMessage=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.rowid>? AND m.direction IN ('in','out') LIMIT 1",
+   p.lead_id,audioMessage.rowid);
+  if(nextMessage)return cancel('CONVERSATION_ALREADY_CONTINUED');
+  const wa=await status(p.session_id);
+  if(!wa.connected)return {state:'OFFLINE'};
+  if(!run("UPDATE prospecting_introductions SET followup_status='SENDING',followup_attempt_at=?,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT' AND followup_status='WAITING' AND followup_due_at<=?",
+   atIso,now(),p.lead_id,atIso).changes)return {state:'BUSY'};
+  try{
+   if(ownerProspectionPaused()||getSetting('paused',true))throw Error('PAUSED_DURING_SEND');
+   const ack=await send('/api/messages/'+encodeURIComponent(p.session_id)+'/'+encodeURIComponent(p.phone+'@s.whatsapp.net')+'/send',
+    {method:'POST',data:{message:{text:PITCH_PREVIEW_TEXT}}});
+   if(ack?.status!==true)throw Error('TEXT_UNCONFIRMED');
+   const stamp=now();
+   run("UPDATE prospecting_introductions SET followup_status='SENT',followup_sent_at=?,updated_at=? WHERE lead_id=? AND followup_status='SENDING'",stamp,stamp,p.lead_id);
+   const thread=one('SELECT id FROM threads WHERE lead_id=?',p.lead_id);
+   if(thread)addMessage({threadId:thread.id,providerId:'intro-preview:'+p.greeting_id,direction:'out',body:PITCH_PREVIEW_TEXT,status:'sent'});
+   audit('PROSPECT_PITCH_PREVIEW_SENT',p.lead_id,{delaySeconds:10,session:p.session_id,gatewayAccepted:true});
+   return {state:'SENT',leadId:p.lead_id};
+  }catch(error){
+   run("UPDATE prospecting_introductions SET followup_status='UNKNOWN',reason='Follow-up delivery uncertain; manual review',updated_at=? WHERE lead_id=? AND followup_status='SENDING'",now(),p.lead_id);
+   audit('PROSPECT_PITCH_PREVIEW_UNKNOWN',p.lead_id,{manualReview:true});
+   return {state:'UNKNOWN',reason:String(error?.message||error).slice(0,80)};
+  }
+ }finally{pitchFollowupBusy=false;}
 }
