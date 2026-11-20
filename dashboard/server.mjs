@@ -1053,6 +1053,23 @@ if(process.env.PROSPECTOR_RESTORE_STOPPED_WA==='true')
 if(process.env.PROSPECTOR_DELIVERY_DIAGNOSTIC==='true')
  setTimeout(()=>inspectGatewayDelivery({max:65}).then(x=>console.info('[verified gateway delivery audit]',JSON.stringify(x)))
   .catch(e=>console.warn('[verified gateway delivery audit]',String(e?.message||e).slice(0,160))),10_000).unref();
+// Aggregated read-only media delivery diagnostics. Never expose contact details,
+// message texts, WhatsApp credentials or full account identifiers in logs.
+setTimeout(()=>{
+ try{
+  const since=new Date(Date.now()-7*86400_000).toISOString();
+  const recent=new Date(Date.now()-48*3600_000).toISOString();
+  const events=['PROSPECT_GREETING_ANSWERED','PROSPECT_INTRO_SENT','PROSPECT_PITCH_VOICE_REQUESTED',
+   'PROSPECT_PITCH_AUDIO_SENT','PROSPECT_PITCH_VIDEO_SENT','PROSPECT_PITCH_PREVIEW_CANCELLED',
+   'PROSPECT_INTRO_UNKNOWN','PROSPECT_PITCH_PREVIEW_UNKNOWN','PROSPECT_INTRO_CANCELLED_MANUAL'];
+  const actionCounts=all("SELECT action,COUNT(*) total FROM audit WHERE at>=? AND action IN ("+
+   events.map(() => '?').join(',')+") GROUP BY action ORDER BY action",since,...events);
+  const intros=all("SELECT stage,COALESCE(reason,'') reason,COALESCE(followup_status,'') video_state,COUNT(*) total FROM prospecting_introductions WHERE created_at>=? GROUP BY stage,reason,followup_status ORDER BY total DESC LIMIT 35",since);
+  const today=all("SELECT stage,COALESCE(reason,'') reason,COALESCE(followup_status,'') video_state,COUNT(*) total FROM prospecting_introductions WHERE updated_at>=? GROUP BY stage,reason,followup_status ORDER BY total DESC LIMIT 35",recent);
+  const replies=all("SELECT state,COUNT(*) total FROM waakg_inbox WHERE received_at>=? GROUP BY state ORDER BY total DESC",since);
+  console.info('[pitch-media-readonly-diagnostic]',JSON.stringify({since,recent,events:actionCounts,introductions:intros,updatedLast48Hours:today,inbound:replies}));
+ }catch(error){console.warn('[pitch-media-readonly-diagnostic]',String(error?.message||error).slice(0,110));}
+},6500).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
 if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
