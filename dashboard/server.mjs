@@ -1093,7 +1093,7 @@ setTimeout(()=>{
   if(matches.length!==1){console.info('[bat-refusal-reconcile]',JSON.stringify({state:'NOT_UNIQUE_OR_MISSING'}));return;}
   const row=matches[0];
   const latest=one("SELECT body FROM messages WHERE thread_id=? AND direction='in' ORDER BY rowid DESC LIMIT 1",row.thread_id);
-  if(!latest||!/^Não amigo só orçamentos porque são muitos e não dá tempo de falar sobre outros assuntos, obrigado$/i.test(latest.body.trim()))return;
+  if(!latest||!/^Não amigo só orçamentos porque são muitos e não dá tempo de falar sobre outros assuntos, obrigado$/i.test(latest.body.replace(/\s+/g,' ').trim()))return;
   if(!['CONVERSING','CONTACTED','REPLIED','DISCOVERED'].includes(row.stage))return;
   stage(row.id,'NO_INTEREST','OWNER_CONFIRMED_DECLINE_20261120');
   run("UPDATE prospecting_introductions SET followup_status='CANCELLED',updated_at=? WHERE lead_id=? AND followup_status='WAITING'",now(),row.id);
