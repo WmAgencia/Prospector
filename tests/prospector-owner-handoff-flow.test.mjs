@@ -116,4 +116,44 @@ test('positive reply after audio transfers silently to owner and queues one noti
  assert.match(recipients[0],/12036302123456789%40g.us/);
  assert.equal((await handleSalesTurn(unique)).state,'SKIP');
 });
+
+test('semantic interest after owner audio stops Francisca and quotes the exact reply in owner alert',async()=>{
+ const item=prospect();
+ await introText(item);
+ routeIntroductionReply({leadId:item.lead.id,providerId:'perm-semantic-'+item.lead.id,body:'pode mandar',receivedAt:new Date(Date.now()-41000)});
+ assert.equal((await tickIntroductions({status:async()=>({connected:true}),session:()=> 'consecom-principal',
+  loadAudio:async()=>({bytes:Buffer.alloc(300000,12)}),sendAudio:async()=>({accepted:true})})).state,'VOICE_SENT');
+ const reply='Parece interessante, como seguimos com os próximos passos?';
+ const unique='consecom-principal:semantic-'+item.lead.id;
+ assert.equal(recordInboundTranscript({sessionId:'consecom-principal',jid:item.jid,unique,content:reply}).status,200);
+ const result=await handleSalesTurn(unique,{classifyPitch:async()=>({intent:'interested',confidence:0.97,evidence:'como seguimos'})});
+ assert.equal(result.state,'HOT');
+ assert.equal(db.one('SELECT stage FROM leads WHERE id=?',item.lead.id).stage,'INTERESTED');
+ assert.equal(db.one('SELECT manual_takeover FROM threads WHERE id=?',item.thread.id).manual_takeover,1);
+ const notice=db.one("SELECT message FROM owner_notices WHERE kind='GROQ_HOT_LEAD' AND lead_id=?",item.lead.id);
+ assert.ok(notice);
+ assert.ok(notice.message.includes(reply));
+ assert.ok(notice.message.includes('https://wa.me/'+item.lead.phone));
+ assert.equal((await handleSalesTurn(unique)).state,'SKIP');
+});
+test('semantic refusal after owner audio sends only existing polite farewell',async()=>{
+ const item=prospect();
+ await introText(item);
+ routeIntroductionReply({leadId:item.lead.id,providerId:'perm-decline-'+item.lead.id,body:'pode mandar',receivedAt:new Date(Date.now()-41000)});
+ assert.equal((await tickIntroductions({status:async()=>({connected:true}),session:()=> 'consecom-principal',
+  loadAudio:async()=>({bytes:Buffer.alloc(300000,12)}),sendAudio:async()=>({accepted:true})})).state,'VOICE_SENT');
+ const unique='consecom-principal:soft-decline-'+item.lead.id;
+ assert.equal(recordInboundTranscript({sessionId:'consecom-principal',jid:item.jid,unique,content:'Agradeço muito, mas vou dispensar esta proposta.'}).status,200);
+ const result=await handleSalesTurn(unique,{classifyPitch:async()=>({intent:'declined',confidence:0.98,evidence:'vou dispensar'})});
+ assert.equal(result.state,'DECLINED');
+ assert.equal(db.one('SELECT stage FROM leads WHERE id=?',item.lead.id).stage,'NO_INTEREST');
+ assert.equal(db.one("SELECT COUNT(*) n FROM owner_notices WHERE kind='GROQ_HOT_LEAD' AND lead_id=?",item.lead.id).n,0);
+ let sent=0;
+ const farewell=await tickProspectorFarewells({status:async()=>({connected:true}),send:async(_route,{data})=>{
+  sent++;assert.equal(data.message.text,PROSPECTOR_FAREWELL);return {status:true};
+ }});
+ assert.equal(farewell.state,'SENT');assert.equal(sent,1);
+ assert.equal((await tickProspectorFarewells({send:async()=>{sent++}})).state,'IDLE');
+});
+
 test.after(()=>{db.db.close();fs.rmSync(process.env.PROSPECTOR_DATA_DIR,{recursive:true,force:true});});
