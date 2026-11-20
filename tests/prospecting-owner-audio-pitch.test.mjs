@@ -93,7 +93,8 @@ test('new proposal sends just one native demo video with the approved caption te
    assert.doesNotMatch(caption,/O que achou/);return {accepted:true};
   }};
  assert.equal((await tickPitchFollowup({...video,currentTime:()=>due-1})).state,'IDLE');
- assert.equal((await tickPitchFollowup({...video,currentTime:()=>due+1})).state,'SENT');
+ const sentVideoResult=await tickPitchFollowup({...video,currentTime:()=>due+1});
+ assert.equal(sentVideoResult.state,'SENT',JSON.stringify(sentVideoResult));
  assert.equal(sent,1);
  assert.equal((await tickPitchFollowup({...video,currentTime:()=>due+2000})).state,'IDLE');
  assert.equal(db.one("SELECT type FROM messages WHERE provider_id=?", 'intro-video:'+row.greeting_id).type,'video');
