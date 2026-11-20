@@ -1,4 +1,8 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import {sendOfferVideoMedia} from './waakg-media.mjs';
+import {CAMPAIGN_VIDEO_CAPTION} from './consecom-flow.mjs';
 // Two-step introduction on an APPROVED WA-AKG prospect campaign.
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
 // After the introduction, every incoming reply can continue the sales conversation.
@@ -19,7 +23,15 @@ import {acceptsProposalAudio} from './prospector-sales-signals.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const PITCH_PREVIEW_DELAY_MS=10_000;
-export const PITCH_PREVIEW_TEXT='Se você quiser, posso te enviar uma prévia de como ficaria o site. O que você acha?';
+export const PITCH_PREVIEW_TEXT=CAMPAIGN_VIDEO_CAPTION;
+export const PITCH_VIDEO_SOURCE_SHA256='326b9d042adba1b3b996811f6ad37fe4b79aafde58f363f92db3d71ce6d9df1b';
+export function readPitchVideo(){
+ const bytes=fs.readFileSync(new URL('./assets/consecom-demo-20261119.mp4',import.meta.url));
+ if(bytes.length<1024||bytes.length>15*1024*1024||bytes.toString('ascii',4,8)!=='ftyp'||
+    crypto.createHash('sha256').update(bytes).digest('hex')!==PITCH_VIDEO_SOURCE_SHA256)
+  throw Error('PITCH_VIDEO_SOURCE_INVALID');
+ return {bytes,caption:PITCH_PREVIEW_TEXT,durationSeconds:44.166667};
+}
 export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês. Posso te mandar um áudio explicando a ideia?';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
@@ -142,6 +154,7 @@ export async function tickIntroductions(deps={}){
    try{
     voice=await loadAudio();
     if(!Buffer.isBuffer(voice?.bytes)||voice.bytes.length<200000)throw Error('AUDIO_NOT_READY');
+    if(!Buffer.isBuffer(readPitchVideo().bytes))throw Error('VIDEO_NOT_READY');
    }catch(e){return {state:'VOICE_ASSET_UNAVAILABLE',reason:String(e?.message||e).slice(0,85)};}
   }
   const wa=await status(item.session_id);
@@ -171,14 +184,14 @@ export async function tickIntroductions(deps={}){
    const acceptedAt=now();
    const followupDue=voiceRequested?new Date(Date.now()+PITCH_PREVIEW_DELAY_MS).toISOString():null;
    run("UPDATE prospecting_introductions SET stage=?,reason=?,sent_at=?,followup_due_at=?,followup_status=?,updated_at=? WHERE lead_id=? AND stage='SENDING'",
-    nextStage,voiceRequested?'PITCH_AUDIO_350':null,acceptedAt,followupDue,voiceRequested?'WAITING':null,acceptedAt,item.lead_id);
+    nextStage,voiceRequested?'PITCH_AUDIO_550':null,acceptedAt,followupDue,voiceRequested?'WAITING':null,acceptedAt,item.lead_id);
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
    if(thread)addMessage({threadId:thread.id,
     providerId:(voiceRequested?'intro-voice:':'intro:')+item.greeting_id,direction:'out',
-    body:voiceRequested?'[Áudio original do Wesley: proposta de portfólio R$ 350]':WESLEY_INTRO,
+    body:voiceRequested?'[Áudio original do Wesley: proposta de portfólio R$ 550]':WESLEY_INTRO,
     status:'sent'});
    audit(voiceRequested?'PROSPECT_PITCH_AUDIO_SENT':'PROSPECT_INTRO_SENT',item.lead_id,
-    voiceRequested?{voice:true,sourceSha256:PITCH_AUDIO_ORIGINAL_SHA256,offerBRL:350,delaySeconds:30,
+    voiceRequested?{voice:true,sourceSha256:PITCH_AUDIO_ORIGINAL_SHA256,offerBRL:550,delaySeconds:30,
      gatewayAccepted:true,verifiedOnPhone:false}:{delaySeconds:30});
    return {state:nextStage,leadId:item.lead_id,verifiedOnPhone:false};
   }catch(error){
@@ -202,7 +215,7 @@ let pitchFollowupBusy=false;
 export async function tickPitchFollowup(deps={}){
  if(ownerProspectionPaused()||getSetting('paused',true))return {state:'PAUSED'};
  if(pitchFollowupBusy)return {state:'BUSY'};
- const {currentTime=()=>Date.now(),status=waControlStatus,send=waRequest}=deps;
+ const {currentTime=()=>Date.now(),status=waControlStatus,sendVideo=sendOfferVideoMedia,loadVideo=readPitchVideo}=deps;
  pitchFollowupBusy=true;
  try{
   const at=currentTime(),atIso=new Date(at).toISOString();
@@ -218,7 +231,7 @@ export async function tickPitchFollowup(deps={}){
   const lead=one("SELECT l.phone,l.stage,t.manual_takeover FROM leads l LEFT JOIN threads t ON t.lead_id=l.id WHERE l.id=?",p.lead_id);
   if(!lead||lead.phone!==p.phone||lead.manual_takeover===1||
    ['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)||
-   p.reason!=='PITCH_AUDIO_350'||!p.sent_at||
+   p.reason!=='PITCH_AUDIO_550'||!p.sent_at||
    !isManagedSession(p.session_id)||leadSession(p.lead_id)!==p.session_id||
    !conversationAuthorized(p.lead_id)||
    one('SELECT 1 FROM suppressions WHERE phone=?',p.phone))
@@ -234,20 +247,25 @@ export async function tickPitchFollowup(deps={}){
   if(!wa.connected)return {state:'OFFLINE'};
   if(one('SELECT manual_takeover FROM threads WHERE lead_id=?',p.lead_id)?.manual_takeover===1||
     introductionStatus(p.lead_id)?.stage!=='VOICE_SENT')return cancel('MANUAL_TAKEOVER');
+  let video=null;
+  try{
+   video=await loadVideo();
+   if(!Buffer.isBuffer(video?.bytes)||video.bytes.length<1024)throw Error('VIDEO_NOT_READY');
+  }catch(error){return {state:'VIDEO_ASSET_UNAVAILABLE',reason:String(error?.message||error).slice(0,80)};}
   if(!run("UPDATE prospecting_introductions SET followup_status='SENDING',followup_attempt_at=?,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT' AND followup_status='WAITING' AND followup_due_at<=?",
    atIso,now(),p.lead_id,atIso).changes)return {state:'BUSY'};
   try{
    if(ownerProspectionPaused()||getSetting('paused',true))throw Error('PAUSED_DURING_SEND');
    if(one('SELECT manual_takeover FROM threads WHERE lead_id=?',p.lead_id)?.manual_takeover===1||
       introductionStatus(p.lead_id)?.stage!=='VOICE_SENT')throw Error('MANUAL_TAKEOVER');
-   const ack=await send('/api/messages/'+encodeURIComponent(p.session_id)+'/'+encodeURIComponent(p.phone+'@s.whatsapp.net')+'/send',
-    {method:'POST',data:{message:{text:PITCH_PREVIEW_TEXT}}});
-   if(ack?.status!==true)throw Error('TEXT_UNCONFIRMED');
+   const ack=await sendVideo({jid:p.phone+'@s.whatsapp.net',session:p.session_id,
+    bytes:video.bytes,caption:PITCH_PREVIEW_TEXT});
+   if(ack?.accepted!==true)throw Error('VIDEO_UNCONFIRMED');
    const stamp=now();
    run("UPDATE prospecting_introductions SET followup_status='SENT',followup_sent_at=?,updated_at=? WHERE lead_id=? AND followup_status='SENDING'",stamp,stamp,p.lead_id);
    const thread=one('SELECT id FROM threads WHERE lead_id=?',p.lead_id);
-   if(thread)addMessage({threadId:thread.id,providerId:'intro-preview:'+p.greeting_id,direction:'out',body:PITCH_PREVIEW_TEXT,status:'sent'});
-   audit('PROSPECT_PITCH_PREVIEW_SENT',p.lead_id,{delaySeconds:10,session:p.session_id,gatewayAccepted:true});
+   if(thread)addMessage({threadId:thread.id,providerId:'intro-video:'+p.greeting_id,direction:'out',type:'video',body:PITCH_PREVIEW_TEXT,status:'sent'});
+   audit('PROSPECT_PITCH_VIDEO_SENT',p.lead_id,{delaySeconds:10,session:p.session_id,gatewayAccepted:true});
    return {state:'SENT',leadId:p.lead_id};
   }catch(error){
    if(String(error?.message||'')==='MANUAL_TAKEOVER'){
