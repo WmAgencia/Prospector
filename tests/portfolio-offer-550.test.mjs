@@ -12,7 +12,7 @@ test('fixed offer is accurate and remains inside the WhatsApp message length gua
  assert.match(text,/R\$ 550/);
  assert.match(text,/domínio pago por um ano/);
  assert.match(text,/Master SEO/);
- assert.match(text,/3 dias/);
+ assert.match(text,/5 dias/);
  assert.doesNotMatch(text,/9 de novembro de 2026|referência de dias de semana|Se tudo for confirmado hoje/);
  assert.doesNotMatch(text,/90\s*%|primeira posição|posição garantida/i);
  assert.ok(text.length<=650,'The fixed pitch must fit the existing guard');
@@ -21,10 +21,10 @@ test('fixed offer is accurate and remains inside the WhatsApp message length gua
  assert.ok(price.length<=650);
 });
 
-test('dates add exactly three Sao Paulo weekdays, including leap and year boundaries',()=>{
- assert.equal(brDeliveryDate(at),'9 de novembro de 2026');
- assert.equal(brDeliveryDate(new Date('2026-12-30T15:00:00Z')),'4 de janeiro de 2027');
- assert.equal(brDeliveryDate(new Date('2028-02-28T15:00:00Z')),'2 de março de 2028');
+test('dates add exactly five Sao Paulo weekdays, including leap and year boundaries',()=>{
+ assert.equal(brDeliveryDate(at),'11 de novembro de 2026');
+ assert.equal(brDeliveryDate(new Date('2026-12-30T15:00:00Z')),'6 de janeiro de 2027');
+ assert.equal(brDeliveryDate(new Date('2028-02-28T15:00:00Z')),'6 de março de 2028');
 });
 
 test('business greeting is never copied into a personal vocative',()=>{
