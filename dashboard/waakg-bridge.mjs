@@ -6,6 +6,7 @@ import {aiDraft} from "./ai-groq.mjs";
 import {classifyContact,prospectorChatEligible,prospectorLeadEligible} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
 import {salesEnding,isExplicitOptOut} from "./sales-policy.mjs";
+import {declinesProposalAudio} from './prospector-sales-signals.mjs';
 import {classifyInboundAutomation} from './inbound-automation.mjs';
 import {recordSalesOutcome} from "./sales-outcomes.mjs";
 import {routeIntroductionReply} from "./prospecting-introduction.mjs";
@@ -129,7 +130,7 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  }else if(lead.stage==='NO_INTEREST'){
   // Terminal refusals never restart an AI conversation or send more thank-yous.
   state='NO_INTEREST';
- }else if(state!=='AUTO_REPLY'&&(/^(?:não tenho interesse|nao tenho interesse|agora não|agora nao|não é o momento|nao e o momento)(?:[.!\s]|$)/i.test(content)||ending==='NO_INTEREST')){
+ }else if(state!=='AUTO_REPLY'&&(/^(?:não tenho interesse|nao tenho interesse|agora não|agora nao|não é o momento|nao e o momento)(?:[.!\s]|$)/i.test(content)||ending==='NO_INTEREST'||(identity.role==='PROSPECT_APPROACHED'&&declinesProposalAudio(content)))){
   stage(lead.id,'NO_INTEREST','INBOUND_SOFT_DECLINE');state='NO_INTEREST';
  }else if(state!=='AUTO_REPLY'&&(/\b(humano|atendente|pessoa de verdade|falar com algu[eé]m)\b/i.test(content)||ending==='HUMAN_REVIEW')){
   run("UPDATE threads SET manual_takeover=1 WHERE id=?",thread.id);state="HUMAN";
