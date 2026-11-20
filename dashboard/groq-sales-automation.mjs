@@ -43,7 +43,7 @@ export function interestNotice(lead,evidence){
  if(business.instagram){const ig=String(business.instagram);if(/^https:\/\/(?:www\.)?instagram\.com\//i.test(ig))links.push('Instagram: '+ig);else if(/^[a-z0-9._]+$/i.test(ig))links.push('Instagram: https://www.instagram.com/'+ig+'/');}
  if(/^https?:\/\//i.test(business.website||''))links.push('Site: '+business.website);
  for(const row of all("SELECT identity FROM lead_origins WHERE lead_id=? AND source='maps_extension'",lead.lead_id))if(/^https:\/\/(?:www\.google\.[a-z.]+\/maps\/|maps\.google\.[a-z.]+\/|maps\.app\.goo\.gl\/)/i.test(row.identity))links.push('Maps: '+row.identity);
- return ['⭐ Interesse real no Prospector','Empresa: '+business.business,'Contato: '+(business.name||'não informado'),'Telefone: '+business.phone,...links,'Assumir conversa: https://wa.me/'+business.phone,'Interesse: '+String(evidence||lead.body||'Intenção confirmada').slice(0,180),'Próximo passo: assumir atendimento e confirmar escopo.'].join('\n');
+ return ['⭐ Interesse real no Prospector','Empresa: '+business.business,'Contato: '+(business.name||'não informado'),'Telefone: '+business.phone,...links,'Assumir conversa: https://wa.me/'+business.phone,'Mensagem do cliente: '+String(evidence||lead.body||'Intenção confirmada').trim().slice(0,2000),'Próximo passo: assumir atendimento e confirmar escopo.'].join('\n');
 }
 export function agentStatus(){return {enabled:process.env.AI_CONVERSATION_AUTOSEND==='true',inboundAssistantEnabled:process.env.PROSPECTOR_INBOUND_AUTOREPLY_ENABLED==='true',approvedProspectFollowup:getSetting('sales_followup_enabled',true)===true,alertOnlyEnabled:process.env.PROSPECTOR_INTEREST_ALERTS_ENABLED==='true',ownerConfigured:!!ownerTarget(),ownerLastFour:(ownerTarget()||'').slice(-4),inboundOnly:true,inboundAutomationVersion:INBOUND_AUTOMATION_VERSION,replyPacing:{enabled:replyPacingEnabled(),minSeconds:8,maxSeconds:35,typing:{enabled:replyPacingEnabled(),minSeconds:3,maxSeconds:5,scope:'prepared_customer_text_replies'}}};}
 function approvedProspectFollowup(identity,jid){
@@ -134,7 +134,7 @@ export async function handleSalesTurn(providerId,deps={}){
   stage(r.lead_id,'INTERESTED','PITCH_AUDIO_550_INTEREST');
   recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:r.body,notify:false});
   queueNotice('pitch-audio550:'+r.lead_id,'GROQ_HOT_LEAD',
-   interestNotice(r,'Interesse na oferta de R$ 550 enviada por áudio. Confirmar escopo e pagamento.'),r.lead_id);
+   interestNotice(r,r.body),r.lead_id);
   return finish('HOT','AUDIO_550_CLOSING_TO_OWNER');
  }
  // The original voice note is the approved proposal. Never improvise a written replacement.
@@ -162,7 +162,7 @@ export async function handleSalesTurn(providerId,deps={}){
     recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:interest.evidence||r.body,notify:false});
     run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
     queueNotice('groq-hot:'+r.lead_id,'GROQ_HOT_LEAD',
-     interestNotice(r,interest.evidence),r.lead_id);
+     interestNotice(r,r.body),r.lead_id);
     audit('GROQ_INTEREST_ALERT_QUEUED',r.lead_id,{model:'groq',confidence:interest.confidence});
    }
   });
