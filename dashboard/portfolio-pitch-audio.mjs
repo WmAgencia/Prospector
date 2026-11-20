@@ -1,4 +1,4 @@
-// Voice pitch recorded by the Consecom owner for the R$350 portfolio campaign.
+// Voice pitch recorded by the Consecom owner for the R$550 portfolio campaign.
 // Stored as secret, split environment values on Railway (never in GitHub).
 // A restart reuses a private cached AAC file on the Railway volume.
 import fs from 'node:fs';
@@ -6,9 +6,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 
-export const PITCH_AUDIO_ORIGINAL_SHA256='82c1044e8d25413f4e4f4fee347639c3f7802927ddf774666c656b15b340f7a1';
-export const PITCH_AUDIO_SECONDS=99.5;
-export const PITCH_AUDIO_OFFER_BRL=350;
+export const PITCH_AUDIO_ORIGINAL_SHA256='521cb9a803ef65daf0aa2ff2e918c9a859876577fb56bb9362140bf0a182c019';
+export const PITCH_AUDIO_SECONDS=102.3665;
+export const PITCH_AUDIO_OFFER_BRL=550;
 const hash=buffer=>crypto.createHash('sha256').update(buffer).digest('hex');
 const normalized=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 
@@ -22,7 +22,7 @@ export function wantsPortfolioPitchAudio(text=''){
  return /(?:sobre o que|do que se trata|qual (?:e |seria )?(?:a |essa |sua )?(?:proposta|oferta)|que (?:proposta|oferta)|(?:pode|poderia|podia) (?:me )?(?:falar|explicar|contar|mandar)|(?:me )?(?:explica|fala|conte|manda)(?: (?:melhor|mais|a proposta|o que))?|o que (?:voces|voce) (?:faz|fazem|oferece|oferecem)|como funciona (?:a |essa |sua )?(?:proposta|oferta))/i.test(s);
 }
 export function portfolioAudioSentFor(intro){
- return intro?.reason==='PITCH_AUDIO_350'&&
+ return intro?.reason==='PITCH_AUDIO_550'&&
   ['VOICE_SENT','CONVERSING'].includes(intro.stage);
 }
 export function readPortfolioPitchAudio(){
@@ -39,7 +39,7 @@ export function readPortfolioPitchAudio(){
   throw Error('PITCH_AUDIO_SOURCE_INVALID');
  const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','private-portfolio-voice');
  fs.mkdirSync(root,{recursive:true,mode:0o700});
- const target=path.join(root,'portfolio-350-'+PITCH_AUDIO_ORIGINAL_SHA256.slice(0,12)+'.m4a');
+ const target=path.join(root,'portfolio-550-'+PITCH_AUDIO_ORIGINAL_SHA256.slice(0,12)+'.m4a');
  let cached=false;
  try{const size=fs.statSync(target).size;cached=size>200000&&size<3*1024*1024;}catch{}
  if(!cached){
@@ -59,7 +59,7 @@ export function readPortfolioPitchAudio(){
  }
  const bytes=fs.readFileSync(target);
  if(bytes.length<200000||bytes.length>3*1024*1024)throw Error('PITCH_AUDIO_INVALID_CACHE');
- return {bytes,sourceSha256:PITCH_AUDIO_ORIGINAL_SHA256,durationSeconds:PITCH_AUDIO_SECONDS,offerBRL:350};
+ return {bytes,sourceSha256:PITCH_AUDIO_ORIGINAL_SHA256,durationSeconds:PITCH_AUDIO_SECONDS,offerBRL:PITCH_AUDIO_OFFER_BRL};
 }
 export function portfolioPitchAudioHealth(){
  if(!portfolioPitchAudioEnabled())return {enabled:false,ready:false};
