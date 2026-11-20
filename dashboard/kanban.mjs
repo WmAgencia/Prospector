@@ -2,6 +2,7 @@
 import {all,one} from './db.mjs';
 import {threeMonthsAfter,latestOutreachAt} from './prospecting-recontact.mjs';
 import {prospectorLeadEligible} from './whatsapp-roles.mjs';
+import {PROSPECTING_EVENT_SQL,prospectingEventParams,prospectingPeriodSnapshot} from './kanban-period.mjs';
 
 export const KANBAN_STAGES=['approaching','no_interest','interested','conversing'];
 
@@ -14,7 +15,9 @@ function cardStatus(row){
  if(row.initial_at||row.last_out_at||row.last_batch_at)return 'approaching';
  return null;
 }
-export function kanbanSnapshot({limit=120,at=Date.now()}={}){
+export function kanbanSnapshot({limit=120,at=Date.now(),period=null}={}){
+ const scoped=Boolean(period?.startISO&&period?.endISO);
+ const prospecting=prospectingPeriodSnapshot(period);
  // Query uses a single lead row per card. A lead cannot appear in two columns.
  const rows=all(`SELECT l.id,l.business,l.city,l.phone,l.stage,l.last_activity_at,
   t.jid,t.manual_takeover,
@@ -26,12 +29,14 @@ export function kanbanSnapshot({limit=120,at=Date.now()}={}){
    AND m.direction='out' AND (m.provider_id LIKE 'operator:%' OR m.provider_id LIKE 'remote-operator:%' OR m.provider_id LIKE 'waakg-out:%')) manually_replied,
   EXISTS(SELECT 1 FROM suppressions s WHERE s.phone=l.phone) opted_out
  FROM leads l LEFT JOIN threads t ON t.lead_id=l.id
- WHERE l.stage IN ('NO_INTEREST','INTERESTED','CLOSED_WON','CONVERSING')
+ WHERE (l.stage IN ('NO_INTEREST','INTERESTED','CLOSED_WON','CONVERSING')
     OR EXISTS(SELECT 1 FROM initial_contacts i WHERE i.lead_id=l.id)
     OR EXISTS(SELECT 1 FROM messages m JOIN threads x ON x.id=m.thread_id WHERE x.lead_id=l.id AND m.direction='out')
     OR EXISTS(SELECT 1 FROM owner_notices n WHERE n.lead_id=l.id AND n.kind='GROQ_HOT_LEAD')
-    OR EXISTS(SELECT 1 FROM prospecting_batch_items q WHERE q.lead_id=l.id AND q.status IN ('SENT','UNKNOWN'))
- ORDER BY COALESCE(l.last_activity_at,l.created_at) DESC LIMIT 3000`);
+    OR EXISTS(SELECT 1 FROM prospecting_batch_items q WHERE q.lead_id=l.id AND q.status IN ('SENT','UNKNOWN')))
+ ${scoped?'AND l.id IN ('+PROSPECTING_EVENT_SQL+')':''}
+ ORDER BY COALESCE(l.last_activity_at,l.created_at) DESC LIMIT 3000`,
+ ...(scoped?prospectingEventParams(period):[]));
  const columns=Object.fromEntries(KANBAN_STAGES.map(k=>[k,[]]));
  const counts=Object.fromEntries(KANBAN_STAGES.map(k=>[k,0]));
  for(const row of rows){
@@ -54,6 +59,7 @@ export function kanbanSnapshot({limit=120,at=Date.now()}={}){
   });
  }
  return {columns,counts,total:Object.values(counts).reduce((x,y)=>x+y,0),
+  prospections:prospecting.total,period:period?{key:period.key,from:period.from,to:period.to,label:period.label}:null,
   monthsBetweenContacts:3,onlyPersistedActivity:true,manualMessagesMoveToConversing:true,
   hotLeadsRequireNotification:true};
 }
