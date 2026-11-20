@@ -1,0 +1,27 @@
+name: Prospector private group
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'dashboard/prospector-private-group.mjs'
+      - 'dashboard/server.mjs'
+      - 'tests/prospector-private-group.test.mjs'
+      - '.github/workflows/private-group.yml'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Check backend syntax
+        run: |
+          node --check dashboard/prospector-private-group.mjs
+          node --check dashboard/server.mjs
+      - name: Mock-test isolated group lifecycle (no real WhatsApp calls)
+        run: node --test tests/prospector-private-group.test.mjs

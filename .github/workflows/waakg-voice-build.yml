@@ -1,5 +1,10 @@
 name: WA-AKG voice native build and checks
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'waakg-voice/**'
+      - '.github/workflows/waakg-voice-build.yml'
   push:
     paths:
       - 'waakg-voice/**'
