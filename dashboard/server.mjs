@@ -1099,6 +1099,8 @@ setTimeout(async()=>{
    const messages=conversation?all("SELECT at,direction,type,status,provider_id,body FROM messages WHERE thread_id=? ORDER BY rowid DESC LIMIT 15",conversation.id).map(m=>({at:m.at,direction:m.direction,type:m.type,status:m.status,tag:String(m.provider_id||'').split(':')[0],permission:m.direction==='in'?consentFromText(m.body):false,refusal:m.direction==='in'?/\\bnao\\b|\\bnão\\b|or[cç]amentos/i.test(m.body):false})).reverse():[];
    cases.push({case:x.case,suffix:String(x.phone||'').slice(-4),leadStage:x.stage,permission:x.contact_permission,manual:conversation?.manual_takeover||0,intro,events,inbox,messages});
   }
+  const paoReply=one("SELECT m.body,m.at FROM leads l JOIN threads t ON t.lead_id=l.id JOIN messages m ON m.thread_id=t.id WHERE l.phone=? AND m.direction='in' ORDER BY m.rowid DESC LIMIT 1",'551140223523');
+  if(paoReply)console.info('[pao-quente-last-reply-redacted]',JSON.stringify({at:paoReply.at,text:String(paoReply.body||'').slice(0,190).replace(/\\b\\d{4,}\\b/g,'[number]').replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi,'[email]')}));
   console.info('[pitch-media-owner-cases]',JSON.stringify(cases));
 
 
