@@ -60,6 +60,8 @@ test('first reply delivers Wesley permission question; second affirmative delive
  assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
  const matches=db.all("SELECT provider_id FROM messages WHERE provider_id LIKE 'intro-voice:%' AND direction='out'");
  assert.equal(matches.length,1);
+ // Separate scenario: do not leave a pending preview for the next test case.
+ db.run("UPDATE prospecting_introductions SET followup_status='CANCELLED' WHERE lead_id=?",lead.id);
 });
 test('new proposal sends just one native demo video with the approved caption ten seconds after audio',async()=>{
  const {lead,jid}=addAuthorized();
