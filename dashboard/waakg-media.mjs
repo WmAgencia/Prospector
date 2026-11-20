@@ -67,3 +67,22 @@ export async function sendVoiceMedia({jid,bytes,session=selectedWaSession(),fetc
   if(!res.ok||reply?.status!==true)throw Error('OFFER_AUDIO_DELIVERY_UNCONFIRMED');
   return {accepted:true,verifiedOnPhone:false};
  }
+
+ // Native video message: the media file and approved caption go in one WhatsApp send.
+export async function sendOfferVideoMedia({jid,bytes,caption,session=selectedWaSession(),fetchFn=fetch,apiKey}={}){
+ if(!jidAllowed(jid)||!session||!Buffer.isBuffer(bytes)||bytes.length<1024||
+  bytes.length>MAX_MEDIA_BYTES||bytes.toString('ascii',4,8)!=='ftyp'||
+  typeof caption!=='string'||!caption.trim()||caption.length>1024)
+  throw Error('INVALID_OFFER_VIDEO_SEND');
+ const form=new FormData();
+ form.append('type','video');
+ form.append('caption',caption);
+ form.append('file',new Blob([bytes],{type:'video/mp4'}),'consecom-demonstracao.mp4');
+ const key=apiKey||await getGatewayApiKey();
+ registerApiOutboundIntent({session,jid,type:'VIDEO'});
+ const res=await fetchFn(base+'/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(jid)+'/media',{
+  method:'POST',headers:{'X-API-Key':key,Accept:'application/json'},body:form,signal:AbortSignal.timeout(30000)});
+ const reply=await res.json().catch(()=>({}));
+ if(!res.ok||reply?.status!==true)throw Error('OFFER_VIDEO_DELIVERY_UNCONFIRMED');
+ return {accepted:true,verifiedOnPhone:false};
+}
