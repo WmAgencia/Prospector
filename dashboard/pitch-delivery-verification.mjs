@@ -92,7 +92,10 @@ export function receivePitchDeliveryStatus(payload={}){
  if(!receipt)return false;
  if(event==='message.status'&&data.remoteJid&&String(data.remoteJid)!==receipt.jid)return false;
  const status=event==='message.sent'?'SENT':cleanStatus(data.status);
- return updateStatus(receipt,status,providerId);
+ // The correlation itself is authoritative for origin, even when a late SENT
+ // event is ignored because DELIVERED/READ was already recorded.
+ updateStatus(receipt,status,providerId);
+ return true;
 }
 const remoteId=m=>String(m.keyId||m.key?.id||'');
 const chatStatus=m=>['SENT','DELIVERED','READ','FAILED'].includes(cleanStatus(m.status))?cleanStatus(m.status):null;
