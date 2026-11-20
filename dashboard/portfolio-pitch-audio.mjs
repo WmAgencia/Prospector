@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import {declinesProposalAudio} from './prospector-sales-signals.mjs';
 
 export const PITCH_AUDIO_ORIGINAL_SHA256='521cb9a803ef65daf0aa2ff2e918c9a859876577fb56bb9362140bf0a182c019';
 export const PITCH_AUDIO_SECONDS=102.3665;
@@ -18,8 +19,8 @@ export function portfolioPitchAudioEnabled(){
 }
 export function wantsPortfolioPitchAudio(text=''){
  const s=normalized(text);
- if(!s||s.length>850)return false;
- return /(?:sobre o que|do que se trata|qual (?:e |seria )?(?:a |essa |sua )?(?:proposta|oferta)|que (?:proposta|oferta)|(?:pode|poderia|podia) (?:me )?(?:falar|explicar|contar|mandar)|(?:me )?(?:explica|fala|conte|manda)(?: (?:melhor|mais|a proposta|o que))?|o que (?:voces|voce) (?:faz|fazem|oferece|oferecem)|como funciona (?:a |essa |sua )?(?:proposta|oferta))/i.test(s);
+ if(!s||s.length>850||declinesProposalAudio(s))return false;
+ return /(?:sobre o que|do que se trata|qual (?:e |seria )?(?:a |essa |sua )?(?:proposta|oferta)|que (?:proposta|oferta)|(?:pode|poderia|podia) (?:me )?(?:falar|explicar|contar|mandar)|(?:me )?(?:explica|fala|conte|manda)\b(?: (?:melhor|mais|a proposta|o que))?|o que (?:voces|voce) (?:faz|fazem|oferece|oferecem)|como funciona (?:a |essa |sua )?(?:proposta|oferta))/i.test(s);
 }
 export function portfolioAudioSentFor(intro){
  return intro?.reason==='PITCH_AUDIO_550'&&
