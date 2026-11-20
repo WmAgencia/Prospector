@@ -36,7 +36,8 @@ RUN npm prune --omit=dev \
  && npm install --no-save tsx typescript
 
 FROM node:22-bookworm-slim AS runner
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl libnss3 libglib2.0-0 libx11-6 libxext6 libasound2 libgbm1 libstdc++6 && rm -rf /var/lib/apt/lists/*
+# Baileys needs ffmpeg at runtime to generate native video JPEG thumbnails.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates openssl libnss3 libglib2.0-0 libx11-6 libxext6 libasound2 libgbm1 libstdc++6 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder --chown=node:node /app/package*.json ./
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
