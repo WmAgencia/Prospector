@@ -1055,7 +1055,7 @@ if(process.env.PROSPECTOR_DELIVERY_DIAGNOSTIC==='true')
   .catch(e=>console.warn('[verified gateway delivery audit]',String(e?.message||e).slice(0,160))),10_000).unref();
 // Aggregated read-only media delivery diagnostics. Never expose contact details,
 // message texts, WhatsApp credentials or full account identifiers in logs.
-setTimeout(()=>{
+setTimeout(async()=>{
  try{
   const since=new Date(Date.now()-7*86400_000).toISOString();
   const recent=new Date(Date.now()-48*3600_000).toISOString();
@@ -1067,7 +1067,19 @@ setTimeout(()=>{
   const intros=all("SELECT stage,COALESCE(reason,'') reason,COALESCE(followup_status,'') video_state,COUNT(*) total FROM prospecting_introductions WHERE created_at>=? GROUP BY stage,reason,followup_status ORDER BY total DESC LIMIT 35",since);
   const today=all("SELECT stage,COALESCE(reason,'') reason,COALESCE(followup_status,'') video_state,COUNT(*) total FROM prospecting_introductions WHERE updated_at>=? GROUP BY stage,reason,followup_status ORDER BY total DESC LIMIT 35",recent);
   const replies=all("SELECT state,COUNT(*) total FROM waakg_inbox WHERE received_at>=? GROUP BY state ORDER BY total DESC",since);
-  console.info('[pitch-media-readonly-diagnostic]',JSON.stringify({since,recent,events:actionCounts,introductions:intros,updatedLast48Hours:today,inbound:replies}));
+  // Classify only ephemeral, local responses; do not print customer wording or numbers.
+  const {acceptsProposalAudio}=await import('./prospector-sales-signals.mjs');
+  const {wantsPortfolioPitchAudio}=await import('./portfolio-pitch-audio.mjs');
+  const unanswered=all("SELECT p.lead_id,p.sent_at, (SELECT i.body FROM waakg_inbox i WHERE i.lead_id=p.lead_id AND i.received_at>=p.sent_at ORDER BY i.received_at DESC LIMIT 1) response,(SELECT i.state FROM waakg_inbox i WHERE i.lead_id=p.lead_id AND i.received_at>=p.sent_at ORDER BY i.received_at DESC LIMIT 1) inbox_state FROM prospecting_introductions p WHERE p.stage='SENT' AND p.sent_at IS NOT NULL AND p.created_at>=?",since);
+  const permission={awaitingReply:0,detectedButStuck:0,unrecognizedAfterReply:0,blockedByReviewState:0,examplesNotLogged:0};
+  for(const r of unanswered){
+   if(!String(r.response||'').trim()){permission.awaitingReply++;continue;}
+   if(r.inbox_state!=='REVIEW'){permission.blockedByReviewState++;continue;}
+   if(acceptsProposalAudio(r.response)||wantsPortfolioPitchAudio(r.response))permission.detectedButStuck++;
+   else permission.unrecognizedAfterReply++;
+  }
+  console.info('[pitch-media-readonly-diagnostic]',JSON.stringify({since,recent,events:actionCounts,introductions:intros,updatedLast48Hours:today,inbound:replies,permission}));
+
  }catch(error){console.warn('[pitch-media-readonly-diagnostic]',String(error?.message||error).slice(0,110));}
 },6500).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
