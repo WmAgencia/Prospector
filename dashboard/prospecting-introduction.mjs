@@ -107,7 +107,14 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  }
  if(item.stage==='SENT')return {managed:true,queueAi:false,state:'AWAITING_AUDIO_PERMISSION'};
  if(item.stage==='VOICE_SENT'){
-  run("UPDATE prospecting_introductions SET stage='CONVERSING',followup_status=CASE WHEN followup_status='WAITING' THEN 'CANCELLED' ELSE followup_status END,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT'",now(),leadId);
+  // A normal inbound reply must not cancel the demo scheduled ten seconds
+  // after the audio. Confirmed interest, refusal or human takeover still stop
+  // media through the existing eligibility checks in tickPitchFollowup.
+  if(item.followup_status==='WAITING'){
+   audit('PROSPECT_POST_AUDIO_REPLY',leadId,{providerId:sourceId,previewStillScheduled:true});
+   return {managed:true,queueAi:true,state:'VOICE_SENT'};
+  }
+  run("UPDATE prospecting_introductions SET stage='CONVERSING',updated_at=? WHERE lead_id=? AND stage='VOICE_SENT'",now(),leadId);
   audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:sourceId,previousStage:item.stage});
   return {managed:true,queueAi:true,state:'CONVERSING'};
  }
@@ -240,9 +247,12 @@ export async function tickPitchFollowup(deps={}){
   const audioMessage=one("SELECT m.rowid FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='out' ORDER BY m.rowid DESC LIMIT 1",
    p.lead_id,'intro-voice:'+p.greeting_id);
   if(!audioMessage)return cancel('AUDIO_NOT_RECORDED');
-  const nextMessage=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.rowid>? AND m.direction IN ('in','out') LIMIT 1",
+  // Inbound replies do not preempt the approved preview. Any later manual
+  // outbound response does; explicit interest/refusal and takeover are guarded
+  // by the lead stage and thread ownership checks above.
+  const nextMessage=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.rowid>? AND m.direction='out' LIMIT 1",
    p.lead_id,audioMessage.rowid);
-  if(nextMessage)return cancel('CONVERSATION_ALREADY_CONTINUED');
+  if(nextMessage)return cancel('OTHER_OUTBOUND_AFTER_AUDIO');
   const wa=await status(p.session_id);
   if(!wa.connected)return {state:'OFFLINE'};
   if(one('SELECT manual_takeover FROM threads WHERE lead_id=?',p.lead_id)?.manual_takeover===1||
