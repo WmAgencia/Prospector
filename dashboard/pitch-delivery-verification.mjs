@@ -166,6 +166,53 @@ export async function reconcilePitchDeliveries({fetchChat=waRequest,limit=4}={})
 }
 // Accepted answers can be stranded before the voice worker even reserves a send.
 // Surface them rather than silently skipping or sending blind duplicates.
+// Repair explicit, unprocessed "yes, send the audio" replies when NO media
+// transport was ever attempted. History must include the original text intro
+// and no intervening outbound message. Ambiguity is escalated, never retried.
+export async function recoverVerifiedUnattemptedPitch({fetchChat=waRequest,limit=2}={}){
+ const {ownerProspectionPaused}=await import('./prospection-pause.mjs');
+ const {conversationAuthorized}=await import('./operator-outreach.mjs');
+ if(ownerProspectionPaused())return {state:'PAUSED'};
+ const cutoff=new Date(Date.now()-48*3600_000).toISOString();
+ const minAge=new Date(Date.now()-90_000).toISOString();
+ const rows=all("SELECT p.lead_id,p.greeting_id,p.session_id,p.phone,p.sent_at FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id JOIN threads t ON t.lead_id=p.lead_id WHERE p.stage='SENT' AND p.sent_at>=? AND p.sent_at<? AND t.manual_takeover=0 AND l.stage NOT IN ('INTERESTED','NO_INTEREST','CLOSED_WON') ORDER BY p.sent_at DESC LIMIT 80",cutoff,minAge);
+ let queued=0,review=0;
+ for(const p of rows){
+  if(queued>=Math.max(1,Math.min(3,Number(limit)||2)))break;
+  if(!conversationAuthorized(p.lead_id)||!isManagedSession(p.session_id)||leadSession(p.lead_id)!==p.session_id)continue;
+  if(one('SELECT 1 FROM pitch_delivery_receipts WHERE lead_id=? AND greeting_id=? AND kind=\'AUDIO\'',p.lead_id,p.greeting_id))continue;
+  if(one('SELECT phone FROM suppressions WHERE phone=?',p.phone))continue;
+  const reply=one("SELECT provider_id,body,received_at FROM waakg_inbox WHERE lead_id=? AND session_id=? AND received_at>=? ORDER BY received_at DESC LIMIT 1",p.lead_id,p.session_id,p.sent_at);
+  if(!reply||!(acceptsProposalAudio(reply.body)||wantsPortfolioPitchAudio(reply.body)))continue;
+  const intro=one("SELECT rowid,body FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='out'",p.lead_id,'intro:'+p.greeting_id);
+  if(!intro||!intro.body)continue;
+  const newer=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.rowid>? AND m.direction='out' LIMIT 1",p.lead_id,intro.rowid);
+  if(newer)continue;
+  let history=null;
+  try{
+   const response=await fetchChat('/api/chat/'+encodeURIComponent(p.session_id)+'/'+encodeURIComponent(p.phone+'@s.whatsapp.net'));
+   if(Array.isArray(response?.data))history=response.data;
+  }catch{}
+  if(!history){review++;continue;}
+  const expected=String(intro.body).replace(/\s+/g,' ').trim();
+  const sentAt=ageMs(p.sent_at);
+  const confirmedIntro=history.find(m=>m.fromMe===true&&cleanStatus(m.type)==='TEXT'&&
+   String(m.content||'').replace(/\s+/g,' ').trim()===expected&&Math.abs(ageMs(m.timestamp)-sentAt)<4*60_000);
+  if(!confirmedIntro){review++;continue;}
+  const laterOutbound=history.some(m=>m.fromMe===true&&ageMs(m.timestamp)>ageMs(confirmedIntro.timestamp)+1000);
+  if(laterOutbound){review++;continue;}
+  const due=new Date(Math.max(Date.now(),ageMs(reply.received_at)+30_000)).toISOString();
+  // Revalidate after the remote I/O, including fresh operator takeovers/opt-outs.
+  const changed=run("UPDATE prospecting_introductions SET stage='VOICE_WAITING',due_at=?,updated_at=? WHERE lead_id=? AND greeting_id=? AND session_id=? AND stage='SENT' AND EXISTS(SELECT 1 FROM threads t WHERE t.lead_id=? AND t.manual_takeover=0) AND EXISTS(SELECT 1 FROM leads l WHERE l.id=? AND l.stage NOT IN ('NO_INTEREST','INTERESTED','CLOSED_WON')) AND NOT EXISTS(SELECT 1 FROM pitch_delivery_receipts r WHERE r.lead_id=? AND r.greeting_id=? AND r.kind='AUDIO')",
+   due,now(),p.lead_id,p.greeting_id,p.session_id,p.lead_id,p.lead_id,p.lead_id,p.greeting_id).changes;
+  if(changed===1){
+   queued++;
+   audit('PITCH_CONSENT_AUTO_RECOVERED',p.lead_id,{session:p.session_id,source:'verified_whatsapp_history',dueAt:due});
+  }
+ }
+ return {state:'CHECKED',candidates:rows.length,queued,review};
+}
+
 export function auditStuckPitchSteps(){
  const cutoff=new Date(Date.now()-3*60_000).toISOString();
  let flagged=0;
