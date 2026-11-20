@@ -19,10 +19,10 @@ function prune(at){
 export function registerApiOutboundIntent({session,jid,type='TEXT',text=''}={}){
  if(!validSession(session)||!validJid(jid))return false;
  const {kind}=canonical(type,text);
- if(!['TEXT','AUDIO'].includes(kind))return false;
+ if(!['TEXT','AUDIO','VIDEO'].includes(kind))return false;
  const at=Date.now();
  prune(at);
- pending.set(keyOf(session,jid,kind,text),at+(kind==='AUDIO'?35_000:90_000));
+ pending.set(keyOf(session,jid,kind,text),at+(['AUDIO','VIDEO'].includes(kind)?35_000:90_000));
  return true;
 }
 export function isApiOutboundEcho({session,jid,type,text=''}={}){
