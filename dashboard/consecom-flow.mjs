@@ -16,7 +16,7 @@ export function buildConsecomSteps({audioId='',videoId='',existingSteps=[]}={}){
   step('message',0,{text:CAMPAIGN_INTRO}),
   step('wait_reply',0),
   step('delay',0,{seconds:45}),
-  step('audio',0,{media_id:audioId||sound.media_id||'',description:sound.description||CAMPAIGN_AUDIO_DESCRIPTION}),
+  step('audio',0,{media_id:audioId||sound.media_id||'',description:CAMPAIGN_AUDIO_DESCRIPTION}),
   step('delay',1,{seconds:10}),
   step('video',0,{media_id:videoId||video.media_id||'',caption:CAMPAIGN_VIDEO_CAPTION}),
   step('wait_reply',1),
