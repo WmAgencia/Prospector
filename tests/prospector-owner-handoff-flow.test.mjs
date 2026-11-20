@@ -106,7 +106,7 @@ test('positive reply after audio transfers silently to owner and queues one noti
  const notice=db.one("SELECT * FROM owner_notices WHERE kind='GROQ_HOT_LEAD' AND lead_id=?",item.lead.id);
  assert.ok(notice);
  assert.match(notice.message,/Oficina Fictícia/);
- assert.match(notice.message,/https:\/\/wa.me\//);
+ assert.match(notice.message,/https:\/\/wa.me\//);\n assert.match(notice.message,/Mensagem do cliente: Gostei, podemos conversar por chamada\?/);
  const recipients=[];
  const delivered=await flushInterestAlerts({status:async()=>({connected:true,sessionId:'consecom-principal'}),
   groupInfo:async()=>({subject:'Meu Prospector',jid:'12036302123456789@g.us'}),
