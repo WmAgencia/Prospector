@@ -4,9 +4,13 @@ import {salesEnding} from './sales-policy.mjs';
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const negative=s=>Boolean(salesEnding(s))||/\b(?:nao|nunca|jamais)\s+(?:quero|gostei|tenho|podem|pode|manda|envie|envia|preciso|estou|estamos|vou)\b/.test(s);
 export function acceptsProposalAudio(text=''){
- const s=norm(text);
- if(!s||s.length>280||negative(s))return false;
- if(/^(?:sim|claro|pode|pode sim|com certeza|beleza|blz|ok|okay|ta bom|tudo bem|manda|envia|envie|pode mandar|pode enviar|pode falar|pode explicar|fala|manda ai|envia ai|pode sim mandar)[.!? ]*$/.test(s))return true;
+ const original=norm(text);
+ if(!original||original.length>280||negative(original))return false;
+ // A polite greeting before an explicit yes must not hide authorization.
+ const s=original.replace(/^(?:oi|ola|bom dia|boa tarde|boa noite)[,! .-]+/,'');
+ if(/^(?:sim|claro|pode|pode sim|com certeza|beleza|blz|ok|okay|ta bom|tudo bem|manda|envia|envie|pode mandar|pode enviar|pode falar|pode explicar|fala|manda ai|envia ai|pode sim mandar|pode ser|claro que pode|manda sim|envia sim)[.!? ]*$/.test(s))return true;
+ if(/^(?:sim[,!. ]*)?(?:pode(?: sim)?(?: me)? (?:mandar|enviar)|manda|envia|envie)(?: (?:o |um |a |essa )?(?:audio|proposta|oferta|detalhes))?(?:[,!. ]+(?:sim|por favor|pra mim|quando puder))*[.!? ]*$/.test(s))return true;
+ if(/^(?:sim[,!. ]*)?(?:pode sim[,!. ]*)?(?:manda|envia|envie)(?: (?:o |um |a |essa )?(?:audio|proposta|oferta|detalhes))?(?:[,!. ]+(?:sim|por favor|pra mim))*[.!? ]*$/.test(s))return true;
  return /^(?:sim,? |claro,? |beleza,? |pode,? )?(?:pode |poderia |consegue )?(?:me )?(?:mandar|manda|enviar|envia|mostrar|mostra|apresentar|apresenta|explicar|explica|falar|fala|contar|conta)(?: (?:um |o |essa |a |sua )?(?:audio|proposta|ideia|oferta|detalhes|mais|pra mim|por favor|ai))?[.!? ]*$/.test(s)||
   /\b(?:quero ouvir|quero saber|gostaria de ouvir|pode mandar (?:o |um )?audio|manda (?:o |um )?audio|pode enviar a proposta)\b/.test(s);
 }
