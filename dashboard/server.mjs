@@ -1129,7 +1129,28 @@ setTimeout(()=>{
 setTimeout(async()=>{
  try{
   const lead=one("SELECT id,phone,stage,business FROM leads WHERE phone=? LIMIT 1",'5519997737658');
-  if(!lead){console.info('[villa-media-diagnostic]',JSON.stringify({state:'LEAD_NOT_FOUND'}));return;}
+  if(!lead){
+   const matches=all("SELECT id,phone,stage,business FROM leads WHERE substr(phone,-4)=? OR lower(business) LIKE ? ORDER BY last_activity_at DESC LIMIT 12",'7658','%incant%');
+   const withJid=all("SELECT t.jid,l.phone,l.stage,l.business FROM threads t JOIN leads l ON l.id=t.lead_id WHERE t.jid LIKE ? ORDER BY t.last_message_at DESC LIMIT 6",'%7658%');
+   const sessionList=await waSessionList();
+   const {isManagedSession}=await import('./waakg-session-registry.mjs');
+   const {acceptsProposalAudio:consent}=await import('./prospector-sales-signals.mjs');
+   const remote=[];
+   for(const session of sessionList.items.filter(x=>x.connected&&isManagedSession(x.session_id))){
+    try{
+     const chat=await waRequest('/api/chat/'+encodeURIComponent(session.session_id)+'/'+encodeURIComponent('5519997737658@s.whatsapp.net'));
+     const a=chat?.data;
+     remote.push({senderSuffix:session.numberSuffix,available:Array.isArray(a),
+      messages:Array.isArray(a)?a.length:0,
+      introFromUs:Array.isArray(a)?a.filter(x=>x.fromMe===true&&String(x.content||'').includes('Posso te mandar um áudio')).length:0,
+      acceptedReply:Array.isArray(a)?a.filter(x=>x.fromMe!==true&&consent(x.content)).length:0,
+      mediaFromUs:Array.isArray(a)?a.filter(x=>x.fromMe===true&&/audio|ptt|video|voice/i.test(String(x.type||''))).length:0
+     });
+    }catch(error){remote.push({senderSuffix:session.numberSuffix,state:'ERROR',reason:String(error?.message||error).slice(0,70)});}
+   }
+   console.info('[villa-media-diagnostic]',JSON.stringify({state:'LEAD_NOT_FOUND',similar:matches.map(x=>({suffix:String(x.phone||'').slice(-4),ddd:String(x.phone||'').slice(2,4),stage:x.stage,villaNamed:/villa|incant/i.test(x.business||'')})),threads:withJid.map(x=>({suffix:String(x.phone||'').slice(-4),stage:x.stage})),remote}));
+   return;
+  }
   const p=one('SELECT * FROM prospecting_introductions WHERE lead_id=?',lead.id);
   const t=one('SELECT id,manual_takeover FROM threads WHERE lead_id=?',lead.id);
   const recent=t?all("SELECT direction,type,status,at,provider_id,body FROM messages WHERE thread_id=? ORDER BY rowid DESC LIMIT 12",t.id):[];
