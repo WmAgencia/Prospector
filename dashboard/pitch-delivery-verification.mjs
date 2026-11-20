@@ -52,7 +52,7 @@ export function beginPitchDelivery({leadId,greetingId,kind,sessionId,jid}={}){
 }
 export function acknowledgePitchDelivery({leadId,greetingId,kind,providerId}={}){
  const id=validId(providerId)?String(providerId):null;
- run("UPDATE pitch_delivery_receipts SET provider_id=COALESCE(provider_id,?),status=CASE WHEN status IN ('READ','DELIVERED') THEN status ELSE 'ACCEPTED' END,error=CASE WHEN ? IS NULL THEN 'Gateway accepted without message ID' ELSE NULL END WHERE lead_id=? AND greeting_id=? AND kind=? AND status NOT IN ('CANCELLED')",
+ run("UPDATE pitch_delivery_receipts SET provider_id=COALESCE(provider_id,?),status=CASE WHEN status IN ('READ','DELIVERED','SENT') THEN status ELSE 'ACCEPTED' END,error=CASE WHEN ? IS NULL THEN 'Gateway accepted without message ID' ELSE NULL END WHERE lead_id=? AND greeting_id=? AND kind=? AND status NOT IN ('CANCELLED')",
   id,id,leadId,greetingId,kind);
  return {messageIdKnown:!!id};
 }
@@ -95,7 +95,7 @@ export function receivePitchDeliveryStatus(payload={}){
  return updateStatus(receipt,status,providerId);
 }
 const remoteId=m=>String(m.keyId||m.key?.id||'');
-const chatStatus=m=>['SENT','DELIVERED','READ','FAILED'].includes(cleanStatus(m.status))?cleanStatus(m.status):'SENT';
+const chatStatus=m=>['SENT','DELIVERED','READ','FAILED'].includes(cleanStatus(m.status))?cleanStatus(m.status):null;
 export function matchPitchHistory(record,messages=[]){
  const pool=messages.filter(m=>m.fromMe===true&&expectedType(m.type,record.kind));
  if(record.provider_id){
@@ -151,7 +151,7 @@ export async function reconcilePitchDeliveries({fetchChat=waRequest,limit=4}={})
     const chat=await fetchChat('/api/chat/'+encodeURIComponent(record.session_id)+'/'+encodeURIComponent(record.jid));
     if(!Array.isArray(chat?.data))throw Error('CHAT_UNAVAILABLE');
     const matched=matchPitchHistory(record,chat.data);verdict=matched.state;
-    if(matched.state==='EXACT')updateStatus(record,chatStatus(matched.message),record.provider_id);
+    if(matched.state==='EXACT'&&chatStatus(matched.message))updateStatus(record,chatStatus(matched.message),record.provider_id);
     if(matched.state==='POSSIBLE')run("UPDATE pitch_delivery_receipts SET error='Possible match without gateway message ID; manual review' WHERE lead_id=? AND greeting_id=? AND kind=?",
      record.lead_id,record.greeting_id,record.kind);
    }catch(error){verdict='UNAVAILABLE';}
