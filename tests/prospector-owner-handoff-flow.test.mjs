@@ -37,7 +37,7 @@ async function introText({lead,jid},time=Date.now()-41000){
  return result;
 }
 test('short positive replies authorize original audio but refusals do not',()=>{
- for(const phrase of ['sim','Claro','pode','Pode mandar','beleza','ok','Pode me mandar o áudio','Quero ouvir'])
+ for(const phrase of ['sim','Claro','pode','Pode mandar','beleza','ok','Pode me mandar o áudio','Quero ouvir','Oi, pode mandar','Pode mandar sim','Pode sim, manda o áudio','Bom dia, pode enviar','Pode ser','Envia sim'])
   assert.equal(acceptsProposalAudio(phrase),true,phrase);
  for(const phrase of ['não quero','não pode','sem interesse','agora não','Não quero áudio','oi tudo bem'])
   assert.equal(acceptsProposalAudio(phrase),false,phrase);
