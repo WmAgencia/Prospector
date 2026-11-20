@@ -1124,149 +1124,33 @@ setTimeout(()=>{
   console.info('[bat-refusal-reconcile]',JSON.stringify({state:'NO_INTEREST',messageSent:false}));
  }catch(error){console.warn('[bat-refusal-reconcile]',String(error?.message||error).slice(0,120));}
 },12500).unref();
-// Read-only, privacy-minimized diagnosis requested for the single Villa Incantto
-// consent case; never sends a message or changes an existing CRM record.
+// Temporary read-only confirmation of the owner's recovered consent case.
+// The worker already recorded one audio and one video attempt; never retry
+// based only on incomplete or delayed WhatsApp receipts.
 setTimeout(async()=>{
  try{
-  const lead=one("SELECT id,phone,stage,business FROM leads WHERE phone=? LIMIT 1",'5519997737658');
-  if(!lead){
-   const matches=all("SELECT id,phone,stage,business FROM leads WHERE substr(phone,-4)=? OR lower(business) LIKE ? ORDER BY last_activity_at DESC LIMIT 12",'7658','%incant%');
-   const withJid=all("SELECT t.jid,l.phone,l.stage,l.business FROM threads t JOIN leads l ON l.id=t.lead_id WHERE t.jid LIKE ? ORDER BY t.last_message_at DESC LIMIT 6",'%7658%');
-   const sessionList=await waSessionList();
-   const {isManagedSession}=await import('./waakg-session-registry.mjs');
-   const {acceptsProposalAudio:consent}=await import('./prospector-sales-signals.mjs');
-   const remote=[];
-   for(const session of sessionList.items.filter(x=>x.connected&&isManagedSession(x.session_id))){
-    try{
-     const chat=await waRequest('/api/chat/'+encodeURIComponent(session.session_id)+'/'+encodeURIComponent('5519997737658@s.whatsapp.net'));
-     const a=chat?.data;
-     remote.push({senderSuffix:session.numberSuffix,available:Array.isArray(a),
-      messages:Array.isArray(a)?a.length:0,
-      introFromUs:Array.isArray(a)?a.filter(x=>x.fromMe===true&&String(x.content||'').includes('Posso te mandar um áudio')).length:0,
-      acceptedReply:Array.isArray(a)?a.filter(x=>x.fromMe!==true&&consent(x.content)).length:0,
-      mediaFromUs:Array.isArray(a)?a.filter(x=>x.fromMe===true&&/audio|ptt|video|voice/i.test(String(x.type||''))).length:0
-     });
-    }catch(error){remote.push({senderSuffix:session.numberSuffix,state:'ERROR',reason:String(error?.message||error).slice(0,70)});}
-   }
-   console.info('[villa-media-diagnostic]',JSON.stringify({state:'LEAD_NOT_FOUND',similar:matches.map(x=>({suffix:String(x.phone||'').slice(-4),ddd:String(x.phone||'').slice(2,4),stage:x.stage,villaNamed:/villa|incant/i.test(x.business||'')})),threads:withJid.map(x=>({suffix:String(x.phone||'').slice(-4),stage:x.stage})),remote}));
-   return;
-  }
-  const p=one('SELECT * FROM prospecting_introductions WHERE lead_id=?',lead.id);
-  const t=one('SELECT id,manual_takeover FROM threads WHERE lead_id=?',lead.id);
-  const recent=t?all("SELECT direction,type,status,at,provider_id,body FROM messages WHERE thread_id=? ORDER BY rowid DESC LIMIT 12",t.id):[];
-  const inbox=all("SELECT body,state,received_at,session_id FROM waakg_inbox WHERE lead_id=? ORDER BY received_at DESC LIMIT 5",lead.id);
-  const receipt=all("SELECT kind,status,attempted_at,provider_id FROM pitch_delivery_receipts WHERE lead_id=?",lead.id).map(x=>({kind:x.kind,status:x.status,attempted:x.attempted_at,idRecorded:!!x.provider_id}));
-  const {acceptsProposalAudio:consent}=await import('./prospector-sales-signals.mjs');
-  const {conversationAuthorized:authorized}=await import('./operator-outreach.mjs');
-  const sentAt=Date.parse(p?.sent_at||'');
-  const relevant=recent.filter(m=>m.direction==='out'&&m.at>=p?.sent_at);
-  let remote={state:'NOT_ATTEMPTED'};
+  const lead=one("SELECT id,phone FROM leads WHERE phone=? LIMIT 1",'5519997737658');
+  if(!lead){console.info('[villa-delivery-final]',JSON.stringify({state:'CRM_NOT_FOUND'}));return;}
+  const p=one('SELECT stage,session_id,greeting_id,reason,followup_status FROM prospecting_introductions WHERE lead_id=?',lead.id);
+  const receipts=all("SELECT kind,status,provider_id,attempted_at,delivered_at,read_at FROM pitch_delivery_receipts WHERE lead_id=? ORDER BY kind",lead.id);
+  let wa=[];
   if(p?.session_id){
    try{
-    const history=await waRequest('/api/chat/'+encodeURIComponent(p.session_id)+'/'+encodeURIComponent(lead.phone+'@s.whatsapp.net'));
-    const arr=history?.data;
-    remote=Array.isArray(arr)?{
-     state:'AVAILABLE',messageCount:arr.length,
-     ownerMedia:arr.filter(m=>m.fromMe===true&&/audio|video|ptt|voice/i.test(String(m.type||''))).length,
-     exactIntro:arr.some(m=>m.fromMe===true&&String(m.content||'').trim()===String(recent.find(x=>String(x.provider_id||'').startsWith('intro:'))?.body||'').trim()),
-     afterIntro:arr.filter(m=>m.fromMe===true&&Date.parse(String(m.timestamp||''))>=sentAt).length
-    }:{state:'UNAVAILABLE'};
-   }catch(error){remote={state:'ERROR',reason:String(error.message||error).slice(0,90)};}
+    const result=await waRequest('/api/chat/'+encodeURIComponent(p.session_id)+'/'+encodeURIComponent(lead.phone+'@s.whatsapp.net'));
+    if(Array.isArray(result?.data))wa=receipts.map(rec=>{
+     const match=result.data.find(m=>m.fromMe===true&&rec.provider_id&&
+      String(m.keyId||m.key?.id||'')===rec.provider_id);
+     return {kind:rec.kind,confirmedMessageId:!!match,
+      remoteStatus:match?.status||null,remoteType:match?.type||null};
+    });
+   }catch(error){wa=[{state:'HISTORY_UNAVAILABLE',reason:String(error?.message||error).slice(0,90)}];}
   }
-  console.info('[villa-media-diagnostic]',JSON.stringify({suffix:'7658',
-   stage:lead.stage,crmBusinessMatches:/villa|incant/i.test(lead.business||''),
-   intro:p?{stage:p.stage,reason:p.reason,source:p.session_id,permissionQuestionAt:p.sent_at,video:p.followup_status||null}:null,
-   manualTakeover:!!t?.manual_takeover,authorized:authorized(lead.id),receipts:receipt,
-   inbox:inbox.map(m=>({state:m.state,at:m.received_at,recognized:consent(m.body),afterIntro:!!p?.sent_at&&m.received_at>=p.sent_at,sourceMatches:m.session_id===p?.session_id})),
-   local:recent.map(m=>({direction:m.direction,type:m.type,at:m.at,providerTag:String(m.provider_id||'').split(':')[0],recognized:m.direction==='in'?consent(m.body):false})),
-   remote
-  }));
- }catch(error){console.warn('[villa-media-diagnostic]',JSON.stringify({error:String(error?.message||error).slice(0,130)}));}
-},11000).unref();
-// One-time owner-authorized recovery of a WhatsApp conversation missing from
-// the Prospector CRM. Always verify original outgoing messages and the exact
-// customer's permission in WA-AKG, across both connected agency sessions.
-// The normal media workers + persistent delivery ledger then send at most once.
-setTimeout(async()=>{
- const key='owner_villa_incantto_verified_pitch_recovery_20261120';
- if(getSetting(key,false))return;
- const target='5519997737658';
- const jid=target+'@s.whatsapp.net';
- const stamp=v=>{const n=Number(v);return Number.isFinite(n)&&n>1e8?(n>1e11?n:n*1000):Date.parse(String(v||''))||0;};
- const norm=s=>String(s||'').replace(/\s+/g,' ').trim();
- const fail=reason=>console.info('[villa-consent-recovery]',JSON.stringify({state:'NOT_SENT',reason}));
- try{
-  const {isManagedSession,bindLeadSession}=await import('./waakg-session-registry.mjs');
-  const {documentedOptIn}=await import('./outreach-queue.mjs');
-  const {acceptsProposalAudio}=await import('./prospector-sales-signals.mjs');
-  const {registerGreeting,routeIntroductionReply,WESLEY_INTRO}=await import('./prospecting-introduction.mjs');
-  const {addMessage}=await import('./db.mjs');
-  const {hasExistingClientRelationship,verifiedOwnerPhone}=await import('./whatsapp-roles.mjs');
-  const {ownerProspectionPaused}=await import('./prospection-pause.mjs');
-  if(ownerProspectionPaused()||one('SELECT 1 FROM suppressions WHERE phone=?',target)||verifiedOwnerPhone()===target||
-    hasExistingClientRelationship(target))return fail('OWNER_PAUSED_OR_CONTACT_BLOCKED');
-  if(one('SELECT id FROM leads WHERE phone=?',target))return fail('CRM_RECORD_NOW_EXISTS');
-  const list=await waSessionList();
-  const connected=list.items.filter(s=>s.connected&&isManagedSession(s.session_id));
-  const possible=connected.filter(s=>s.numberSuffix==='7336');
-  if(possible.length!==1)return fail('SENDER_7336_NOT_UNIQUE_OR_OFFLINE');
-  let sourceChat=null;
-  for(const session of connected){
-   const result=await waRequest('/api/chat/'+encodeURIComponent(session.session_id)+'/'+encodeURIComponent(jid));
-   if(!Array.isArray(result?.data))return fail('REMOTE_HISTORY_UNAVAILABLE');
-   if(result.data.some(m=>m.fromMe===true&&/audio|voice|ptt|video/i.test(String(m.type||''))))
-    return fail('MEDIA_ALREADY_EXISTS_ON_CONNECTED_SESSION');
-   if(session.session_id===possible[0].session_id)sourceChat=result.data;
-  }
-  if(!sourceChat?.length)return fail('NO_VERIFIED_CHAT');
-  const ordered=[...sourceChat].sort((a,b)=>stamp(a.timestamp||a.createdAt)-stamp(b.timestamp||b.createdAt));
-  const greeting=ordered.find(m=>m.fromMe===true&&norm(m.content)==='Olá, bom dia! Como vai?');
-  const intro=ordered.find(m=>m.fromMe===true&&norm(m.content)===norm(WESLEY_INTRO));
-  const reply=ordered.at(-1);
-  const exact='Claro! Pode enviar o áudio que eu encaminho aos responsáveis';
-  if(!greeting||!intro||!reply||reply.fromMe===true||norm(reply.content)!==exact||
-    !acceptsProposalAudio(reply.content)||stamp(greeting.timestamp)>=stamp(intro.timestamp)||
-    stamp(intro.timestamp)>=stamp(reply.timestamp)||stamp(reply.timestamp)<Date.now()-48*3600_000)
-   return fail('EXPLICIT_CONSENT_OR_SEQUENCE_NOT_VERIFIED');
-  if(ordered.some(m=>m.fromMe===true&&stamp(m.timestamp)>stamp(intro.timestamp)+1000))
-   return fail('OUTBOUND_ALREADY_FOLLOWED_INTRO');
-  // No asynchronous I/O between this final guard and the atomic CRM record.
-  if(one('SELECT id FROM leads WHERE phone=?',target)||getSetting(key,false))return fail('CHANGED_DURING_PREFLIGHT');
-  const inserted=tx(()=>{
-   const existing=one('SELECT id FROM leads WHERE phone=?',target);
-   if(existing)throw Error('CRM_CREATED_DURING_RECOVERY');
-   const result=addLead({phone:target,business:'Villa Incantto',source:'VERIFIED_OWNER_WHATSAPP_CHAT',contact_permission:true});
-   if(!result.created)throw Error('CRM_IDENTITY_CONFLICT');
-   const lead=result.lead,greetingId=id();
-   stage(lead.id,'CONVERSING','VERIFIED_EXISTING_AGENCY_CONVERSATION');
-   audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:exact,
-    evidenceVerified:true,evidenceType:'CONFIRMED_INBOUND_WAAKG_CHAT',method:'owner_requested_single_pitch_recovery',
-    consentScope:'AUDIO_AND_DEMO_VIDEO_ONLY',consentAt:new Date(stamp(reply.timestamp)).toISOString(),
-    sourceSession:possible[0].session_id});
-   bindLeadSession(lead.id,possible[0].session_id);
-   const thread=getThread(lead.id,jid);
-   const first=addMessage({threadId:thread.id,providerId:'prospect-queue:'+greetingId,
-    direction:'out',body:norm(greeting.content),status:'sent'});
-   if(!first||!registerGreeting({leadId:lead.id,greetingId,sessionId:possible[0].session_id}))
-    throw Error('CANNOT_RESTORE_VERIFIED_GREETING');
-   addMessage({threadId:thread.id,providerId:'intro:'+greetingId,direction:'out',
-    body:WESLEY_INTRO,status:'sent'});
-   addMessage({threadId:thread.id,providerId:'villa-permission:'+greetingId,
-    direction:'in',body:exact,status:'received'});
-   run("UPDATE prospecting_introductions SET stage='SENT',sent_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
-    new Date(stamp(intro.timestamp)).toISOString(),now(),lead.id);
-   if(!documentedOptIn(lead.id))throw Error('CONVERSATION_AUTHORIZATION_NOT_PERSISTED');
-   const routed=routeIntroductionReply({leadId:lead.id,providerId:'villa-permission:'+greetingId,
-    body:exact,receivedAt:new Date(Date.now()-32_000)});
-   if(routed.state!=='VOICE_WAITING')throw Error('VOICE_NOT_QUEUED');
-   setSetting(key,true);
-   audit('OWNER_VILLA_INCANTTO_MEDIA_RESCUE_QUEUED',lead.id,{sourceSuffix:'7336',
-    remoteMessagesVerified:ordered.length,previewDelaySeconds:10,oneTime:true});
-   return {state:'VOICE_QUEUED',suffix:'7658',senderSuffix:'7336',videoAfterSeconds:10};
-  });
-  console.info('[villa-consent-recovery]',JSON.stringify(inserted));
- }catch(error){console.warn('[villa-consent-recovery]',JSON.stringify({state:'NOT_SENT',reason:String(error?.message||error).slice(0,125)}));}
-},17000).unref();
+  console.info('[villa-delivery-final]',JSON.stringify({suffix:'7658',intro:p?{
+   stage:p.stage,reason:p.reason,video:p.followup_status}:null,
+   receipts:receipts.map(x=>({kind:x.kind,status:x.status,messageId:!!x.provider_id,
+    handsetDelivered:!!x.delivered_at,handsetRead:!!x.read_at})),remote:wa}));
+ }catch(error){console.warn('[villa-delivery-final]',JSON.stringify({state:'ERROR',reason:String(error?.message||error).slice(0,110)}));}
+},12000).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
 if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
