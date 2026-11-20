@@ -129,7 +129,7 @@ export async function waConnect(requestedSession){
  if(hookSecret.length>=40){
   const hooks=await waRequest("/api/webhooks/"+encodeURIComponent(sessionId));
   const existing=(hooks.data||[]).some(x=>x.url===destination&&x.isActive!==false);
-  if(!existing)await waRequest("/api/webhooks/"+encodeURIComponent(sessionId),{method:"POST",data:{name:"Consecom Prospector",url:destination,secret:hookSecret,events:["message.received","message.sent","connection.update"]}});
+  if(!existing)await waRequest("/api/webhooks/"+encodeURIComponent(sessionId),{method:"POST",data:{name:"Consecom Prospector",url:destination,secret:hookSecret,events:["message.received","message.sent","message.status","connection.update"]}});
  }
  return {ok:true,sessionId,connected:state.connected,message:state.connected?"WhatsApp conectado":"Sessão iniciada. Escaneie o QR Code."};
 }
