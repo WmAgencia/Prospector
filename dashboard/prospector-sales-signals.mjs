@@ -7,7 +7,7 @@ export function acceptsProposalAudio(text=''){
  const original=norm(text);
  if(!original||original.length>280||negative(original))return false;
  // A polite greeting before an explicit yes must not hide authorization.
- const s=original.replace(/^(?:oi|ola|bom dia|boa tarde|boa noite)[,! .-]+/,'');
+ const s=original.replace(/^(?:oi|ola|bom dia|boa tarde|boa noite)[,! .-]+(?=(?:sim|pode|manda|envia|envie|claro)\b)/,'');
  if(/^(?:sim|claro|pode|pode sim|com certeza|beleza|blz|ok|okay|ta bom|tudo bem|manda|envia|envie|pode mandar|pode enviar|pode falar|pode explicar|fala|manda ai|envia ai|pode sim mandar|pode ser|claro que pode|manda sim|envia sim)[.!? ]*$/.test(s))return true;
  if(/^(?:sim[,!. ]*)?(?:pode(?: sim)?(?: me)? (?:mandar|enviar)|manda|envia|envie)(?: (?:o |um |a |essa )?(?:audio|proposta|oferta|detalhes))?(?:[,!. ]+(?:sim|por favor|pra mim|quando puder))*[.!? ]*$/.test(s))return true;
  if(/^(?:sim[,!. ]*)?(?:pode sim[,!. ]*)?(?:manda|envia|envie)(?: (?:o |um |a |essa )?(?:audio|proposta|oferta|detalhes))?(?:[,!. ]+(?:sim|por favor|pra mim))*[.!? ]*$/.test(s))return true;
