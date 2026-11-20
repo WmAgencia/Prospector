@@ -1,0 +1,195 @@
+// Persistent, at-most-once media ledger for Consecom's approved R$ 550 sequence.
+// A successful WA-AKG HTTP response is not proof of handset delivery.
+// Do not resend after timeouts, restarts, missing history or ambiguous receipts.
+import {db,one,all,run,now,audit} from './db.mjs';
+import {waRequest} from './waakg-control.mjs';
+import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
+import {queueNotice} from './notifications.mjs';
+import {acceptsProposalAudio} from './prospector-sales-signals.mjs';
+import {wantsPortfolioPitchAudio} from './portfolio-pitch-audio.mjs';
+import {CAMPAIGN_VIDEO_CAPTION} from './consecom-flow.mjs';
+
+db.exec(`CREATE TABLE IF NOT EXISTS pitch_delivery_receipts(
+ lead_id TEXT NOT NULL REFERENCES leads(id),
+ greeting_id TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK(kind IN ('AUDIO','VIDEO')),
+ session_id TEXT NOT NULL,
+ jid TEXT NOT NULL,
+ attempted_at TEXT NOT NULL,
+ provider_id TEXT,
+ status TEXT NOT NULL,
+ last_checked_at TEXT,
+ confirmed_at TEXT,
+ delivered_at TEXT,
+ read_at TEXT,
+ alerted_at TEXT,
+ error TEXT,
+ PRIMARY KEY(lead_id,greeting_id,kind))`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_pitch_receipt_check ON pitch_delivery_receipts(status,last_checked_at)');
+// A crash during network I/O is ambiguous. Preserve the single-attempt rule.
+run("UPDATE pitch_delivery_receipts SET status='UNKNOWN',error='Process interrupted before send acknowledgement' WHERE status='SENDING'");
+const validId=s=>/^[A-Za-z0-9_-]{5,150}$/.test(String(s||''));
+const cleanStatus=s=>String(s||'').toUpperCase();
+const ageMs=t=>{const n=Number(t);return Number.isFinite(n)&&n>1e11?n:Number.isFinite(n)&&n>1e8?n*1000:(Date.parse(t)||0);};
+const delivered=new Set(['DELIVERED','READ']);
+const terminal=new Set(['READ','CANCELLED']);
+const expectedType=(type,kind)=>kind==='AUDIO'?['AUDIO','VOICE','PTT'].includes(cleanStatus(type)):cleanStatus(type)==='VIDEO';
+
+export function beginPitchDelivery({leadId,greetingId,kind,sessionId,jid}={}){
+ if(!['AUDIO','VIDEO'].includes(kind)||!isManagedSession(sessionId)||leadSession(leadId)!==sessionId||
+   !/^\d{10,15}@s\.whatsapp\.net$/.test(jid||'')||
+   one('SELECT phone FROM leads WHERE id=?',leadId)?.phone!==jid.split('@')[0])
+  throw Error('PITCH_RECEIPT_INVALID_ROUTE');
+ const introduction=one('SELECT greeting_id,stage,followup_status FROM prospecting_introductions WHERE lead_id=?',leadId);
+ if(!introduction||introduction.greeting_id!==greetingId||
+   (kind==='AUDIO'&&introduction.stage!=='SENDING')||
+   (kind==='VIDEO'&&introduction.followup_status!=='SENDING'))
+  throw Error('PITCH_RECEIPT_NOT_RESERVED');
+ const inserted=run("INSERT OR IGNORE INTO pitch_delivery_receipts(lead_id,greeting_id,kind,session_id,jid,attempted_at,status) VALUES(?,?,?,?,?,?,'SENDING')",
+  leadId,greetingId,kind,sessionId,jid,now()).changes;
+ if(inserted!==1)throw Error('PITCH_DUPLICATE_BLOCKED');
+ return true;
+}
+export function acknowledgePitchDelivery({leadId,greetingId,kind,providerId}={}){
+ const id=validId(providerId)?String(providerId):null;
+ run("UPDATE pitch_delivery_receipts SET provider_id=COALESCE(provider_id,?),status=CASE WHEN status IN ('READ','DELIVERED') THEN status ELSE 'ACCEPTED' END,error=CASE WHEN ? IS NULL THEN 'Gateway accepted without message ID' ELSE NULL END WHERE lead_id=? AND greeting_id=? AND kind=? AND status NOT IN ('CANCELLED')",
+  id,id,leadId,greetingId,kind);
+ return {messageIdKnown:!!id};
+}
+export function unknownPitchDelivery({leadId,greetingId,kind,reason='UNKNOWN_TRANSPORT'}={}){
+ run("UPDATE pitch_delivery_receipts SET status=CASE WHEN status IN ('READ','DELIVERED','SENT') THEN status ELSE 'UNKNOWN' END,error=? WHERE lead_id=? AND greeting_id=? AND kind=?",
+  String(reason||'UNKNOWN').slice(0,110),leadId,greetingId,kind);
+}
+export function cancelPitchDelivery({leadId,greetingId,kind,reason='OWNER_TAKEOVER'}={}){
+ run("UPDATE pitch_delivery_receipts SET status='CANCELLED',error=? WHERE lead_id=? AND greeting_id=? AND kind=? AND status='SENDING'",
+  String(reason||'CANCELLED').slice(0,110),leadId,greetingId,kind);
+}
+export function pitchDeliveryReceipt(leadId,greetingId,kind){
+ return one('SELECT * FROM pitch_delivery_receipts WHERE lead_id=? AND greeting_id=? AND kind=?',leadId,greetingId,kind)||null;
+}
+function updateStatus(record,status,providerId=null){
+ const next=cleanStatus(status);
+ if(!['SENT','DELIVERED','READ','FAILED'].includes(next))return false;
+ if(record.status==='READ'||(record.status==='DELIVERED'&&next!=='READ')||record.status==='CANCELLED')return false;
+ if(record.provider_id&&providerId&&record.provider_id!==providerId)return false;
+ const stamp=now();
+ run(`UPDATE pitch_delivery_receipts SET status=?,provider_id=COALESCE(provider_id,?),
+  confirmed_at=COALESCE(confirmed_at,?),delivered_at=CASE WHEN ? IN ('DELIVERED','READ') THEN COALESCE(delivered_at,?) ELSE delivered_at END,
+  read_at=CASE WHEN ?='READ' THEN COALESCE(read_at,?) ELSE read_at END,error=NULL
+  WHERE lead_id=? AND greeting_id=? AND kind=? AND status NOT IN ('CANCELLED','READ')`,
+  next,providerId,stamp,next,stamp,next,stamp,record.lead_id,record.greeting_id,record.kind);
+ if(next!==record.status)audit('PITCH_DELIVERY_STATUS',record.lead_id,{kind:record.kind,status:next,sender:record.session_id,deviceDelivered:delivered.has(next)});
+ return true;
+}
+// Gateway webhook updates refer to the exact Baileys message ID, never just the
+// recipient number. An unrelated/manual message cannot satisfy an operation.
+export function receivePitchDeliveryStatus(payload={}){
+ const event=String(payload.event||''),data=payload.data||{};
+ if(!['message.sent','message.status'].includes(event))return false;
+ const sessionId=String(payload.sessionId||''),providerId=String(data.keyId||data.key?.id||'');
+ if(!isManagedSession(sessionId)||!validId(providerId))return false;
+ const receipt=one('SELECT * FROM pitch_delivery_receipts WHERE session_id=? AND provider_id=?',sessionId,providerId);
+ if(!receipt)return false;
+ if(event==='message.status'&&data.remoteJid&&String(data.remoteJid)!==receipt.jid)return false;
+ const status=event==='message.sent'?'SENT':cleanStatus(data.status);
+ return updateStatus(receipt,status,providerId);
+}
+const remoteId=m=>String(m.keyId||m.key?.id||'');
+const chatStatus=m=>['SENT','DELIVERED','READ','FAILED'].includes(cleanStatus(m.status))?cleanStatus(m.status):'SENT';
+export function matchPitchHistory(record,messages=[]){
+ const pool=messages.filter(m=>m.fromMe===true&&expectedType(m.type,record.kind));
+ if(record.provider_id){
+  const exact=pool.find(m=>remoteId(m)===record.provider_id);
+  return exact?{state:'EXACT',message:exact}:{state:'NOT_FOUND'};
+ }
+ // Without an ID we cannot prove which media the gateway accepted. Report a
+ // potential match for operator review; NEVER treat it as a safe retry signal.
+ const start=ageMs(record.attempted_at),end=start+5*60_000;
+ const candidates=pool.filter(m=>{
+  const at=ageMs(m.timestamp||m.createdAt);
+  if(!at||at<start-30_000||at>end)return false;
+  return record.kind!=='VIDEO'||String(m.content||m.caption||'').trim()===CAMPAIGN_VIDEO_CAPTION.trim();
+ });
+ if(candidates.length===1)return {state:'POSSIBLE',message:candidates[0]};
+ return {state:candidates.length>1?'AMBIGUOUS':'NOT_FOUND'};
+}
+function maybeAlert(record,reason){
+ const elapsed=Date.now()-ageMs(record.attempted_at);
+ if(record.alerted_at||terminal.has(record.status))return false;
+ // Device-delivery receipts may be delayed while a phone is offline.
+ const limit=reason==='NOT_DELIVERED_TO_PHONE'?15*60_000:3*60_000;
+ if(elapsed<limit)return false;
+ const lead=one('SELECT phone,business,stage FROM leads WHERE id=?',record.lead_id);
+ if(!lead)return false;
+ const message=[
+  '*Prospector — conferir entrega '+(record.kind==='AUDIO'?'do áudio':'do vídeo')+'*',
+  'Empresa: '+String(lead.business||'').slice(0,85),
+  'Destino: '+lead.phone,
+  'WhatsApp de origem: '+record.session_id,
+  'Situação: '+(reason==='NOT_DELIVERED_TO_PHONE'?'WhatsApp não confirmou entrega no aparelho':reason==='POSSIBLE'?'Mídia encontrada, mas sem ID comprovado':'Envio sem confirmação conclusiva'),
+  'Conversa: https://wa.me/'+lead.phone,
+  'Não reenviar automaticamente: conferir ID, histórico e status de entrega para evitar duplicação.'
+ ].join('\n');
+ const queued=queueNotice('pitch-receipt:'+record.greeting_id+':'+record.kind,'PITCH_DELIVERY_ISSUE',message,record.lead_id);
+ if(queued){run('UPDATE pitch_delivery_receipts SET alerted_at=? WHERE lead_id=? AND greeting_id=? AND kind=?',now(),record.lead_id,record.greeting_id,record.kind);return true;}
+ return false;
+}
+let active=false;
+export async function reconcilePitchDeliveries({fetchChat=waRequest,limit=4}={}){
+ if(active)return {state:'BUSY'};
+ active=true;
+ try{
+  const checkBefore=new Date(Date.now()-45_000).toISOString();
+  const rows=all("SELECT * FROM pitch_delivery_receipts WHERE status NOT IN ('READ','CANCELLED') AND (last_checked_at IS NULL OR last_checked_at<?) AND attempted_at>=? ORDER BY COALESCE(last_checked_at,attempted_at) LIMIT ?",
+   checkBefore,new Date(Date.now()-7*86400000).toISOString(),Math.max(1,Math.min(8,Number(limit)||4)));
+  let checked=0,alerts=0;
+  for(const record of rows){
+   run('UPDATE pitch_delivery_receipts SET last_checked_at=? WHERE lead_id=? AND greeting_id=? AND kind=?',now(),record.lead_id,record.greeting_id,record.kind);
+   let verdict='UNAVAILABLE';
+   try{
+    if(!isManagedSession(record.session_id)||leadSession(record.lead_id)!==record.session_id)throw Error('SESSION_MISMATCH');
+    const chat=await fetchChat('/api/chat/'+encodeURIComponent(record.session_id)+'/'+encodeURIComponent(record.jid));
+    if(!Array.isArray(chat?.data))throw Error('CHAT_UNAVAILABLE');
+    const matched=matchPitchHistory(record,chat.data);verdict=matched.state;
+    if(matched.state==='EXACT')updateStatus(record,chatStatus(matched.message),record.provider_id);
+    if(matched.state==='POSSIBLE')run("UPDATE pitch_delivery_receipts SET error='Possible match without gateway message ID; manual review' WHERE lead_id=? AND greeting_id=? AND kind=?",
+     record.lead_id,record.greeting_id,record.kind);
+   }catch(error){verdict='UNAVAILABLE';}
+   const latest=pitchDeliveryReceipt(record.lead_id,record.greeting_id,record.kind)||record;
+   const warn=latest.status==='FAILED'?'FAILED':verdict==='POSSIBLE'?'POSSIBLE':
+    delivered.has(latest.status)?'':verdict==='EXACT'?'NOT_DELIVERED_TO_PHONE':'NOT_CONFIRMED';
+   if(warn&&maybeAlert(latest,warn))alerts++;
+   checked++;
+  }
+  return {state:'OK',checked,alerts};
+ }finally{active=false;}
+}
+// Accepted answers can be stranded before the voice worker even reserves a send.
+// Surface them rather than silently skipping or sending blind duplicates.
+export function auditStuckPitchSteps(){
+ const cutoff=new Date(Date.now()-3*60_000).toISOString();
+ let flagged=0;
+ const waiting=all("SELECT p.lead_id,p.greeting_id,p.session_id,p.stage,p.due_at,l.phone,l.business FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id JOIN threads t ON t.lead_id=p.lead_id WHERE p.stage='VOICE_WAITING' AND p.due_at<? AND t.manual_takeover=0 AND l.stage NOT IN ('NO_INTEREST','INTERESTED','CLOSED_WON') ORDER BY p.due_at LIMIT 20",cutoff);
+ for(const p of waiting){
+  const msg='*Prospector — áudio autorizado, mas não enviado*\nEmpresa: '+p.business+'\nDestino: '+p.phone+'\nConversa: https://wa.me/'+p.phone+'\nEnvio ainda pendente. Conferir o WhatsApp antes de qualquer recuperação.';
+  if(queueNotice('pitch-voice-wait:'+p.greeting_id,'PITCH_DELIVERY_ISSUE',msg,p.lead_id))flagged++;
+ }
+ const sent=all("SELECT p.lead_id,p.greeting_id,p.session_id,p.sent_at,l.phone,l.business FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id JOIN threads t ON t.lead_id=p.lead_id WHERE p.stage='SENT' AND p.sent_at<? AND t.manual_takeover=0 AND l.stage NOT IN ('NO_INTEREST','INTERESTED','CLOSED_WON') ORDER BY p.sent_at DESC LIMIT 80",
+ cutoff);
+ for(const p of sent){
+  const replies=all("SELECT body FROM waakg_inbox WHERE lead_id=? AND session_id=? AND received_at>=? AND state='REVIEW' ORDER BY received_at DESC LIMIT 8",p.lead_id,p.session_id,p.sent_at);
+  if(!replies.some(r=>acceptsProposalAudio(r.body)||wantsPortfolioPitchAudio(r.body)))continue;
+  const msg='*Prospector — cliente autorizou áudio, porém o fluxo não avançou*\nEmpresa: '+p.business+'\nDestino: '+p.phone+'\nConversa: https://wa.me/'+p.phone+'\nConfirmar histórico antes de reprogramar o áudio.';
+  if(queueNotice('pitch-consent-stuck:'+p.greeting_id,'PITCH_DELIVERY_ISSUE',msg,p.lead_id))flagged++;
+ }
+ const videos=all("SELECT p.lead_id,p.greeting_id,p.session_id,p.followup_status,p.reason,l.phone,l.business FROM prospecting_introductions p JOIN leads l ON l.id=p.lead_id JOIN threads t ON t.lead_id=p.lead_id WHERE p.stage='VOICE_SENT' AND p.sent_at<? AND p.reason IN ('PITCH_AUDIO_550','FOLLOWUP_WINDOW_EXPIRED') AND (p.followup_status IN ('CANCELLED','UNKNOWN') OR (p.followup_status='WAITING' AND p.followup_due_at<?)) AND t.manual_takeover=0 AND l.stage NOT IN ('NO_INTEREST','INTERESTED','CLOSED_WON') ORDER BY p.sent_at DESC LIMIT 60",cutoff,cutoff);
+ for(const p of videos){
+  const msg='*Prospector — verificar vídeo após áudio*\nEmpresa: '+p.business+'\nDestino: '+p.phone+'\nEstado: '+p.followup_status+'\nConversa: https://wa.me/'+p.phone+'\nNão enviar segunda cópia sem verificar a primeira.';
+  if(queueNotice('pitch-missing-video:'+p.greeting_id,'PITCH_DELIVERY_ISSUE',msg,p.lead_id))flagged++;
+ }
+ return {flagged,waiting:waiting.length,consentCandidates:sent.length,videoCandidates:videos.length};
+}
+export function pitchDeliverySummary(){
+ const rows=all('SELECT kind,status,COUNT(*) AS total FROM pitch_delivery_receipts GROUP BY kind,status');
+ return {statuses:rows,unconfirmed:rows.filter(r=>!['READ','DELIVERED','CANCELLED'].includes(r.status)).reduce((s,r)=>s+r.total,0),meaning:'SENT is not a handset-delivery guarantee'};
+}
