@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 
 export const CAMPAIGN_NAME='Consecom | Site profissional R$ 550 | Áudio + vídeo';
 export const CAMPAIGN_INTRO='{{greeting}} Eu sou da agência Consecom. Demos uma olhada no seu perfil e gostaríamos de te apresentar uma proposta. Posso te enviar um áudio com os detalhes?';
-export const CAMPAIGN_VIDEO_CAPTION='Esse é um exemplo da qualidade dos sites que a gente desenvolve.\n\nConheça nossa agência e nossa vitrine de trabalhos: https://consecom.com.br\n\nO que achou? Gostaria de ter um site assim também?';
+export const CAMPAIGN_VIDEO_CAPTION='Esse é um exemplo da qualidade dos projetos que a gente desenvolve.\n\nE aqui está o site da nossa agência\nhttps://consecom.com.br';
 export const CAMPAIGN_FAREWELL='Sem problemas, muito obrigado pelo retorno, ficamos à disposição.';
 export const CAMPAIGN_AUDIO_DESCRIPTION='Áudio original gravado pelo Wesley, da Consecom. Explica a vitrine do site da agência, proposta de site profissional com Master SEO, um ano de domínio gratuito, sem mensalidade, por R$ 550 mediante autorização para apresentar o site na vitrine; prevê entrega em cinco dias e convida a conhecer o vídeo e o site da Consecom.';
 
