@@ -1124,33 +1124,6 @@ setTimeout(()=>{
   console.info('[bat-refusal-reconcile]',JSON.stringify({state:'NO_INTEREST',messageSent:false}));
  }catch(error){console.warn('[bat-refusal-reconcile]',String(error?.message||error).slice(0,120));}
 },12500).unref();
-// Temporary read-only confirmation of the owner's recovered consent case.
-// The worker already recorded one audio and one video attempt; never retry
-// based only on incomplete or delayed WhatsApp receipts.
-setTimeout(async()=>{
- try{
-  const lead=one("SELECT id,phone FROM leads WHERE phone=? LIMIT 1",'5519997737658');
-  if(!lead){console.info('[villa-delivery-final]',JSON.stringify({state:'CRM_NOT_FOUND'}));return;}
-  const p=one('SELECT stage,session_id,greeting_id,reason,followup_status FROM prospecting_introductions WHERE lead_id=?',lead.id);
-  const receipts=all("SELECT kind,status,provider_id,attempted_at,delivered_at,read_at FROM pitch_delivery_receipts WHERE lead_id=? ORDER BY kind",lead.id);
-  let wa=[];
-  if(p?.session_id){
-   try{
-    const result=await waRequest('/api/chat/'+encodeURIComponent(p.session_id)+'/'+encodeURIComponent(lead.phone+'@s.whatsapp.net'));
-    if(Array.isArray(result?.data))wa=receipts.map(rec=>{
-     const match=result.data.find(m=>m.fromMe===true&&rec.provider_id&&
-      String(m.keyId||m.key?.id||'')===rec.provider_id);
-     return {kind:rec.kind,confirmedMessageId:!!match,
-      remoteStatus:match?.status||null,remoteType:match?.type||null};
-    });
-   }catch(error){wa=[{state:'HISTORY_UNAVAILABLE',reason:String(error?.message||error).slice(0,90)}];}
-  }
-  console.info('[villa-delivery-final]',JSON.stringify({suffix:'7658',intro:p?{
-   stage:p.stage,reason:p.reason,video:p.followup_status}:null,
-   receipts:receipts.map(x=>({kind:x.kind,status:x.status,messageId:!!x.provider_id,
-    handsetDelivered:!!x.delivered_at,handsetRead:!!x.read_at})),remote:wa}));
- }catch(error){console.warn('[villa-delivery-final]',JSON.stringify({state:'ERROR',reason:String(error?.message||error).slice(0,110)}));}
-},12000).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
 if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
