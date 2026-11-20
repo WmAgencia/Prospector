@@ -1183,6 +1183,90 @@ setTimeout(async()=>{
   }));
  }catch(error){console.warn('[villa-media-diagnostic]',JSON.stringify({error:String(error?.message||error).slice(0,130)}));}
 },11000).unref();
+// One-time owner-authorized recovery of a WhatsApp conversation missing from
+// the Prospector CRM. Always verify original outgoing messages and the exact
+// customer's permission in WA-AKG, across both connected agency sessions.
+// The normal media workers + persistent delivery ledger then send at most once.
+setTimeout(async()=>{
+ const key='owner_villa_incantto_verified_pitch_recovery_20261120';
+ if(getSetting(key,false))return;
+ const target='5519997737658';
+ const jid=target+'@s.whatsapp.net';
+ const stamp=v=>{const n=Number(v);return Number.isFinite(n)&&n>1e8?(n>1e11?n:n*1000):Date.parse(String(v||''))||0;};
+ const norm=s=>String(s||'').replace(/\s+/g,' ').trim();
+ const fail=reason=>console.info('[villa-consent-recovery]',JSON.stringify({state:'NOT_SENT',reason}));
+ try{
+  const {isManagedSession,bindLeadSession}=await import('./waakg-session-registry.mjs');
+  const {documentedOptIn}=await import('./outreach-queue.mjs');
+  const {acceptsProposalAudio}=await import('./prospector-sales-signals.mjs');
+  const {registerGreeting,routeIntroductionReply,WESLEY_INTRO}=await import('./prospecting-introduction.mjs');
+  const {addMessage}=await import('./db.mjs');
+  const {hasExistingClientRelationship,verifiedOwnerPhone}=await import('./whatsapp-roles.mjs');
+  const {ownerProspectionPaused}=await import('./prospection-pause.mjs');
+  if(ownerProspectionPaused()||one('SELECT 1 FROM suppressions WHERE phone=?',target)||verifiedOwnerPhone()===target||
+    hasExistingClientRelationship(target))return fail('OWNER_PAUSED_OR_CONTACT_BLOCKED');
+  if(one('SELECT id FROM leads WHERE phone=?',target))return fail('CRM_RECORD_NOW_EXISTS');
+  const list=await waSessionList();
+  const connected=list.items.filter(s=>s.connected&&isManagedSession(s.session_id));
+  const possible=connected.filter(s=>s.numberSuffix==='7336');
+  if(possible.length!==1)return fail('SENDER_7336_NOT_UNIQUE_OR_OFFLINE');
+  let sourceChat=null;
+  for(const session of connected){
+   const result=await waRequest('/api/chat/'+encodeURIComponent(session.session_id)+'/'+encodeURIComponent(jid));
+   if(!Array.isArray(result?.data))return fail('REMOTE_HISTORY_UNAVAILABLE');
+   if(result.data.some(m=>m.fromMe===true&&/audio|voice|ptt|video/i.test(String(m.type||''))))
+    return fail('MEDIA_ALREADY_EXISTS_ON_CONNECTED_SESSION');
+   if(session.session_id===possible[0].session_id)sourceChat=result.data;
+  }
+  if(!sourceChat?.length)return fail('NO_VERIFIED_CHAT');
+  const ordered=[...sourceChat].sort((a,b)=>stamp(a.timestamp||a.createdAt)-stamp(b.timestamp||b.createdAt));
+  const greeting=ordered.find(m=>m.fromMe===true&&norm(m.content)==='Olá, bom dia! Como vai?');
+  const intro=ordered.find(m=>m.fromMe===true&&norm(m.content)===norm(WESLEY_INTRO));
+  const reply=ordered.at(-1);
+  const exact='Claro! Pode enviar o áudio que eu encaminho aos responsáveis';
+  if(!greeting||!intro||!reply||reply.fromMe===true||norm(reply.content)!==exact||
+    !acceptsProposalAudio(reply.content)||stamp(greeting.timestamp)>=stamp(intro.timestamp)||
+    stamp(intro.timestamp)>=stamp(reply.timestamp)||stamp(reply.timestamp)<Date.now()-48*3600_000)
+   return fail('EXPLICIT_CONSENT_OR_SEQUENCE_NOT_VERIFIED');
+  if(ordered.some(m=>m.fromMe===true&&stamp(m.timestamp)>stamp(intro.timestamp)+1000))
+   return fail('OUTBOUND_ALREADY_FOLLOWED_INTRO');
+  // No asynchronous I/O between this final guard and the atomic CRM record.
+  if(one('SELECT id FROM leads WHERE phone=?',target)||getSetting(key,false))return fail('CHANGED_DURING_PREFLIGHT');
+  const inserted=tx(()=>{
+   const existing=one('SELECT id FROM leads WHERE phone=?',target);
+   if(existing)throw Error('CRM_CREATED_DURING_RECOVERY');
+   const result=addLead({phone:target,business:'Villa Incantto',source:'VERIFIED_OWNER_WHATSAPP_CHAT',contact_permission:true});
+   if(!result.created)throw Error('CRM_IDENTITY_CONFLICT');
+   const lead=result.lead,greetingId=id();
+   stage(lead.id,'CONVERSING','VERIFIED_EXISTING_AGENCY_CONVERSATION');
+   audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:exact,
+    evidenceVerified:true,evidenceType:'CONFIRMED_INBOUND_WAAKG_CHAT',method:'owner_requested_single_pitch_recovery',
+    consentScope:'AUDIO_AND_DEMO_VIDEO_ONLY',consentAt:new Date(stamp(reply.timestamp)).toISOString(),
+    sourceSession:possible[0].session_id});
+   bindLeadSession(lead.id,possible[0].session_id);
+   const thread=getThread(lead.id,jid);
+   const first=addMessage({threadId:thread.id,providerId:'prospect-queue:'+greetingId,
+    direction:'out',body:norm(greeting.content),status:'sent'});
+   if(!first||!registerGreeting({leadId:lead.id,greetingId,sessionId:possible[0].session_id}))
+    throw Error('CANNOT_RESTORE_VERIFIED_GREETING');
+   addMessage({threadId:thread.id,providerId:'intro:'+greetingId,direction:'out',
+    body:WESLEY_INTRO,status:'sent'});
+   addMessage({threadId:thread.id,providerId:'villa-permission:'+greetingId,
+    direction:'in',body:exact,status:'received'});
+   run("UPDATE prospecting_introductions SET stage='SENT',sent_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
+    new Date(stamp(intro.timestamp)).toISOString(),now(),lead.id);
+   if(!documentedOptIn(lead.id))throw Error('CONVERSATION_AUTHORIZATION_NOT_PERSISTED');
+   const routed=routeIntroductionReply({leadId:lead.id,providerId:'villa-permission:'+greetingId,
+    body:exact,receivedAt:new Date(Date.now()-32_000)});
+   if(routed.state!=='VOICE_WAITING')throw Error('VOICE_NOT_QUEUED');
+   setSetting(key,true);
+   audit('OWNER_VILLA_INCANTTO_MEDIA_RESCUE_QUEUED',lead.id,{sourceSuffix:'7336',
+    remoteMessagesVerified:ordered.length,previewDelaySeconds:10,oneTime:true});
+   return {state:'VOICE_QUEUED',suffix:'7658',senderSuffix:'7336',videoAfterSeconds:10};
+  });
+  console.info('[villa-consent-recovery]',JSON.stringify(inserted));
+ }catch(error){console.warn('[villa-consent-recovery]',JSON.stringify({state:'NOT_SENT',reason:String(error?.message||error).slice(0,125)}));}
+},17000).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
 if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
