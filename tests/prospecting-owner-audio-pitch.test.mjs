@@ -55,7 +55,8 @@ test('first reply delivers Wesley permission question; second affirmative delive
  assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
  assert.equal((await tickIntroductions({sendAudio:async()=>{throw Error('DUPLICATE');}})).state,'IDLE');
  const next=routeIntroductionReply({leadId:lead.id,providerId:'inbound-next',body:'Gostei, me conta mais'});
- assert.equal(next.state,'CONVERSING');assert.equal(next.queueAi,true);
+ assert.equal(next.state,'VOICE_SENT');assert.equal(next.queueAi,true);
+ assert.equal(introductionStatus(lead.id).followup_status,'WAITING');
  assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
  const matches=db.all("SELECT provider_id FROM messages WHERE provider_id LIKE 'intro-voice:%' AND direction='out'");
  assert.equal(matches.length,1);
@@ -73,6 +74,13 @@ test('new proposal sends just one native demo video with the approved caption te
  assert.equal(row.reason,'PITCH_AUDIO_550');
  const due=Date.parse(row.followup_due_at);
  assert.ok(due>Date.now());
+ // A natural reply before the 10-second preview must not silently cancel it.
+ db.addMessage({threadId:db.getThread(lead.id).id,providerId:'video-customer-early-'+lead.id,
+  direction:'in',body:'Obrigado, vou ouvir e avaliar',status:'received'});
+ const continued=routeIntroductionReply({leadId:lead.id,providerId:'video-customer-early-'+lead.id,
+  body:'Obrigado, vou ouvir e avaliar'});
+ assert.equal(continued.state,'VOICE_SENT');
+ assert.equal(introductionStatus(lead.id).followup_status,'WAITING');
  db.setSetting('paused',false);
  let sent=0;
  const video={status:async()=>({connected:true}),loadVideo:async()=>({bytes:Buffer.alloc(3000,19)}),
