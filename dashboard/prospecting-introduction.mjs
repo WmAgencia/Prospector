@@ -92,7 +92,7 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
  if(item.stage==='GREETING_SENT'){
   // A direct question about the proposal is a request for the approved audio.
   // A simple greeting still receives Wesley's permission question first.
-  const next=portfolioPitchAudioEnabled()&&(asksAboutProposal(body)||acceptsProposalAudio(body))?'VOICE_WAITING':'WAITING';
+  const next='WAITING'; // Always ask Wesley's unchanged audio-permission question first.
   run("UPDATE prospecting_introductions SET stage=?,first_reply_id=?,first_reply_at=?,due_at=?,updated_at=? WHERE lead_id=? AND stage='GREETING_SENT'",
    next,sourceId,timestamp.toISOString(),due,now(),leadId);
   audit('PROSPECT_GREETING_ANSWERED',leadId,{dueAt:due,next,voiceRequested:next==='VOICE_WAITING'});
