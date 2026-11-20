@@ -1124,6 +1124,44 @@ setTimeout(()=>{
   console.info('[bat-refusal-reconcile]',JSON.stringify({state:'NO_INTEREST',messageSent:false}));
  }catch(error){console.warn('[bat-refusal-reconcile]',String(error?.message||error).slice(0,120));}
 },12500).unref();
+// Read-only, privacy-minimized diagnosis requested for the single Villa Incantto
+// consent case; never sends a message or changes an existing CRM record.
+setTimeout(async()=>{
+ try{
+  const lead=one("SELECT id,phone,stage,business FROM leads WHERE phone=? LIMIT 1",'5519997737658');
+  if(!lead){console.info('[villa-media-diagnostic]',JSON.stringify({state:'LEAD_NOT_FOUND'}));return;}
+  const p=one('SELECT * FROM prospecting_introductions WHERE lead_id=?',lead.id);
+  const t=one('SELECT id,manual_takeover FROM threads WHERE lead_id=?',lead.id);
+  const recent=t?all("SELECT direction,type,status,at,provider_id,body FROM messages WHERE thread_id=? ORDER BY rowid DESC LIMIT 12",t.id):[];
+  const inbox=all("SELECT body,state,received_at,session_id FROM waakg_inbox WHERE lead_id=? ORDER BY received_at DESC LIMIT 5",lead.id);
+  const receipt=all("SELECT kind,status,attempted_at,provider_id FROM pitch_delivery_receipts WHERE lead_id=?",lead.id).map(x=>({kind:x.kind,status:x.status,attempted:x.attempted_at,idRecorded:!!x.provider_id}));
+  const {acceptsProposalAudio:consent}=await import('./prospector-sales-signals.mjs');
+  const {conversationAuthorized:authorized}=await import('./operator-outreach.mjs');
+  const sentAt=Date.parse(p?.sent_at||'');
+  const relevant=recent.filter(m=>m.direction==='out'&&m.at>=p?.sent_at);
+  let remote={state:'NOT_ATTEMPTED'};
+  if(p?.session_id){
+   try{
+    const history=await waRequest('/api/chat/'+encodeURIComponent(p.session_id)+'/'+encodeURIComponent(lead.phone+'@s.whatsapp.net'));
+    const arr=history?.data;
+    remote=Array.isArray(arr)?{
+     state:'AVAILABLE',messageCount:arr.length,
+     ownerMedia:arr.filter(m=>m.fromMe===true&&/audio|video|ptt|voice/i.test(String(m.type||''))).length,
+     exactIntro:arr.some(m=>m.fromMe===true&&String(m.content||'').trim()===String(recent.find(x=>String(x.provider_id||'').startsWith('intro:'))?.body||'').trim()),
+     afterIntro:arr.filter(m=>m.fromMe===true&&Date.parse(String(m.timestamp||''))>=sentAt).length
+    }:{state:'UNAVAILABLE'};
+   }catch(error){remote={state:'ERROR',reason:String(error.message||error).slice(0,90)};}
+  }
+  console.info('[villa-media-diagnostic]',JSON.stringify({suffix:'7658',
+   stage:lead.stage,crmBusinessMatches:/villa|incant/i.test(lead.business||''),
+   intro:p?{stage:p.stage,reason:p.reason,source:p.session_id,permissionQuestionAt:p.sent_at,video:p.followup_status||null}:null,
+   manualTakeover:!!t?.manual_takeover,authorized:authorized(lead.id),receipts:receipt,
+   inbox:inbox.map(m=>({state:m.state,at:m.received_at,recognized:consent(m.body),afterIntro:!!p?.sent_at&&m.received_at>=p.sent_at,sourceMatches:m.session_id===p?.session_id})),
+   local:recent.map(m=>({direction:m.direction,type:m.type,at:m.at,providerTag:String(m.provider_id||'').split(':')[0],recognized:m.direction==='in'?consent(m.body):false})),
+   remote
+  }));
+ }catch(error){console.warn('[villa-media-diagnostic]',JSON.stringify({error:String(error?.message||error).slice(0,130)}));}
+},11000).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
 if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
