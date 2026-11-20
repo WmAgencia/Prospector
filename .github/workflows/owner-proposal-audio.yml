@@ -8,6 +8,8 @@ on:
       - 'tests/waakg-voice-presence.test.mjs'
       - 'dashboard/prospecting-introduction.mjs'
       - 'dashboard/groq-sales-automation.mjs'
+      - 'dashboard/groq-interest-check.mjs'
+      - 'tests/prospector-owner-handoff-flow.test.mjs'
       - 'dashboard/server.mjs'
       - 'tests/prospecting-owner-audio-pitch.test.mjs'
       - '.github/workflows/owner-proposal-audio.yml'
@@ -18,6 +20,8 @@ on:
       - 'tests/waakg-voice-presence.test.mjs'
       - 'dashboard/prospecting-introduction.mjs'
       - 'dashboard/groq-sales-automation.mjs'
+      - 'dashboard/groq-interest-check.mjs'
+      - 'tests/prospector-owner-handoff-flow.test.mjs'
       - 'tests/prospecting-owner-audio-pitch.test.mjs'
 jobs:
   voice-pitch:
