@@ -1080,6 +1080,28 @@ setTimeout(async()=>{
   }
   console.info('[pitch-media-readonly-diagnostic]',JSON.stringify({since,recent,events:actionCounts,introductions:intros,updatedLast48Hours:today,inbound:replies,permission}));
 
+  // Specific two incidents supplied by the owner, metadata only. No customer
+  // text, complete phone, or media content is printed to Railway logs.
+  const targets=[
+   ...all("SELECT id,phone,business,stage,contact_permission FROM leads WHERE phone=? LIMIT 2",'551140223523').map(x=>({...x,case:'PÃO_QUENTE'})),
+   ...all("SELECT DISTINCT l.id,l.phone,l.business,l.stage,l.contact_permission FROM leads l JOIN threads t ON t.lead_id=l.id JOIN messages m ON m.thread_id=t.id WHERE m.direction='in' AND m.body LIKE ? ORDER BY m.at DESC LIMIT 3",'%só orçamentos%').map(x=>({...x,case:'REFUSAL_SCREENSHOT'}))
+  ];
+  const cases=[];
+  const {acceptsProposalAudio:consentFromText,interestedAfterProposal}=await import('./prospector-sales-signals.mjs');
+  for(const x of targets){
+   const intro=one("SELECT stage,reason,session_id,first_reply_at,due_at,sent_at,followup_due_at,followup_status,followup_sent_at,created_at,updated_at FROM prospecting_introductions WHERE lead_id=?",x.id);
+   const conversation=one("SELECT id,manual_takeover FROM threads WHERE lead_id=?",x.id);
+   const events=all("SELECT at,action,detail FROM audit WHERE lead_id=? ORDER BY at DESC LIMIT 24",x.id).map(a=>{
+    let detail;try{detail=JSON.parse(a.detail)}catch{detail={}}
+    return {at:a.at,action:a.action,reason:detail?.reason||detail?.next||detail?.state||null};
+   }).reverse();
+   const inbox=all("SELECT received_at,state,body FROM waakg_inbox WHERE lead_id=? ORDER BY received_at DESC LIMIT 12",x.id).map(a=>({at:a.received_at,state:a.state,permission:consentFromText(a.body),intention:interestedAfterProposal(a.body),refusal:/\bnao\b|\bnão\b|or[cç]amentos/i.test(a.body)})).reverse();
+   const messages=conversation?all("SELECT at,direction,type,status,provider_id,body FROM messages WHERE thread_id=? ORDER BY rowid DESC LIMIT 15",conversation.id).map(m=>({at:m.at,direction:m.direction,type:m.type,status:m.status,tag:String(m.provider_id||'').split(':')[0],permission:m.direction==='in'?consentFromText(m.body):false,refusal:m.direction==='in'?/\\bnao\\b|\\bnão\\b|or[cç]amentos/i.test(m.body):false})).reverse():[];
+   cases.push({case:x.case,suffix:String(x.phone||'').slice(-4),leadStage:x.stage,permission:x.contact_permission,manual:conversation?.manual_takeover||0,intro,events,inbox,messages});
+  }
+  console.info('[pitch-media-owner-cases]',JSON.stringify(cases));
+
+
  }catch(error){console.warn('[pitch-media-readonly-diagnostic]',String(error?.message||error).slice(0,110));}
 },6500).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
