@@ -3,6 +3,20 @@
 import {salesEnding} from './sales-policy.mjs';
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const negative=s=>Boolean(salesEnding(s))||/\b(?:nao|nunca|jamais)\s+(?:quero|gostei|tenho|podem|pode|manda|envie|envia|preciso|estou|estamos|vou)\b/.test(s);
+// A clear refusal is terminal. Never treat words like "falar" in
+// "não dá tempo de falar" as consent to send a recorded sales pitch.
+export function declinesProposalAudio(text=''){
+ const s=norm(text);
+ if(!s||s.length>1500)return false;
+ if(/(?:^|[.!?]\s*)(?:nao[, ]+)?(?:amigo[, ]+)?(?:so|apenas|somente)\s+(?:fac[oa]|atendo|recebo|quero|trato)?\s*(?:de\s+)?orcamentos\b/.test(s))return true;
+ if(/\b(?:so|apenas|somente)\s+(?:trabalho\s+com\s+|recebo\s+|atendo\s+)?orcamentos\b/.test(s))return true;
+ if(/\bnao\s+(?:da\s+tempo|tenho\s+tempo|posso|vou|queremos|quero|tenho\s+interesse|me\s+interessa|preciso|estamos\s+interessados)\b/.test(s) &&
+    !/\bnao\s+(?:da\s+tempo|posso)\s+(?:esperar|agora)\b.*\b(?:pode\s+enviar|manda(?:r)?)\b/.test(s))return true;
+ if(/^(?:nao[,!. ]+)?(?:obrigad[oa]|valeu)[.! ]*$/.test(s)&&/^(?:nao)\b/.test(s))return true;
+ if(/^(?:nao[,!. ]+)(?:amigo[,!. ]+)?(?:obrigad[oa]|prefiro\s+nao|pode\s+deixar|sem\s+interesse)\b/.test(s))return true;
+ return false;
+}
+
 export function acceptsProposalAudio(text=''){
  const original=norm(text);
  if(!original||original.length>280||negative(original))return false;
