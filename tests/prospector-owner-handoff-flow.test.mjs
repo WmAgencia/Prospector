@@ -69,6 +69,9 @@ test('BAT Móveis refusal must never be classified as consent or send a recorded
  assert.notEqual(introductionStatus(item.lead.id).stage,'VOICE_WAITING');
  const result=await tickIntroductions({status:async()=>({connected:true}),sendAudio:async()=>{throw Error('refused client received audio')}});
  assert.equal(result.state,'IDLE');
+ // Consume the expected single farewell in this isolated test.
+ const farewell=await tickProspectorFarewells({status:async()=>({connected:true}),send:async()=>({status:true})});
+ assert.equal(farewell.state,'SENT');
 });
 
 test('first reply always sends permission question; only second permission sends voice, never substitute text',async()=>{
