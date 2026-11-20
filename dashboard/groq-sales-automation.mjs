@@ -13,8 +13,9 @@ import {introductionStatus} from './prospecting-introduction.mjs';
 import {portfolioAudioSentFor} from './portfolio-pitch-audio.mjs';
 import {interestedAfterProposal} from './prospector-sales-signals.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
-import {explicitInterest,qualifyWithGroq} from './groq-interest-check.mjs';
+import {explicitInterest,qualifyWithGroq,classifyPitchResponse} from './groq-interest-check.mjs';
 import {queueNotice} from './notifications.mjs';
+import {queueProspectorFarewell} from './prospector-farewell.mjs';
 import {testModeAllowed,reviewGroqReply} from './groq-live-test-guard.mjs';
 import {classifyInbound,firstGreeting,personalPhone} from './personal-concierge.mjs';
 import {analyzeChatTurn,compactChatHistory,refineChatReply} from './francisca-chat-coach.mjs';
@@ -129,16 +130,30 @@ export async function handleSalesTurn(providerId,deps={}){
  dialogue.hasAssistantReply=hasOutbound;
  dialogue.isFirstContact=!hasOutbound;
  const buyerCommitment=identity.role==='PROSPECT_APPROACHED'&&explicitInterest(r.body);
- if(audioOffer550&&interestedAfterProposal(r.body)){
-  run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
-  stage(r.lead_id,'INTERESTED','PITCH_AUDIO_550_INTEREST');
-  recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:r.body,notify:false});
-  queueNotice('pitch-audio550:'+r.lead_id,'GROQ_HOT_LEAD',
-   interestNotice(r,r.body),r.lead_id);
-  return finish('HOT','AUDIO_550_CLOSING_TO_OWNER');
+ if(audioOffer550){
+  // After Wesley's R$550 audio, only classify and hand off, politely close,
+  // or leave uncertain replies for a human. Never improvise another pitch.
+  const direct=interestedAfterProposal(r.body);
+  const pitch=direct?{intent:'interested',reason:'DIRECT_INTEREST'}:
+   await (deps.classifyPitch||classifyPitchResponse)({text:r.body,history});
+  if(stale())return finish(stale());
+  if(pitch.intent==='interested'){
+   run('UPDATE threads SET manual_takeover=1 WHERE id=?',r.thread_id);
+   stage(r.lead_id,'INTERESTED','PITCH_AUDIO_550_INTEREST');
+   recordSalesOutcome({leadId:r.lead_id,status:'INTERESTED',providerId,evidence:r.body,notify:false});
+   queueNotice('pitch-audio550:'+r.lead_id,'GROQ_HOT_LEAD',interestNotice(r,r.body),r.lead_id);
+   return finish('HOT','AUDIO_550_CLOSING_TO_OWNER');
+  }
+  if(pitch.intent==='declined'){
+   stage(r.lead_id,'NO_INTEREST','PITCH_AUDIO_550_DECLINED');
+   run("UPDATE waakg_inbox SET state='NO_INTEREST',updated_at=? WHERE provider_id=? AND state='REVIEW'",now(),providerId);
+   recordSalesOutcome({leadId:r.lead_id,status:'NO_INTEREST',providerId,evidence:r.body,notify:false});
+   queueProspectorFarewell({leadId:r.lead_id,sessionId:r.session_id,jid:r.jid});
+   audit('PITCH_AUDIO_550_DECLINED',r.lead_id,{providerId,reason:pitch.reason||'CLASSIFIED'});
+   return finish('DECLINED');
+  }
+  return finish('REVIEW','AUDIO_OFFER_AWAITING_OPERATOR');
  }
- // The original voice note is the approved proposal. Never improvise a written replacement.
- if(audioOffer550)return finish('REVIEW','AUDIO_OFFER_AWAITING_OPERATOR');
  const audioPriceQuestion=audioOffer550&&/(?:quanto|pre[cç]o|valor|custa|r\$ ?550)/i.test(r.body)&&
   !/(?:parcel|pix|cart[aã]o|entrada|pagamento)/i.test(r.body);
  const intent=commercialIntent(r.body);
