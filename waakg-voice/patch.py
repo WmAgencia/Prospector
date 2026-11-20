@@ -80,3 +80,20 @@ migration_source = (
 )
 migrate.write_text(migration_source)
 print("WA-AKG runtime skips redundant User enum ALTER TABLE on already-current schema")
+
+
+# The owner's original recording is OGG/Opus (OggS header), not AAC/MP4.
+# Preserve the real MIME type in WhatsApp's PTT metadata so recipients can play
+# the voice note reliably. Other voice formats retain the upstream behavior.
+chat_service = Path("/app/src/modules/whatsapp/chat.service.ts")
+source = chat_service.read_text()
+voice_old = "content = { audio: buffer, mimetype: 'audio/mp4', ptt: true };"
+voice_new = "content = { audio: buffer, mimetype: mimetype.startsWith('audio/ogg') ? 'audio/ogg; codecs=opus' : 'audio/mp4', ptt: true };"
+assert source.count(voice_old) == 1, "Unexpected upstream voice media metadata"
+source = source.replace(voice_old, voice_new)
+hook_old = "webhookMsg.message = { audioMessage: { mimetype: 'audio/mp4', ptt: type === 'voice' } };"
+hook_new = "webhookMsg.message = { audioMessage: { mimetype: mimetype.startsWith('audio/ogg') ? 'audio/ogg; codecs=opus' : 'audio/mp4', ptt: type === 'voice' } };"
+assert source.count(hook_old) == 1, "Unexpected upstream voice webhook metadata"
+source = source.replace(hook_old, hook_new)
+chat_service.write_text(source)
+print("WA-AKG preserves OGG/Opus MIME for approved original WhatsApp voice messages")
