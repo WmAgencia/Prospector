@@ -252,3 +252,45 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
 .approval-toolbar-actions .primary{white-space:nowrap}
 .approval-result{margin:0 0 14px;color:var(--ink2);font-size:13px;font-weight:600;line-height:1.5}
 @media(max-width:700px){.approval-toolbar-actions{width:100%;justify-content:flex-start}.approval-toolbar-actions button{flex:1 1 auto}}
+
+/* Dashboard operation time filter — fits the marked space beside Atualizar. */
+.kanban-overview-title{flex:0 1 335px;min-width:235px}
+.kanban-overview-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex:1;min-width:0;flex-wrap:wrap}
+.kanban-period-controls{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap;min-width:0}
+.kanban-period-buttons{display:inline-flex;align-items:center;gap:3px;background:#f2edff;border:1px solid #e9dfff;border-radius:13px;padding:4px;min-height:41px}
+.kanban-period-button{appearance:none;border:0;border-radius:9px;background:transparent;color:#67548f;cursor:pointer;padding:9px 12px;min-height:33px;font:750 11px/1.1 'Plus Jakarta Sans',sans-serif;white-space:nowrap;transition:background .15s ease,color .15s ease,box-shadow .15s ease}
+.kanban-period-button:hover{background:#e9dfff;color:#4e2cab}
+.kanban-period-button.active,.kanban-period-button[aria-pressed="true"]{background:#6938ec;color:#fff;box-shadow:0 2px 9px #6738d82b}
+.kanban-period-button:focus-visible,.kanban-date-apply:focus-visible,.kanban-custom-dates input:focus-visible{outline:2px solid #7543ef;outline-offset:2px}
+.kanban-refresh{flex:none;white-space:nowrap}
+.kanban-custom-dates{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.kanban-custom-dates label{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:750;color:#6b5c8f;white-space:nowrap}
+.kanban-custom-dates input{font:650 11px/1.1 'Plus Jakarta Sans',sans-serif;min-width:115px;width:128px;min-height:35px;color:#39265f;border:1px solid #ded4fc;background:#fff;border-radius:9px;padding:6px 9px}
+.kanban-date-apply{background:#6e3dec;border:1px solid #6e3dec;color:#fff;border-radius:9px;padding:9px 13px;font:750 11px/1 'Plus Jakarta Sans',sans-serif;cursor:pointer;min-height:35px}
+.kanban-date-apply:hover{background:#552ac3}
+.kanban-metrics{grid-template-columns:repeat(5,minmax(0,1fr))}
+.kanban-metric:first-child{background:linear-gradient(120deg,#f7f3ff,#fff)!important;border-color:#dccaff!important}
+.kanban-metric:first-child>strong{color:#6938ec!important}
+@media(max-width:1320px){
+ .kanban-overview-head{align-items:flex-start;flex-wrap:wrap}
+ .kanban-overview-title{flex:1 1 270px}
+ .kanban-overview-actions{flex:1 1 620px;justify-content:flex-end}
+ .kanban-period-controls{justify-content:flex-end}
+}
+@media(max-width:850px){
+ .kanban-overview-head{gap:9px}
+ .kanban-overview-title,.kanban-overview-actions{flex:1 1 100%}
+ .kanban-overview-actions{justify-content:space-between}
+ .kanban-period-controls{justify-content:flex-start}
+ .kanban-period-buttons{max-width:100%;overflow-x:auto}
+ .kanban-period-button{padding:8px 10px;font-size:10px}
+ .kanban-metrics{grid-template-columns:repeat(5,minmax(115px,1fr));overflow-x:auto;gap:7px}
+ .kanban-custom-dates input{width:123px}
+}
+@media(max-width:420px){
+ .kanban-overview-actions{align-items:stretch}
+ .kanban-period-controls{width:100%}
+ .kanban-period-buttons{width:100%;justify-content:space-between}
+ .kanban-period-button{padding:8px 7px;font-size:9px}
+ .kanban-refresh{min-height:35px}
+}
