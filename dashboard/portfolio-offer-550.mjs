@@ -2,7 +2,7 @@
 // Pure logic: no database, WhatsApp, owner notifications, or network calls.
 import {classifyInboundAutomation} from './inbound-automation.mjs';
 import {leadFirstName} from './lead-salutation.mjs';
-export const PORTFOLIO_OFFER_VERSION="consecom-portfolio-550-2026-11-06-business-days";
+export const PORTFOLIO_OFFER_VERSION="consecom-portfolio-550-2026-11-19-five-business-days";
 export const PORTFOLIO_PRICE_BRL=550;
 export const PORTFOLIO_DOMAIN_MONTHS=12;
 export const WESLEY_PRESENTATION="Meu nome é Wesley, sou dono da agência Consecom. Entrei em contato porque queria fazer uma proposta para vocês.";
@@ -54,7 +54,7 @@ export function brDeliveryDate(at=new Date()){
  const parts=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(at).filter(x=>x.type!=="literal").map(x=>[x.type,Number(x.value)]));
  const target=new Date(Date.UTC(parts.year,parts.month-1,parts.day,12));
  let counted=0;
- while(counted<3){target.setUTCDate(target.getUTCDate()+1);const weekday=target.getUTCDay();if(weekday!==0&&weekday!==6)counted++;}
+ while(counted<5){target.setUTCDate(target.getUTCDate()+1);const weekday=target.getUTCDay();if(weekday!==0&&weekday!==6)counted++;}
  // Calendar holidays require verified local information; avoid firm dates before prerequisites.
  return new Intl.DateTimeFormat("pt-BR",{timeZone:"UTC",day:"numeric",month:"long",year:"numeric"}).format(target);
 }
@@ -67,11 +67,11 @@ export function fixedOfferPitch(lead={},at=new Date(),{busy=false}={}){
  const what=siteFocus(lead.segment,lead.business);
  // Initial explanation: short and natural. Only clarify delivery dates when specifically requested.
  const first='A ideia é fazer um site profissional pra vocês, com '+what+'. Estamos ampliando nosso portfólio nesse segmento.';
- const second='O site fica em R$ 550, com domínio pago por um ano e Master SEO, sem promessa de posição no Google. O prazo é de até 3 dias úteis após pagamento confirmado e recebimento dos materiais.';
+ const second='O site fica em R$ 550, com domínio pago por um ano e Master SEO, sem promessa de posição no Google. O prazo é de até 5 dias úteis após pagamento confirmado e recebimento dos materiais.';
  return first+'\n\n'+second+(busy?' Pode olhar com calma quando conseguir.':' Faz sentido pra vocês?');
 }
 export function fixedOfferPriceReply(at=new Date()){
- return 'O site profissional de portfólio fica em R$ 550, com domínio pago por um ano. O prazo é de até 3 dias úteis após pagamento confirmado e recebimento dos materiais. Recursos extras, como checkout e integrações especiais, são avaliados à parte.';
+ return 'O site profissional de portfólio fica em R$ 550, com domínio pago por um ano. O prazo é de até 5 dias úteis após pagamento confirmado e recebimento dos materiais. Recursos extras, como checkout e integrações especiais, são avaliados à parte.';
 }
 export function approvedPortfolioText(text,at=new Date()){
  const n=norm(text);
@@ -82,7 +82,7 @@ export function approvedPortfolioText(text,at=new Date()){
 export function isPortfolioFAQ(value=''){
  const n=norm(value);
  if(/(?:parcelamento|parcelar|cartao|pix|boleto|entrada|mensalidade|loja virtual|checkout|sistema|integracao especial)/.test(n))return false;
- return /(?:google|seo|ranking|primeira posicao|dominio|entrega|prazo|tres dias|3 dias|90%|desconto)/.test(n);
+ return /(?:google|seo|ranking|primeira posicao|dominio|entrega|prazo|cinco dias|5 dias|90%|desconto)/.test(n);
 }
 export function fixedOfferFollowup(question='',at=new Date()){
  const n=norm(question);
@@ -92,8 +92,8 @@ export function fixedOfferFollowup(question='',at=new Date()){
   return 'Incluímos uma estrutura técnica de Master SEO para melhorar a presença do site nas buscas orgânicas. Isso não garante a primeira posição no Google nem um número específico de clientes.';
  if(/dominio/.test(n))
   return 'Sim. No site base de portfólio, o domínio fica pago por um ano e já está incluído no valor de R$ 550. Renovações futuras e outros serviços são combinados separadamente.';
- if(/(?:prazo|entrega|pronto|quando|3 dias|tres dias)/.test(n))
-  return 'O prazo é de até três dias úteis, contados após a confirmação do pagamento e a entrega de todos os materiais necessários. Antes disso, a contagem ainda não começa.';
+ if(/(?:prazo|entrega|pronto|quando|5 dias|cinco dias)/.test(n))
+  return 'O prazo é de até cinco dias úteis, contados após a confirmação do pagamento e a entrega de todos os materiais necessários. Antes disso, a contagem ainda não começa.';
  if(/(?:quanto|preco|valor|custa|r\$\s*550)/.test(n))return fixedOfferPriceReply(at);
  return 'Me conta qual parte ficou confusa que eu explico de outro jeito, sem repetir tudo.';
 }
