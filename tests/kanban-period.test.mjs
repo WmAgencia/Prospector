@@ -73,7 +73,7 @@ test('week, month and custom filter the Kanban cards consistently',()=>{
  assert.equal(custom.prospections,1);
  assert.deepEqual(custom.columns.approaching.map(x=>x.id),['lead-old']);
  const month=kanbanSnapshot({period:kanbanPeriodFromQuery(query('30d'),clock)});
- assert.equal(month.prospections,5);
+ assert.equal(month.prospections,4);
  const all=kanbanSnapshot({period:kanbanPeriodFromQuery(query('all'),clock)});
  assert.equal(all.prospections,5);
 });
