@@ -55,8 +55,8 @@ test('first reply delivers Wesley permission question; second affirmative delive
  assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
  assert.equal((await tickIntroductions({sendAudio:async()=>{throw Error('DUPLICATE');}})).state,'IDLE');
  const next=routeIntroductionReply({leadId:lead.id,providerId:'inbound-next',body:'Gostei, me conta mais'});
- assert.equal(next.state,'VOICE_SENT');assert.equal(next.queueAi,true);
- assert.equal(introductionStatus(lead.id).followup_status,'WAITING');
+ assert.equal(next.state,'INTERESTED');assert.equal(next.queueAi,false);
+ assert.equal(db.one('SELECT stage FROM leads WHERE id=?',lead.id).stage,'INTERESTED');
  assert.equal(portfolioAudioSentFor(introductionStatus(lead.id)),true);
  const matches=db.all("SELECT provider_id FROM messages WHERE provider_id LIKE 'intro-voice:%' AND direction='out'");
  assert.equal(matches.length,1);
