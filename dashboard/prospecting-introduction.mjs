@@ -7,7 +7,7 @@ import {CAMPAIGN_VIDEO_CAPTION} from './consecom-flow.mjs';
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
 // After the introduction, every incoming reply can continue the sales conversation.
 // No public listing is ever treated as documented WhatsApp opt-in.
-import {db,one,run,now,audit,addMessage,getSetting} from './db.mjs';
+import {db,one,run,now,audit,addMessage,getSetting,stage} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
@@ -19,7 +19,8 @@ import {waControlStatus,selectedWaSession,waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
 import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
-import {acceptsProposalAudio} from './prospector-sales-signals.mjs';
+import {acceptsProposalAudio,interestedAfterProposal} from './prospector-sales-signals.mjs';
+import {recordSalesOutcome} from './sales-outcomes.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const PITCH_PREVIEW_DELAY_MS=10_000;
@@ -111,8 +112,21 @@ export function routeIntroductionReply({leadId,providerId,body='',inboxState='RE
   // after the audio. Confirmed interest, refusal or human takeover still stop
   // media through the existing eligibility checks in tickPitchFollowup.
   if(item.followup_status==='WAITING'){
+   // Defer generic AI until the 10-second approved video is resolved.
+   // Confirmed interest transfers immediately to the operator, without the video.
+   if(item.reason==='PITCH_AUDIO_550'&&interestedAfterProposal(body)){
+    const lead=one('SELECT stage FROM leads WHERE id=?',leadId);
+    const owner=one('SELECT manual_takeover FROM threads WHERE lead_id=?',leadId);
+    if(lead&&!['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)&&owner?.manual_takeover!==1){
+     stage(leadId,'INTERESTED','PITCH_AUDIO_550_INTEREST');
+     run('UPDATE threads SET manual_takeover=1 WHERE lead_id=?',leadId);
+     recordSalesOutcome({leadId,status:'INTERESTED',providerId:sourceId,evidence:body});
+     audit('PROSPECT_POST_AUDIO_HOT_LEAD',leadId,{providerId:sourceId});
+    }
+    return {managed:true,queueAi:false,state:'INTERESTED'};
+   }
    audit('PROSPECT_POST_AUDIO_REPLY',leadId,{providerId:sourceId,previewStillScheduled:true});
-   return {managed:true,queueAi:true,state:'VOICE_SENT'};
+   return {managed:true,queueAi:false,state:'VOICE_SENT'};
   }
   run("UPDATE prospecting_introductions SET stage='CONVERSING',updated_at=? WHERE lead_id=? AND stage='VOICE_SENT'",now(),leadId);
   audit('PROSPECT_INVITED_PROPOSAL_DETAILS',leadId,{providerId:sourceId,previousStage:item.stage});
@@ -228,10 +242,26 @@ export async function tickPitchFollowup(deps={}){
   const at=currentTime(),atIso=new Date(at).toISOString();
   const p=one("SELECT * FROM prospecting_introductions WHERE stage='VOICE_SENT' AND followup_status='WAITING' AND followup_due_at<=? ORDER BY followup_due_at LIMIT 1",atIso);
   if(!p)return {state:'IDLE'};
-  const cancel=reason=>{
+  const queueDeferredReply=async()=>{
+   const owner=one('SELECT l.stage,t.manual_takeover FROM leads l LEFT JOIN threads t ON t.lead_id=l.id WHERE l.id=?',p.lead_id);
+   if(!owner||owner.manual_takeover===1||['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(owner.stage))return false;
+   const inbound=one("SELECT provider_id,jid FROM waakg_inbox WHERE lead_id=? AND session_id=? AND state='REVIEW' AND received_at>=? ORDER BY received_at DESC LIMIT 1",p.lead_id,p.session_id,p.sent_at);
+   if(!inbound)return false;
+   try{
+    const {queueInboundTurn}=await import('./groq-sales-automation.mjs');
+    const queued=queueInboundTurn({providerId:inbound.provider_id,jid:inbound.jid,sessionId:p.session_id});
+    audit('PROSPECT_POST_VIDEO_REPLY_QUEUED',p.lead_id,{queued});
+    return queued;
+   }catch(error){
+    audit('PROSPECT_POST_VIDEO_REPLY_QUEUE_ERROR',p.lead_id,{reason:String(error?.message||error).slice(0,100)});
+    return false;
+   }
+  };
+  const cancel=async reason=>{
    run("UPDATE prospecting_introductions SET followup_status='CANCELLED',reason=?,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT' AND followup_status='WAITING'",
     reason,now(),p.lead_id);
    audit('PROSPECT_PITCH_PREVIEW_CANCELLED',p.lead_id,{reason});
+   if(reason==='FOLLOWUP_WINDOW_EXPIRED')await queueDeferredReply();
    return {state:'CANCELLED',reason};
   };
   if(at-Date.parse(p.followup_due_at)>90_000)return cancel('FOLLOWUP_WINDOW_EXPIRED');
@@ -276,6 +306,7 @@ export async function tickPitchFollowup(deps={}){
    const thread=one('SELECT id FROM threads WHERE lead_id=?',p.lead_id);
    if(thread)addMessage({threadId:thread.id,providerId:'intro-video:'+p.greeting_id,direction:'out',type:'video',body:PITCH_PREVIEW_TEXT,status:'sent'});
    audit('PROSPECT_PITCH_VIDEO_SENT',p.lead_id,{delaySeconds:10,session:p.session_id,gatewayAccepted:true});
+   await queueDeferredReply();
    return {state:'SENT',leadId:p.lead_id};
   }catch(error){
    if(String(error?.message||'')==='MANUAL_TAKEOVER'){
