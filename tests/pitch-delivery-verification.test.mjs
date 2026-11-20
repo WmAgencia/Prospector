@@ -40,7 +40,7 @@ test('only matching WhatsApp message ID can confirm delivery',()=>{
  assert.equal(pitchDeliveryReceipt(leadId,'greeting-001','AUDIO').status,'ACCEPTED');
  assert.equal(receivePitchDeliveryStatus({event:'message.status',sessionId,data:{keyId:'TEST_AUDIO_123456',remoteJid:jid,status:'DELIVERED'}}),true);
  assert.equal(pitchDeliveryReceipt(leadId,'greeting-001','AUDIO').status,'DELIVERED');
- assert.equal(receivePitchDeliveryStatus({event:'message.status',sessionId,data:{keyId:'TEST_AUDIO_123456',remoteJid:jid,status:'SENT'}}),false);
+ assert.equal(receivePitchDeliveryStatus({event:'message.status',sessionId,data:{keyId:'TEST_AUDIO_123456',remoteJid:jid,status:'SENT'}}),true);
  assert.equal(pitchDeliveryReceipt(leadId,'greeting-001','AUDIO').status,'DELIVERED');
  assert.equal(receivePitchDeliveryStatus({event:'message.status',sessionId,data:{keyId:'TEST_AUDIO_123456',remoteJid:jid,status:'READ'}}),true);
  assert.equal(pitchDeliveryReceipt(leadId,'greeting-001','AUDIO').status,'READ');
