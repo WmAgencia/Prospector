@@ -184,7 +184,7 @@ export async function recoverVerifiedUnattemptedPitch({fetchChat=waRequest,limit
   if(one('SELECT phone FROM suppressions WHERE phone=?',p.phone))continue;
   const reply=one("SELECT provider_id,body,received_at FROM waakg_inbox WHERE lead_id=? AND session_id=? AND received_at>=? ORDER BY received_at DESC LIMIT 1",p.lead_id,p.session_id,p.sent_at);
   if(!reply||!(acceptsProposalAudio(reply.body)||wantsPortfolioPitchAudio(reply.body)))continue;
-  const intro=one("SELECT rowid,body FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='out'",p.lead_id,'intro:'+p.greeting_id);
+  const intro=one("SELECT m.rowid AS rowid,m.body FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='out'",p.lead_id,'intro:'+p.greeting_id);
   if(!intro||!intro.body)continue;
   const newer=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.rowid>? AND m.direction='out' LIMIT 1",p.lead_id,intro.rowid);
   if(newer)continue;
