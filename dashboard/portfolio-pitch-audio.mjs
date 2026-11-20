@@ -1,10 +1,7 @@
 // Voice pitch recorded by the Consecom owner for the R$550 portfolio campaign.
 // Stored as secret, split environment values on Railway (never in GitHub).
 // A restart reuses a private cached AAC file on the Railway volume.
-import fs from 'node:fs';
-import path from 'node:path';
 import crypto from 'node:crypto';
-import {spawnSync} from 'node:child_process';
 import {declinesProposalAudio} from './prospector-sales-signals.mjs';
 
 export const PITCH_AUDIO_ORIGINAL_SHA256='521cb9a803ef65daf0aa2ff2e918c9a859876577fb56bb9362140bf0a182c019';
@@ -38,30 +35,14 @@ export function readPortfolioPitchAudio(){
   hash(original)!==PITCH_AUDIO_ORIGINAL_SHA256||
   process.env.PROSPECTOR_PITCH_AUDIO_SOURCE_SHA256!==PITCH_AUDIO_ORIGINAL_SHA256)
   throw Error('PITCH_AUDIO_SOURCE_INVALID');
- const root=path.resolve(process.env.PROSPECTOR_DATA_DIR||'data','private-portfolio-voice');
- fs.mkdirSync(root,{recursive:true,mode:0o700});
- const target=path.join(root,'portfolio-550-'+PITCH_AUDIO_ORIGINAL_SHA256.slice(0,12)+'.m4a');
- let cached=false;
- try{const size=fs.statSync(target).size;cached=size>200000&&size<3*1024*1024;}catch{}
- if(!cached){
-  const tmp=target+'.'+process.pid+'.tmp';
-  try{
-   const execution=spawnSync('ffmpeg',[
-    '-nostdin','-hide_banner','-loglevel','error','-y','-f','ogg','-i','pipe:0',
-    '-vn','-map_metadata','-1','-ac','1','-ar','44100','-c:a','aac','-b:a','32k',
-    '-movflags','+faststart','-f','ipod',tmp
-   ],{input:original,timeout:30000,maxBuffer:1048576});
-   if(execution.error||execution.status!==0)throw Error('PITCH_AUDIO_TRANSCODE_FAILED');
-   const size=fs.statSync(tmp).size;
-   if(size<200000||size>3*1024*1024)throw Error('PITCH_AUDIO_OUTPUT_INVALID');
-   fs.chmodSync(tmp,0o600);
-   fs.renameSync(tmp,target);
-  }catch(error){try{fs.unlinkSync(tmp);}catch{}throw error;}
- }
- const bytes=fs.readFileSync(target);
- if(bytes.length<200000||bytes.length>3*1024*1024)throw Error('PITCH_AUDIO_INVALID_CACHE');
- return {bytes,sourceSha256:PITCH_AUDIO_ORIGINAL_SHA256,durationSeconds:PITCH_AUDIO_SECONDS,offerBRL:PITCH_AUDIO_OFFER_BRL};
+ // Preserve the owner's original WhatsApp OGG/Opus PTT media, without
+ // transcoding it to AAC or relabeling it audio/mp4. The WA-AKG endpoint
+ // accepts original OGG as a real voice note (ptt=true).
+ if(original.toString('ascii',0,4)!=='OggS')throw Error('PITCH_AUDIO_OGG_INVALID');
+ return {bytes:original,sourceSha256:PITCH_AUDIO_ORIGINAL_SHA256,
+  durationSeconds:PITCH_AUDIO_SECONDS,offerBRL:PITCH_AUDIO_OFFER_BRL};
 }
+
 export function portfolioPitchAudioHealth(){
  if(!portfolioPitchAudioEnabled())return {enabled:false,ready:false};
  try{const asset=readPortfolioPitchAudio();return {enabled:true,ready:true,bytes:asset.bytes.length,durationSeconds:asset.durationSeconds,offerBRL:asset.offerBRL};}
