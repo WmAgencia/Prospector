@@ -71,9 +71,10 @@ import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} 
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
-import {tickIntroductions,tickPitchFollowup} from './prospecting-introduction.mjs';
+import {tickIntroductions,tickPitchFollowup,routeIntroductionReply} from './prospecting-introduction.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
+import {conversationAuthorized} from './operator-outreach.mjs';
 import {bootstrapConsecomCampaign} from './consecom-campaign-bootstrap.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
@@ -1106,6 +1107,39 @@ setTimeout(async()=>{
 
  }catch(error){console.warn('[pitch-media-readonly-diagnostic]',String(error?.message||error).slice(0,110));}
 },6500).unref();
+// Owner supplied Pão Quente's positive permission and confirmed no media was
+// delivered. One-shot safe recovery only: verify exact answer, local AND remote
+// send history, connected sender, eligible lead, and no human takeover.
+setTimeout(async()=>{
+ const recoveryKey='pao_quente_approved_audio_one_time_20261120';
+ if(getSetting(recoveryKey,false)===true)return;
+ try{
+  const lead=one("SELECT id,phone,stage FROM leads WHERE phone=? LIMIT 1",'551140223523');
+  const p=lead?one('SELECT * FROM prospecting_introductions WHERE lead_id=?',lead.id):null;
+  if(!p||p.stage!=='SENT'||p.followup_status||p.reason||!conversationAuthorized(lead.id)){
+   console.info('[pao-consent-recovery]',JSON.stringify({state:'NOT_ELIGIBLE'}));return;
+  }
+  const thread=one('SELECT id,manual_takeover FROM threads WHERE lead_id=?',lead.id);
+  if(!thread||thread.manual_takeover===1)return;
+  const inbound=one("SELECT body,provider_id,at FROM messages WHERE thread_id=? AND direction='in' ORDER BY rowid DESC LIMIT 1",thread.id);
+  if(!inbound||inbound.body.trim().toLowerCase()!=='pode sim, encaminho ao responsável')return;
+  const messagesAfter=one("SELECT COUNT(*) n FROM messages WHERE thread_id=? AND direction='out' AND at>? AND provider_id<>?",thread.id,p.sent_at,'intro:'+p.greeting_id)?.n||0;
+  if(messagesAfter)return;
+  const status=await waControlStatus(p.session_id);
+  if(!status.connected){console.info('[pao-consent-recovery]',JSON.stringify({state:'SENDER_OFFLINE'}));return;}
+  const remote=await waRequest('/api/chat/'+encodeURIComponent(p.session_id)+'/'+encodeURIComponent(lead.phone+'@s.whatsapp.net'));
+  if(!Array.isArray(remote?.data)){console.info('[pao-consent-recovery]',JSON.stringify({state:'REMOTE_HISTORY_UNAVAILABLE'}));return;}
+  // Refuse to queue if WhatsApp already shows any media sent to this number.
+  const hasMedia=remote.data.some(m=>m.fromMe===true&&/audio|voice|ptt|video/i.test(String(m.type||'')));
+  if(hasMedia){console.info('[pao-consent-recovery]',JSON.stringify({state:'REMOTE_MEDIA_EXISTS'}));return;}
+  const queued=routeIntroductionReply({leadId:lead.id,providerId:inbound.provider_id,
+   body:inbound.body,receivedAt:new Date(Date.now()-31000)});
+  if(queued.state!=='VOICE_WAITING')return;
+  setSetting(recoveryKey,true);
+  audit('OWNER_PAO_APPROVED_AUDIO_RECOVERY',lead.id,{reason:'RECORDED_EXPLICIT_CONSENT',previewDelaySeconds:10});
+  console.info('[pao-consent-recovery]',JSON.stringify({state:'VOICE_QUEUED',suffix:'3523',previewAfterSeconds:10}));
+ }catch(error){console.warn('[pao-consent-recovery]',JSON.stringify({state:'CHECK_FAILED',error:String(error?.message||error).slice(0,110)}));}
+},18000).unref();
 server.listen(port,host,()=>{console.log('Prospector: http://'+host+':'+port);if(process.env.WHATSAPP_TRANSPORT==='waakg'){console.info('[whatsapp] WA-AKG gateway selected; legacy Baileys restore disabled');}else{restoreWhatsAppSession().then(r=>{if(r.restored)console.log('[whatsapp] Restaurando sessão persistida');}).catch(e=>console.error('[whatsapp] Falha ao restaurar sessão:',e.message));}});
 
 if(process.env.PROSPECTOR_PRODUCTION_VERIFY_ENABLED==='true'){
