@@ -1,7 +1,7 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import {sendOfferVideoMedia} from './waakg-media.mjs';
+import {sendOfferVideoMedia,sendRecordedOfferVoiceMedia} from './waakg-media.mjs';
 import {CAMPAIGN_VIDEO_CAPTION} from './consecom-flow.mjs';
 // Two-step introduction on an APPROVED WA-AKG prospect campaign.
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
@@ -126,7 +126,7 @@ export async function tickIntroductions(deps={}){
  if(ownerProspectionPaused())return {state:'PAUSED_BY_OWNER'};
  if(busy)return {state:'BUSY'};
  const {currentTime=()=>Date.now(),status=waControlStatus,session=selectedWaSession,
-  send=waRequest,sendAudio=sendVoiceWithRecording,loadAudio=readPortfolioPitchAudio}=deps;
+  send=waRequest,sendAudio=async args=>sendVoiceWithRecording({...args,sendAudio:sendRecordedOfferVoiceMedia}),loadAudio=readPortfolioPitchAudio}=deps;
  busy=true;
  try{
   const at=currentTime();
