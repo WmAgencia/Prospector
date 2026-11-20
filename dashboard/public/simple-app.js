@@ -36,7 +36,30 @@ let offerType='portfolio';
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",approvals:"✓",connections:"◫",settings:"⚙"};
 let view=Object.keys(tabs).includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
 let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false,consentPolicy=null,consentPolicyBusy=false;
+let kanbanPeriod="all",kanbanCustomFrom="",kanbanCustomTo="",kanbanLoading=false,kanbanRequestSeq=0;
+try{const chosen=sessionStorage.getItem("prospector-kanban-period");if(["all","today","7d","30d","custom"].includes(chosen))kanbanPeriod=chosen;}catch{}
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
+const brazilDayOffset=(day,offset)=>new Date(Date.parse(day+"T12:00:00Z")+offset*86400000).toISOString().slice(0,10);
+kanbanCustomTo=prospectDay();
+kanbanCustomFrom=brazilDayOffset(kanbanCustomTo,-6);
+try{
+ const dates=JSON.parse(sessionStorage.getItem("prospector-kanban-custom")||"null");
+ if(/^\d{4}-\d{2}-\d{2}$/.test(dates?.from||"")&&/^\d{4}-\d{2}-\d{2}$/.test(dates?.to||"")){
+  kanbanCustomFrom=dates.from;kanbanCustomTo=dates.to;
+ }
+}catch{}
+function kanbanPeriodControls(){
+ const ranges=[["all","Tudo"],["today","Hoje"],["7d","7 dias"],["30d","1 mês"],["custom","Personalizado"]];
+ return '<div class="kanban-period-controls" aria-label="Filtrar prospecções por período">'+
+  '<div class="kanban-period-buttons" role="group" aria-label="Período">'+ranges.map(([value,label])=>
+   '<button type="button" class="kanban-period-button '+(kanbanPeriod===value?'active':'')+'" data-action="kanban-period" data-period="'+value+'" aria-pressed="'+(kanbanPeriod===value)+'">'+label+'</button>'
+  ).join('')+'</div>'+
+  (kanbanPeriod==='custom'?'<div class="kanban-custom-dates"><label>De <input type="date" id="kanban-custom-from" value="'+esc(kanbanCustomFrom)+'" aria-label="Data inicial"></label>'+
+   '<label>Até <input type="date" id="kanban-custom-to" value="'+esc(kanbanCustomTo)+'" aria-label="Data final"></label>'+
+   '<button type="button" class="kanban-date-apply" data-action="kanban-custom-apply">Aplicar</button></div>':'')+
+  '</div>';
+}
+
 function newProspectSession(){
  const token=crypto.randomUUID();
  try{if(typeof sessionStorage!=="undefined"){sessionStorage.setItem("prospect-session",token);sessionStorage.setItem("prospect-session-day",prospectDay());}}catch{}
@@ -1018,6 +1041,8 @@ function overview(){
   ['conversing','Conversando','Atendimento assumido por você']
  ];
  const total=Object.values(k.counts||{}).reduce((x,y)=>x+Number(y||0),0);
+ const metricValue=value=>kanbanLoading?'—':value;
+ const rangeHint=kanbanPeriod==='all'?'Todos os contatos e oportunidades em uma única tela.':'Empresas prospectadas no período; as etapas mostram a situação atual.';
  const startupChecks=[
   {label:'Conectar WhatsApp',done:!!wa?.connected,tab:'connections'},
   {label:'Treinar sua IA',done:!!(state?.settings?.training_active||trainingState?.profile),tab:'training'},
@@ -1033,9 +1058,12 @@ function overview(){
   (lead.phone?'<button class="kanban-message" type="button" data-kanban-chat="'+esc(lead.phone)+'">'+(col==='interested'?'Enviar mensagem ↗':'Abrir conversa ↗')+'</button>':'')+'</div>';
  };
  return '<div class="kanban-dashboard" id="overview-board">'+
-  '<div class="kanban-overview-head"><div><span class="kicker">PIPELINE COMERCIAL</span><h2>Visão da operação</h2><p>Todos os contatos e oportunidades em uma única tela.</p></div><button class="secondary compact" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div>'+
-  '<div class="kanban-metrics">'+stat('Empresas acompanhadas',total,'Com atividade registrada')+stat('Abordando',k.counts?.approaching||0,'Em contato')+stat('Interessados',k.counts?.interested||0,'Prioridade comercial')+stat('Conversando',k.counts?.conversing||0,'Atendimento humano')+'</div>'+
-  '<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>Acompanhe cada etapa e abra a conversa pelo cartão.</small></div>'+
+  '<div class="kanban-overview-head"><div class="kanban-overview-title"><span class="kicker">PIPELINE COMERCIAL</span><h2>Visão da operação</h2><p>'+esc(rangeHint)+'</p></div>'+
+  '<div class="kanban-overview-actions">'+kanbanPeriodControls()+'<button class="secondary compact kanban-refresh" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div></div>'+
+  '<div class="kanban-metrics">'+stat('Prospecções',metricValue(k.prospections??'—'),kanbanPeriod==='all'?'Abordagens enviadas':'Abordagens no período')+
+  stat('Empresas acompanhadas',metricValue(total),'Com atividade registrada')+stat('Abordando',metricValue(k.counts?.approaching||0),'Em contato')+
+  stat('Interessados',metricValue(k.counts?.interested||0),'Prioridade comercial')+stat('Conversando',metricValue(k.counts?.conversing||0),'Atendimento humano')+'</div>'+
+  '<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>'+(kanbanLoading?'Carregando prospecções...':kanbanPeriod==='all'?'Acompanhe cada etapa e abra a conversa pelo cartão.':'Somente contatos prospectados neste intervalo.')+'</small></div>'+
   '<div class="kanban-columns" aria-label="Kanban comercial">'+definition.map(([key,label,description])=>
    '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items">'+
    ((k.columns?.[key]||[]).length?k.columns[key].map(x=>item(x,key)).join(''):'<div class="kanban-empty">Nenhuma empresa nesta etapa.</div>')+'</div></section>').join('')+
@@ -1334,7 +1362,23 @@ async function loadMessages(id){
   if(!id.startsWith("wa:"))await post("/api/threads/"+encodeURIComponent(id)+"/read",{}).catch(()=>{});
  }catch(e){const feed=q("#messages");if(feed)feed.textContent="Não foi possível carregar a conversa.";}
 }
-async function loadKanban(){try{kanban=await api('/api/kanban');salesResults=await api('/api/sales/outcomes').catch(()=>null);if(view==='overview')render();}catch(e){if(view==='overview')render();n('Não foi possível carregar o Kanban: '+e.message);}}
+async function loadKanban(){
+ const ticket=++kanbanRequestSeq;
+ const query=new URLSearchParams({period:kanbanPeriod});
+ if(kanbanPeriod==='custom'){query.set('from',kanbanCustomFrom);query.set('to',kanbanCustomTo);}
+ kanbanLoading=true;kanban=null;
+ if(view==='overview')render();
+ try{
+  const [board,outcomes]=await Promise.all([api('/api/kanban?'+query.toString()),api('/api/sales/outcomes').catch(()=>null)]);
+  if(ticket!==kanbanRequestSeq)return;
+  kanban=board;salesResults=outcomes;
+ }catch(e){
+  if(ticket!==kanbanRequestSeq)return;
+  n('Não foi possível carregar o Kanban: '+e.message);
+ }finally{
+  if(ticket===kanbanRequestSeq){kanbanLoading=false;if(view==='overview')render();}
+ }
+}
 async function reload(){
  if(!workspaceInitialized){
   workspaceInitialized=true;
@@ -1423,6 +1467,23 @@ document.addEventListener("click",async ev=>{
   if(action==='francisca-record-toggle'){await toggleFranciscaRecording();return;}
   if(action==='calendar-prev'||action==='calendar-next'){moveCalendar(action==='calendar-prev'?-1:1);return;}
   if(action==='calendar-day'){calendarDay=el.dataset.date||'';calendarCategory=el.dataset.kind==='closed'?'closed':'approached';render();return;}
+  if(action==="kanban-period"){
+   const chosen=String(el.dataset.period||"all");
+   if(!["all","today","7d","30d","custom"].includes(chosen))return;
+   kanbanPeriod=chosen;
+   try{sessionStorage.setItem("prospector-kanban-period",chosen);}catch{}
+   if(chosen==="custom"){render();return;}
+   await loadKanban();return;
+  }
+  if(action==="kanban-custom-apply"){
+   const from=q("#kanban-custom-from")?.value||"",to=q("#kanban-custom-to")?.value||"";
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to)||from>to){
+    n("Selecione um período válido: a data inicial não pode ser depois da final.");return;
+   }
+   kanbanCustomFrom=from;kanbanCustomTo=to;
+   try{sessionStorage.setItem("prospector-kanban-custom",JSON.stringify({from,to}));}catch{}
+   await loadKanban();return;
+  }
   if(action==="refresh-kanban"){await loadKanban();n('Kanban atualizado.');return;}
   if(action==="menu"){q("#side")?.classList.toggle("mobile-open");q(".scrim")?.classList.toggle("visible");return;}
   if(action==="close-menu"){q("#side")?.classList.remove("mobile-open");q(".scrim")?.classList.remove("visible");return;}
