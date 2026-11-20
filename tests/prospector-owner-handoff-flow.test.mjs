@@ -38,7 +38,7 @@ async function introText({lead,jid},time=Date.now()-41000){
  return result;
 }
 test('short positive replies authorize original audio but refusals do not',()=>{
- for(const phrase of ['sim','Claro','pode','Pode mandar','beleza','ok','Pode me mandar o áudio','Quero ouvir','Oi, pode mandar','Pode mandar sim','Pode sim, manda o áudio','Bom dia, pode enviar','Pode ser','Envia sim'])
+ for(const phrase of ['sim','Claro','pode','Pode mandar','beleza','ok','Pode me mandar o áudio','Quero ouvir','Oi, pode mandar','Pode mandar sim','Pode sim, manda o áudio','Bom dia, pode enviar','Pode ser','Envia sim','Claro! Pode enviar o áudio que eu encaminho aos responsáveis'])
   assert.equal(acceptsProposalAudio(phrase),true,phrase);
  for(const phrase of ['não quero','não pode','sem interesse','agora não','Não quero áudio','oi tudo bem'])
   assert.equal(acceptsProposalAudio(phrase),false,phrase);
@@ -48,6 +48,20 @@ test('short positive replies authorize original audio but refusals do not',()=>{
   assert.equal(interestedAfterProposal(phrase),false,phrase);
 });
 
+test('Villa Incantto consent explicitly allows the approved voice, without altering the permission question',async()=>{
+ const item=prospect();
+ await introText(item);
+ const reply='Claro! Pode enviar o áudio que eu encaminho aos responsáveis';
+ assert.equal(acceptsProposalAudio(reply),true);
+ const routed=routeIntroductionReply({leadId:item.lead.id,providerId:'villa-'+item.lead.id,body:reply,receivedAt:new Date(Date.now()-41000)});
+ assert.equal(routed.state,'VOICE_WAITING');
+ assert.equal(introductionStatus(item.lead.id).stage,'VOICE_WAITING');
+ let delivered=0;
+ const sent=await tickIntroductions({status:async()=>({connected:true}),session:()=> 'consecom-principal',
+  loadAudio:async()=>({bytes:Buffer.alloc(300000,12)}),sendAudio:async()=>{delivered++;return {accepted:true}}});
+ assert.equal(sent.state,'VOICE_SENT');
+ assert.equal(delivered,1);
+});
 test('Pão Quente permission to forward to its manager is recognized',async()=>{
  const item=prospect();
  await introText(item);
