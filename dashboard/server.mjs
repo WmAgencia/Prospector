@@ -72,7 +72,7 @@ import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {tickIntroductions,tickPitchFollowup} from './prospecting-introduction.mjs';
-import {reconcilePitchDeliveries,auditStuckPitchSteps,pitchDeliverySummary} from './pitch-delivery-verification.mjs';
+import {reconcilePitchDeliveries,auditStuckPitchSteps,recoverVerifiedUnattemptedPitch,pitchDeliverySummary} from './pitch-delivery-verification.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {bootstrapConsecomCampaign} from './consecom-campaign-bootstrap.mjs';
@@ -957,10 +957,16 @@ const pitchReceiptTimer=setInterval(()=>{
   if(result.alerts)console.warn('[pitch delivery] unresolved receipts',JSON.stringify(result));
  }).catch(error=>console.warn('[pitch delivery]',String(error?.message||error).slice(0,110)));
 },60_000);
-const pitchStuckTimer=setInterval(()=>{
- try{const result=auditStuckPitchSteps();if(result.flagged)console.warn('[pitch delivery] approved steps stalled',JSON.stringify(result));}
- catch(error){console.warn('[pitch delivery audit]',String(error?.message||error).slice(0,110));}
-},120_000);
+async function auditApprovedPitchContinuity(){
+ try{
+  const recovery=await recoverVerifiedUnattemptedPitch({limit:2});
+  if(recovery.queued)console.info('[pitch delivery] safely recovered approved audio',JSON.stringify(recovery));
+  const result=auditStuckPitchSteps();
+  if(result.flagged)console.warn('[pitch delivery] approved steps stalled',JSON.stringify(result));
+ }catch(error){console.warn('[pitch delivery audit]',String(error?.message||error).slice(0,110));}
+}
+const pitchStuckTimer=setInterval(auditApprovedPitchContinuity,120_000);
+setTimeout(auditApprovedPitchContinuity,15_000).unref();
 setTimeout(()=>{
  try{console.info('[pitch delivery summary]',JSON.stringify(pitchDeliverySummary()));}
  catch(error){console.warn('[pitch delivery summary]',String(error?.message||error).slice(0,110));}
