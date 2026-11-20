@@ -21,6 +21,7 @@ import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
 import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
 import {acceptsProposalAudio,interestedAfterProposal} from './prospector-sales-signals.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
+import {beginPitchDelivery,acknowledgePitchDelivery,unknownPitchDelivery,cancelPitchDelivery} from './pitch-delivery-verification.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const PITCH_PREVIEW_DELAY_MS=10_000;
@@ -193,8 +194,10 @@ export async function tickIntroductions(deps={}){
   };
   try{
    if(voiceRequested){
+    beginPitchDelivery({leadId:item.lead_id,greetingId:item.greeting_id,kind:'AUDIO',sessionId:item.session_id,jid:item.phone+'@s.whatsapp.net'});
     const ack=await sendAudio({jid:item.phone+'@s.whatsapp.net',session:item.session_id,bytes:voice.bytes,shouldSend:stillAutomated});
     if(ack?.accepted!==true)throw Error('VOICE_UNCONFIRMED');
+    acknowledgePitchDelivery({leadId:item.lead_id,greetingId:item.greeting_id,kind:'AUDIO',providerId:ack.messageId});
    }else{
     if(!stillAutomated())throw Error('TEXT_OWNER_TAKEOVER');
     const ack=await send('/api/messages/'+encodeURIComponent(item.session_id)+'/'+encodeURIComponent(item.phone+'@s.whatsapp.net')+'/send',
@@ -217,10 +220,12 @@ export async function tickIntroductions(deps={}){
    return {state:nextStage,leadId:item.lead_id,verifiedOnPhone:false};
   }catch(error){
    if(['VOICE_OWNER_TAKEOVER','TEXT_OWNER_TAKEOVER'].includes(String(error?.message||''))){
+    if(voiceRequested)cancelPitchDelivery({leadId:item.lead_id,greetingId:item.greeting_id,kind:'AUDIO'});
     run("UPDATE prospecting_introductions SET stage='CONVERSING',reason='MANUAL_TAKEOVER',followup_status='CANCELLED',updated_at=? WHERE lead_id=? AND stage='SENDING'",now(),item.lead_id);
     audit('PROSPECT_INTRO_CANCELLED_MANUAL',item.lead_id,{voice:voiceRequested});
     return {state:'CANCELLED',reason:'MANUAL_TAKEOVER'};
    }
+   if(voiceRequested)unknownPitchDelivery({leadId:item.lead_id,greetingId:item.greeting_id,kind:'AUDIO',reason:String(error?.message||error)});
    run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Uncertain delivery; verify WhatsApp',updated_at=? WHERE lead_id=? AND stage='SENDING'",now(),item.lead_id);
    audit('PROSPECT_INTRO_UNKNOWN',item.lead_id,{manualReview:true,voice:voiceRequested});
    return {state:'UNKNOWN'};
@@ -264,7 +269,9 @@ export async function tickPitchFollowup(deps={}){
    if(reason==='FOLLOWUP_WINDOW_EXPIRED')await queueDeferredReply();
    return {state:'CANCELLED',reason};
   };
-  if(at-Date.parse(p.followup_due_at)>90_000)return cancel('FOLLOWUP_WINDOW_EXPIRED');
+  // Recovery after a temporary outage is allowed for the original approved video.
+  // A long delay becomes an operator issue, never a blind retry.
+  if(at-Date.parse(p.followup_due_at)>6*60*60_000)return cancel('FOLLOWUP_WINDOW_EXPIRED');
   const lead=one("SELECT l.phone,l.stage,t.manual_takeover FROM leads l LEFT JOIN threads t ON t.lead_id=l.id WHERE l.id=?",p.lead_id);
   if(!lead||lead.phone!==p.phone||lead.manual_takeover===1||
    ['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)||
@@ -298,9 +305,11 @@ export async function tickPitchFollowup(deps={}){
    if(ownerProspectionPaused()||getSetting('paused',true))throw Error('PAUSED_DURING_SEND');
    if(one('SELECT manual_takeover FROM threads WHERE lead_id=?',p.lead_id)?.manual_takeover===1||
       introductionStatus(p.lead_id)?.stage!=='VOICE_SENT')throw Error('MANUAL_TAKEOVER');
+   beginPitchDelivery({leadId:p.lead_id,greetingId:p.greeting_id,kind:'VIDEO',sessionId:p.session_id,jid:p.phone+'@s.whatsapp.net'});
    const ack=await sendVideo({jid:p.phone+'@s.whatsapp.net',session:p.session_id,
     bytes:video.bytes,caption:PITCH_PREVIEW_TEXT});
    if(ack?.accepted!==true)throw Error('VIDEO_UNCONFIRMED');
+   acknowledgePitchDelivery({leadId:p.lead_id,greetingId:p.greeting_id,kind:'VIDEO',providerId:ack.messageId});
    const stamp=now();
    run("UPDATE prospecting_introductions SET followup_status='SENT',followup_sent_at=?,updated_at=? WHERE lead_id=? AND followup_status='SENDING'",stamp,stamp,p.lead_id);
    const thread=one('SELECT id FROM threads WHERE lead_id=?',p.lead_id);
@@ -310,9 +319,11 @@ export async function tickPitchFollowup(deps={}){
    return {state:'SENT',leadId:p.lead_id};
   }catch(error){
    if(String(error?.message||'')==='MANUAL_TAKEOVER'){
+    cancelPitchDelivery({leadId:p.lead_id,greetingId:p.greeting_id,kind:'VIDEO'});
     run("UPDATE prospecting_introductions SET followup_status='CANCELLED',reason='MANUAL_TAKEOVER',updated_at=? WHERE lead_id=? AND followup_status='SENDING'",now(),p.lead_id);
     return {state:'CANCELLED',reason:'MANUAL_TAKEOVER'};
    }
+   unknownPitchDelivery({leadId:p.lead_id,greetingId:p.greeting_id,kind:'VIDEO',reason:String(error?.message||error)});
    run("UPDATE prospecting_introductions SET followup_status='UNKNOWN',reason='Follow-up delivery uncertain; manual review',updated_at=? WHERE lead_id=? AND followup_status='SENDING'",now(),p.lead_id);
    audit('PROSPECT_PITCH_PREVIEW_UNKNOWN',p.lead_id,{manualReview:true});
    return {state:'UNKNOWN',reason:String(error?.message||error).slice(0,80)};
