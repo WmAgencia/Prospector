@@ -9,7 +9,8 @@ process.env.PROSPECTOR_PITCH_AUDIO_ENABLED='true';
 process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN='true';
 process.env.PROSPECTOR_GROUP_IMPORT_JID='12036302123456789@g.us';
 const db=await import('../dashboard/db.mjs');
-const {acceptsProposalAudio,interestedAfterProposal}=await import('../dashboard/prospector-sales-signals.mjs');
+const {acceptsProposalAudio,interestedAfterProposal,declinesProposalAudio}=await import('../dashboard/prospector-sales-signals.mjs');
+const {wantsPortfolioPitchAudio}=await import('../dashboard/portfolio-pitch-audio.mjs');
 const {registerGreeting,routeIntroductionReply,introductionStatus,tickIntroductions,WESLEY_INTRO}=await import('../dashboard/prospecting-introduction.mjs');
 const {recordInboundTranscript}=await import('../dashboard/waakg-bridge.mjs');
 const {tickProspectorFarewells,queueProspectorFarewell,PROSPECTOR_FAREWELL}=await import('../dashboard/prospector-farewell.mjs');
@@ -46,6 +47,30 @@ test('short positive replies authorize original audio but refusals do not',()=>{
  for(const phrase of ['Não tenho interesse','Não gostei','Agora não','Não quero o site'])
   assert.equal(interestedAfterProposal(phrase),false,phrase);
 });
+
+test('Pão Quente permission to forward to its manager is recognized',async()=>{
+ const item=prospect();
+ await introText(item);
+ const answer='pode sim, encaminho ao responsável';
+ assert.equal(acceptsProposalAudio(answer),true);
+ assert.equal(routeIntroductionReply({leadId:item.lead.id,providerId:'pao-'+item.lead.id,body:answer,receivedAt:new Date(Date.now()-42000)}).state,'VOICE_WAITING');
+ db.run("UPDATE prospecting_introductions SET stage='CANCELLED' WHERE lead_id=?",item.lead.id);
+});
+test('BAT Móveis refusal must never be classified as consent or send a recorded proposal',async()=>{
+ const msg='Não amigo só orçamentos porque são muitos e não dá tempo de falar sobre outros assuntos, obrigado';
+ assert.equal(declinesProposalAudio(msg),true);
+ assert.equal(wantsPortfolioPitchAudio(msg),false);
+ assert.equal(acceptsProposalAudio(msg),false);
+ const item=prospect();
+ await introText(item);
+ const inbound=recordInboundTranscript({sessionId:'consecom-principal',jid:item.jid,unique:'consecom-principal:bat-'+item.lead.id,content:msg});
+ assert.equal(inbound.status,200);
+ assert.equal(db.one('SELECT stage FROM leads WHERE id=?',item.lead.id).stage,'NO_INTEREST');
+ assert.notEqual(introductionStatus(item.lead.id).stage,'VOICE_WAITING');
+ const result=await tickIntroductions({status:async()=>({connected:true}),sendAudio:async()=>{throw Error('refused client received audio')}});
+ assert.equal(result.state,'IDLE');
+});
+
 test('first reply always sends permission question; only second permission sends voice, never substitute text',async()=>{
  const item=prospect();
  await introText(item);
