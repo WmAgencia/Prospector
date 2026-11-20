@@ -74,6 +74,7 @@ import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {tickIntroductions,tickPitchFollowup} from './prospecting-introduction.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
+import {bootstrapConsecomCampaign} from './consecom-campaign-bootstrap.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
 import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
@@ -299,6 +300,8 @@ if(ownerProspectionPaused()){
  console.warn('[owner pause] Consecom prospecting PAUSED until owner explicitly resumes');
 }
 
+try{console.info('[Consecom campaign R$550 media]',JSON.stringify(bootstrapConsecomCampaign()));}
+catch(error){console.error('[Consecom campaign R$550 media]',String(error?.message||error).slice(0,160));}
 const dailyCap250Result=apply250DailyLimit();
 console.info('[daily 250 limit]',JSON.stringify(dailyCap250Result));
 console.info('[proposal voice asset]',JSON.stringify(portfolioPitchAudioHealth()));
