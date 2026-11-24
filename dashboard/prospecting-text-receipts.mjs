@@ -6,6 +6,7 @@ import {db,one,all,run,now,audit} from './db.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 import {waRequest} from './waakg-control.mjs';
 import {queueNotice} from './notifications.mjs';
+import {findSentTextInHistory,loadProspectorHistory} from './prospecting-chat-history.mjs';
 
 db.exec(`CREATE TABLE IF NOT EXISTS prospecting_text_receipts(
  lead_id TEXT NOT NULL REFERENCES leads(id),
@@ -88,6 +89,17 @@ export function receiveTextReceiptStatus(payload={}){
  return true; // matched echo must not create a false owner manual takeover.
 }
 function ageMs(t){const n=Number(t);return Number.isFinite(n)&&n>1e11?n:n>1e8?n*1000:(Date.parse(t)||0);}
+async function expectedTextForReceipt(record){
+ const prefix=record.kind==='GREETING'?'prospect-queue:':'intro:';
+ const msg=one("SELECT body FROM messages WHERE provider_id=? AND direction='out'",prefix+record.greeting_id);
+ if(msg?.body)return msg.body;
+ // The transport may have succeeded before the local message was persisted.
+ // Recover the approved source copy, not an arbitrary message.
+ const {WESLEY_INTRO,greetingForProspect}=await import('./prospecting-introduction.mjs');
+ if(record.kind==='INTRO')return WESLEY_INTRO;
+ const lead=one('SELECT * FROM leads WHERE id=?',record.lead_id);
+ return lead?greetingForProspect(lead,new Date(record.attempted_at)):'';
+}
 let reconciling=false;
 export async function reconcileTextReceipts({fetchChat=waRequest,limit=5}={}){
  if(reconciling)return {state:'BUSY'};
@@ -99,13 +111,36 @@ export async function reconcileTextReceipts({fetchChat=waRequest,limit=5}={}){
   for(const r of rows){
    run('UPDATE prospecting_text_receipts SET checked_at=? WHERE lead_id=? AND greeting_id=? AND kind=?',now(),r.lead_id,r.greeting_id,r.kind);
    try{
-    if(r.provider_id&&isManagedSession(r.session_id)&&leadSession(r.lead_id)===r.session_id){
-     const response=await fetchChat('/api/chat/'+encodeURIComponent(r.session_id)+'/'+encodeURIComponent(r.jid));
-     const items=Array.isArray(response?.data)?response.data:[];
-     const msg=items.find(x=>x.fromMe===true&&(x.keyId||x.key?.id)===r.provider_id&&String(x.type||'').toUpperCase()==='TEXT');
-     if(msg){matched++;if(['SENT','DELIVERED','READ','FAILED'].includes(String(msg.status||'').toUpperCase()))updateReceipt(r,msg.status);}
+    if(isManagedSession(r.session_id)&&leadSession(r.lead_id)===r.session_id){
+     const history=await loadProspectorHistory({sessionId:r.session_id,jid:r.jid,fetchChat});
+     if(history.state==='AVAILABLE'){
+      const verified=findSentTextInHistory({
+       messages:history.messages,providerId:r.provider_id,
+       expectedText:r.provider_id?'':await expectedTextForReceipt(r),
+       attemptedAt:r.attempted_at
+      });
+      if(['EXACT_ID','UNIQUE_CONTENT'].includes(verified.state)){
+       const found=verified.message;
+       const foundId=String(found.keyId||found.key?.id||'');
+       const changed=run("UPDATE prospecting_text_receipts SET provider_id=? WHERE lead_id=? AND greeting_id=? AND kind=? AND provider_id IS NULL",
+        foundId,r.lead_id,r.greeting_id,r.kind).changes;
+       const actual=(found.status||'SENT').toUpperCase();
+       if(['SENT','DELIVERED','READ','FAILED'].includes(actual)){
+        updateReceipt({...r,provider_id:r.provider_id||foundId},actual);
+       }
+       if(changed)audit('PROSPECT_TEXT_FOUND_IN_WHATSAPP',r.lead_id,{kind:r.kind,method:verified.state,messageId:foundId});
+       matched++;
+      }else if(verified.state==='AMBIGUOUS'){
+       run("UPDATE prospecting_text_receipts SET error='Multiple matching outgoing messages; manual verification required' WHERE lead_id=? AND greeting_id=? AND kind=?",
+        r.lead_id,r.greeting_id,r.kind);
+      }
+      // NOT_FOUND never causes an automatic second attempt: the API returns
+      // only the last 100 messages, so absence is not conclusive evidence.
+     }
     }
-   }catch{}
+   }catch(error){
+    audit('PROSPECT_HISTORY_READ_ERROR',r.lead_id,{kind:r.kind,error:String(error?.message||error).slice(0,120)});
+   }
    const latest=textReceipt(r.lead_id,r.greeting_id,r.kind)||r;
    const elapsed=Date.now()-ageMs(latest.attempted_at);
    const warn=latest.status==='UNKNOWN'||latest.status==='FAILED'?elapsed>3*60000:
