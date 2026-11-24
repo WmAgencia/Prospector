@@ -73,7 +73,7 @@ import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {tickIntroductions,tickPitchFollowup} from './prospecting-introduction.mjs';
-import {reconcilePitchDeliveries,auditStuckPitchSteps,recoverVerifiedUnattemptedPitch,pitchDeliverySummary} from './pitch-delivery-verification.mjs';
+import {reconcilePitchDeliveries,auditStuckPitchSteps,recoverVerifiedUnattemptedPitch,pitchDeliverySummary,pitchVideoBacklogStatus} from './pitch-delivery-verification.mjs';
 import {reconcileTextReceipts} from './prospecting-text-receipts.mjs';
 import {auditProspectingWorkflow} from './prospecting-workflow-watchdog.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
@@ -959,10 +959,20 @@ const pitchPreviewTimer=setInterval(()=>{
 },1000);
 // Message ID/receipt reconciliation never sends to prospects or retries a failed request.
 const pitchReceiptTimer=setInterval(()=>{
- reconcilePitchDeliveries({limit:4}).then(result=>{
+ reconcilePitchDeliveries({limit:6}).then(result=>{
   if(result.alerts)console.warn('[pitch delivery] unresolved receipts',JSON.stringify(result));
  }).catch(error=>console.warn('[pitch delivery]',String(error?.message||error).slice(0,110)));
-},15_000);
+},5_000);
+const pitchVideoBacklogTimer=setInterval(()=>{
+ try{
+  const pending=pitchVideoBacklogStatus();
+  if(pending.waiting||pending.videoUncertain)console.warn('[pitch video backlog]',JSON.stringify(pending));
+ }catch(error){console.warn('[pitch video backlog]',String(error?.message||error).slice(0,120));}
+},60_000);
+setTimeout(()=>{
+ try{console.info('[pitch video backlog at startup]',JSON.stringify(pitchVideoBacklogStatus()));}
+ catch(error){console.warn('[pitch video backlog]',String(error?.message||error).slice(0,120));}
+},12_000).unref();
 const textReceiptTimer=setInterval(()=>{
  reconcileTextReceipts({limit:5}).then(result=>{
   if(result.alerts)console.warn('[prospect text receipts] unresolved WhatsApp confirmations',JSON.stringify(result));
