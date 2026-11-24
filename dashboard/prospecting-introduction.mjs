@@ -282,6 +282,10 @@ export async function tickIntroductions(deps={}){
 // Only brand-new automated audio acknowledgments schedule this; past/manual audios
 // are not backfilled. Uncertain sends are NEVER automatically retried.
 let pitchFollowupBusy=false;
+// A single unavailable sender/chat must not starve unrelated clients.
+// In-memory cooldown never resends media; the durable receipt still enforces
+// one actual network attempt for each recipient and video.
+const pitchFollowupCheckAfter=new Map();
 export async function tickPitchFollowup(deps={}){
  if(ownerProspectionPaused()||getSetting('paused',true))return {state:'PAUSED'};
  if(pitchFollowupBusy)return {state:'BUSY'};
@@ -292,14 +296,19 @@ export async function tickPitchFollowup(deps={}){
   // Never allow one unconfirmed/failed audio to block videos for other
   // clients. Pick the earliest due video whose own audio is confirmed SENT
   // (or delivered/read) by the exact WhatsApp ID/history.
-  const p=one(`SELECT p.* FROM prospecting_introductions p
+  for(const [leadId,retryAt] of pitchFollowupCheckAfter){
+   if(retryAt<=at)pitchFollowupCheckAfter.delete(leadId);
+  }
+  const candidates=all(`SELECT p.* FROM prospecting_introductions p
    WHERE p.stage='VOICE_SENT' AND p.followup_status='WAITING'
     AND p.followup_due_at<=?
     AND EXISTS (SELECT 1 FROM pitch_delivery_receipts r
      WHERE r.lead_id=p.lead_id AND r.greeting_id=p.greeting_id
       AND r.kind='AUDIO' AND r.status IN ('SENT','DELIVERED','READ'))
-   ORDER BY p.followup_due_at LIMIT 1`,atIso);
+   ORDER BY p.followup_due_at LIMIT 100`,atIso);
+  const p=candidates.find(row=>(pitchFollowupCheckAfter.get(row.lead_id)||0)<=at);
   if(!p){
+   if(candidates.length)return {state:'CHECK_DEFERRED',pending:candidates.length};
    const blocked=one(`SELECT p.lead_id,r.status AS audio_status
     FROM prospecting_introductions p
     LEFT JOIN pitch_delivery_receipts r
@@ -357,7 +366,10 @@ export async function tickPitchFollowup(deps={}){
    p.lead_id,audioMessage.rowid);
   if(nextMessage)return cancel('OTHER_OUTBOUND_AFTER_AUDIO');
   const wa=await status(p.session_id);
-  if(!wa.connected)return {state:'OFFLINE'};
+  if(!wa.connected){
+   pitchFollowupCheckAfter.set(p.lead_id,at+30_000);
+   return {state:'OFFLINE'};
+  }
   if(one('SELECT manual_takeover FROM threads WHERE lead_id=?',p.lead_id)?.manual_takeover===1||
     introductionStatus(p.lead_id)?.stage!=='VOICE_SENT')return cancel('MANUAL_TAKEOVER');
   let video=null;
@@ -371,7 +383,12 @@ export async function tickPitchFollowup(deps={}){
   if(fetchHistory){
    const proof=await preflightNewStep({sessionId:p.session_id,jid:p.phone+'@s.whatsapp.net',
     kind:'VIDEO',text:PITCH_PREVIEW_TEXT,at:new Date(at),fetchChat:fetchHistory});
-   if(proof.state==='UNAVAILABLE')return {state:'HISTORY_UNAVAILABLE'};
+   if(proof.state==='UNAVAILABLE'){
+    // Do not repeatedly block every other customer's video while one
+    // WhatsApp conversation has temporarily unreadable history.
+    pitchFollowupCheckAfter.set(p.lead_id,at+25_000);
+    return {state:'HISTORY_UNAVAILABLE'};
+   }
    if(proof.state==='EXISTS'){
     const messageId=String(proof.message?.keyId||proof.message?.key?.id||'');
     const stamp=now();
