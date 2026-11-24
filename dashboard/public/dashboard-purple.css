@@ -943,3 +943,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .billing-return-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .billing-return-actions .secondary{font-size:12px;white-space:nowrap;border-radius:10px}
 @media(max-width:700px){.billing-return-status{padding:16px!important;align-items:stretch}.billing-return-actions{width:100%}.billing-return-actions button{flex:1}}
+
+/* Verified 80/day pipeline: five columns with queue at the left. */
+.kanban-columns{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+.kanban-column.kanban-queued{background:#f4edff!important;border-color:#e6d9ff!important}
+.kanban-column.kanban-queued header{background:#eee3ff!important;border-top:3px solid #9069ec!important;border-bottom-color:#dbc9fa!important}
+.kanban-column.kanban-queued .kanban-column-head>span{background:#dbc9ff!important;color:#5a2fa4!important}
+.kanban-checkpoint.is-confirmed .kanban-checkpoint-copy small{color:#217d4b!important}
+.kanban-checkpoint.is-problem .kanban-checkpoint-copy small{color:#bd5437!important}
+@media(max-width:1600px){.kanban-columns{grid-template-columns:repeat(5,minmax(225px,1fr))!important}}
+@media(max-width:940px){.kanban-columns{grid-template-columns:repeat(5,minmax(225px,1fr))!important}}
