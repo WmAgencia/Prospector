@@ -59,6 +59,21 @@ export function prospectingStepVerification({at=new Date(),days=7,limit=50}={}){
    }
   }
  }
+ // A first greeting can be marked SENT/UNKNOWN by a legacy worker without
+ // the separate receipt. Expose that gap instead of treating CRM state as proof.
+ for(const row of all(`SELECT b.id AS greeting_id,b.lead_id,b.attempt_at,
+   b.status,l.phone,l.business,l.stage AS lead_stage,
+   COALESCE(t.manual_takeover,0) AS manual_takeover
+   FROM prospecting_batch_items b JOIN leads l ON l.id=b.lead_id
+   LEFT JOIN threads t ON t.lead_id=b.lead_id
+   LEFT JOIN prospecting_text_receipts r ON r.lead_id=b.lead_id
+    AND r.greeting_id=b.id AND r.kind='GREETING'
+   WHERE b.attempt_at>=? AND b.status IN ('SENT','SENDING','UNKNOWN')
+    AND r.lead_id IS NULL`,cutoff)){
+  if(stamp(row.attempt_at)>0&&stamp(row.attempt_at)<ms-4*60000)
+   add({...row,step:'GREETING',code:'MISSING_SEND_RECEIPT',
+    status:'NOT_VERIFIED',at:row.attempt_at,urgency:1});
+ }
  const permission={awaitingReply:0,received:0,stalled:0};
  const introductions=all(`SELECT p.*,l.business,l.phone,l.stage AS lead_stage,
   COALESCE(t.manual_takeover,0) AS manual_takeover
