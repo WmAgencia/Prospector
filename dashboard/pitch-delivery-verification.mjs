@@ -98,7 +98,14 @@ export function receivePitchDeliveryStatus(payload={}){
  return true;
 }
 const remoteId=m=>String(m.keyId||m.key?.id||'');
-const chatStatus=m=>['SENT','DELIVERED','READ','FAILED'].includes(cleanStatus(m.status))?cleanStatus(m.status):null;
+// WA-AKG persists outgoing messages with status=PENDING until a receipt arrives.
+// Matching an exact Baileys message ID in its OWN outbound history confirms
+// the message was sent into WhatsApp, but does NOT prove handset delivery.
+const chatStatus=m=>{
+ const raw=cleanStatus(m?.status);
+ if(raw==='PENDING'&&m?.fromMe===true&&validId(remoteId(m)))return 'SENT';
+ return ['SENT','DELIVERED','READ','FAILED'].includes(raw)?raw:null;
+};
 export function matchPitchHistory(record,messages=[]){
  const pool=messages.filter(m=>m.fromMe===true&&expectedType(m.type,record.kind));
  if(record.provider_id){
@@ -151,9 +158,29 @@ export async function reconcilePitchDeliveries({fetchChat=waRequest,limit=4}={})
  if(active)return {state:'BUSY'};
  active=true;
  try{
-  const checkBefore=new Date(Date.now()-45_000).toISOString();
-  const rows=all("SELECT * FROM pitch_delivery_receipts WHERE status NOT IN ('READ','CANCELLED') AND (last_checked_at IS NULL OR last_checked_at<?) AND attempted_at>=? ORDER BY COALESCE(last_checked_at,attempted_at) LIMIT ?",
-   checkBefore,new Date(Date.now()-7*86400000).toISOString(),Math.max(1,Math.min(8,Number(limit)||4)));
+  const ordinaryBefore=new Date(Date.now()-45_000).toISOString();
+  const activeBefore=new Date(Date.now()-7_000).toISOString();
+  // The approved video is waiting for its audio's confirmation. Reconcile
+  // these audio receipts FIRST so old unrelated media cannot starve the queue.
+  const rows=all(`SELECT * FROM pitch_delivery_receipts r WHERE r.status NOT IN ('READ','CANCELLED')
+   AND r.attempted_at>=?
+   AND (
+    (r.kind='AUDIO' AND EXISTS(
+     SELECT 1 FROM prospecting_introductions p
+     WHERE p.lead_id=r.lead_id AND p.greeting_id=r.greeting_id
+      AND p.stage='VOICE_SENT' AND p.followup_status='WAITING'
+    ) AND (r.last_checked_at IS NULL OR r.last_checked_at<?))
+    OR (r.last_checked_at IS NULL OR r.last_checked_at<?)
+   )
+   ORDER BY CASE WHEN r.kind='AUDIO' AND EXISTS(
+     SELECT 1 FROM prospecting_introductions p
+     WHERE p.lead_id=r.lead_id AND p.greeting_id=r.greeting_id
+      AND p.stage='VOICE_SENT' AND p.followup_status='WAITING'
+    ) THEN 0 ELSE 1 END,
+    COALESCE(r.last_checked_at,r.attempted_at)
+   LIMIT ?`,
+   new Date(Date.now()-7*86400000).toISOString(),activeBefore,ordinaryBefore,
+   Math.max(1,Math.min(8,Number(limit)||4)));
   let checked=0,alerts=0;
   for(const record of rows){
    run('UPDATE pitch_delivery_receipts SET last_checked_at=? WHERE lead_id=? AND greeting_id=? AND kind=?',now(),record.lead_id,record.greeting_id,record.kind);
