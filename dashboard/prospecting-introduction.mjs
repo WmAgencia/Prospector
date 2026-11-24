@@ -22,7 +22,9 @@ import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAu
 import {acceptsProposalAudio,interestedAfterProposal} from './prospector-sales-signals.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
 import {beginPitchDelivery,acknowledgePitchDelivery,unknownPitchDelivery,cancelPitchDelivery,pitchDeliveryReceipt} from './pitch-delivery-verification.mjs';
-import {reserveTextReceipt,acceptTextReceipt,unknownTextReceipt,extractTextMessageId} from './prospecting-text-receipts.mjs';
+import {reserveTextReceipt,acceptTextReceipt,unknownTextReceipt,extractTextMessageId,receiveTextReceiptStatus} from './prospecting-text-receipts.mjs';
+import {preflightNewStep} from './prospecting-chat-history.mjs';
+import {queueNotice} from './notifications.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const PITCH_PREVIEW_DELAY_MS=10_000;
@@ -183,6 +185,43 @@ export async function tickIntroductions(deps={}){
   const wa=await status(item.session_id);
   if(!wa.connected)return {state:'OFFLINE'};
   if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
+  // This is a brand-new stage (no previous network attempt). Read actual
+  // WhatsApp history before issuing its one permitted transport request.
+  const fetchHistory=deps.fetchHistory||(!deps.status&&!deps.send&&!deps.sendAudio?waRequest:null);
+  if(fetchHistory){
+   const proof=await preflightNewStep({sessionId:item.session_id,jid:item.phone+'@s.whatsapp.net',
+    kind:voiceRequested?'AUDIO':'TEXT',text:voiceRequested?'':WESLEY_INTRO,
+    at:new Date(at),fetchChat:fetchHistory});
+   if(proof.state==='UNAVAILABLE')return {state:'HISTORY_UNAVAILABLE'};
+   if(!voiceRequested&&proof.state==='EXISTS'){
+    const messageId=String(proof.message?.keyId||proof.message?.key?.id||'');
+    const changed=run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND greeting_id=? AND stage='WAITING'",
+     now(),now(),item.lead_id,item.greeting_id).changes;
+    if(!changed)return {state:'BUSY'};
+    reserveTextReceipt({leadId:item.lead_id,greetingId:item.greeting_id,kind:'INTRO',sessionId:item.session_id,jid:item.phone+'@s.whatsapp.net'});
+    acceptTextReceipt({leadId:item.lead_id,greetingId:item.greeting_id,kind:'INTRO',providerId:messageId});
+    receiveTextReceiptStatus({event:'message.status',sessionId:item.session_id,
+     data:{keyId:messageId,remoteJid:item.phone+'@s.whatsapp.net',
+      status:['SENT','DELIVERED','READ'].includes(String(proof.message.status||'').toUpperCase())?proof.message.status:'SENT'}});
+    const stamp=now();
+    run("UPDATE prospecting_introductions SET stage='SENT',reason=NULL,sent_at=?,updated_at=? WHERE lead_id=? AND stage='SENDING'",
+     stamp,stamp,item.lead_id);
+    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
+    if(thread&&!one('SELECT id FROM messages WHERE provider_id=?','intro:'+item.greeting_id))
+     addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:WESLEY_INTRO,status:'sent'});
+    audit('PROSPECT_PERMISSION_TEXT_ALREADY_IN_WHATSAPP',item.lead_id,{messageId,duplicateAvoided:true});
+    return {state:'SENT',fromHistory:true};
+   }
+   if(proof.state!=='CLEAR'){
+    run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason=?,updated_at=? WHERE lead_id=? AND stage=?",
+     'Possible earlier outbound WhatsApp media; manual review',now(),item.lead_id,item.stage);
+    queueNotice('preflight-intro:'+item.greeting_id+':'+item.stage,'PITCH_DELIVERY_ISSUE',
+     '*Prospector — mensagem já existe ou pode existir no WhatsApp*\\nDestino: '+item.phone+
+     '\\nNenhum novo envio realizado; conferir mídia e mensagem.\\nhttps://wa.me/'+item.phone,item.lead_id);
+    audit('PROSPECT_INTRO_PREFLIGHT_HELD',item.lead_id,{state:proof.state,voice:voiceRequested});
+    return {state:'UNKNOWN',reason:'POSSIBLE_EXISTING_MESSAGE'};
+   }
+  }
   // Reserve before attempting network transport; UNKNOWN never auto-retries.
   if(!run("UPDATE prospecting_introductions SET stage='SENDING',attempt_at=?,updated_at=? WHERE lead_id=? AND stage=? AND due_at<=?",
    new Date(at).toISOString(),now(),item.lead_id,item.stage,new Date(at).toISOString()).changes)return {state:'BUSY'};
