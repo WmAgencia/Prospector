@@ -74,6 +74,7 @@ import {outreachConsentControl,requestOutreachConsentControl} from './outreach-c
 import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {tickIntroductions,tickPitchFollowup} from './prospecting-introduction.mjs';
 import {reconcilePitchDeliveries,auditStuckPitchSteps,recoverVerifiedUnattemptedPitch,pitchDeliverySummary} from './pitch-delivery-verification.mjs';
+import {reconcileTextReceipts} from './prospecting-text-receipts.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {bootstrapConsecomCampaign} from './consecom-campaign-bootstrap.mjs';
@@ -960,7 +961,13 @@ const pitchReceiptTimer=setInterval(()=>{
  reconcilePitchDeliveries({limit:4}).then(result=>{
   if(result.alerts)console.warn('[pitch delivery] unresolved receipts',JSON.stringify(result));
  }).catch(error=>console.warn('[pitch delivery]',String(error?.message||error).slice(0,110)));
-},60_000);
+},15_000);
+const textReceiptTimer=setInterval(()=>{
+ reconcileTextReceipts({limit:5}).then(result=>{
+  if(result.alerts)console.warn('[prospect text receipts] unresolved WhatsApp confirmations',JSON.stringify(result));
+ }).catch(error=>console.warn('[prospect text receipts]',String(error?.message||error).slice(0,110)));
+},30_000);
+setTimeout(()=>reconcileTextReceipts({limit:5}).catch(e=>console.warn('[prospect text receipts]',e.message)),9_000).unref();
 async function auditApprovedPitchContinuity(){
  try{
   const recovery=await recoverVerifiedUnattemptedPitch({limit:2});
