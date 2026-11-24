@@ -1,11 +1,12 @@
 // Read-only continuity checks: notify the owner, NEVER resend uncertain steps.
 import {one,all,getSetting,now} from './db.mjs';
-import {queueNotice,localDay} from './notifications.mjs';
+import {queueNotice} from './notifications.mjs';
+import {brazilDay} from './kanban-period.mjs';
 import {insideApproachWindow,saoPauloClock} from './outreach-window.mjs';
 import {approachQueueStatus,autonomousReadyCount} from './prospecting-queue.mjs';
 
 export function auditProspectingWorkflow({at=new Date()}={}){
- const date=localDay(at);
+ const date=brazilDay(at);
  let alerts=0;
  const afterStart=saoPauloClock(at)>=8*60+20;
  if(afterStart&&insideApproachWindow(at)&&getSetting('autonomous_outreach_enabled',false)===true&&getSetting('paused',true)===false){
