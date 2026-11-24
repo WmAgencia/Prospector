@@ -71,6 +71,10 @@ function updateStatus(record,status,providerId=null){
  const next=cleanStatus(status);
  if(!['SENT','DELIVERED','READ','FAILED'].includes(next))return false;
  if(record.status==='READ'||(record.status==='DELIVERED'&&next!=='READ')||record.status==='CANCELLED')return false;
+ // A late gateway FAILED/SENT event must never downgrade earlier positive
+ // evidence. Conversely, a later exact history match may heal FAILED.
+ if(['SENT','DELIVERED','READ'].includes(record.status)&&next==='FAILED')return false;
+ if(record.status==='SENT'&&next==='SENT')return false;
  if(record.provider_id&&providerId&&record.provider_id!==providerId)return false;
  const stamp=now();
  run(`UPDATE pitch_delivery_receipts SET status=?,provider_id=COALESCE(provider_id,?),
@@ -153,6 +157,60 @@ function maybeAlert(record,reason){
  if(queued){run('UPDATE pitch_delivery_receipts SET alerted_at=? WHERE lead_id=? AND greeting_id=? AND kind=?',now(),record.lead_id,record.greeting_id,record.kind);return true;}
  return false;
 }
+// Restore only a step whose original, unique WhatsApp message ID was found.
+// The ledger is updated first; this function never calls a send endpoint.
+async function restoreVerifiedMediaWorkflow(record,messages=[]){
+ const receipt=pitchDeliveryReceipt(record.lead_id,record.greeting_id,record.kind);
+ if(!receipt||!receipt.provider_id||!['SENT','DELIVERED','READ'].includes(receipt.status))return false;
+ const p=one('SELECT * FROM prospecting_introductions WHERE lead_id=? AND greeting_id=? AND session_id=?',
+  record.lead_id,record.greeting_id,record.session_id);
+ if(!p)return false;
+ const {getThread,addMessage}=await import('./db.mjs');
+ const thread=getThread(record.lead_id,record.jid);
+ if(record.kind==='AUDIO'&&p.stage==='UNKNOWN'){
+  // Never restore a next step if the prospect declined, took over manually,
+  // or has any newer outbound WhatsApp message after the recovered audio.
+  const lead=one('SELECT stage FROM leads WHERE id=?',p.lead_id);
+  const owner=one('SELECT manual_takeover FROM threads WHERE lead_id=?',p.lead_id);
+  const audio=messages.find(m=>m.fromMe===true&&expectedType(m.type,'AUDIO')&&remoteId(m)===receipt.provider_id);
+  const audioAt=ageMs(audio?.timestamp||audio?.createdAt)||ageMs(receipt.attempted_at);
+  const otherOutbound=messages.some(m=>m.fromMe===true&&
+   remoteId(m)!==receipt.provider_id&&ageMs(m.timestamp||m.createdAt)>audioAt+1000);
+  const safe=lead&&!['NO_INTEREST','INTERESTED','CLOSED_WON'].includes(lead.stage)&&
+   owner?.manual_takeover!==1&&!one('SELECT 1 FROM suppressions WHERE phone=?',p.phone)&&
+   !otherOutbound&&(Date.now()-audioAt)<6*60*60_000;
+  const due=new Date(audioAt+10_000).toISOString();
+  const status=safe?'WAITING':'UNKNOWN';
+  const updated=run(`UPDATE prospecting_introductions SET stage='VOICE_SENT',
+   reason='PITCH_AUDIO_550',sent_at=COALESCE(sent_at,?),
+   followup_due_at=?,followup_status=?,updated_at=?
+   WHERE lead_id=? AND greeting_id=? AND session_id=? AND stage='UNKNOWN'`,
+   new Date(audioAt).toISOString(),due,status,now(),p.lead_id,p.greeting_id,p.session_id).changes;
+  if(!updated)return false;
+  if(thread&&!one('SELECT 1 FROM messages WHERE provider_id=?','intro-voice:'+p.greeting_id))
+   addMessage({threadId:thread.id,providerId:'intro-voice:'+p.greeting_id,
+    direction:'out',body:'[Áudio original de proposta confirmado no WhatsApp]',status:'sent'});
+  audit('PITCH_AUDIO_RECOVERED_FROM_WHATSAPP',p.lead_id,{status:receipt.status,
+   videoQueued:safe,manualReview:!safe,hasMessageId:true});
+  if(!safe)queueNotice('pitch-audio-recovered-review:'+p.greeting_id,'PITCH_DELIVERY_ISSUE',
+   '*Prospector — áudio recuperado, vídeo requer conferência*\\nDestino: '+p.phone+
+   '\\nO áudio foi localizado pelo ID exato. Confira a conversa antes do próximo envio.\\nhttps://wa.me/'+p.phone,p.lead_id);
+  return true;
+ }
+ if(record.kind==='VIDEO'&&p.followup_status==='UNKNOWN'){
+  const updated=run(`UPDATE prospecting_introductions SET followup_status='SENT',
+   followup_sent_at=COALESCE(followup_sent_at,?),updated_at=?
+   WHERE lead_id=? AND greeting_id=? AND session_id=? AND followup_status='UNKNOWN'`,
+   now(),now(),p.lead_id,p.greeting_id,p.session_id).changes;
+  if(!updated)return false;
+  if(thread&&!one('SELECT 1 FROM messages WHERE provider_id=?','intro-video:'+p.greeting_id))
+   addMessage({threadId:thread.id,providerId:'intro-video:'+p.greeting_id,
+    direction:'out',type:'video',body:CAMPAIGN_VIDEO_CAPTION,status:'sent'});
+  audit('PITCH_VIDEO_RECOVERED_FROM_WHATSAPP',p.lead_id,{status:receipt.status,hasMessageId:true});
+  return true;
+ }
+ return false;
+}
 let active=false;
 export async function reconcilePitchDeliveries({fetchChat=waRequest,limit=4}={}){
  if(active)return {state:'BUSY'};
@@ -190,7 +248,9 @@ export async function reconcilePitchDeliveries({fetchChat=waRequest,limit=4}={})
     const chat=await fetchChat('/api/chat/'+encodeURIComponent(record.session_id)+'/'+encodeURIComponent(record.jid));
     if(!Array.isArray(chat?.data))throw Error('CHAT_UNAVAILABLE');
     const matched=matchPitchHistory(record,chat.data);verdict=matched.state;
-    if(matched.state==='EXACT'&&chatStatus(matched.message))updateStatus(record,chatStatus(matched.message),record.provider_id);
+    if(matched.state==='EXACT'&&
+       (!matched.message.remoteJid||String(matched.message.remoteJid)===record.jid)&&
+       chatStatus(matched.message))updateStatus(record,chatStatus(matched.message),record.provider_id);
     if(matched.state==='EXACT_CAPTION'){
      const msgId=remoteId(matched.message);
      const added=run("UPDATE pitch_delivery_receipts SET provider_id=? WHERE lead_id=? AND greeting_id=? AND kind='VIDEO' AND provider_id IS NULL",
@@ -201,7 +261,14 @@ export async function reconcilePitchDeliveries({fetchChat=waRequest,limit=4}={})
     }
     if(matched.state==='POSSIBLE')run("UPDATE pitch_delivery_receipts SET error='Possible match without gateway message ID; manual review' WHERE lead_id=? AND greeting_id=? AND kind=?",
      record.lead_id,record.greeting_id,record.kind);
-   }catch(error){verdict='UNAVAILABLE';}
+    if(['EXACT','EXACT_CAPTION'].includes(matched.state)&&
+       (!matched.message?.remoteJid||String(matched.message.remoteJid)===record.jid))
+     await restoreVerifiedMediaWorkflow(record,chat.data);
+   }catch(error){
+    verdict='UNAVAILABLE';
+    audit('PITCH_HISTORY_RECONCILIATION_ERROR',record.lead_id,{kind:record.kind,
+     reason:String(error?.message||error).slice(0,110)});
+   }
    const latest=pitchDeliveryReceipt(record.lead_id,record.greeting_id,record.kind)||record;
    const warn=latest.status==='FAILED'?'FAILED':verdict==='POSSIBLE'?'POSSIBLE':
     delivered.has(latest.status)?'':verdict==='EXACT'?'NOT_DELIVERED_TO_PHONE':'NOT_CONFIRMED';
