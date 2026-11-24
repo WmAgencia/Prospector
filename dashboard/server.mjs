@@ -77,6 +77,7 @@ import {reconcilePitchDeliveries,auditStuckPitchSteps,recoverVerifiedUnattempted
 import {reconcileTextReceipts} from './prospecting-text-receipts.mjs';
 import {auditProspectingWorkflow} from './prospecting-workflow-watchdog.mjs';
 import {prospectingStepVerification,alertUnverifiedProspectingSteps} from './prospecting-step-verification.mjs';
+import {reconcileLegacyProspectingReceipts} from './prospecting-legacy-receipt-recovery.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {bootstrapConsecomCampaign} from './consecom-campaign-bootstrap.mjs';
@@ -997,6 +998,20 @@ const textReceiptTimer=setInterval(()=>{
 setTimeout(()=>reconcileTextReceipts({limit:8}).catch(e=>console.warn('[prospect text receipts]',e.message)),9_000).unref();
 // Audit EVERY step and consent, not just the intro worker. Never blindly
 // re-send to a customer when gateway receipts are missing.
+// Recover legacy ledger gaps ONLY by matching unique messages in WA-AKG
+// history; skipped entirely while the WhatsApp gateway is offline.
+async function verifyLegacySendProof(){
+ try{
+  const result=await reconcileLegacyProspectingReceipts({limit:8});
+  if(result.verified)console.info('[prospect historical verification]',JSON.stringify(result));
+  return result;
+ }catch(error){
+  console.warn('[prospect historical verification]',String(error?.message||error).slice(0,130));
+  return {state:'ERROR'};
+ }
+}
+const historicalProofTimer=setInterval(verifyLegacySendProof,75_000);
+setTimeout(verifyLegacySendProof,35_000).unref();
 const prospectStepAuditTimer=setInterval(()=>{
  try{
   const r=alertUnverifiedProspectingSteps({limit:12});
