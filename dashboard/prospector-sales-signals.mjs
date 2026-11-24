@@ -23,6 +23,10 @@ export function acceptsProposalAudio(text=''){
  // A polite greeting before an explicit yes must not hide authorization.
  const s=original.replace(/^(?:oi|ola|bom dia|boa tarde|boa noite)[,! .-]+(?=(?:sim|pode|manda|envia|envie|claro)\b)/,'');
  if(/^(?:sim|claro|pode|pode sim|com certeza|beleza|blz|ok|okay|ta bom|tudo bem|manda|envia|envie|pode mandar|pode enviar|pode falar|pode explicar|fala|manda ai|envia ai|pode sim mandar|pode ser|claro que pode|manda sim|envia sim)[.!? ]*$/.test(s))return true;
+ // Confirmations such as "Ok, pode enviar" are explicit consent to the
+ // previous question asking to send the proposal by voice. Prior negative
+ // screening above is mandatory, and the second part must be a send verb.
+ if(/^(?:ok|okay|beleza|blz|ta bom|tudo bem)[,!;. ]+(?:pode(?: sim)?(?: me)? (?:enviar|mandar)|manda|envia|envie)(?: (?:o |um |a |essa |sua )?(?:audio|proposta|oferta|detalhes))?(?:[,!. ]+(?:sim|por favor|pra mim|quando puder))*[.!? ]*$/.test(s))return true;
  // Example from Villa Incantto: "Claro! Pode enviar o áudio que eu encaminho aos responsáveis".
  // Require an explicit permission verb AND a concrete audio/proposal object;
  // a generic greeting, auto-reply or quoted offer is not sufficient.
