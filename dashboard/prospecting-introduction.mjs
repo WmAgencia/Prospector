@@ -289,8 +289,25 @@ export async function tickPitchFollowup(deps={}){
  pitchFollowupBusy=true;
  try{
   const at=currentTime(),atIso=new Date(at).toISOString();
-  const p=one("SELECT * FROM prospecting_introductions WHERE stage='VOICE_SENT' AND followup_status='WAITING' AND followup_due_at<=? ORDER BY followup_due_at LIMIT 1",atIso);
-  if(!p)return {state:'IDLE'};
+  // Never allow one unconfirmed/failed audio to block videos for other
+  // clients. Pick the earliest due video whose own audio is confirmed SENT
+  // (or delivered/read) by the exact WhatsApp ID/history.
+  const p=one(`SELECT p.* FROM prospecting_introductions p
+   WHERE p.stage='VOICE_SENT' AND p.followup_status='WAITING'
+    AND p.followup_due_at<=?
+    AND EXISTS (SELECT 1 FROM pitch_delivery_receipts r
+     WHERE r.lead_id=p.lead_id AND r.greeting_id=p.greeting_id
+      AND r.kind='AUDIO' AND r.status IN ('SENT','DELIVERED','READ'))
+   ORDER BY p.followup_due_at LIMIT 1`,atIso);
+  if(!p){
+   const blocked=one(`SELECT p.lead_id,r.status AS audio_status
+    FROM prospecting_introductions p
+    LEFT JOIN pitch_delivery_receipts r
+     ON r.lead_id=p.lead_id AND r.greeting_id=p.greeting_id AND r.kind='AUDIO'
+    WHERE p.stage='VOICE_SENT' AND p.followup_status='WAITING'
+     AND p.followup_due_at<=? ORDER BY p.followup_due_at LIMIT 1`,atIso);
+   return blocked?{state:'WAITING_AUDIO_CONFIRMATION',audioStatus:blocked.audio_status||'MISSING'}:{state:'IDLE'};
+  }
   const queueDeferredReply=async()=>{
    const owner=one('SELECT l.stage,t.manual_takeover FROM leads l LEFT JOIN threads t ON t.lead_id=l.id WHERE l.id=?',p.lead_id);
    if(!owner||owner.manual_takeover===1||['INTERESTED','NO_INTEREST','CLOSED_WON'].includes(owner.stage))return false;
