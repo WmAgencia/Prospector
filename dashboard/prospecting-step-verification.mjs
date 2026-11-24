@@ -12,7 +12,7 @@ const sent=new Set(['SENT','DELIVERED','READ']);
 const resultStep=()=>({total:0,confirmedOnDevice:0,sentOnWhatsApp:0,acceptedOnly:0,unverified:0,needsReview:0,byStatus:{}});
 const stamp=value=>{const n=Date.parse(value||'');return Number.isFinite(n)?n:0;};
 const ageMinutes=(at,time)=>Math.max(0,Math.round((time-stamp(at))/60000));
-const safeCount=x=>Math.min(150,Math.max(1,Number(x)||50));
+const safeCount=x=>Math.min(1500,Math.max(1,Number(x)||50));
 
 export function prospectingStepVerification({at=new Date(),days=7,limit=50}={}){
  const nowAt=at instanceof Date?at:new Date(at);
@@ -137,7 +137,7 @@ const noticeKey=x=>{
  return 'pitch-receipt:'+x.greetingId+':'+x.step;
 };
 export function alertUnverifiedProspectingSteps({at=new Date(),notify=queueNotice,limit=12}={}){
- const status=prospectingStepVerification({at,days:7,limit:150});
+ const status=prospectingStepVerification({at,days:7,limit:1500});
  const byCode={};
  for(const item of status.issues)byCode[item.code]=(byCode[item.code]||0)+1;
  let alerted=0,aggregated=false;
@@ -148,7 +148,8 @@ export function alertUnverifiedProspectingSteps({at=new Date(),notify=queueNotic
   const urgent=new Set(['DELIVERY_UNCERTAIN','SEND_IN_PROGRESS_TOO_LONG',
    'AUTHORIZED_STEP_NOT_ATTEMPTED','CONSENT_RECEIVED_NOT_PROCESSED']);
   const fresh=status.issues.filter(x=>x.active&&urgent.has(x.code)&&x.ageMinutes<=48*60);
-  for(const item of fresh.slice(0,Math.max(1,Math.min(6,Number(limit)||6)))){
+  for(const item of fresh){
+   if(alerted>=Math.max(1,Math.min(6,Number(limit)||6)))break;
    const message=[
     '*Prospector — etapa precisa de conferência*',
     'Etapa: '+item.stepLabel,
