@@ -1054,7 +1054,7 @@ function overview(){
  const stat=(label,value,description)=>'<div class="kanban-metric"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong><small>'+esc(description)+'</small></div>';
  const item=(lead,col)=>{
   const due=lead.blocked?'Não contatar':lead.nextEligibleAt?(lead.eligibleAgain?'Recontato liberado':'Retorna '+new Date(lead.nextEligibleAt).toLocaleDateString('pt-BR')):'';
-  const note=col==='queued'?(lead.queueStatus==='UNKNOWN'?'Envio incerto — revisar antes de qualquer reenvio':lead.queueStatus==='SENDING'?'Envio em conferência':'Aguardando a abordagem'):col==='approaching'?(lead.noResponse?'Aguardando resposta':'Abordagem iniciada'):col==='no_interest'?(due||'Sem interesse'):col==='interested'?'Interesse confirmado':'Em atendimento';
+  const note=col==='queued'?(lead.queueStatus==='UNKNOWN'?'Envio incerto — revisar antes de qualquer reenvio':lead.queueStatus==='SENDING'?'Envio em conferência':lead.queueStatus==='SENT'?'Aguardando confirmação do WhatsApp':'Aguardando a abordagem'):col==='approaching'?(lead.noResponse?'Aguardando resposta':'Abordagem iniciada'):col==='no_interest'?(due||'Sem interesse'):col==='interested'?'Interesse confirmado':'Em atendimento';
   const checkText={QUEUED:'Na fila',WAITING:'Aguardando',SENDING:'Enviando',ACCEPTED:'Aceito pela API',SENT:'Enviado',DELIVERED:'Entregue',READ:'Lido',RECEIVED:'Recebido',UNKNOWN:'Revisar',FAILED:'Falhou',CANCELLED:'Interrompido'};
   const steps=(lead.workflow?.checklist||[]).map(step=>{
    const state=String(step.status||'WAITING');
@@ -1070,7 +1070,7 @@ function overview(){
  return '<div class="kanban-dashboard" id="overview-board">'+
   '<div class="kanban-overview-head"><div class="kanban-overview-title"><span class="kicker">PIPELINE COMERCIAL</span><h2>Visão da operação</h2><p>'+esc(rangeHint)+'</p></div>'+
   '<div class="kanban-overview-actions">'+kanbanPeriodControls()+'<button class="secondary compact kanban-refresh" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div></div>'+
-  '<div class="kanban-metrics">'+stat('Fila de hoje',metricValue(k.scheduledToday?.pending??0),'de '+esc(k.scheduledToday?.scheduled||0)+' agendadas hoje')+
+  '<div class="kanban-metrics">'+stat('Na fila',metricValue(k.counts?.queued||0),'de '+esc(k.scheduledToday?.scheduled||0)+' agendadas hoje')+
    stat('Prospecções',metricValue(k.prospections??'—'),kanbanPeriod==='all'?'Abordagens enviadas':'Abordagens no período')+
   stat('Empresas acompanhadas',metricValue(total),'Com atividade registrada')+stat('Abordando',metricValue(k.counts?.approaching||0),'Em contato')+
   stat('Interessados',metricValue(k.counts?.interested||0),'Prioridade comercial')+stat('Conversando',metricValue(k.counts?.conversing||0),'Atendimento humano')+'</div>'+
