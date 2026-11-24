@@ -17,7 +17,7 @@ const validId=v=>/^[A-Za-z0-9_-]{5,150}$/.test(String(v||''));
 const messageId=m=>String(m?.keyId||m?.key?.id||'');
 const statusOf=m=>{
  const raw=String(m?.status||'').toUpperCase();
- return !raw||raw==='PENDING'?'SENT':['SENT','DELIVERED','READ','FAILED'].includes(raw)?raw:null;
+ return !raw||raw==='PENDING'?'SENT':['SENT','DELIVERED','READ'].includes(raw)?raw:null;
 };
 const readOnlyCandidates=since=>{
  const texts=all(`SELECT 'INTRO' AS kind,p.lead_id,p.greeting_id,p.session_id,p.phone,
