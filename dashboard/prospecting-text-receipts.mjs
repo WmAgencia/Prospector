@@ -61,7 +61,8 @@ export function unknownTextReceipt({leadId,greetingId,kind,error='TRANSPORT_UNCE
 function updateReceipt(record,status){
  const next=String(status||'').toUpperCase();
  if(!Object.prototype.hasOwnProperty.call(progressed,next)||next==='SENDING'||next==='ACCEPTED'||next==='UNKNOWN')return false;
- if(progressed[record.status]>=progressed[next]||record.status==='READ')return false;
+ if(record.status==='READ'||(next==='FAILED'&&progressed[record.status]>=2)||
+   (next!=='FAILED'&&progressed[record.status]>=progressed[next]))return false;
  // A FAILED status can be transient; retain the record, but never retry.
  const stamp=now();
  run(`UPDATE prospecting_text_receipts SET status=?,confirmed_at=COALESCE(confirmed_at,?),
