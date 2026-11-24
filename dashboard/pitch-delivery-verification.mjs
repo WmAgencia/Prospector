@@ -283,6 +283,28 @@ export function auditStuckPitchSteps(){
  }
  return {flagged,waiting:waiting.length,consentCandidates:sent.length,videoCandidates:videos.length};
 }
+// Read-only operational health for videos, useful after webhook failures.
+// Does not expose phone numbers or alter WhatsApp state.
+export function pitchVideoBacklogStatus(){
+ const rows=all(`SELECT p.followup_status AS video_status,
+  COALESCE(r.status,'NO_AUDIO_RECEIPT') AS audio_status,COUNT(*) AS total
+  FROM prospecting_introductions p
+  LEFT JOIN pitch_delivery_receipts r ON r.lead_id=p.lead_id
+   AND r.greeting_id=p.greeting_id AND r.kind='AUDIO'
+  WHERE p.stage='VOICE_SENT' AND p.sent_at>=?
+  GROUP BY p.followup_status,COALESCE(r.status,'NO_AUDIO_RECEIPT')`,
+  new Date(Date.now()-3*86400000).toISOString());
+ const sum=(p)=>rows.filter(p).reduce((n,r)=>n+Number(r.total||0),0);
+ return {
+  waiting:sum(r=>r.video_status==='WAITING'),
+  readyToSend:sum(r=>r.video_status==='WAITING'&&['SENT','DELIVERED','READ'].includes(r.audio_status)),
+  waitingAudioConfirmation:sum(r=>r.video_status==='WAITING'&&!['SENT','DELIVERED','READ'].includes(r.audio_status)),
+  videoAccepted:sum(r=>r.video_status==='SENT'),
+  videoUncertain:sum(r=>r.video_status==='UNKNOWN'),
+  videoCancelled:sum(r=>r.video_status==='CANCELLED'),
+  byStatus:rows
+ };
+}
 export function pitchDeliverySummary(){
  const rows=all('SELECT kind,status,COUNT(*) AS total FROM pitch_delivery_receipts GROUP BY kind,status');
  return {statuses:rows,unconfirmed:rows.filter(r=>!['READ','DELIVERED','CANCELLED'].includes(r.status)).reduce((s,r)=>s+r.total,0),meaning:'SENT is not a handset-delivery guarantee'};
