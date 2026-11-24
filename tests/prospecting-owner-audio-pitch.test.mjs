@@ -106,6 +106,50 @@ test('new proposal sends just one native demo video with the approved caption te
  assert.equal((await tickPitchFollowup({...video,currentTime:()=>due+2000})).state,'IDLE');
  assert.equal(db.one("SELECT type FROM messages WHERE provider_id=?", 'intro-video:'+row.greeting_id).type,'video');
 });
+test('existing permission message in WhatsApp is confirmed without another outgoing text',async()=>{
+ const {lead,greetingId,jid}=addAuthorized();
+ const when=new Date(Date.now()-45000);
+ assert.equal(routeIntroductionReply({leadId:lead.id,providerId:'already-asked-reply',body:'Oi, tudo bem?',receivedAt:when}).state,'WAITING');
+ let sends=0;
+ const {WESLEY_INTRO}=await import('../dashboard/prospecting-introduction.mjs');
+ const result=await tickIntroductions({currentTime:()=>Date.now(),
+  session:()=> 'consecom-principal',status:async()=>({connected:true}),
+  fetchHistory:async()=>({status:true,data:[{fromMe:true,type:'TEXT',
+   keyId:'PERMISSION_ALREADY_SENT_001',content:WESLEY_INTRO,timestamp:new Date().toISOString(),status:'DELIVERED'}]}),
+  send:async()=>{sends++;throw Error('SHOULD_NOT_SEND_DUPLICATE');}});
+ assert.equal(result.state,'SENT');
+ assert.equal(result.fromHistory,true);
+ assert.equal(sends,0);
+ const {textReceipt}=await import('../dashboard/prospecting-text-receipts.mjs');
+ assert.equal(textReceipt(lead.id,greetingId,'INTRO').status,'DELIVERED');
+});
+test('existing exact campaign video is confirmed from WhatsApp without a second video',async()=>{
+ const {lead,greetingId,jid}=addAuthorized();
+ const when=new Date(Date.now()-45000);
+ routeIntroductionReply({leadId:lead.id,providerId:'preexisting-video-1',body:'Oi',receivedAt:when});
+ assert.equal((await tickIntroductions({status:async()=>({connected:true}),session:()=> 'consecom-principal',
+  send:async()=>({status:true,data:{key:{id:'INTRO_CONFIRMED_001'}}})})).state,'SENT');
+ routeIntroductionReply({leadId:lead.id,providerId:'preexisting-video-2',body:'Pode mandar o áudio',receivedAt:when});
+ assert.equal((await tickIntroductions({status:async()=>({connected:true}),session:()=> 'consecom-principal',
+  loadAudio:async()=>({bytes:Buffer.alloc(300000,19)}),
+  sendAudio:async()=>({accepted:true,messageId:'ORIGINAL_AUDIO_001'})})).state,'VOICE_SENT');
+ assert.equal(receivePitchDeliveryStatus({event:'message.status',sessionId:'consecom-principal',
+  data:{keyId:'ORIGINAL_AUDIO_001',remoteJid:jid,status:'SENT'}}),true);
+ db.setSetting('paused',false);
+ const due=Date.parse(introductionStatus(lead.id).followup_due_at);
+ let sends=0;
+ const result=await tickPitchFollowup({currentTime:()=>due+10,status:async()=>({connected:true}),
+  fetchHistory:async()=>({status:true,data:[{fromMe:true,type:'VIDEO',keyId:'EXISTING_APPROVED_VIDEO_001',
+   content:PITCH_PREVIEW_TEXT,timestamp:new Date(due+10).toISOString(),status:'DELIVERED'}]}),
+  sendVideo:async()=>{sends++;throw Error('SHOULD_NOT_RESEND_VIDEO');}});
+ assert.equal(result.state,'SENT',JSON.stringify(result));
+ assert.equal(result.fromHistory,true);
+ assert.equal(sends,0);
+ const receipt=pitchDeliveryReceipt(lead.id,greetingId,'VIDEO');
+ assert.equal(receipt.provider_id,'EXISTING_APPROVED_VIDEO_001');
+ assert.equal(receipt.status,'DELIVERED');
+});
+
 test('audio unavailable fails closed, leaving voice pending and sending no replacement text',async()=>{
  const {lead}=addAuthorized();
  const when=new Date(Date.now()-41000);
