@@ -135,8 +135,23 @@ export async function reconcileTextReceipts({fetchChat=waRequest,limit=5}={}){
  if(reconciling)return {state:'BUSY'};
  reconciling=true;
  try{
-  const rows=all("SELECT * FROM prospecting_text_receipts WHERE status NOT IN ('READ') AND attempted_at>=? AND (checked_at IS NULL OR checked_at<?) ORDER BY COALESCE(checked_at,attempted_at) LIMIT ?",
-   new Date(Date.now()-7*86400000).toISOString(),new Date(Date.now()-45_000).toISOString(),Math.min(12,Math.max(1,Number(limit)||5)));
+  // Prioritize any unverified introduction or first greeting stalled in UNKNOWN.
+  // A generic OLD SENT receipt must not starve the customer's next step.
+  const rows=all(`SELECT r.* FROM prospecting_text_receipts r
+   LEFT JOIN prospecting_introductions p ON p.lead_id=r.lead_id AND p.greeting_id=r.greeting_id
+   LEFT JOIN prospecting_batch_items b ON b.id=r.greeting_id AND b.lead_id=r.lead_id
+   WHERE r.status<>'READ' AND r.attempted_at>=?
+    AND (r.checked_at IS NULL OR r.checked_at<?)
+   ORDER BY CASE
+    WHEN r.kind='INTRO' AND p.stage='UNKNOWN' THEN 0
+    WHEN r.kind='GREETING' AND b.status='UNKNOWN' THEN 0
+    WHEN r.kind='INTRO' AND r.status IN ('SENDING','UNKNOWN','ACCEPTED') THEN 1
+    WHEN r.kind='GREETING' AND r.status IN ('SENDING','UNKNOWN','ACCEPTED') THEN 2
+    ELSE 3 END,
+    COALESCE(r.checked_at,r.attempted_at)
+   LIMIT ?`,
+   new Date(Date.now()-7*86400000).toISOString(),new Date(Date.now()-12_000).toISOString(),
+   Math.min(16,Math.max(1,Number(limit)||6)));
   let matched=0,alerts=0;
   for(const r of rows){
    run('UPDATE prospecting_text_receipts SET checked_at=? WHERE lead_id=? AND greeting_id=? AND kind=?',now(),r.lead_id,r.greeting_id,r.kind);
@@ -149,12 +164,17 @@ export async function reconcileTextReceipts({fetchChat=waRequest,limit=5}={}){
        messages:history.messages,providerId:r.provider_id,
        expectedText,attemptedAt:r.attempted_at
       });
-      if(['EXACT_ID','UNIQUE_CONTENT'].includes(verified.state)){
+      if(['EXACT_ID','UNIQUE_CONTENT'].includes(verified.state) &&
+         (!verified.message?.remoteJid||String(verified.message.remoteJid)===r.jid)){
        const found=verified.message;
        const foundId=String(found.keyId||found.key?.id||'');
        const changed=run("UPDATE prospecting_text_receipts SET provider_id=? WHERE lead_id=? AND greeting_id=? AND kind=? AND provider_id IS NULL",
         foundId,r.lead_id,r.greeting_id,r.kind).changes;
-       const actual=(found.status||'SENT').toUpperCase();
+       // WA-AKG stores outbound messages as PENDING before handset receipts.
+       // An exact outbound message ID is evidence of existence in WhatsApp
+       // history, never proof of delivery to the recipient's device.
+       const rawStatus=String(found.status||'').toUpperCase();
+       const actual=rawStatus==='PENDING'||!rawStatus?'SENT':rawStatus;
        if(['SENT','DELIVERED','READ','FAILED'].includes(actual)){
         updateReceipt({...r,provider_id:r.provider_id||foundId},actual);
        }
