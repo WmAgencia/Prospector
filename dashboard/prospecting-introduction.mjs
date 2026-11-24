@@ -21,7 +21,8 @@ import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
 import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
 import {acceptsProposalAudio,interestedAfterProposal} from './prospector-sales-signals.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
-import {beginPitchDelivery,acknowledgePitchDelivery,unknownPitchDelivery,cancelPitchDelivery} from './pitch-delivery-verification.mjs';
+import {beginPitchDelivery,acknowledgePitchDelivery,unknownPitchDelivery,cancelPitchDelivery,pitchDeliveryReceipt} from './pitch-delivery-verification.mjs';
+import {reserveTextReceipt,acceptTextReceipt,unknownTextReceipt,extractTextMessageId} from './prospecting-text-receipts.mjs';
 
 export const INTRO_DELAY_MS=30_000;
 export const PITCH_PREVIEW_DELAY_MS=10_000;
@@ -200,9 +201,11 @@ export async function tickIntroductions(deps={}){
     acknowledgePitchDelivery({leadId:item.lead_id,greetingId:item.greeting_id,kind:'AUDIO',providerId:ack.messageId});
    }else{
     if(!stillAutomated())throw Error('TEXT_OWNER_TAKEOVER');
+    reserveTextReceipt({leadId:item.lead_id,greetingId:item.greeting_id,kind:'INTRO',sessionId:item.session_id,jid:item.phone+'@s.whatsapp.net'});
     const ack=await send('/api/messages/'+encodeURIComponent(item.session_id)+'/'+encodeURIComponent(item.phone+'@s.whatsapp.net')+'/send',
      {method:'POST',data:{message:{text:WESLEY_INTRO}}});
     if(ack.status!==true)throw Error('TEXT_UNCONFIRMED');
+    acceptTextReceipt({leadId:item.lead_id,greetingId:item.greeting_id,kind:'INTRO',providerId:extractTextMessageId(ack)});
    }
    const nextStage=voiceRequested?'VOICE_SENT':'SENT';
    const acceptedAt=now();
@@ -221,11 +224,13 @@ export async function tickIntroductions(deps={}){
   }catch(error){
    if(['VOICE_OWNER_TAKEOVER','TEXT_OWNER_TAKEOVER'].includes(String(error?.message||''))){
     if(voiceRequested)cancelPitchDelivery({leadId:item.lead_id,greetingId:item.greeting_id,kind:'AUDIO'});
+    else unknownTextReceipt({leadId:item.lead_id,greetingId:item.greeting_id,kind:'INTRO',error:'MANUAL_TAKEOVER_DURING_RESERVATION'});
     run("UPDATE prospecting_introductions SET stage='CONVERSING',reason='MANUAL_TAKEOVER',followup_status='CANCELLED',updated_at=? WHERE lead_id=? AND stage='SENDING'",now(),item.lead_id);
     audit('PROSPECT_INTRO_CANCELLED_MANUAL',item.lead_id,{voice:voiceRequested});
     return {state:'CANCELLED',reason:'MANUAL_TAKEOVER'};
    }
    if(voiceRequested)unknownPitchDelivery({leadId:item.lead_id,greetingId:item.greeting_id,kind:'AUDIO',reason:String(error?.message||error)});
+   else unknownTextReceipt({leadId:item.lead_id,greetingId:item.greeting_id,kind:'INTRO',error:String(error?.message||error)});
    run("UPDATE prospecting_introductions SET stage='UNKNOWN',reason='Uncertain delivery; verify WhatsApp',updated_at=? WHERE lead_id=? AND stage='SENDING'",now(),item.lead_id);
    audit('PROSPECT_INTRO_UNKNOWN',item.lead_id,{manualReview:true,voice:voiceRequested});
    return {state:'UNKNOWN'};
@@ -280,6 +285,11 @@ export async function tickPitchFollowup(deps={}){
    !conversationAuthorized(p.lead_id)||
    one('SELECT 1 FROM suppressions WHERE phone=?',p.phone))
    return cancel('CONTACT_NOT_ELIGIBLE');
+  // Sequence gate: WhatsApp must confirm that the exact audio message was
+  // sent before scheduling its video; a gateway HTTP 200 is not enough.
+  const audioReceipt=pitchDeliveryReceipt(p.lead_id,p.greeting_id,'AUDIO');
+  if(!audioReceipt||!['SENT','DELIVERED','READ'].includes(audioReceipt.status))
+   return {state:'WAITING_AUDIO_CONFIRMATION',audioStatus:audioReceipt?.status||'MISSING'};
   // Do not interrupt a conversation or duplicate a manually sent second message.
   const audioMessage=one("SELECT m.rowid FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='out' ORDER BY m.rowid DESC LIMIT 1",
    p.lead_id,'intro-voice:'+p.greeting_id);
