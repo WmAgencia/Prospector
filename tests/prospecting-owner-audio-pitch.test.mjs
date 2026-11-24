@@ -10,6 +10,7 @@ process.env.PROSPECTOR_TEST_CONTACT_PHONE='5515981817336';
 process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN='true';
 const db=await import('../dashboard/db.mjs');
 const {registerGreeting,routeIntroductionReply,introductionStatus,tickIntroductions,tickPitchFollowup,PITCH_PREVIEW_TEXT}=await import('../dashboard/prospecting-introduction.mjs');
+const {receivePitchDeliveryStatus,pitchDeliveryReceipt}=await import('../dashboard/pitch-delivery-verification.mjs');
 const {wantsPortfolioPitchAudio,portfolioAudioSentFor,portfolioPitchAudioHealth}=await import('../dashboard/portfolio-pitch-audio.mjs');
 let idNum=1000;
 function addAuthorized(){
@@ -71,7 +72,7 @@ test('new proposal sends just one native demo video with the approved caption te
   send:async()=>({status:true})})).state,'SENT');
  assert.equal(routeIntroductionReply({leadId:lead.id,providerId:'video-authorized',body:'pode mandar',receivedAt:when}).state,'VOICE_WAITING');
  assert.equal((await tickIntroductions({session:()=> 'consecom-principal',status:async()=>({connected:true}),
-  loadAudio:async()=>({bytes:Buffer.alloc(300000,19)}),sendAudio:async()=>({accepted:true})})).state,'VOICE_SENT');
+  loadAudio:async()=>({bytes:Buffer.alloc(300000,19)}),sendAudio:async()=>({accepted:true,messageId:'AUDIO_WA_MESSAGE_001'})})).state,'VOICE_SENT');
  const row=introductionStatus(lead.id);
  assert.equal(row.reason,'PITCH_AUDIO_550');
  const due=Date.parse(row.followup_due_at);
@@ -93,6 +94,12 @@ test('new proposal sends just one native demo video with the approved caption te
    assert.doesNotMatch(caption,/O que achou/);return {accepted:true};
   }};
  assert.equal((await tickPitchFollowup({...video,currentTime:()=>due-1})).state,'IDLE');
+ const premature=await tickPitchFollowup({...video,currentTime:()=>due+1});
+ assert.equal(premature.state,'WAITING_AUDIO_CONFIRMATION');
+ assert.equal(sent,0);
+ assert.equal(pitchDeliveryReceipt(lead.id,row.greeting_id,'AUDIO').status,'ACCEPTED');
+ assert.equal(receivePitchDeliveryStatus({event:'message.status',sessionId:'consecom-principal',data:{
+  keyId:'AUDIO_WA_MESSAGE_001',remoteJid:jid,status:'SENT'}}),true);
  const sentVideoResult=await tickPitchFollowup({...video,currentTime:()=>due+1});
  assert.equal(sentVideoResult.state,'SENT',JSON.stringify(sentVideoResult));
  assert.equal(sent,1);
