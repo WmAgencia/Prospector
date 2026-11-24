@@ -294,3 +294,24 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
  .kanban-period-button{padding:8px 7px;font-size:9px}
  .kanban-refresh{min-height:35px}
 }
+
+/* Five-stage prospecting Kanban: planned queue always precedes Abordando. */
+.kanban-columns{grid-template-columns:repeat(5,minmax(0,1fr));overflow-x:auto;scrollbar-width:thin}
+.kanban-metrics{grid-template-columns:repeat(6,minmax(0,1fr))}
+.kanban-queued{background:#f0ebfd;border-color:#e4d9fc}
+.kanban-queued>header{border-top:3px solid #9069ec;padding-top:11px;border-bottom-color:#e2d9f6}
+.kanban-queued .kanban-column-head strong{color:#6242b4}
+.kanban-queued .kanban-column-head span{background:#e1d5fb;color:#6847bc}
+.kanban-checklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:10px;border-top:1px solid #ece8f3;padding-top:9px}
+.kanban-checkpoint{display:flex;align-items:center;gap:5px;min-width:0;color:#81758e}
+.kanban-checkpoint-dot{display:grid;place-items:center;flex:none;width:15px;height:15px;border-radius:50%;border:1px solid #e3ddee;font-size:9px;font-weight:850;color:#9385ad;background:#f8f6fc}
+.kanban-checkpoint.is-confirmed .kanban-checkpoint-dot{background:#e7f6ec;color:#217d4b;border-color:#baebce}
+.kanban-checkpoint.is-confirmed .kanban-checkpoint-copy small{color:#217d4b}
+.kanban-checkpoint.is-problem .kanban-checkpoint-dot{background:#fff1eb;color:#bd5437;border-color:#ffcdb9}
+.kanban-checkpoint.is-problem .kanban-checkpoint-copy small{color:#bd5437;font-weight:800}
+.kanban-checkpoint-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
+.kanban-checkpoint-copy b{font-size:9px;line-height:1.2;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#746483}
+.kanban-checkpoint-copy small{font-size:8px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:1600px){.kanban-columns{grid-template-columns:repeat(5,minmax(228px,1fr))}}
+@media(max-width:1180px){.kanban-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.kanban-columns{grid-template-columns:repeat(5,minmax(225px,1fr));gap:9px}.kanban-metrics{grid-template-columns:repeat(3,minmax(110px,1fr));overflow-x:auto}}
