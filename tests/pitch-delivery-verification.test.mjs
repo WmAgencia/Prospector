@@ -82,6 +82,27 @@ test('a unique exact video caption in WhatsApp history restores a lost send ID',
  assert.throws(()=>beginPitchDelivery({leadId,greetingId:'greeting-001',kind:'VIDEO',sessionId,jid}),/PITCH_RECEIPT_DUPLICATE_BLOCKED|PITCH_RECEIPT_NOT_RESERVED|PITCH_DUPLICATE_BLOCKED/);
 });
 
+test('a PENDING audio found by its exact ID in WhatsApp history is confirmed SENT, not delivered',async()=>{
+ const id='audio-pending-assertion',phone='5515999995555',greeting='test-pending-greeting';
+ const stamp=now();
+ run('INSERT INTO leads(id,business,phone,stage,contact_permission,created_at,last_seen_at) VALUES(?,?,?,?,?,?,?)',
+  id,'Test Pending Audio',phone,'CONVERSING',1,stamp,stamp);
+ bindLeadSession(id,sessionId);
+ run('INSERT INTO prospecting_introductions(lead_id,greeting_id,stage,followup_status) VALUES(?,?,?,?)',
+  id,greeting,'SENDING',null);
+ assert.equal(beginPitchDelivery({leadId:id,greetingId:greeting,kind:'AUDIO',sessionId,jid:phone+'@s.whatsapp.net'}),true);
+ acknowledgePitchDelivery({leadId:id,greetingId:greeting,kind:'AUDIO',providerId:'PENDING_HISTORY_AUDIO_001'});
+ run("UPDATE prospecting_introductions SET stage='VOICE_SENT',followup_status='WAITING' WHERE lead_id=?",id);
+ const rec=pitchDeliveryReceipt(id,greeting,'AUDIO');
+ assert.equal(rec.status,'ACCEPTED');
+ const seen={fromMe:true,type:'AUDIO',keyId:'PENDING_HISTORY_AUDIO_001',timestamp:stamp,status:'PENDING'};
+ assert.equal(matchPitchHistory(rec,[seen]).state,'EXACT');
+ const result=await reconcilePitchDeliveries({limit:8,fetchChat:async()=>({status:true,data:[seen]})});
+ assert.equal(result.state,'OK');
+ assert.equal(pitchDeliveryReceipt(id,greeting,'AUDIO').status,'SENT');
+ assert.equal(pitchDeliveryReceipt(id,greeting,'AUDIO').delivered_at,null);
+});
+
 test('sender session is bound to each lead',()=>{
  assert.throws(()=>beginPitchDelivery({
   leadId,greetingId:'greeting-001',kind:'VIDEO',sessionId:'wrong-sender',jid
