@@ -67,7 +67,7 @@ import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
 import {resumeOwnerApprovedProspecting} from './prospection-resume.mjs';
-import {apply250DailyLimit} from './daily-approach-rollout.mjs';
+import {apply250DailyLimit,applyOwnerDailyLimit100} from './daily-approach-rollout.mjs';
 import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} from './consecom-offer-ab.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
@@ -308,6 +308,8 @@ try{console.info('[Consecom campaign R$550 media]',JSON.stringify(bootstrapConse
 catch(error){console.error('[Consecom campaign R$550 media]',String(error?.message||error).slice(0,160));}
 const dailyCap250Result=apply250DailyLimit();
 console.info('[daily 250 limit]',JSON.stringify(dailyCap250Result));
+const dailyCap100Result=applyOwnerDailyLimit100();
+console.info('[owner daily 100 limit]',JSON.stringify(dailyCap100Result));
 console.info('[proposal voice asset]',JSON.stringify(portfolioPitchAudioHealth()));
 const ownerResumeResult=resumeOwnerApprovedProspecting();
 if(ownerResumeResult.status==='RESUMED_WITH_CONSENT_GATES')
