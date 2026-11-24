@@ -64,4 +64,19 @@ test('recover only the messages actually found in WhatsApp, without sending agai
  assert.equal(db.one('SELECT COUNT(*) AS n FROM messages WHERE provider_id=?','intro:'+c.greeting).n,1);
  assert.equal(db.one('SELECT COUNT(*) AS n FROM prospecting_batch_items').n,3);
 });
+test('an exact outbound PENDING WhatsApp greeting confirms SENT but never handset delivery',async()=>{
+ const d=setup('GREETING',99444);
+ db.addMessage({threadId:d.thread.id,providerId:'prospect-queue:'+d.greeting,
+  direction:'out',body:'Olá, empresa teste!',status:'sent'});
+ const pending={fromMe:true,type:'TEXT',keyId:'PENDING_TEXT_99444',
+  content:'Olá, empresa teste!',remoteJid:d.jid,timestamp:d.stamp,status:'PENDING'};
+ const result=await reconcileTextReceipts({fetchChat:async url=>({status:true,
+  data:url.includes(d.phone)?[pending]:[]}),limit:8});
+ assert.equal(result.state,'OK');
+ const receipt=textReceipt(d.id,d.greeting,'GREETING');
+ assert.equal(receipt.status,'SENT');
+ assert.equal(receipt.delivered_at,null);
+ assert.equal(receipt.provider_id,'PENDING_TEXT_99444');
+ assert.equal(db.one('SELECT status FROM prospecting_batch_items WHERE id=?',d.greeting).status,'SENT');
+});
 test.after(()=>{db.db.close();fs.rmSync(dir,{recursive:true,force:true});});
