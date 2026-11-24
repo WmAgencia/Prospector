@@ -7,7 +7,7 @@ import {CAMPAIGN_VIDEO_CAPTION} from './consecom-flow.mjs';
 // A reply to "Olá, <nome>, tudo bem?" schedules ONE introduction after 30s.
 // After the introduction, every incoming reply can continue the sales conversation.
 // No public listing is ever treated as documented WhatsApp opt-in.
-import {db,one,run,now,audit,addMessage,getSetting,stage} from './db.mjs';
+import {db,one,all,run,now,audit,addMessage,getSetting,stage} from './db.mjs';
 import {operatorSelected,conversationAuthorized} from './operator-outreach.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {classifyContact} from './whatsapp-roles.mjs';
