@@ -138,22 +138,47 @@ const noticeKey=x=>{
 };
 export function alertUnverifiedProspectingSteps({at=new Date(),notify=queueNotice,limit=12}={}){
  const status=prospectingStepVerification({at,days:7,limit:150});
- let alerted=0;
+ const byCode={};
+ for(const item of status.issues)byCode[item.code]=(byCode[item.code]||0)+1;
+ let alerted=0,aggregated=false;
  if(getSetting('paused',false)!==true){
-  for(const item of status.issues){
-   if(!item.active||alerted>=Math.max(1,Math.min(30,Number(limit)||12)))continue;
-   const text='*Prospector — etapa sem confirmação*\\nEtapa: '+item.stepLabel+
-    '\\nEmpresa: '+String(item.business).slice(0,85)+
-    '\\nDestino: '+item.phone+
-    '\\nSituação: '+item.code+' ('+item.status+')'+
-    '\\nTempo: '+item.ageMinutes+' min'+
-    '\\nConversa: https://wa.me/'+item.phone+
-    '\\nConferir o ID e o histórico do WhatsApp antes de qualquer reenvio.';
-   if(notify(noticeKey(item),'PITCH_DELIVERY_ISSUE',text,item.leadId))alerted++;
+  // Only fresh blockers need one message per lead. Hundreds of older
+  // gateway-only/legacy receipts would flood the owner's WhatsApp.
+  // Keep EVERY issue in the protected detail endpoint; send ONE daily digest.
+  const urgent=new Set(['DELIVERY_UNCERTAIN','SEND_IN_PROGRESS_TOO_LONG',
+   'AUTHORIZED_STEP_NOT_ATTEMPTED','CONSENT_RECEIVED_NOT_PROCESSED']);
+  const fresh=status.issues.filter(x=>x.active&&urgent.has(x.code)&&x.ageMinutes<=48*60);
+  for(const item of fresh.slice(0,Math.max(1,Math.min(6,Number(limit)||6)))){
+   const message=[
+    '*Prospector — etapa precisa de conferência*',
+    'Etapa: '+item.stepLabel,
+    'Empresa: '+String(item.business).slice(0,85),
+    'Destino: '+item.phone,
+    'Motivo: '+item.code+' ('+item.status+')',
+    'Tempo de espera: '+item.ageMinutes+' min',
+    'Conversa: https://wa.me/'+item.phone,
+    'Não reenviar automaticamente sem identificar a mensagem original.'
+   ].join('\n');
+   if(notify(noticeKey(item),'PITCH_DELIVERY_ISSUE',message,item.leadId))alerted++;
+  }
+  const other=status.issues.filter(x=>x.active&&(!urgent.has(x.code)||x.ageMinutes>48*60));
+  if(other.length){
+   const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',
+    year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at));
+   const message=[
+    '*Prospector — resumo da verificação de envios*',
+    'Existem '+status.reviewActive+' etapas ativas para conferir.',
+    'Comprovante ausente, aceite sem entrega ou status incerto NÃO autoriza reenvio.',
+    'Acesse a tela do Prospector para conferir cada contato:',
+    'https://prospector-ui-production.up.railway.app/#/overview'
+   ].join('\n');
+   aggregated=!!notify('prospector-step-verification-digest:'+day,
+    'PITCH_DELIVERY_ISSUE',message);
   }
  }
  return {checkedAt:status.checkedAt,reviewTotal:status.reviewTotal,
-  reviewActive:status.reviewActive,alerts:alerted,
+  reviewActive:status.reviewActive,alerts:alerted+(aggregated?1:0),
+  digestQueued:aggregated,byCode,
   steps:Object.fromEntries(Object.entries(status.steps).map(([k,v])=>[k,{
    total:v.total,confirmedOnDevice:v.confirmedOnDevice,sentOnWhatsApp:v.sentOnWhatsApp,
    needsReview:v.needsReview}])),
