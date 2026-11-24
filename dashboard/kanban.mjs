@@ -38,9 +38,14 @@ export function kanbanSnapshot({limit=120,at=Date.now(),period=null}={}){
  FROM leads l LEFT JOIN threads t ON t.lead_id=l.id
  LEFT JOIN prospecting_batch_items qb ON qb.id=(
    SELECT q.id FROM prospecting_batch_items q JOIN prospecting_batches b ON b.id=q.batch_id
-   WHERE q.lead_id=l.id AND q.status IN ('QUEUED','SENDING','UNKNOWN')
-    AND (b.status='ACTIVE' OR
-     (q.status='UNKNOWN' AND strftime('%s',q.attempt_at)>=strftime('%s','now','-7 days')))
+   WHERE q.lead_id=l.id AND (
+      (q.status IN ('QUEUED','SENDING','UNKNOWN') AND
+       (b.status='ACTIVE' OR (q.status='UNKNOWN' AND strftime('%s',q.attempt_at)>=strftime('%s','now','-7 days'))))
+      OR (q.status='SENT' AND EXISTS(
+       SELECT 1 FROM prospecting_text_receipts tr WHERE tr.lead_id=q.lead_id AND tr.greeting_id=q.id
+        AND tr.kind='GREETING' AND tr.status NOT IN ('SENT','DELIVERED','READ')
+      ))
+    )
    ORDER BY q.created_at DESC LIMIT 1)
  WHERE (l.stage IN ('NO_INTEREST','INTERESTED','CLOSED_WON','CONVERSING')
     OR EXISTS(SELECT 1 FROM initial_contacts i WHERE i.lead_id=l.id)
