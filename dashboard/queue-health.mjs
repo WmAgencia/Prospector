@@ -36,9 +36,20 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  let invitationQueue=outreachQueueSnapshot();
  const discovery=radarSnapshot(at);
  const autonomous=getSetting('autonomous_outreach_enabled',false)===true;
- if(autonomous&&coldFirstApproachEnabled()){
+ if(autonomous){
+  // Always use the SAME eligibility gate as the real autonomous sender.
+  // Previously cold-first=false reported invitation-ready leads as READY even
+  // though eligibleLead() rejected all of them for missing documented consent.
   const queue=approachQueueStatus(),ready=autonomousReadyCount(at)+queue.waiting;
-  invitationQueue={total:ready,ready,awaitingConsent:0,missingWhatsapp:0,suppressed:inventory.suppressed};
+  const requiresConsent=queue.requiresDocumentedOptIn;
+  invitationQueue={
+   total:invitationQueue.total,ready,
+   awaitingConsent:requiresConsent?Math.max(invitationQueue.awaitingConsent,invitationQueue.ready-ready):0,
+   missingWhatsapp:invitationQueue.missingWhatsapp,suppressed:invitationQueue.suppressed,
+   coldFirstApproachEnabled:coldFirstApproachEnabled(),
+   requiresDocumentedOptIn:requiresConsent,
+   queuedInDurableBatch:queue.waiting
+  };
   eligible=ready>0;
  }
  const unknownErrors=all("SELECT error FROM jobs WHERE execution_id IS NOT NULL AND step_index=0 AND status='UNKNOWN' ORDER BY updated_at DESC LIMIT 30");
