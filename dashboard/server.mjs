@@ -36,7 +36,7 @@ import {importOfficial} from './official-import.mjs';
 import {siteAudit} from './site-audit.mjs';
 import {productionList,offer,manualAccept,move,approveAndQueue,closeDeal,brief} from './production.mjs';
 import {evaluateDecision,selectAutomationForLead} from './automation-router.mjs';
-import {dailyReport,reportText,targetNumber,scheduleReport} from './notifications.mjs';
+import {dailyReport,reportText,targetNumber,scheduleReport,queueNotice,localDay} from './notifications.mjs';
 import {salesOutcomes} from './sales-outcomes.mjs';
 import {SITE_AVERAGE_PRICE_BRL} from './sales-policy.mjs';
 import {syncPublishedSamples} from './studio-sync.mjs';
@@ -904,6 +904,14 @@ async function reportQueueHealth(){
  const live=process.env.WHATSAPP_TRANSPORT==='waakg'?await waOperationalStatus():null;
  const waStatus=live?(live.connected?'CONNECTED':'DISCONNECTED'):connection().status;
  const snapshot=queueHealth({waStatus,senderReady:live?.approachReady!==false,busy:tickStatus().locked});
+ if(snapshot.reason==='WHATSAPP_OFFLINE'&&!snapshot.paused){
+  // Durable owner notice, one per local day, even if WhatsApp is currently
+  // offline. Never try to send to a lead or recreate deleted credentials.
+  queueNotice('prospector-whatsapp-disconnected:'+localDay(),'PITCH_DELIVERY_ISSUE',
+   '*Prospector — WhatsApp desconectado*\\nA prospecção foi interrompida porque não há sessão de envio conectada. '+
+   'Verifique Conexões e reconecte os números mediante leitura do QR Code. '+
+   'As abordagens já feitas e os leads pendentes foram preservados.');
+ }
  if(snapshot.reason!==lastQueueReason||Date.now()-lastQueueLogAt>=15*60000||snapshot.alert){
   console.info('[queue health]',JSON.stringify({reason:snapshot.reason,alert:snapshot.alert,ready:snapshot.eligibleWaiting,pending:snapshot.initialPending,oldestPendingMinutes:snapshot.oldestPendingMinutes,unknown:snapshot.unknownInitial,sentToday:snapshot.initialToday.sent,counted:snapshot.initialToday.counted,limit:snapshot.initialToday.limit,nextAt:snapshot.initialToday.nextAt,lastAccepted:snapshot.lastConfirmedInitialAt,inventory:snapshot.inventory,queue:snapshot.queue,discovery:snapshot.discovery,uncertainReasons:snapshot.uncertainReasons,tick:tickStatus()}));
   lastQueueReason=snapshot.reason;lastQueueLogAt=Date.now();
