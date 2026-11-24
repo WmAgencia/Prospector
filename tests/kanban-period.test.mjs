@@ -6,6 +6,8 @@ import os from 'node:os';
 
 process.env.PROSPECTOR_DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-period-'));
 const {db,run}=await import('../dashboard/db.mjs');
+// Load durable batch and introduction schemas used by the five-column Kanban.
+await import('../dashboard/prospecting-queue.mjs');
 const {kanbanPeriodFromQuery,brazilDay,brazilMidnight,prospectingPeriodSnapshot}=await import('../dashboard/kanban-period.mjs');
 const {kanbanSnapshot}=await import('../dashboard/kanban.mjs');
 const clock=new Date('2026-11-20T18:00:00Z');
@@ -29,6 +31,8 @@ test('invalid custom ranges rejected',()=>{
 db.exec(`CREATE TABLE IF NOT EXISTS prospecting_batch_items(
  id TEXT PRIMARY KEY,batch_id TEXT,lead_id TEXT NOT NULL,phone TEXT NOT NULL,
  status TEXT NOT NULL,attempt_at TEXT,created_at TEXT NOT NULL)`);
+run("INSERT OR IGNORE INTO prospecting_batches(id,status,created_at,updated_at,origin) VALUES(?,?,?,?,?)",
+ 'batch-test','COMPLETED','2026-11-20T14:00:00Z','2026-11-20T14:00:00Z','MANUAL');
 function lead(id,phone,status='DISCOVERED'){
  const iso='2026-10-01T12:00:00Z';
  run('INSERT INTO leads(id,business,phone,stage,contact_permission,created_at,last_seen_at) VALUES(?,?,?,?,?,?,?)',
