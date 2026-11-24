@@ -76,6 +76,7 @@ import {tickIntroductions,tickPitchFollowup} from './prospecting-introduction.mj
 import {reconcilePitchDeliveries,auditStuckPitchSteps,recoverVerifiedUnattemptedPitch,pitchDeliverySummary,pitchVideoBacklogStatus} from './pitch-delivery-verification.mjs';
 import {reconcileTextReceipts} from './prospecting-text-receipts.mjs';
 import {auditProspectingWorkflow} from './prospecting-workflow-watchdog.mjs';
+import {prospectingStepVerification,alertUnverifiedProspectingSteps} from './prospecting-step-verification.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {bootstrapConsecomCampaign} from './consecom-campaign-bootstrap.mjs';
@@ -611,6 +612,11 @@ async function handler(req,res){
     }catch(err){return respond(res,422,{error:String(err.message).slice(0,190)});}
    }
   }
+  if(req.method==='GET'&&pathname==='/api/prospecting/verification'){
+   if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')
+    return respond(res,403,{error:'Diagnóstico reservado à operação Consecom'});
+   return respond(res,200,prospectingStepVerification({limit:Number(url.searchParams.get('limit')||50)}));
+  }
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
   if(req.method==='POST'&&pathname==='/api/prospecting/queue'){const r=enqueueApprovedApproaches(await json(req));if(r.status===202)notify();return respond(res,r.status,r.body);}
   if(req.method==='POST'&&pathname==='/api/prospecting/queue/cancel'){const r=cancelApproachQueue();notify();return respond(res,200,r);}
@@ -976,11 +982,23 @@ setTimeout(()=>{
  catch(error){console.warn('[pitch video backlog]',String(error?.message||error).slice(0,120));}
 },12_000).unref();
 const textReceiptTimer=setInterval(()=>{
- reconcileTextReceipts({limit:5}).then(result=>{
+ reconcileTextReceipts({limit:8}).then(result=>{
   if(result.alerts)console.warn('[prospect text receipts] unresolved WhatsApp confirmations',JSON.stringify(result));
  }).catch(error=>console.warn('[prospect text receipts]',String(error?.message||error).slice(0,110)));
-},30_000);
-setTimeout(()=>reconcileTextReceipts({limit:5}).catch(e=>console.warn('[prospect text receipts]',e.message)),9_000).unref();
+},10_000);
+setTimeout(()=>reconcileTextReceipts({limit:8}).catch(e=>console.warn('[prospect text receipts]',e.message)),9_000).unref();
+// Audit EVERY step and consent, not just the intro worker. Never blindly
+// re-send to a customer when gateway receipts are missing.
+const prospectStepAuditTimer=setInterval(()=>{
+ try{
+  const r=alertUnverifiedProspectingSteps({limit:12});
+  if(r.alerts)console.warn('[prospect step verification]',JSON.stringify(r));
+ }catch(error){console.warn('[prospect step verification]',String(error?.message||error).slice(0,120));}
+},60_000);
+setTimeout(()=>{
+ try{console.info('[prospect step verification startup]',JSON.stringify(alertUnverifiedProspectingSteps({limit:12})));}
+ catch(error){console.warn('[prospect step verification]',String(error?.message||error).slice(0,120));}
+},18_000).unref();
 async function auditApprovedPitchContinuity(){
  try{
   const recovery=await recoverVerifiedUnattemptedPitch({limit:2});
@@ -989,7 +1007,7 @@ async function auditApprovedPitchContinuity(){
   if(result.flagged)console.warn('[pitch delivery] approved steps stalled',JSON.stringify(result));
  }catch(error){console.warn('[pitch delivery audit]',String(error?.message||error).slice(0,110));}
 }
-const pitchStuckTimer=setInterval(auditApprovedPitchContinuity,120_000);
+const pitchStuckTimer=setInterval(auditApprovedPitchContinuity,45_000);
 const prospectWorkflowWatchdogTimer=setInterval(()=>{
  try{const x=auditProspectingWorkflow();if(x.alerts)console.warn('[prospect workflow] owner checks queued',JSON.stringify(x));}
  catch(error){console.warn('[prospect workflow]',String(error?.message||error).slice(0,140));}
