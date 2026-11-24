@@ -5,7 +5,7 @@ import {db,one,all,run,now,audit} from './db.mjs';
 import {waRequest} from './waakg-control.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
 import {queueNotice} from './notifications.mjs';
-import {acceptsProposalAudio} from './prospector-sales-signals.mjs';
+import {acceptsProposalAudio,declinesProposalAudio} from './prospector-sales-signals.mjs';
 import {wantsPortfolioPitchAudio} from './portfolio-pitch-audio.mjs';
 import {CAMPAIGN_VIDEO_CAPTION} from './consecom-flow.mjs';
 
@@ -296,8 +296,19 @@ export async function recoverVerifiedUnattemptedPitch({fetchChat=waRequest,limit
   if(!conversationAuthorized(p.lead_id)||!isManagedSession(p.session_id)||leadSession(p.lead_id)!==p.session_id)continue;
   if(one('SELECT 1 FROM pitch_delivery_receipts WHERE lead_id=? AND greeting_id=? AND kind=\'AUDIO\'',p.lead_id,p.greeting_id))continue;
   if(one('SELECT phone FROM suppressions WHERE phone=?',p.phone))continue;
-  const reply=one("SELECT provider_id,body,received_at FROM waakg_inbox WHERE lead_id=? AND session_id=? AND received_at>=? ORDER BY received_at DESC LIMIT 1",p.lead_id,p.session_id,p.sent_at);
-  if(!reply||!(acceptsProposalAudio(reply.body)||wantsPortfolioPitchAudio(reply.body)))continue;
+  // Customers sometimes send a second harmless message after "pode enviar".
+  // Verify the ENTIRE recent reply sequence; never lose permission merely
+  // because a newer message says "obrigado" or asks a follow-up question.
+  const replies=all("SELECT provider_id,body,state,received_at FROM waakg_inbox WHERE lead_id=? AND session_id=? AND received_at>=? ORDER BY received_at DESC LIMIT 15",
+   p.lead_id,p.session_id,p.sent_at);
+  if(!replies.length)continue;
+  const reply=replies.find(r=>r.state==='REVIEW'&&
+   (acceptsProposalAudio(r.body)||wantsPortfolioPitchAudio(r.body)));
+  if(!reply)continue;
+  // A refusal, human takeover or opt-out AFTER consent invalidates recovery.
+  // Only harmless additional replies may follow the verified opt-in.
+  if(replies.some(r=>ageMs(r.received_at)>ageMs(reply.received_at)&&
+    (r.state!=='REVIEW'||declinesProposalAudio(r.body))))continue;
   const intro=one("SELECT m.rowid AS rowid,m.body FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.provider_id=? AND m.direction='out'",p.lead_id,'intro:'+p.greeting_id);
   if(!intro||!intro.body)continue;
   const newer=one("SELECT 1 FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.lead_id=? AND m.rowid>? AND m.direction='out' LIMIT 1",p.lead_id,intro.rowid);
