@@ -113,7 +113,16 @@ export function matchPitchHistory(record,messages=[]){
   if(!at||at<start-30_000||at>end)return false;
   return record.kind!=='VIDEO'||String(m.content||m.caption||'').trim()===CAMPAIGN_VIDEO_CAPTION.trim();
  });
- if(candidates.length===1)return {state:'POSSIBLE',message:candidates[0]};
+ if(candidates.length===1){
+  const found=candidates[0],msgId=remoteId(found);
+  // The approved video has an exact caption; one matching outbound message
+  // inside the original send window can be identified without duplicating it.
+  // Audio has no content hash in the gateway database: treat it as POSSIBLE.
+  if(record.kind==='VIDEO'&&validId(msgId)&&
+    String(found.content||found.caption||'').trim()===CAMPAIGN_VIDEO_CAPTION.trim())
+   return {state:'EXACT_CAPTION',message:found};
+  return {state:'POSSIBLE',message:found};
+ }
  return {state:candidates.length>1?'AMBIGUOUS':'NOT_FOUND'};
 }
 function maybeAlert(record,reason){
@@ -155,6 +164,14 @@ export async function reconcilePitchDeliveries({fetchChat=waRequest,limit=4}={})
     if(!Array.isArray(chat?.data))throw Error('CHAT_UNAVAILABLE');
     const matched=matchPitchHistory(record,chat.data);verdict=matched.state;
     if(matched.state==='EXACT'&&chatStatus(matched.message))updateStatus(record,chatStatus(matched.message),record.provider_id);
+    if(matched.state==='EXACT_CAPTION'){
+     const msgId=remoteId(matched.message);
+     const added=run("UPDATE pitch_delivery_receipts SET provider_id=? WHERE lead_id=? AND greeting_id=? AND kind='VIDEO' AND provider_id IS NULL",
+      msgId,record.lead_id,record.greeting_id).changes;
+     const state=chatStatus(matched.message)||'SENT';
+     updateStatus({...record,provider_id:msgId},state,msgId);
+     if(added)audit('PITCH_VIDEO_FOUND_IN_WHATSAPP',record.lead_id,{greetingId:record.greeting_id,messageId:msgId,status:state});
+    }
     if(matched.state==='POSSIBLE')run("UPDATE pitch_delivery_receipts SET error='Possible match without gateway message ID; manual review' WHERE lead_id=? AND greeting_id=? AND kind=?",
      record.lead_id,record.greeting_id,record.kind);
    }catch(error){verdict='UNAVAILABLE';}
