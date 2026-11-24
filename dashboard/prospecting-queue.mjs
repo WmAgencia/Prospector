@@ -14,6 +14,8 @@ import {insideApproachWindow,isOutboundBusinessDay,prospectingWindowLabel} from 
 import {isExcludedTestContact} from './test-contact-exclusion.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
 import {reserveTextReceipt,acceptTextReceipt,unknownTextReceipt,extractTextMessageId} from './prospecting-text-receipts.mjs';
+import {preflightNewStep} from './prospecting-chat-history.mjs';
+import {queueNotice} from './notifications.mjs';
 import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
 import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
 
@@ -243,6 +245,26 @@ export async function tickApproachQueue(deps={}){
   const wa=rotating?await selectApproachSender():await getWaStatus(),session=rotating?wa.sessionId:(getSession()||wa.sessionId);
   if(!wa.connected||!session)return {status:wa.reason||'OFFLINE'};
   if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('training_active',null))return {status:'TRAINING_REVIEW_REQUIRED'};
+  const recipient=one('SELECT name,business FROM leads WHERE id=?',next.lead_id);
+  const message=greetingForProspect(recipient,new Date(time));
+  // A brand-new step has no transport attempt yet. Inspect the same sender's
+  // actual WhatsApp conversation before reserving the first POST.
+  // Unit tests using mock transport remain isolated from the live gateway.
+  const fetchHistory=deps.fetchHistory||(rotating?waRequest:null);
+  if(fetchHistory){
+   const proof=await preflightNewStep({sessionId:session,jid:next.phone+'@s.whatsapp.net',
+    kind:'TEXT',text:message,at:new Date(time),fetchChat:fetchHistory});
+   if(proof.state==='UNAVAILABLE')return {status:'HISTORY_UNAVAILABLE'};
+   if(proof.state!=='CLEAR'){
+    run("UPDATE prospecting_batch_items SET status='SKIPPED',error=? WHERE id=? AND status='QUEUED'",
+     'Conversa já contém saudação semelhante; verificar antes de enviar',next.id);
+    queueNotice('preflight-greeting:'+next.id,'PITCH_DELIVERY_ISSUE',
+     '*Prospector — conferir saudação existente*\nContato: '+next.phone+
+     '\nA primeira mensagem já aparece no WhatsApp ou possui correspondência ambígua. Nenhum novo disparo foi feito.\nhttps://wa.me/'+next.phone,next.lead_id);
+    audit('PROSPECT_GREETING_PREFLIGHT_HELD',next.lead_id,{state:proof.state,sessionId:session});
+    return {status:'HISTORY_CONFLICT',reason:proof.state};
+   }
+  }
   if(!reserveApproachCredit(next.id))return {status:'NO_CREDITS'};
   // Transaction reserves the global clock *before* invoking the provider.
   // Timestamp can only move forward. The interval is enforced after restarts.
@@ -268,8 +290,6 @@ export async function tickApproachQueue(deps={}){
    return true;
   });
   if(!reserved){settleApproachCredit(next.id,false);return {status:'WAITING'};}
-  const recipient=one('SELECT name,business FROM leads WHERE id=?',next.lead_id);
-  const message=greetingForProspect(recipient,new Date(time));
   try{
    reserveTextReceipt({leadId:next.lead_id,greetingId:next.id,kind:'GREETING',sessionId:session,jid:next.phone+'@s.whatsapp.net'});
    const result=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/send',{method:'POST',data:{message:{text:message}}});
