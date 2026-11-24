@@ -9,13 +9,17 @@ export const KANBAN_STAGES=['queued','approaching','no_interest','interested','c
 
 function cardStatus(row){
  if(row.stage==='CLOSED_WON')return null;
- const manual=Boolean(row.manually_replied);
- if(manual||row.stage==='CONVERSING')return 'conversing';
+ const manual=Boolean(row.manually_replied||row.manual_takeover===1);
  if(row.hot_notice||row.stage==='INTERESTED')return 'interested';
  if(row.opted_out||row.stage==='NO_INTEREST'&&!row.queue_id)return 'no_interest';
- // An unattempted or uncertain greeting stays visible in the queue, never
- // moves to Abordando solely because an initial_contacts reservation exists.
+ if(manual)return 'conversing';
+ // Receiving an actual reply is independent proof the original greeting arrived.
+ if(row.first_reply_id&&row.last_batch_at)return 'approaching';
+ // Unconfirmed gateway acceptance stays in the visible send queue.
  if(row.queue_id)return 'queued';
+ // Do not mark an AI-managed exchange as human takeover.
+ if(row.intro_active&&(row.initial_at||row.last_out_at||row.last_batch_at))return 'approaching';
+ if(row.stage==='CONVERSING')return 'conversing';
  if(row.stage==='NO_INTEREST')return 'no_interest';
  if(row.initial_at||row.last_out_at||row.last_batch_at)return 'approaching';
  return null;
@@ -26,6 +30,7 @@ export function kanbanSnapshot({limit=120,at=Date.now(),period=null}={}){
  // Query uses a single lead row per card. A lead cannot appear in two columns.
  const rows=all(`SELECT l.id,l.business,l.city,l.phone,l.stage,l.last_activity_at,
   t.jid,t.manual_takeover,qb.id queue_id,qb.status queue_status,qb.created_at queue_at,
+  pi.first_reply_id,pi.stage intro_stage,pi.stage IN ('GREETING_SENT','WAITING','SENDING','SENT','VOICE_WAITING','VOICE_SENT') intro_active,
   (SELECT id FROM prospecting_batch_items q WHERE q.lead_id=l.id AND q.status='SENT'
    ORDER BY q.attempt_at DESC,q.created_at DESC LIMIT 1) last_greeting_id,
   (SELECT MAX(created_at) FROM initial_contacts i WHERE i.lead_id=l.id OR i.phone=l.phone) initial_at,
@@ -36,6 +41,7 @@ export function kanbanSnapshot({limit=120,at=Date.now(),period=null}={}){
    AND m.direction='out' AND (m.provider_id LIKE 'operator:%' OR m.provider_id LIKE 'remote-operator:%' OR m.provider_id LIKE 'waakg-out:%')) manually_replied,
   EXISTS(SELECT 1 FROM suppressions s WHERE s.phone=l.phone) opted_out
  FROM leads l LEFT JOIN threads t ON t.lead_id=l.id
+ LEFT JOIN prospecting_introductions pi ON pi.lead_id=l.id
  LEFT JOIN prospecting_batch_items qb ON qb.id=(
    SELECT q.id FROM prospecting_batch_items q JOIN prospecting_batches b ON b.id=q.batch_id
    WHERE q.lead_id=l.id AND (
