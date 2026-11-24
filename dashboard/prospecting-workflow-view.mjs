@@ -43,7 +43,7 @@ export function workflowChecklist({leadId,greetingId,queueStatus}={}){
   recordedAt:batch?.attempt_at||null};
 }
 export function dailyScheduledSummary(){
- return one(`SELECT b.id AS batchId,b.created_at AS createdAt,
+ return one(`SELECT MAX(b.id) AS batchId,MAX(b.created_at) AS createdAt,
    COUNT(*) AS scheduled,
    SUM(CASE WHEN i.status='QUEUED' THEN 1 ELSE 0 END) AS pending,
    SUM(CASE WHEN i.status='SENT' THEN 1 ELSE 0 END) AS accepted,
@@ -52,6 +52,6 @@ export function dailyScheduledSummary(){
    SUM(CASE WHEN i.status='SKIPPED' THEN 1 ELSE 0 END) AS skipped
    FROM prospecting_batches b JOIN prospecting_batch_items i ON i.batch_id=b.id
    WHERE b.origin='AUTONOMOUS' AND date(b.created_at,'-3 hours')=date('now','-3 hours')
-   GROUP BY b.id ORDER BY b.created_at DESC LIMIT 1`)||
+   LIMIT 1`)||
   {batchId:null,createdAt:null,scheduled:0,pending:0,accepted:0,sending:0,uncertain:0,skipped:0};
 }
