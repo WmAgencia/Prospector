@@ -1043,7 +1043,6 @@ function overview(){
  ];
  const total=Object.values(k.counts||{}).reduce((x,y)=>x+Number(y||0),0);
  const metricValue=value=>kanbanLoading?'—':value;
- const rangeHint=kanbanPeriod==='all'?'Todos os contatos e oportunidades em uma única tela.':'Empresas prospectadas no período; as etapas mostram a situação atual.';
  const startupChecks=[
   {label:'Conectar WhatsApp',done:!!wa?.connected,tab:'connections'},
   {label:'Treinar sua IA',done:!!(state?.settings?.training_active||trainingState?.profile),tab:'training'},
@@ -1068,22 +1067,18 @@ function overview(){
   (lead.phone?'<button class="kanban-message" type="button" data-kanban-chat="'+esc(lead.phone)+'">'+(col==='interested'?'Enviar mensagem ↗':'Abrir conversa ↗')+'</button>':'')+'</div>';
  };
  return '<div class="kanban-dashboard" id="overview-board">'+
-  '<div class="kanban-overview-head"><div class="kanban-overview-title"><span class="kicker">PIPELINE COMERCIAL</span><h2>Visão da operação</h2><p>'+esc(rangeHint)+'</p></div>'+
-  '<div class="kanban-overview-actions">'+kanbanPeriodControls()+'<button class="secondary compact kanban-refresh" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div></div>'+
+  '<div class="kanban-overview-head"><div class="kanban-overview-actions">'+kanbanPeriodControls()+
+  '<button class="secondary compact kanban-refresh" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div></div>'+
   '<div class="kanban-metrics">'+stat('Na fila',metricValue(k.counts?.queued||0),'de '+esc(k.scheduledToday?.scheduled||0)+' agendadas hoje')+
    stat('Prospecções',metricValue(k.prospections??'—'),kanbanPeriod==='all'?'Abordagens enviadas':'Abordagens no período')+
   stat('Empresas acompanhadas',metricValue(total),'Com atividade registrada')+stat('Abordando',metricValue(k.counts?.approaching||0),'Em contato')+
   stat('Interessados',metricValue(k.counts?.interested||0),'Prioridade comercial')+stat('Conversando',metricValue(k.counts?.conversing||0),'Atendimento humano')+'</div>'+
   '<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>'+(kanbanLoading?'Carregando prospecções...':kanbanPeriod==='all'?'Fila de hoje: '+(k.scheduledToday?.scheduled||0)+' selecionados · '+(k.scheduledToday?.accepted||0)+' aceitos pelo gateway.':'Contatos e abordagens do intervalo, com as confirmações de cada etapa.')+'</small></div>'+
   '<div class="kanban-columns" aria-label="Kanban comercial">'+definition.map(([key,label,description])=>
-   '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items">'+
+   '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items" tabindex="0" role="region" aria-label="Contatos: '+esc(label)+'">'+
    ((k.columns?.[key]||[]).length?k.columns[key].map(x=>item(x,key)).join(''):'<div class="kanban-empty">Nenhuma empresa nesta etapa.</div>')+'</div></section>').join('')+
   '</div>'+
-  '<section class="panel" style="margin-top:20px"><div class="heading"><div><h3>Desfechos comerciais</h3><p>Referência média por site: R$ '+esc(salesResults?.priceReferenceBrl||550)+' · Proposta final depende do escopo.</p></div></div>'+
-   (salesResults?.items?.length?salesResults.items.slice(0,8).map(x=>
-    '<div class="kanban-lead" style="margin-bottom:8px"><div class="kanban-lead-top"><div><strong>'+esc(x.business)+'</strong><small>'+esc(({INTERESTED:'Interessado',NO_INTEREST:'Sem interesse',OPT_OUT:'Não contatar',HUMAN_REVIEW:'Revisão humana',CLOSED_WON:'Venda confirmada'})[x.status]||x.status)+'</small></div></div><p>'+esc(x.summary)+'</p>'+
-    (x.phone?'<a class="kanban-message" target="_blank" rel="noopener noreferrer" href="https://wa.me/'+encodeURIComponent(x.phone)+'">Abrir conversa ↗</a>':'')+'</div>').join(''):'<p>Nenhum desfecho comercial confirmado ainda.</p>')+
-  '</section></div>';
+  '</div>';
 }
 
 function handoffFor(chosen){
