@@ -953,3 +953,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .kanban-checkpoint.is-problem .kanban-checkpoint-copy small{color:#bd5437!important}
 @media(max-width:1600px){.kanban-columns{grid-template-columns:repeat(5,minmax(225px,1fr))!important}}
 @media(max-width:940px){.kanban-columns{grid-template-columns:repeat(5,minmax(225px,1fr))!important}}
+
+/* Compact Visão geral: the Kanban is the only vertical scrolling surface. */
+.kanban-columns{padding-bottom:0!important;scrollbar-width:none!important;-ms-overflow-style:none!important}
+.kanban-columns::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+.kanban-column-items{flex:1 1 0!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;scrollbar-width:none!important;-ms-overflow-style:none!important;overscroll-behavior:contain}
+.kanban-column-items::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
