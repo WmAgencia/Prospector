@@ -48,7 +48,10 @@ export async function preflightNewStep({sessionId,jid,kind='TEXT',text='',at=new
  const type=String(kind||'TEXT').toUpperCase();
  if(type==='TEXT'){
   const found=findSentTextInHistory({messages:history.messages,expectedText:text,attemptedAt:atIso,spanMs:90000});
-  return {state:found.state==='NOT_FOUND'?'CLEAR':found.state==='UNIQUE_CONTENT'?'EXISTS':found.state,message:found.message||null};
+  const success=found.state==='UNIQUE_CONTENT'&&
+   (!found.message?.status||isConfirmedMessageState(found.message.status));
+  return {state:found.state==='NOT_FOUND'?'CLEAR':success?'EXISTS':
+   found.state==='UNIQUE_CONTENT'?'POSSIBLE_EXISTING':found.state,message:found.message||null};
  }
  const nearby=history.messages.filter(m=>{
   if(m?.fromMe!==true||String(m.type||'').toUpperCase()!==type)return false;
@@ -60,5 +63,6 @@ export async function preflightNewStep({sessionId,jid,kind='TEXT',text='',at=new
  if(nearby.length>1)return {state:'AMBIGUOUS'};
  // Video is uniquely identified by the campaign caption. An audio record
  // without a hash may be another voice note and requires human review.
- return {state:type==='VIDEO'?'EXISTS':'POSSIBLE_EXISTING',message:nearby[0]};
+ return {state:type==='VIDEO'&&(!nearby[0].status||isConfirmedMessageState(nearby[0].status))
+  ?'EXISTS':'POSSIBLE_EXISTING',message:nearby[0]};
 }
