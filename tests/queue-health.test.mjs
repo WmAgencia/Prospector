@@ -63,6 +63,8 @@ test('provider deadline always settles but does not initiate a retry',async()=>{
 });
 
 test('autonomous queue reads real WA session and reports missing permission instead of disabled legacy automation',()=>{
+ const originalCold=process.env.PROSPECTOR_COLD_FIRST_APPROACH;
+ process.env.PROSPECTOR_COLD_FIRST_APPROACH='false';
  const lead=db.addLead({business:'Empresa Fictícia Sem Consentimento',phone:'5515987766554',source:'TEST',contact_permission:false}).lead;
  db.setSetting('autonomous_outreach_enabled',true);
  db.setSetting('paused',false);
@@ -78,6 +80,7 @@ test('autonomous queue reads real WA session and reports missing permission inst
   db.setSetting('paused',true);
   assert.equal(queueHealth({at,waStatus:'CONNECTED'}).reason,'PAUSED');
  }finally{
+  if(originalCold===undefined)delete process.env.PROSPECTOR_COLD_FIRST_APPROACH;else process.env.PROSPECTOR_COLD_FIRST_APPROACH=originalCold;
   db.setSetting('autonomous_outreach_enabled',false);
   db.setSetting('auto_initial',true);
   db.setSetting('paused',false);
