@@ -10,8 +10,9 @@ const {db,run,now}=await import('../dashboard/db.mjs');
 const {registerSession,bindLeadSession}=await import('../dashboard/waakg-session-registry.mjs');
 const {
  beginPitchDelivery,acknowledgePitchDelivery,receivePitchDeliveryStatus,
- pitchDeliveryReceipt,unknownPitchDelivery,matchPitchHistory
+ pitchDeliveryReceipt,unknownPitchDelivery,matchPitchHistory,reconcilePitchDeliveries
 }=await import('../dashboard/pitch-delivery-verification.mjs');
+const {CAMPAIGN_VIDEO_CAPTION}=await import('../dashboard/consecom-flow.mjs');
 db.exec(`CREATE TABLE IF NOT EXISTS prospecting_introductions(
  lead_id TEXT PRIMARY KEY, greeting_id TEXT NOT NULL, stage TEXT NOT NULL, followup_status TEXT)`);
 const leadId='test-pitch-receipt';
@@ -62,6 +63,23 @@ test('without ID, a matching media is only a possible receipt and never proof',(
  assert.equal(matchPitchHistory(record,[voice]).state,'POSSIBLE');
  assert.equal(matchPitchHistory(record,[voice,{...voice,keyId:'VOICE_TWO'}]).state,'AMBIGUOUS');
  assert.equal(matchPitchHistory(record,[]).state,'NOT_FOUND');
+});
+
+
+test('a unique exact video caption in WhatsApp history restores a lost send ID',async()=>{
+ run("UPDATE prospecting_introductions SET stage='VOICE_SENT',followup_status='SENDING' WHERE lead_id=?",leadId);
+ assert.equal(beginPitchDelivery({leadId,greetingId:'greeting-001',kind:'VIDEO',sessionId,jid}),true);
+ unknownPitchDelivery({leadId,greetingId:'greeting-001',kind:'VIDEO',reason:'TIMEOUT_AFTER_SEND'});
+ const attempted=pitchDeliveryReceipt(leadId,'greeting-001','VIDEO');
+ const found={fromMe:true,type:'VIDEO',keyId:'VIDEO_FROM_HISTORY_11',
+  content:CAMPAIGN_VIDEO_CAPTION,timestamp:attempted.attempted_at,status:'DELIVERED'};
+ assert.equal(matchPitchHistory(attempted,[found]).state,'EXACT_CAPTION');
+ const result=await reconcilePitchDeliveries({fetchChat:async()=>({status:true,data:[found]}),limit:4});
+ assert.equal(result.checked>=1,true);
+ const repaired=pitchDeliveryReceipt(leadId,'greeting-001','VIDEO');
+ assert.equal(repaired.provider_id,'VIDEO_FROM_HISTORY_11');
+ assert.equal(repaired.status,'DELIVERED');
+ assert.throws(()=>beginPitchDelivery({leadId,greetingId:'greeting-001',kind:'VIDEO',sessionId,jid}),/PITCH_RECEIPT_DUPLICATE_BLOCKED|PITCH_RECEIPT_NOT_RESERVED|PITCH_DUPLICATE_BLOCKED/);
 });
 
 test('sender session is bound to each lead',()=>{
