@@ -179,6 +179,36 @@ test('unavailable history for the oldest video does not stall the next confirmed
  db.run("UPDATE prospecting_introductions SET followup_status='CANCELLED' WHERE lead_id=?",offline.lead.id);
 });
 
+test('a later harmless reply does not hide the customer\'s earlier voice authorization',async()=>{
+ const {lead,jid,greetingId}=addAuthorized();
+ const when=new Date(Date.now()-180000);
+ assert.equal(routeIntroductionReply({leadId:lead.id,providerId:'multi-first',body:'Oi',receivedAt:when}).state,'WAITING');
+ assert.equal((await tickIntroductions({session:()=> 'consecom-principal',
+  status:async()=>({connected:true}),send:async()=>({status:true})})).state,'SENT');
+ const intro=introductionStatus(lead.id);
+ const old=new Date(Date.now()-3*60000).toISOString();
+ db.run("UPDATE prospecting_introductions SET sent_at=? WHERE lead_id=?",old,lead.id);
+ db.exec(`CREATE TABLE IF NOT EXISTS waakg_inbox(
+  id TEXT PRIMARY KEY,session_id TEXT,jid TEXT,provider_id TEXT,
+  lead_id TEXT,body TEXT,state TEXT,received_at TEXT,updated_at TEXT)`);
+ const yesAt=new Date(Date.now()-2*60000).toISOString();
+ const laterAt=new Date(Date.now()-115000).toISOString();
+ for(const [idx,body,at] of [[1,'Ok, pode enviar',yesAt],[2,'Obrigado, vou conferir',laterAt]]){
+  const key='multireply-'+idx+'-'+lead.id;
+  db.run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+   key,'consecom-principal',jid,key,lead.id,body,'REVIEW',at,at);
+ }
+ const {WESLEY_INTRO}=await import('../dashboard/prospecting-introduction.mjs');
+ const {recoverVerifiedUnattemptedPitch}=await import('../dashboard/pitch-delivery-verification.mjs');
+ const proof={fromMe:true,type:'TEXT',keyId:'MULTI_INTRO_CONFIRMED',
+  content:WESLEY_INTRO,timestamp:old,status:'DELIVERED'};
+ const result=await recoverVerifiedUnattemptedPitch({limit:2,fetchChat:async()=>({status:true,data:[proof]})});
+ assert.equal(result.queued>=1,true,JSON.stringify(result));
+ assert.equal(introductionStatus(lead.id).stage,'VOICE_WAITING');
+ assert.equal(db.one("SELECT COUNT(*) AS n FROM pitch_delivery_receipts WHERE lead_id=?",lead.id).n,0);
+ db.run("UPDATE prospecting_introductions SET stage='CANCELLED' WHERE lead_id=?",lead.id);
+});
+
 test('existing permission message in WhatsApp is confirmed without another outgoing text',async()=>{
  const {lead,greetingId,jid}=addAuthorized();
  const when=new Date(Date.now()-45000);
