@@ -66,4 +66,21 @@ test('real inbound reply is separately confirmed and does not duplicate the gree
  assert.equal(progress.checklist[2].status,'WAITING');
  assert.equal(q.approachQueueStatus().waiting,79);
 });
+test('actual WhatsApp history prevents a duplicate first greeting before any transport',async()=>{
+ const time=new Date(at.getTime()+200_000);
+ const next=d.one("SELECT q.*,l.business,l.name FROM prospecting_batch_items q JOIN leads l ON l.id=q.lead_id WHERE q.status='QUEUED' ORDER BY q.created_at,q.id LIMIT 1");
+ const {greetingForProspect}=await import('../dashboard/prospecting-introduction.mjs');
+ const outgoing=greetingForProspect(next,time);
+ let sent=0;
+ const result=await q.tickApproachQueue({currentTime:()=>time.getTime(),
+  getWaStatus:async()=>({connected:true,sessionId:'test-wa-sender'}),getSession:()=> 'test-wa-sender',
+  fetchHistory:async()=>({status:true,data:[{fromMe:true,type:'TEXT',keyId:'ALREADY_EXISTING_001',content:outgoing,
+   timestamp:time.toISOString(),status:'DELIVERED'}]}),
+  send:async()=>{sent++;throw Error('DUPLICATE MUST NOT SEND');}});
+ assert.equal(result.status,'HISTORY_CONFLICT');
+ assert.equal(sent,0);
+ assert.equal(d.one("SELECT status FROM prospecting_batch_items WHERE id=?",next.id).status,'SKIPPED');
+ assert.equal(textReceipt(next.lead_id,next.id,'GREETING'),null);
+});
+
 test.after(()=>{d.db.close();fs.rmSync(dir,{recursive:true,force:true});});
