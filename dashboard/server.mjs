@@ -75,6 +75,7 @@ import {listLeadApprovals,approveLeadBatch} from './lead-approvals.mjs';
 import {tickIntroductions,tickPitchFollowup} from './prospecting-introduction.mjs';
 import {reconcilePitchDeliveries,auditStuckPitchSteps,recoverVerifiedUnattemptedPitch,pitchDeliverySummary} from './pitch-delivery-verification.mjs';
 import {reconcileTextReceipts} from './prospecting-text-receipts.mjs';
+import {auditProspectingWorkflow} from './prospecting-workflow-watchdog.mjs';
 import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {bootstrapConsecomCampaign} from './consecom-campaign-bootstrap.mjs';
@@ -977,6 +978,14 @@ async function auditApprovedPitchContinuity(){
  }catch(error){console.warn('[pitch delivery audit]',String(error?.message||error).slice(0,110));}
 }
 const pitchStuckTimer=setInterval(auditApprovedPitchContinuity,120_000);
+const prospectWorkflowWatchdogTimer=setInterval(()=>{
+ try{const x=auditProspectingWorkflow();if(x.alerts)console.warn('[prospect workflow] owner checks queued',JSON.stringify(x));}
+ catch(error){console.warn('[prospect workflow]',String(error?.message||error).slice(0,140));}
+},120_000);
+setTimeout(()=>{
+ try{const x=auditProspectingWorkflow();if(x.alerts)console.warn('[prospect workflow] initial owner checks',JSON.stringify(x));}
+ catch(error){console.warn('[prospect workflow]',String(error?.message||error).slice(0,140));}
+},25_000).unref();
 setTimeout(auditApprovedPitchContinuity,15_000).unref();
 setTimeout(()=>{
  try{console.info('[pitch delivery summary]',JSON.stringify(pitchDeliverySummary()));}
