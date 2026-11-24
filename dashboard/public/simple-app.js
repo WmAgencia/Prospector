@@ -1028,14 +1028,15 @@ async function platformSubmit(ev){
  }catch(e){n(e.message);}finally{trainingBusy=false;busy=false;render();}return true;
 }
 function pipelineGraphic(k){
- const stages=[['approaching','Em abordagem'],['interested','Interessados'],['conversing','Em atendimento']],values=stages.map(([key])=>Math.max(0,Number(k.counts?.[key])||0)),max=Math.max(1,...values);
+ const stages=[['queued','Na fila'],['approaching','Em abordagem'],['interested','Interessados'],['conversing','Em atendimento']],values=stages.map(([key])=>Math.max(0,Number(k.counts?.[key])||0)),max=Math.max(1,...values);
  return '<section class="pipeline-graphic" aria-label="Resumo visual do funil"><div><span class="kicker">MOVIMENTO DA OPERAÇÃO</span><h3>Da conversa à oportunidade.</h3></div><div class="pipeline-bars">'+stages.map(([key,label],i)=>'<div><span>'+label+'</span><div class="pipeline-track"><i style="width:'+Math.round(values[i]/max*100)+'%"></i></div><strong>'+values[i]+'</strong></div>').join('')+'</div></section>';
 }
 function overview(){
  if(platformContext.role==="master")return masterDashboard();
- const k=kanban||{columns:{approaching:[],no_interest:[],interested:[],conversing:[]},counts:{}};
+ const k=kanban||{columns:{queued:[],approaching:[],no_interest:[],interested:[],conversing:[]},counts:{},scheduledToday:{scheduled:0,pending:0,accepted:0}};
  const definition=[
-  ['approaching','Abordando','Mensagens enviadas, aguardando retorno'],
+  ['queued','Fila de abordagem','Contatos programados para a próxima abordagem'],
+  ['approaching','Abordando','Saudação registrada; acompanhe as confirmações'],
   ['no_interest','Sem interesse','Recusas e contatos não convertidos'],
   ['interested','Interessados','Interesse confirmado e aviso privado'],
   ['conversing','Conversando','Atendimento assumido por você']
@@ -1053,17 +1054,27 @@ function overview(){
  const stat=(label,value,description)=>'<div class="kanban-metric"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong><small>'+esc(description)+'</small></div>';
  const item=(lead,col)=>{
   const due=lead.blocked?'Não contatar':lead.nextEligibleAt?(lead.eligibleAgain?'Recontato liberado':'Retorna '+new Date(lead.nextEligibleAt).toLocaleDateString('pt-BR')):'';
-  const note=col==='approaching'?(lead.noResponse?'Aguardando resposta':'Abordagem iniciada'):col==='no_interest'?(due||'Sem interesse'):col==='interested'?'Interesse confirmado':'Em atendimento';
+  const note=col==='queued'?(lead.queueStatus==='UNKNOWN'?'Envio incerto — revisar antes de qualquer reenvio':lead.queueStatus==='SENDING'?'Envio em conferência':'Aguardando a abordagem'):col==='approaching'?(lead.noResponse?'Aguardando resposta':'Abordagem iniciada'):col==='no_interest'?(due||'Sem interesse'):col==='interested'?'Interesse confirmado':'Em atendimento';
+  const checkText={QUEUED:'Na fila',WAITING:'Aguardando',SENDING:'Enviando',ACCEPTED:'Aceito pela API',SENT:'Enviado',DELIVERED:'Entregue',READ:'Lido',RECEIVED:'Recebido',UNKNOWN:'Revisar',FAILED:'Falhou',CANCELLED:'Interrompido'};
+  const steps=(lead.workflow?.checklist||[]).map(step=>{
+   const state=String(step.status||'WAITING');
+   const text=checkText[state]||state;
+   return '<div class="kanban-checkpoint '+(step.confirmed?'is-confirmed':'')+(['FAILED','UNKNOWN'].includes(state)?' is-problem':'')+'" title="'+esc(step.label+': '+text)+'">'+
+    '<span class="kanban-checkpoint-dot">'+(step.confirmed?'✓':['UNKNOWN','FAILED'].includes(state)?'!':state==='ACCEPTED'?'·':'○')+'</span>'+
+    '<span class="kanban-checkpoint-copy"><b>'+esc(step.label)+'</b><small>'+esc(text)+'</small></span></div>';
+  }).join('');
   return '<div class="kanban-lead"><div class="kanban-lead-top"><span class="kanban-lead-avatar">'+esc((lead.business||'?')[0])+'</span><div><strong title="'+esc(lead.business)+'">'+esc(lead.business)+'</strong><small>'+esc(lead.city||lead.phone||'Empresa')+'</small></div></div><p>'+esc(note)+'</p>'+
+   (steps?'<div class="kanban-checklist" aria-label="Verificações WhatsApp">'+steps+'</div>':'')+
   (lead.phone?'<button class="kanban-message" type="button" data-kanban-chat="'+esc(lead.phone)+'">'+(col==='interested'?'Enviar mensagem ↗':'Abrir conversa ↗')+'</button>':'')+'</div>';
  };
  return '<div class="kanban-dashboard" id="overview-board">'+
   '<div class="kanban-overview-head"><div class="kanban-overview-title"><span class="kicker">PIPELINE COMERCIAL</span><h2>Visão da operação</h2><p>'+esc(rangeHint)+'</p></div>'+
   '<div class="kanban-overview-actions">'+kanbanPeriodControls()+'<button class="secondary compact kanban-refresh" data-action="refresh-kanban">'+glyph('refresh')+' Atualizar</button></div></div>'+
-  '<div class="kanban-metrics">'+stat('Prospecções',metricValue(k.prospections??'—'),kanbanPeriod==='all'?'Abordagens enviadas':'Abordagens no período')+
+  '<div class="kanban-metrics">'+stat('Fila de hoje',metricValue(k.scheduledToday?.pending??0),'de '+esc(k.scheduledToday?.scheduled||0)+' agendadas hoje')+
+   stat('Prospecções',metricValue(k.prospections??'—'),kanbanPeriod==='all'?'Abordagens enviadas':'Abordagens no período')+
   stat('Empresas acompanhadas',metricValue(total),'Com atividade registrada')+stat('Abordando',metricValue(k.counts?.approaching||0),'Em contato')+
   stat('Interessados',metricValue(k.counts?.interested||0),'Prioridade comercial')+stat('Conversando',metricValue(k.counts?.conversing||0),'Atendimento humano')+'</div>'+
-  '<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>'+(kanbanLoading?'Carregando prospecções...':kanbanPeriod==='all'?'Acompanhe cada etapa e abra a conversa pelo cartão.':'Somente contatos prospectados neste intervalo.')+'</small></div>'+
+  '<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>'+(kanbanLoading?'Carregando prospecções...':kanbanPeriod==='all'?'Fila de hoje: '+(k.scheduledToday?.scheduled||0)+' selecionados · '+(k.scheduledToday?.accepted||0)+' aceitos pelo gateway.':'Contatos e abordagens do intervalo, com as confirmações de cada etapa.')+'</small></div>'+
   '<div class="kanban-columns" aria-label="Kanban comercial">'+definition.map(([key,label,description])=>
    '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items">'+
    ((k.columns?.[key]||[]).length?k.columns[key].map(x=>item(x,key)).join(''):'<div class="kanban-empty">Nenhuma empresa nesta etapa.</div>')+'</div></section>').join('')+
