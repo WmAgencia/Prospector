@@ -1105,6 +1105,16 @@ if(process.env.PROSPECTOR_RESTORE_STOPPED_WA==='true')
 if(process.env.PROSPECTOR_DELIVERY_DIAGNOSTIC==='true')
  setTimeout(()=>inspectGatewayDelivery({max:65}).then(x=>console.info('[verified gateway delivery audit]',JSON.stringify(x)))
   .catch(e=>console.warn('[verified gateway delivery audit]',String(e?.message||e).slice(0,160))),10_000).unref();
+// Temporary case-by-case delivery audit can be enabled with a private phone
+// variable; it only reads local records and the sender's WhatsApp history.
+if(process.env.PROSPECTOR_CASE_AUDIT_PHONE){
+ setTimeout(async()=>{
+  try{
+   const {inspectDeliveryCase}=await import('./prospecting-delivery-case-audit.mjs');
+   console.info('[owner audio case audit]',JSON.stringify(await inspectDeliveryCase(process.env.PROSPECTOR_CASE_AUDIT_PHONE)));
+  }catch(error){console.warn('[owner audio case audit]',String(error?.message||error).slice(0,110));}
+ },18_000).unref();
+}
 // Aggregated read-only media delivery diagnostics. Never expose contact details,
 // message texts, WhatsApp credentials or full account identifiers in logs.
 setTimeout(async()=>{
