@@ -148,7 +148,7 @@ function unsafeSister(sibling,at){
  const due=last?threeMonthsAfter(new Date(last)):null;
  return !!due&&Date.parse(due)>at;
 }
-export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
+export function enrollAutonomousApproaches({at=new Date(),maxBatch=100}={}){
  if(ownerProspectionPaused())return {status:'PAUSED_BY_OWNER'};
  if(getSetting('autonomous_outreach_enabled',false)!==true)return {status:'DISABLED'};
  if(getSetting('paused',true))return {status:'PAUSED'};
@@ -157,14 +157,14 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
  if(!insideApproachWindow(at))return {status:'OUTSIDE_WINDOW'};
  const remaining=dailyApproachBudget(at).remaining;
  if(remaining<=0)return {status:'DAILY_LIMIT'};
- maxBatch=Math.min(Number(maxBatch)||80,80,remaining);
+ maxBatch=Math.min(Number(maxBatch)||100,100,remaining);
  const atMs=at.getTime();
  const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL ORDER BY created_at DESC LIMIT 6000");
  const byIdentity=new Map();
  for(const lead of rows){const key=businessIdentity(lead);if(key){if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(lead);}}
  const selected=[],keys=new Set();
  for(const lead of rows){
-  if(selected.length>=Math.max(1,Math.min(100,Number(maxBatch)||80)))break;
+  if(selected.length>=Math.max(1,Math.min(100,Number(maxBatch)||100)))break;
   if(!['DISCOVERED','NO_INTEREST'].includes(lead.stage))continue;
   if(!recontactDecision(lead,atMs).eligible)continue;
   // Match the send-time permission check before creating an autonomous batch.
@@ -195,14 +195,14 @@ function createAutonomousBatch(selected,at=new Date()){
 }
 // Pré-aquecimento 07:00–08:00: a pesquisa do dia já virou leads no CRM, então a
 // fila nasce antes da janela e o trabalhador envia a partir das 08:00, 90s cada.
-export function preloadApproachQueue({at=new Date(),maxBatch=80}={}){
+export function preloadApproachQueue({at=new Date(),maxBatch=100}={}){
  if(getSetting('paused',true))return {status:'PAUSED'};
  if(!isOutboundBusinessDay(at))return {status:'OUTSIDE_WINDOW'};
  closeStaleBatch(at);
  if(currentBatch())return {status:'ACTIVE'};
  const remaining=dailyApproachBudget(at).remaining;
  if(remaining<=0)return {status:'DAILY_LIMIT'};
- maxBatch=Math.min(Number(maxBatch)||80,80,remaining);
+ maxBatch=Math.min(Number(maxBatch)||100,100,remaining);
  const atMs=at.getTime();
  const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL AND created_at>=? ORDER BY created_at DESC LIMIT 3000",new Date(atMs-18*3600_000).toISOString());
  const selected=[];
@@ -232,7 +232,7 @@ export async function tickApproachQueue(deps={}){
   const expired=closeStaleBatch(new Date(time));
   if(expired)return expired;
   if(!insideApproachWindow(new Date(time)))return {status:'OUTSIDE_WINDOW'};
-  if(dailyApproachBudget(new Date(time)).remaining===0)return {status:'DAILY_LIMIT',limit:250};
+  if(dailyApproachBudget(new Date(time)).remaining===0)return {status:'DAILY_LIMIT',limit:dailyApproachBudget(new Date(time)).limit};
   const clock=one('SELECT last_attempt_ms,last_finished_ms,interval_ms FROM prospecting_send_clock WHERE id=1');
   const next=one("SELECT * FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED' ORDER BY created_at,id LIMIT 1",batch.id);
   if(!next){run("UPDATE prospecting_batches SET status='COMPLETED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);return {status:'COMPLETED'};}
