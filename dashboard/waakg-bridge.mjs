@@ -19,6 +19,7 @@ import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 import {isManagedSession,boundLeadSession,leadSession,bindLeadSession,managedSessions} from './waakg-session-registry.mjs';
 import {isApiOutboundEcho} from './waakg-outbound-intents.mjs';
 import {receivePitchDeliveryStatus} from './pitch-delivery-verification.mjs';
+import {receiveTextReceiptStatus} from './prospecting-text-receipts.mjs';
 import {takeover} from './runtime.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
@@ -58,12 +59,13 @@ export async function receiveWebhook(req){
  let payload;try{payload=JSON.parse(raw.toString("utf8"));}catch{return {status:400,body:{accepted:false,reason:"BAD_JSON"}};}
  if(payload.event==="test")return {status:200,body:{accepted:true,test:true}};
  if(payload.event==="message.status"){
-  const updated=receivePitchDeliveryStatus(payload);
+  const updated=receivePitchDeliveryStatus(payload)||receiveTextReceiptStatus(payload);
   return {status:200,body:{accepted:true,deliveryReceipt:updated}};
  }
  if(payload.event==="message.sent"){
   // A correlated automation receipt must never be treated as a manual owner takeover.
-  if(receivePitchDeliveryStatus(payload))return {status:200,body:{accepted:true,automationReceipt:true}};
+  if(receivePitchDeliveryStatus(payload)||receiveTextReceiptStatus(payload))
+   return {status:200,body:{accepted:true,automationReceipt:true}};
   return recordOwnerOutboundEvent(payload);
  }
  if(payload.event!=="message.received")return {status:200,body:{accepted:true,ignored:true}};
