@@ -106,6 +106,38 @@ test('new proposal sends just one native demo video with the approved caption te
  assert.equal((await tickPitchFollowup({...video,currentTime:()=>due+2000})).state,'IDLE');
  assert.equal(db.one("SELECT type FROM messages WHERE provider_id=?", 'intro-video:'+row.greeting_id).type,'video');
 });
+test('an old audio awaiting confirmation never blocks another customer whose audio was verified',async()=>{
+ db.setSetting('paused',false);
+ const stuck=addAuthorized(),ready=addAuthorized();
+ for(const [i,client] of [stuck,ready].entries()){
+  const when=new Date(Date.now()-45_000);
+  assert.equal(routeIntroductionReply({leadId:client.lead.id,providerId:'head-first-'+i,body:'Oi',receivedAt:when}).state,'WAITING');
+  assert.equal((await tickIntroductions({session:()=> 'consecom-principal',
+   status:async()=>({connected:true}),send:async()=>({status:true})})).state,'SENT');
+  assert.equal(routeIntroductionReply({leadId:client.lead.id,providerId:'head-permission-'+i,
+   body:'Pode mandar o áudio',receivedAt:when}).state,'VOICE_WAITING');
+  assert.equal((await tickIntroductions({session:()=> 'consecom-principal',
+   status:async()=>({connected:true}),loadAudio:async()=>({bytes:Buffer.alloc(300000,19)}),
+   sendAudio:async()=>({accepted:true,messageId:'QUEUE_AUDIO_'+i+'_123456'})})).state,'VOICE_SENT');
+  db.run("UPDATE prospecting_introductions SET followup_due_at=? WHERE lead_id=?",
+   new Date(Date.now()-(i===0?9000:4000)).toISOString(),client.lead.id);
+ }
+ assert.equal(pitchDeliveryReceipt(stuck.lead.id,stuck.greetingId,'AUDIO').status,'ACCEPTED');
+ assert.equal(receivePitchDeliveryStatus({event:'message.status',sessionId:'consecom-principal',data:{
+  keyId:'QUEUE_AUDIO_1_123456',remoteJid:ready.jid,status:'SENT'}}),true);
+ let count=0;
+ const sent=await tickPitchFollowup({currentTime:()=>Date.now(),status:async()=>({connected:true}),
+  loadVideo:async()=>({bytes:Buffer.alloc(3000,19)}),
+  sendVideo:async({jid})=>{count++;assert.equal(jid,ready.jid);return {accepted:true,messageId:'QUEUE_VIDEO_1_123456'};}});
+ assert.equal(sent.state,'SENT',JSON.stringify(sent));
+ assert.equal(sent.leadId,ready.lead.id);
+ assert.equal(count,1);
+ assert.equal(introductionStatus(stuck.lead.id).followup_status,'WAITING');
+ assert.equal((await tickPitchFollowup({currentTime:()=>Date.now(),sendVideo:async()=>{
+  throw Error('MUST_NOT_SEND_UNCONFIRMED');}})).state,'WAITING_AUDIO_CONFIRMATION');
+ db.run("UPDATE prospecting_introductions SET followup_status='CANCELLED' WHERE lead_id=?",stuck.lead.id);
+});
+
 test('existing permission message in WhatsApp is confirmed without another outgoing text',async()=>{
  const {lead,greetingId,jid}=addAuthorized();
  const when=new Date(Date.now()-45000);
