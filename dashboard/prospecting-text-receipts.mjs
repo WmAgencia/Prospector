@@ -100,6 +100,36 @@ async function expectedTextForReceipt(record){
  const lead=one('SELECT * FROM leads WHERE id=?',record.lead_id);
  return lead?greetingForProspect(lead,new Date(record.attempted_at)):'';
 }
+// If a timed-out request really appears in the WhatsApp conversation, restore
+// its local workflow once. Never issue a second POST or release a manual pause.
+async function restoreHistoryConfirmedStep(record,expectedText){
+ const status=textReceipt(record.lead_id,record.greeting_id,record.kind)?.status;
+ if(!['SENT','DELIVERED','READ'].includes(status))return false;
+ if(record.kind==='GREETING'){
+  const changed=run("UPDATE prospecting_batch_items SET status='SENT',error=NULL WHERE id=? AND lead_id=? AND status='UNKNOWN'",
+   record.greeting_id,record.lead_id).changes;
+  if(!changed)return false;
+  run("UPDATE initial_contacts SET status='SENT' WHERE job_id=? AND status='UNKNOWN'",record.greeting_id);
+  const {getThread,addMessage}=await import('./db.mjs');
+  const thread=getThread(record.lead_id,record.jid);
+  if(!one('SELECT id FROM messages WHERE provider_id=?','prospect-queue:'+record.greeting_id))
+   addMessage({threadId:thread.id,providerId:'prospect-queue:'+record.greeting_id,
+    direction:'out',body:expectedText,status:'sent'});
+  const {registerGreeting}=await import('./prospecting-introduction.mjs');
+  registerGreeting({leadId:record.lead_id,greetingId:record.greeting_id,sessionId:record.session_id});
+  audit('PROSPECT_GREETING_RECOVERED_FROM_HISTORY',record.lead_id,{greetingId:record.greeting_id,confirmedStatus:status});
+  return true;
+ }
+ const changed=run("UPDATE prospecting_introductions SET stage='SENT',reason=NULL,sent_at=COALESCE(sent_at,?),updated_at=? WHERE lead_id=? AND greeting_id=? AND session_id=? AND stage='UNKNOWN'",
+  now(),now(),record.lead_id,record.greeting_id,record.session_id).changes;
+ if(!changed)return false;
+ const {getThread,addMessage}=await import('./db.mjs');
+ const thread=getThread(record.lead_id,record.jid);
+ if(!one('SELECT id FROM messages WHERE provider_id=?','intro:'+record.greeting_id))
+  addMessage({threadId:thread.id,providerId:'intro:'+record.greeting_id,direction:'out',body:expectedText,status:'sent'});
+ audit('PROSPECT_PERMISSION_TEXT_RECOVERED_FROM_HISTORY',record.lead_id,{greetingId:record.greeting_id,confirmedStatus:status});
+ return true;
+}
 let reconciling=false;
 export async function reconcileTextReceipts({fetchChat=waRequest,limit=5}={}){
  if(reconciling)return {state:'BUSY'};
@@ -114,10 +144,10 @@ export async function reconcileTextReceipts({fetchChat=waRequest,limit=5}={}){
     if(isManagedSession(r.session_id)&&leadSession(r.lead_id)===r.session_id){
      const history=await loadProspectorHistory({sessionId:r.session_id,jid:r.jid,fetchChat});
      if(history.state==='AVAILABLE'){
+      const expectedText=await expectedTextForReceipt(r);
       const verified=findSentTextInHistory({
        messages:history.messages,providerId:r.provider_id,
-       expectedText:r.provider_id?'':await expectedTextForReceipt(r),
-       attemptedAt:r.attempted_at
+       expectedText,attemptedAt:r.attempted_at
       });
       if(['EXACT_ID','UNIQUE_CONTENT'].includes(verified.state)){
        const found=verified.message;
@@ -129,6 +159,8 @@ export async function reconcileTextReceipts({fetchChat=waRequest,limit=5}={}){
         updateReceipt({...r,provider_id:r.provider_id||foundId},actual);
        }
        if(changed)audit('PROSPECT_TEXT_FOUND_IN_WHATSAPP',r.lead_id,{kind:r.kind,method:verified.state,messageId:foundId});
+       if(['SENT','DELIVERED','READ'].includes(textReceipt(r.lead_id,r.greeting_id,r.kind)?.status))
+        await restoreHistoryConfirmedStep(r,expectedText);
        matched++;
       }else if(verified.state==='AMBIGUOUS'){
        run("UPDATE prospecting_text_receipts SET error='Multiple matching outgoing messages; manual verification required' WHERE lead_id=? AND greeting_id=? AND kind=?",
