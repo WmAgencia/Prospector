@@ -83,7 +83,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  const dormant=reason==='INITIAL_JOB_PENDING'&&pendingAge>=INITIAL_PENDING_MAX_AGE_MINUTES;
  const invalidPending=initial.filter(x=>x.status==='PENDING'&&(x.execution_state!=='SENDING'||x.manual_takeover===1));
  return {
-  at:at.toISOString(),reason,autonomousMode:autonomous,alert:dormant?'STALE_INITIAL_PENDING':null,
+  at:at.toISOString(),reason,autonomousMode:autonomous,alert:reason==='WHATSAPP_OFFLINE'?'WHATSAPP_RECONNECTION_REQUIRED':dormant?'STALE_INITIAL_PENDING':null,
   allowedNow:reason==='READY',campaignSelected:!!campaign?.enabled,waConnected:waStatus==='CONNECTED',
   paused:getSetting('paused',true),autoInitial:getSetting('auto_initial',false),
   initialToday:{sent:b.confirmed+approachAccepted,uncertain:b.uncertain+approachUnknown,inFlight:b.sending+approachSending,
