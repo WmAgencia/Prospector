@@ -160,6 +160,8 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
   if(selected.length>=Math.max(1,Math.min(100,Number(maxBatch)||80)))break;
   if(!['DISCOVERED','NO_INTEREST'].includes(lead.stage))continue;
   if(!recontactDecision(lead,atMs).eligible)continue;
+  // Match the send-time permission check before creating an autonomous batch.
+  if(!eligibleLead(lead.id,'',false,true))continue;
   const key=businessIdentity(lead);
   if(key&&(keys.has(key)||(byIdentity.get(key)||[]).some(other=>other.id!==lead.id&&unsafeSister(other,atMs))))continue;
   selected.push(lead);if(key)keys.add(key);
@@ -198,6 +200,8 @@ export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
   if(selected.length>=Math.max(1,Math.min(300,Number(maxBatch)||200)))break;
   if(!['DISCOVERED','NO_INTEREST'].includes(lead.stage))continue;
   if(!recontactDecision(lead,atMs).eligible)continue;
+  // Match the send-time permission check before creating an autonomous batch.
+  if(!eligibleLead(lead.id,'',false,true))continue;
   selected.push(lead);
  }
  if(!selected.length)return {status:'NO_ELIGIBLE_LEADS'};
