@@ -21,7 +21,7 @@ import {sendVoiceWithRecording} from './waakg-voice-presence.mjs';
 import {portfolioPitchAudioEnabled,wantsPortfolioPitchAudio,readPortfolioPitchAudio,PITCH_AUDIO_ORIGINAL_SHA256} from './portfolio-pitch-audio.mjs';
 import {acceptsProposalAudio,interestedAfterProposal} from './prospector-sales-signals.mjs';
 import {recordSalesOutcome} from './sales-outcomes.mjs';
-import {beginPitchDelivery,acknowledgePitchDelivery,unknownPitchDelivery,cancelPitchDelivery,pitchDeliveryReceipt} from './pitch-delivery-verification.mjs';
+import {beginPitchDelivery,acknowledgePitchDelivery,unknownPitchDelivery,cancelPitchDelivery,pitchDeliveryReceipt,receivePitchDeliveryStatus} from './pitch-delivery-verification.mjs';
 import {reserveTextReceipt,acceptTextReceipt,unknownTextReceipt,extractTextMessageId,receiveTextReceiptStatus} from './prospecting-text-receipts.mjs';
 import {preflightNewStep} from './prospecting-chat-history.mjs';
 import {queueNotice} from './notifications.mjs';
@@ -348,6 +348,43 @@ export async function tickPitchFollowup(deps={}){
    video=await loadVideo();
    if(!Buffer.isBuffer(video?.bytes)||video.bytes.length<1024)throw Error('VIDEO_NOT_READY');
   }catch(error){return {state:'VIDEO_ASSET_UNAVAILABLE',reason:String(error?.message||error).slice(0,80)};}
+  // Before the first video transport, inspect the sender's real WhatsApp
+  // conversation. A previously sent campaign video is counted, never repeated.
+  const fetchHistory=deps.fetchHistory||(!deps.status&&!deps.sendVideo?waRequest:null);
+  if(fetchHistory){
+   const proof=await preflightNewStep({sessionId:p.session_id,jid:p.phone+'@s.whatsapp.net',
+    kind:'VIDEO',text:PITCH_PREVIEW_TEXT,at:new Date(at),fetchChat:fetchHistory});
+   if(proof.state==='UNAVAILABLE')return {state:'HISTORY_UNAVAILABLE'};
+   if(proof.state==='EXISTS'){
+    const messageId=String(proof.message?.keyId||proof.message?.key?.id||'');
+    const stamp=now();
+    const changed=run("UPDATE prospecting_introductions SET followup_status='SENDING',followup_attempt_at=?,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT' AND followup_status='WAITING' AND followup_due_at<=?",
+     stamp,stamp,p.lead_id,atIso).changes;
+    if(!changed)return {state:'BUSY'};
+    beginPitchDelivery({leadId:p.lead_id,greetingId:p.greeting_id,kind:'VIDEO',sessionId:p.session_id,jid:p.phone+'@s.whatsapp.net'});
+    acknowledgePitchDelivery({leadId:p.lead_id,greetingId:p.greeting_id,kind:'VIDEO',providerId:messageId});
+    receivePitchDeliveryStatus({event:'message.status',sessionId:p.session_id,
+     data:{keyId:messageId,remoteJid:p.phone+'@s.whatsapp.net',
+      status:['SENT','DELIVERED','READ'].includes(String(proof.message.status||'').toUpperCase())?proof.message.status:'SENT'}});
+    run("UPDATE prospecting_introductions SET followup_status='SENT',followup_sent_at=?,updated_at=? WHERE lead_id=? AND followup_status='SENDING'",
+     stamp,stamp,p.lead_id);
+    const thread=one('SELECT id FROM threads WHERE lead_id=?',p.lead_id);
+    if(thread&&!one('SELECT id FROM messages WHERE provider_id=?','intro-video:'+p.greeting_id))
+     addMessage({threadId:thread.id,providerId:'intro-video:'+p.greeting_id,
+      direction:'out',type:'video',body:PITCH_PREVIEW_TEXT,status:'sent'});
+    audit('PROSPECT_VIDEO_ALREADY_IN_WHATSAPP',p.lead_id,{messageId,avoidedDuplicate:true});
+    await queueDeferredReply();
+    return {state:'SENT',fromHistory:true,leadId:p.lead_id};
+   }
+   if(proof.state!=='CLEAR'){
+    run("UPDATE prospecting_introductions SET followup_status='UNKNOWN',reason=?,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT' AND followup_status='WAITING'",
+     'Possible existing outbound video; manual review',now(),p.lead_id);
+    queueNotice('preflight-video:'+p.greeting_id,'PITCH_DELIVERY_ISSUE',
+     '*Prospector — vídeo possivelmente já enviado*\\nDestino: '+p.phone+
+     '\\nConfira o WhatsApp antes de reenviar. Nenhuma cópia foi enviada automaticamente.\\nhttps://wa.me/'+p.phone,p.lead_id);
+    return {state:'UNKNOWN',reason:'WHATSAPP_HISTORY_CONFLICT'};
+   }
+  }
   if(!run("UPDATE prospecting_introductions SET followup_status='SENDING',followup_attempt_at=?,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT' AND followup_status='WAITING' AND followup_due_at<=?",
    atIso,now(),p.lead_id,atIso).changes)return {state:'BUSY'};
   try{
