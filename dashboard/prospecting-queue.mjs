@@ -13,6 +13,7 @@ import {recontactDecision,latestOutreachAt,threeMonthsAfter} from './prospecting
 import {insideApproachWindow,isOutboundBusinessDay,prospectingWindowLabel} from './outreach-window.mjs';
 import {isExcludedTestContact} from './test-contact-exclusion.mjs';
 import {greetingForProspect,registerGreeting} from './prospecting-introduction.mjs';
+import {reserveTextReceipt,acceptTextReceipt,unknownTextReceipt,extractTextMessageId} from './prospecting-text-receipts.mjs';
 import {waRequest,selectedWaSession,waControlStatus,selectApproachSender} from './waakg-control.mjs';
 import {bindLeadSession,rotationCursor,advanceRotation,managedSessions} from './waakg-session-registry.mjs';
 
@@ -66,7 +67,8 @@ function closeStaleBatch(at=new Date()){
  const batchDay=daySP(new Date(created)),today=daySP(at);
  if(batchDay>=today)return null;
  const pending=one("SELECT COUNT(*) AS n FROM prospecting_batch_items WHERE batch_id=? AND status='QUEUED'",batch.id)?.n||0;
- if(!pending)return null;
+ // Even an ACTIVE batch with only UNKNOWN/SENT/SKIPPED rows must expire.
+ // Otherwise it blocks the next business day's 80-person queue indefinitely.
  run("UPDATE prospecting_batch_items SET status='CANCELLED',error='Janela encerrada; lote expirado' WHERE batch_id=? AND status='QUEUED'",batch.id);
  run("UPDATE prospecting_batches SET status='EXPIRED',updated_at=? WHERE id=? AND status='ACTIVE'",now(),batch.id);
  audit('PROSPECTING_BATCH_EXPIRED',null,{batchId:batch.id,cancelled:pending});
@@ -151,6 +153,9 @@ export function enrollAutonomousApproaches({at=new Date(),maxBatch=80}={}){
  closeStaleBatch(at);
  if(currentBatch())return {status:'ACTIVE'};
  if(!insideApproachWindow(at))return {status:'OUTSIDE_WINDOW'};
+ const remaining=dailyApproachBudget(at).remaining;
+ if(remaining<=0)return {status:'DAILY_LIMIT'};
+ maxBatch=Math.min(Number(maxBatch)||80,80,remaining);
  const atMs=at.getTime();
  const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL ORDER BY created_at DESC LIMIT 6000");
  const byIdentity=new Map();
@@ -188,11 +193,14 @@ function createAutonomousBatch(selected,at=new Date()){
 }
 // Pré-aquecimento 07:00–08:00: a pesquisa do dia já virou leads no CRM, então a
 // fila nasce antes da janela e o trabalhador envia a partir das 08:00, 90s cada.
-export function preloadApproachQueue({at=new Date(),maxBatch=200}={}){
+export function preloadApproachQueue({at=new Date(),maxBatch=80}={}){
  if(getSetting('paused',true))return {status:'PAUSED'};
  if(!isOutboundBusinessDay(at))return {status:'OUTSIDE_WINDOW'};
  closeStaleBatch(at);
  if(currentBatch())return {status:'ACTIVE'};
+ const remaining=dailyApproachBudget(at).remaining;
+ if(remaining<=0)return {status:'DAILY_LIMIT'};
+ maxBatch=Math.min(Number(maxBatch)||80,80,remaining);
  const atMs=at.getTime();
  const rows=all("SELECT id,business,city,phone,stage,contact_permission FROM leads WHERE phone IS NOT NULL AND created_at>=? ORDER BY created_at DESC LIMIT 3000",new Date(atMs-18*3600_000).toISOString());
  const selected=[];
@@ -263,10 +271,13 @@ export async function tickApproachQueue(deps={}){
   const recipient=one('SELECT name,business FROM leads WHERE id=?',next.lead_id);
   const message=greetingForProspect(recipient,new Date(time));
   try{
+   reserveTextReceipt({leadId:next.lead_id,greetingId:next.id,kind:'GREETING',sessionId:session,jid:next.phone+'@s.whatsapp.net'});
    const result=await send('/api/messages/'+encodeURIComponent(session)+'/'+encodeURIComponent(next.phone+'@s.whatsapp.net')+'/send',{method:'POST',data:{message:{text:message}}});
    run('UPDATE prospecting_send_clock SET last_finished_ms=MAX(last_finished_ms,?) WHERE id=1',currentTime());
-   if(result.status!==true)throw Error('Gateway não confirmou entrega');
+   if(result.status!==true)throw Error('Gateway não confirmou envio');
+   const receipt=acceptTextReceipt({leadId:next.lead_id,greetingId:next.id,kind:'GREETING',providerId:extractTextMessageId(result)});
    settleApproachCredit(next.id,true);
+   audit('PROSPECT_GREETING_GATEWAY_ACCEPTED',next.lead_id,{hasMessageId:receipt.hasProviderId,notDeviceDelivery:true});
    run("UPDATE prospecting_batch_items SET status='SENT',error=NULL WHERE id=?",next.id);
    run("UPDATE initial_contacts SET status='SENT' WHERE job_id=?",next.id);
    const lead=one('SELECT * FROM leads WHERE id=?',next.lead_id);
@@ -277,6 +288,7 @@ export async function tickApproachQueue(deps={}){
    audit('PROSPECTING_GREETING_ACCEPTED',lead.id,{batchId:batch.id,intervalSeconds:clock.interval_ms/1000,cadence:APPROACH_CADENCE});
    return {status:'SENT',batchId:batch.id};
   }catch(error){
+   unknownTextReceipt({leadId:next.lead_id,greetingId:next.id,kind:'GREETING',error:String(error?.message||error)});
    settleApproachCredit(next.id,false);
    run('UPDATE prospecting_send_clock SET last_finished_ms=MAX(last_finished_ms,?) WHERE id=1',currentTime());
    run("UPDATE prospecting_batch_items SET status='UNKNOWN',error='Entrega incerta; verificar manualmente' WHERE id=?",next.id);
