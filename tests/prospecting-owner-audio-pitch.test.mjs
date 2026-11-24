@@ -11,6 +11,7 @@ process.env.PROSPECTOR_REQUIRE_DOCUMENTED_OPTIN='true';
 const db=await import('../dashboard/db.mjs');
 const {registerGreeting,routeIntroductionReply,introductionStatus,tickIntroductions,tickPitchFollowup,PITCH_PREVIEW_TEXT}=await import('../dashboard/prospecting-introduction.mjs');
 const {receivePitchDeliveryStatus,pitchDeliveryReceipt}=await import('../dashboard/pitch-delivery-verification.mjs');
+const {acceptsProposalAudio}=await import('../dashboard/prospector-sales-signals.mjs');
 const {wantsPortfolioPitchAudio,portfolioAudioSentFor,portfolioPitchAudioHealth}=await import('../dashboard/portfolio-pitch-audio.mjs');
 let idNum=1000;
 function addAuthorized(){
@@ -29,6 +30,12 @@ test('phrases asking for the offer choose voice; generic greetings do not',()=>{
  assert.equal(wantsPortfolioPitchAudio('Pode explicar melhor essa proposta?'),true);
  assert.equal(wantsPortfolioPitchAudio('Oi, tudo bem?'),false);
  assert.equal(wantsPortfolioPitchAudio('Não tenho interesse'),false);
+ assert.equal(acceptsProposalAudio('ok, pode enviar'),true);
+ assert.equal(acceptsProposalAudio('Ok, pode enviar o áudio.'),true);
+ assert.equal(acceptsProposalAudio('beleza, pode mandar'),true);
+ assert.equal(acceptsProposalAudio('ok, não pode enviar'),false);
+ assert.equal(acceptsProposalAudio('ok, por enquanto não'),false);
+ assert.equal(acceptsProposalAudio('ok, vou avaliar'),false);
 });
 test('first reply delivers Wesley permission question; second affirmative delivers only original audio, once',async()=>{
  const {lead,jid}=addAuthorized();
@@ -41,7 +48,7 @@ test('first reply delivers Wesley permission question; second affirmative delive
   sendAudio:async()=>{voiceCount++;return {accepted:true};}});
  assert.equal(text.state,'SENT');
  assert.equal(textCount,1);assert.equal(voiceCount,0);
- const permission=routeIntroductionReply({leadId:lead.id,providerId:'inbound-2',body:'sim, pode mandar',receivedAt:when});
+ const permission=routeIntroductionReply({leadId:lead.id,providerId:'inbound-2',body:'ok, pode enviar',receivedAt:when});
  assert.equal(permission.state,'VOICE_WAITING');
  const sent=await tickIntroductions({currentTime:()=>Date.now(),session:()=> 'consecom-principal',
   status:async()=>({connected:true}),
