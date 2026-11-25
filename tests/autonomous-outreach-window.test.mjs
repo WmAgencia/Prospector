@@ -26,6 +26,12 @@ test('São Paulo window is inclusive at 08:00 and exclusive at 17:30',()=>{
  assert.equal(insideApproachWindow(new Date('2026-11-04T11:00:00Z')),true);
  assert.equal(insideApproachWindow(new Date('2026-11-04T20:29:59Z')),true);
  assert.equal(insideApproachWindow(new Date('2026-11-04T20:30:00Z')),false);
+ assert.equal(insideApproachWindow(new Date('2026-11-07T19:59:59Z')),true);
+ assert.equal(insideApproachWindow(new Date('2026-11-07T20:00:00Z')),false);
+ assert.equal(insideApproachWindow(new Date('2026-11-08T14:00:00Z')),false);
+ d.setSetting('client_outreach_hours',{start:'08:00',end:'16:00'});
+ assert.equal(insideApproachWindow(new Date('2026-11-04T19:00:00Z')),false);
+ d.setSetting('client_outreach_hours',{start:'08:00',end:'17:30'});
 });
 test('automatic queue excludes recent approaches, duplicates, opt-outs, and queues due recontacts',()=>{
  const first=lead('Oficina Alfa','5515999890001');
@@ -70,9 +76,13 @@ test('chosen interval is enforced even when the queue is checked every second',a
  const thread=d.getThread(contacted);
  d.addMessage({threadId:thread.id,direction:'in',body:'Tudo bem, e com vocês?'});
  assert.equal(conversationAuthorized(contacted),true);
+ const pendingBefore=d.one("SELECT COUNT(*) n FROM prospecting_batch_items WHERE status='QUEUED'").n;
+ assert.ok(pendingBefore>0);
  time=Date.parse('2026-11-04T20:30:00Z'); // 17:30 São Paulo
  assert.equal((await q.tickApproachQueue(deps)).status,'OUTSIDE_WINDOW');
  assert.equal(sent.length,2);
+ assert.equal(d.one("SELECT COUNT(*) n FROM prospecting_batch_items WHERE status='QUEUED'").n,pendingBefore);
+ assert.equal(conversationAuthorized(contacted),true);
  d.setSetting('paused',true);
  assert.equal((await q.tickApproachQueue(deps)).status,'PAUSED');
 });
