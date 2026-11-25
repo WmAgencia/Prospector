@@ -71,19 +71,25 @@ test('first reply delivers Wesley permission question; second affirmative delive
  // Separate scenario: do not leave a pending preview for the next test case.
  db.run("UPDATE prospecting_introductions SET followup_status='CANCELLED' WHERE lead_id=?",lead.id);
 });
-test('new proposal sends just one native demo video with the approved caption ten seconds after audio',async()=>{
+test('existing conversation sends authorization text, audio and one confirmed video outside approach hours',async()=>{
  const {lead,jid}=addAuthorized();
- const when=new Date(Date.now()-42000);
+ const outside=new Date(Date.now()+86400000);
+ outside.setUTCHours(21,0,0,0); // 18:00 in São Paulo
+ const {insideApproachWindow}=await import('../dashboard/outreach-window.mjs');
+ assert.equal(insideApproachWindow(outside),false);
+ const when=new Date(outside.getTime()-42000);
  assert.equal(routeIntroductionReply({leadId:lead.id,providerId:'video-first',body:'Oi',receivedAt:when}).state,'WAITING');
- assert.equal((await tickIntroductions({session:()=> 'consecom-principal',status:async()=>({connected:true}),
+ assert.equal((await tickIntroductions({currentTime:()=>outside.getTime(),session:()=> 'consecom-principal',status:async()=>({connected:true}),
   send:async()=>({status:true})})).state,'SENT');
  assert.equal(routeIntroductionReply({leadId:lead.id,providerId:'video-authorized',body:'pode mandar',receivedAt:when}).state,'VOICE_WAITING');
- assert.equal((await tickIntroductions({session:()=> 'consecom-principal',status:async()=>({connected:true}),
+ assert.equal((await tickIntroductions({currentTime:()=>outside.getTime(),session:()=> 'consecom-principal',status:async()=>({connected:true}),
   loadAudio:async()=>({bytes:Buffer.alloc(300000,19)}),sendAudio:async()=>({accepted:true,messageId:'AUDIO_WA_MESSAGE_001'})})).state,'VOICE_SENT');
  const row=introductionStatus(lead.id);
  assert.equal(row.reason,'PITCH_AUDIO_550');
- const due=Date.parse(row.followup_due_at);
- assert.ok(due>Date.now());
+ assert.ok(Date.parse(row.followup_due_at)>Date.now());
+ const due=outside.getTime()+10000;
+ db.run('UPDATE prospecting_introductions SET followup_due_at=? WHERE lead_id=?',new Date(due).toISOString(),lead.id);
+ assert.equal(insideApproachWindow(new Date(due)),false);
  // A natural reply before the 10-second preview must not silently cancel it.
  db.addMessage({threadId:db.getThread(lead.id).id,providerId:'video-customer-early-'+lead.id,
   direction:'in',body:'Obrigado, vou ouvir e avaliar',status:'received'});
