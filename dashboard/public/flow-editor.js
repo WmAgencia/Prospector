@@ -3,7 +3,7 @@ const kinds={text:'Mensagem de texto',audio:'Áudio',video:'Vídeo',image:'Image
 const isMessage=k=>['text','audio','video','image','document'].includes(k);
 const icons={folder:'<path d="M3 7V5h7l2 3h9v12H3z"/>',text:'<path d="M4 4h16v13H9l-5 4zM8 9h8M8 13h6"/>',audio:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3"/>',video:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/>',image:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',document:'<path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h8"/>',reply:'<path d="M20 16H9l-5 4V4h16zM8 9h8M8 13h6"/>',delay:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',condition:'<path d="M12 3v5M5 21v-5l7-8 7 8v5"/><circle cx="12" cy="3" r="2"/>',ai:'<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/>',handoff:'<circle cx="12" cy="7" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 4H4v12"/>',search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',plus:'<path d="M12 5v14M5 12h14"/>'};
 const icon=k=>'<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(icons[k]||icons.folder)+'</svg>';
-let root,api,projects=[],current=null,selected=null,query='',loading=false,loaded=false,error='',dirty=false,zoom=1,simulating=false,simulationLead=1,busy=false,projectDialog=null;
+let root,api,projects=[],current=null,selected=null,query='',loading=false,loaded=false,error='',dirty=false,zoom=1,simulating=false,simulationLead=1,busy=false,projectDialog=null,simulationRun=null;
 const uid=()=>crypto.randomUUID();
 const btn=(action,label,extra='')=>'<button type="button" data-flow="'+action+'" '+extra+'>'+label+'</button>';
 const readonly=()=>!!current?.protected;
@@ -33,11 +33,23 @@ function simulatedVariant(s){
  for(let i=0;i<vars.length;i++){if(cursor<weights[i])return vars[i];cursor-=weights[i];}
  return vars[0];
 }
-function simulation(){
+function previewSimulation(){
  return '<div class="pf-sim"><div class="pf-sim-head"><strong>Simulação local</strong><span>Nenhuma mensagem enviada</span>'+btn('prev-sim','←')+'<b>Contato '+simulationLead+'</b>'+btn('next-sim','→')+btn('close-sim','Fechar')+'</div>'+current.definition.steps.map((s,i)=>{
  const v=simulatedVariant(s),idx=s.variants.indexOf(v),variantName=idx>=0?' · Variante '+(idx<26?String.fromCharCode(65+idx):idx+1):'';
  return '<p><b>'+String(i+1).padStart(2,'0')+' · '+esc(s.name)+esc(variantName)+'</b> — '+esc(isMessage(s.kind)?(v?.text||'Mensagem vazia'):s.kind==='delay'?s.seconds+' s':s.kind==='condition'?'Condição: '+({reply:'Resposta',permission:'Autorização',interest:'Interesse'}[s.condition]||'Resposta'):kinds[s.kind])+'</p>';
  }).join('')+'<small>Prévia de percurso afirmativo; condições e mensagens são apenas representadas, sem execução externa.</small></div>';
+}
+function simulation(){
+ if(!simulationRun)return previewSimulation();
+ const r=simulationRun,e=r.execution,s=r.definition.steps[e.cursor];
+ const terminal=['COMPLETE','CANCELLED','HUMAN','REVIEW'].includes(e.state);
+ const choices=e.state==='WAIT_REPLY'?['reply','permission','interest','automatic','refusal','optout','takeover']:terminal?[]:['next',...(['RESERVED','WAIT_PROOF'].includes(e.state)?['uncertain']:[]),'takeover'];
+ const labels={next:'Avançar',reply:'Cliente respondeu',permission:'Autorizou',interest:'Demonstrou interesse',automatic:'Resposta automática',refusal:'Recusou',optout:'Não contatar',takeover:'Assumir conversa',uncertain:'Entrega incerta'};
+ return '<div class="pf-sim"><div class="pf-sim-head"><strong>Simulação persistente</strong><span>Versão '+r.version+' · Sem envio real</span>'+btn('close-sim','Fechar')+'</div><p><b>'+esc(s?.name||'Fluxo encerrado')+'</b> · '+esc(e.state)+'</p>'+e.history.slice(-15).map(h=>'<p>'+esc(h.type)+' · '+esc(h.stepId||'')+(h.variantId?' · Variante '+esc(h.variantId):'')+'</p>').join('')+'<div class="pf-actions">'+choices.map(c=>btn('sim-event',labels[c],'data-choice="'+c+'"')).join('')+btn('restart-sim','Novo contato')+'</div></div>';
+}
+async function runSimulation(action,extra={}){
+ const r=await api('/api/flow/simulation',{method:'POST',body:JSON.stringify({action,...extra})});
+ simulationRun=r;simulating=true;paint();
 }
 function editor(){
  return '<div class="pf-editor"><div class="pf-edit-top"><div>'+btn('back','← Projetos','class="pf-back"')+'<h2>'+esc(current.name)+'</h2><span class="pf-niche">'+esc(current.niche||'Sem nicho')+'</span></div><div class="pf-actions"><span class="pf-chip">'+(readonly()?'Fluxo atual · protegido':dirty?'Alterações não salvas':'Salvo')+'</span>'+(!readonly()?btn('settings','Configurar projeto')+btn('save','Salvar')+btn('version','Salvar versão','class="pf-primary"'):'')+'</div></div><div class="pf-edit-toolbar"><span>Editor visual</span><span class="pf-toolbar-note">'+(readonly()?'Espelho somente leitura do fluxo existente':'Ambiente de edição e simulação · sem disparos reais')+'</span>'+btn('simulate','Simular')+(!readonly()?'<select data-field="addKind" aria-label="Tipo da nova etapa">'+Object.entries(kinds).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+btn('add-step',icon('plus')+' Etapa','class="pf-primary"'):'')+'</div><div class="pf-workspace"><div class="pf-canvas"><div class="pf-track" style="zoom:'+zoom+'">'+current.definition.steps.map((s,i)=>node(s,i)).join('<div class="pf-wire"><span>›</span></div>')+'</div><div class="pf-zoom">'+btn('zoom-out','−')+'<span>'+Math.round(zoom*100)+'%</span>'+btn('zoom-in','+')+btn('fullscreen','⛶','title="Tela cheia"')+'</div></div>'+panel()+'</div>'+(simulating?simulation():'')+'</div>';
@@ -79,7 +91,9 @@ async function onClick(e){
  else if(action==='back'){if(dirty&&!confirm('Sair sem salvar as alterações?'))return;current=null;selected=null;dirty=false;simulating=false;}
  else if(action==='select'){selected={step:b.dataset.step,variant:b.dataset.variant};}
  else if(action==='settings'||action==='deselect'){selected=null;}
- else if(action==='simulate'){simulating=true;simulationLead=1;}
+ else if(action==='simulate'){simulationRun=null;simulating=true;simulationLead=1;if(!readonly()&&current.publishedVersion&&!dirty){await runSimulation('start',{projectId:current.id});return;}}
+ else if(action==='restart-sim'){await runSimulation('start',{projectId:current.id});return;}
+ else if(action==='sim-event'&&simulationRun){await runSimulation('advance',{id:simulationRun.id,revision:simulationRun.revision,choice:b.dataset.choice});return;}
  else if(action==='prev-sim'){simulationLead=Math.max(1,simulationLead-1);}
  else if(action==='next-sim'){simulationLead++;}
  else if(action==='close-sim'){simulating=false;}
