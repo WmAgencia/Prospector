@@ -1,6 +1,7 @@
 import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
 import {handlePlatform,isPrimaryClient} from './platform.mjs';
+import {listFlowProjects,mutateFlowProject} from './flow-projects.mjs';
 import {handleTraining} from './training.mjs';
 import {handleFranciscaPanel} from './francisca-panel.mjs';
 import {monthlyProspectingCalendar} from './prospecting-calendar.mjs';
@@ -527,6 +528,11 @@ async function handler(req,res){
    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
+  if(pathname==='/api/flow/projects'){
+   if(req.method==='GET')return respond(res,200,listFlowProjects());
+   if(req.method==='POST'){try{const input=await json(req);return respond(res,200,mutateFlowProject(input.action,input));}catch(e){return respond(res,400,{error:String(e.message).slice(0,200)});}}
+   return respond(res,405,{error:'Método inválido'});
+  }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
   if(req.method==='GET'&&pathname==='/api/conversations/local')return respond(res,200,{threads:conversationSnapshot()});
   if(req.method==='GET'&&pathname==='/api/approvals'){
@@ -879,7 +885,7 @@ async function handler(req,res){
   }
   if(req.method!=='GET')return respond(res,404,{error:'Rota inexistente'});
   const target=pathname==='/'?'index.html':pathname.slice(1);
-  if(!['index.html','simple-app.js','francisca-live.mjs','simple-app.css','product-theme.css','dashboard-purple.css','product-icons.js','app.js','style.css','campaign-ui.js','campaign-ui.mjs','campaign-ui-state.mjs','campaign-ui.css','radar-ui.js'].includes(target))return respond(res,404,{error:'Arquivo inexistente'});
+  if(!['index.html','simple-app.js','flow-editor.js','flow-editor.css','francisca-live.mjs','simple-app.css','product-theme.css','dashboard-purple.css','product-icons.js','app.js','style.css','campaign-ui.js','campaign-ui.mjs','campaign-ui-state.mjs','campaign-ui.css','radar-ui.js'].includes(target))return respond(res,404,{error:'Arquivo inexistente'});
   const f=path.join(root,target),ext=path.extname(f);
   res.writeHead(200,{'Content-Type':web[ext]||'text/plain','Cache-Control':'no-cache'});fs.createReadStream(f).pipe(res);
  }catch(e){console.error('[API]',e?.message);error(res,e);}
