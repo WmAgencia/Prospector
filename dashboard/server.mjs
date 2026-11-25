@@ -44,7 +44,7 @@ import {connection,tickStatus,connectWhatsApp,disconnectWhatsApp,restoreWhatsApp
 import {queueHealth} from './queue-health.mjs';
 import {aiStatus,aiDraft} from './ai-groq.mjs';
 import {gatewayStatus,gatewayRemoteStatus,gatewayInbox,receiveWebhook,ensureOwnerHandoffWebhooks,draftInbox,sendApproved,sendChatMessage} from './waakg-bridge.mjs';
-import {recordInboundTranscript} from './waakg-bridge.mjs';
+import {recordInboundTranscript,reconcileHeldInbound,heldInboundSummary} from './waakg-bridge.mjs';
 import {processAudioJobs,audioStatus,transcribeAudio} from './waakg-audio-inbound.mjs';
 import {voiceStatus,makeFranciscaVoice,makeFranciscaCallPcm} from './francisca-tts.mjs';
 import {wavFromPcm16} from './francisca-call-lab.mjs';
@@ -625,7 +625,7 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/prospecting/verification'){
    if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')
     return respond(res,403,{error:'Diagnóstico reservado à operação Consecom'});
-   return respond(res,200,prospectingStepVerification({limit:Number(url.searchParams.get('limit')||50)}));
+   return respond(res,200,{...prospectingStepVerification({limit:Number(url.searchParams.get('limit')||50)}),heldInbound:heldInboundSummary()});
   }
   if(req.method==='GET'&&pathname==='/api/prospecting/queue')return respond(res,200,approachQueueStatus());
   if(req.method==='POST'&&pathname==='/api/prospecting/queue'){const r=enqueueApprovedApproaches(await json(req));if(r.status===202)notify();return respond(res,r.status,r.body);}
@@ -999,6 +999,11 @@ setTimeout(()=>{
  try{console.info('[pitch video backlog at startup]',JSON.stringify(pitchVideoBacklogStatus()));}
  catch(error){console.warn('[pitch video backlog]',String(error?.message||error).slice(0,120));}
 },12_000).unref();
+const heldInboundTimer=setInterval(()=>{
+ try{const r=reconcileHeldInbound();if(r.recovered||r.review)console.info('[held inbound]',JSON.stringify(r));}
+ catch(e){console.warn('[held inbound]',String(e.message||e).slice(0,100));}
+},15000);
+heldInboundTimer.unref();
 const textReceiptTimer=setInterval(()=>{
  reconcileTextReceipts({limit:8}).then(result=>{
   if(result.alerts)console.warn('[prospect text receipts] unresolved WhatsApp confirmations',JSON.stringify(result));
