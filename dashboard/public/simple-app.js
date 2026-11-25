@@ -1,5 +1,9 @@
 // Prospector workspace.
-import {mountProspectorFlow} from './flow-editor.js';
+let flowModulePromise=null;
+function openFlowEditor(host){
+ flowModulePromise ||= import('./flow-editor.js').catch(error=>{flowModulePromise=null;throw error;});
+ flowModulePromise.then(module=>{if(view==='flow'&&host.isConnected)module.mountProspectorFlow(host,api);}).catch(error=>{if(host.isConnected)host.textContent='Não foi possível abrir o Prospector Flow: '+error.message;});
+}
 const q=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
@@ -1241,7 +1245,7 @@ function render(){
  const selection=wasTyping?[oldInput.selectionStart,oldInput.selectionEnd]:null;
  shell();
  const el=q("#view");
- if(view==="flow"){mountProspectorFlow(el,api);return;}
+ if(view==="flow"){openFlowEditor(el);return;}
  el.innerHTML={dashboard:masterDashboard,clients:clientsView,overview,conversations,prospects:prospecting,approvals:approvalsView,connections,training:trainingView,credits:creditsView,settings}[view]();
  if(view==='training'){const feed=q('.training-interview-feed');if(feed)feed.scrollTop=feed.scrollHeight;}
  if(view==='conversations'){
