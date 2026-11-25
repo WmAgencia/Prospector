@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-flow-runtime-'));
+process.env.PROSPECTOR_DATA_DIR=dir;
+process.env.WA_AKG_SESSION_ID='synthetic-flow-session';
+process.env.PROSPECTOR_FLOW_LIVE_ENABLED='true';
+delete process.env.PROSPECTOR_TENANT_ID;
+const d=await import('../dashboard/db.mjs');
+const {liveFlowSupported,setLiveRoute,previewLiveGreeting,reserveLiveGreeting,liveFirstText,liveOwnsLead,tickLiveFlows}=await import('../dashboard/flow-runtime.mjs');
+const {bindLeadSession}=await import('../dashboard/waakg-session-registry.mjs');
+const {listFlowProjects,mutateFlowProject}=await import('../dashboard/flow-projects.mjs');
+const sid='synthetic-flow-session';
+const definition={steps:[{id:'first',kind:'text',name:'Abordagem',variants:[{id:'a',text:'Olá!',weight:1},{id:'b',text:'Bom dia!',weight:1}]},{id:'reply',kind:'reply',name:'Resposta',variants:[]}]};
+test('internal owner cannot activate visual execution even with external rollout flag',async()=>{
+ assert.equal(liveFlowSupported(),false);
+ assert.equal(previewLiveGreeting('missing'),null);
+ assert.equal(liveOwnsLead('missing'),false);
+ assert.throws(()=>setLiveRoute({projectId:'x',niche:'Eventos',version:1,definition,enabled:true}),/indisponível/);
+ assert.equal((await tickLiveFlows({send:()=>{throw Error('must not send')}})).processed,0);
+ assert.equal(d.one("SELECT 1 FROM sqlite_master WHERE name='flow_live_runs'"),undefined);
+});
+test('external execution requires rollout flag, explicit activation, matching niche and documented opt-in',()=>{
+ process.env.PROSPECTOR_TENANT_ID='synthetic-flow-tenant';process.env.PROSPECTOR_TENANT_INTERNAL='false';
+ try{
+  assert.equal(liveFlowSupported(),true);
+  const project=mutateFlowProject('create',{name:'Eventos',niche:'Eventos'});
+  project.definition=definition;
+  const saved=mutateFlowProject('save',project),version=mutateFlowProject('version',{id:saved.id,revision:saved.revision});
+  assert.throws(()=>mutateFlowProject('activate',{id:version.id,revision:version.revision}),/Confirme/);
+  mutateFlowProject('activate',{id:version.id,revision:version.revision,confirm:true});
+  const lead=d.addLead({business:'Empresa fictícia',phone:'5515987654310',source:'TEST',segment:'Eventos',contact_permission:true}).lead;
+  d.run('UPDATE leads SET segment=? WHERE id=?','Eventos',lead.id);
+  assert.equal(previewLiveGreeting(lead.id).blocked,true);
+  d.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Synthetic explicit consent fixture'});
+  const plan=previewLiveGreeting(lead.id);assert.equal(plan.variantId,'a');
+  bindLeadSession(lead.id,sid);
+  const greeting=d.id();
+  assert.equal(d.tx(()=>reserveLiveGreeting({plan,leadId:lead.id,greetingId:greeting,sessionId:sid,jid:lead.phone+'@s.whatsapp.net',at:Date.now()})),true);
+  assert.equal(liveFirstText(greeting),'Olá!');
+  assert.equal(liveOwnsLead(lead.id),true);
+  assert.equal(previewLiveGreeting(lead.id).variantId,'b');
+  assert.equal(listFlowProjects().items.some(p=>p.protected),false);
+  process.env.PROSPECTOR_FLOW_LIVE_ENABLED='false';
+  assert.equal(previewLiveGreeting(lead.id),null);
+  assert.equal(liveOwnsLead(lead.id),true);
+ }finally{delete process.env.PROSPECTOR_TENANT_ID;delete process.env.PROSPECTOR_TENANT_INTERNAL;delete process.env.PROSPECTOR_FLOW_LIVE_ENABLED;}
+});
+test.after(()=>{d.db.close();fs.rmSync(dir,{recursive:true,force:true});});
