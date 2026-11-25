@@ -34,3 +34,13 @@ export function applyOwnerDailyLimit100(){
   preservesPriorContacts:true,consentAndSuppressionUnchanged:true});
  return {status:'UPDATED',dailyLimit:100,previous,additionalCapacity:Math.max(0,100-Number(previous||0))};
 }
+
+export const DAILY_90_MARKER='owner_daily_90_20261125_v1';
+export function applyOwnerDailyLimit90(){
+ if(process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true')return {status:'OTHER_TENANT_UNCHANGED'};
+ const previous=getSetting('daily_limit',90);
+ if(getSetting(DAILY_90_MARKER,false)===true)return {status:'ALREADY_APPLIED',dailyLimit:previous};
+ setSetting('daily_limit',90);setSetting(DAILY_90_MARKER,true);
+ audit('OWNER_DAILY_LIMIT_90',null,{previous,current:90,preservesPriorContacts:true});
+ return {status:'UPDATED',previous,dailyLimit:90};
+}
