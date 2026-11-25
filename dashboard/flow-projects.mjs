@@ -54,11 +54,10 @@ export function validateFlow(input,{publish=false}={}){
 }
 const parse=r=>({id:r.id,name:r.name,niche:r.niche,description:r.description,definition:JSON.parse(r.draft),revision:r.revision,publishedVersion:r.published_version,createdAt:r.created_at,updatedAt:r.updated_at,status:r.published_version?'versioned':'draft',execution:'simulation_only'});
 export function listFlowProjects(){
- if(isInternal())return {items:[internalProject()],protected:true,executionEnabled:false};
- init();return {items:all('SELECT * FROM flow_projects ORDER BY updated_at DESC LIMIT 500').map(parse),protected:false,executionEnabled:false};
+ init();const internal=isInternal();return {items:[...(internal?[internalProject()]:[]),...all('SELECT * FROM flow_projects ORDER BY updated_at DESC LIMIT 500').map(parse)],protected:internal,executionEnabled:false};
 }
 export function mutateFlowProject(action,input={}){
- if(isInternal())throw Error('O fluxo Consecom está protegido e não pode ser alterado neste editor.');
+ if(input.id==='consecom-current')throw Error('O fluxo Consecom está protegido e não pode ser alterado neste editor.');
  init();
  return tx(()=>{
   if(action==='create'||action==='duplicate'){
