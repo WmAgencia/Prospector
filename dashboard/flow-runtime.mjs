@@ -1,6 +1,6 @@
 // Opt-in external tenant adapter. The internal Consecom operation always
 // returns before accessing these tables. Initial sends use the existing queue.
-import {db,one,all,run,now,tx} from './db.mjs';
+import {db,one,all,run,now,tx,getThread,addMessage} from './db.mjs';
 import {assignVariant,normalizedNiche,newExecution,reduceExecution} from './flow-engine.mjs';
 import {documentedOptIn} from './outreach-queue.mjs';
 import {isManagedSession,leadSession} from './waakg-session-registry.mjs';
@@ -31,6 +31,7 @@ export function setLiveRoute({projectId,niche,version,definition,enabled}){
  const prior=one('SELECT project_id FROM flow_live_routes WHERE niche=? AND enabled=1',key);
  if(enabled&&prior&&prior.project_id!==projectId)throw Error('Já existe um fluxo ativo neste nicho.');
  if(!enabled){run('UPDATE flow_live_routes SET enabled=0,updated_at=? WHERE project_id=?',now(),projectId);return;}
+ run('UPDATE flow_live_routes SET enabled=0,updated_at=? WHERE project_id=? AND niche<>?',now(),projectId,key);
  run('INSERT INTO flow_live_routes(niche,project_id,version,definition,enabled,updated_at) VALUES(?,?,?,?,1,?) ON CONFLICT(niche) DO UPDATE SET project_id=excluded.project_id,version=excluded.version,definition=excluded.definition,enabled=1,updated_at=excluded.updated_at',key,projectId,version,JSON.stringify(definition),now());
 }
 const render=(text,lead)=>String(text||'').replace(/\{\{(nome|empresa|cidade|segmento)\}\}/g,(_,key)=>String(({nome:lead.name,empresa:lead.business,cidade:lead.city,segmento:lead.segment})[key]||'').slice(0,120)).replace(/\s+/g,' ').trim();
@@ -52,7 +53,7 @@ export function previewLiveGreeting(leadId){
 }
 // Called inside existing queue reservation transaction, never sends.
 export function reserveLiveGreeting({plan,leadId,greetingId,sessionId,jid,at}){
- if(!plan)return true;
+ if(!plan)return !liveFlowSupported()||!previewLiveGreeting(leadId);
  if(!liveFlowSupported()||plan.blocked||!documentedOptIn(leadId)||!isManagedSession(sessionId))return false;
  const route=one('SELECT * FROM flow_live_routes WHERE niche=? AND enabled=1',plan.niche);
  if(!route||route.project_id!==plan.projectId||route.version!==plan.version)return false;
@@ -91,19 +92,20 @@ export async function tickLiveFlows(deps={}){
    }
    const apply=(event,opts={})=>{e=reduceExecution(def,e,event,{at,...opts});persist(row,e);};
    if(row.state==='FIRST_PROOF'){
-    const receipt=one("SELECT status,provider_id FROM prospecting_text_receipts WHERE lead_id=? AND greeting_id=? AND kind='GREETING'",row.lead_id,row.greeting_id);
+    const receipt=one("SELECT status,provider_id,attempted_at FROM prospecting_text_receipts WHERE lead_id=? AND greeting_id=? AND kind='GREETING'",row.lead_id,row.greeting_id);
     const batch=one('SELECT status FROM prospecting_batch_items WHERE id=?',row.greeting_id);
     if(batch?.status==='SENT'&&receipt?.provider_id&&confirmed.has(receipt.status)){
      e=reduceExecution(def,e,{type:'accepted',providerId:receipt.provider_id},{at});
-     apply({type:'proof',providerId:receipt.provider_id,status:receipt.status});processed++;
+     e=reduceExecution(def,e,{type:'proof',providerId:receipt.provider_id,status:receipt.status},{at});
+     e.enteredAt=Math.min(at,Date.parse(receipt.attempted_at)||at);persist(row,e);processed++;
     }else if(receipt?.status==='FAILED'||batch?.status==='UNKNOWN'){hold(row,e,'primeira abordagem incerta');}
     continue;
    }
    if(!conversationAuthorized(row.lead_id)){hold(row,e,'autorização indisponível');continue;}
    const step=def.steps[e.cursor];if(!step){persist(row,e,'COMPLETE');continue;}
    if(e.state==='WAIT_REPLY'){
-    const incoming=all("SELECT provider_id,body,state,received_at FROM waakg_inbox WHERE lead_id=? AND session_id=? AND received_at>=? ORDER BY received_at,rowid LIMIT 100",row.lead_id,row.session_id,new Date(e.enteredAt).toISOString());
-    const next=incoming.find(x=>!e.history.some(h=>h.inboundId===x.provider_id||h.id===x.provider_id));
+    const consumed=e.history.filter(h=>h.inboundId||h.id).map(h=>h.inboundId||h.id);
+    const next=one("SELECT provider_id,body,state,received_at FROM waakg_inbox WHERE lead_id=? AND session_id=? AND received_at>=? AND provider_id NOT IN (SELECT value FROM json_each(?)) ORDER BY received_at,rowid LIMIT 1",row.lead_id,row.session_id,new Date(e.enteredAt).toISOString(),JSON.stringify(consumed));
     if(!next){run('UPDATE flow_live_runs SET updated_at=? WHERE greeting_id=?',now(),row.greeting_id);continue;}
     const ending=salesEnding(next.body);
     if(next.state==='OPT_OUT'||ending==='OPT_OUT'||next.state==='NO_INTEREST'||ending==='NO_INTEREST')apply({type:'refusal'});
@@ -119,7 +121,10 @@ export async function tickLiveFlows(deps={}){
    if(e.state==='WAIT_PROOF'){
     const history=await (deps.history||loadProspectorHistory)({sessionId:row.session_id,jid:row.jid,fetchChat:deps.send||waRequest});
     const exact=history.messages?.find(m=>m.fromMe===true&&outboundId(m)===e.providerId&&(!m.remoteJid||m.remoteJid===row.jid)&&confirmed.has(String(m.status).toUpperCase()));
-    if(exact){apply({type:'proof',providerId:e.providerId,status:String(exact.status).toUpperCase()});processed++;}
+    if(exact){
+     const providerId=e.providerId,variant=step.variants.find(v=>v.id===e.assignments[step.id]);
+     tx(()=>{const thread=getThread(row.lead_id,row.jid);addMessage({threadId:thread.id,providerId:row.session_id+':'+providerId,direction:'out',body:e.renderedText||render(variant?.text,lead),status:'sent'});apply({type:'proof',providerId,status:String(exact.status).toUpperCase()});delete e.renderedText;persist(row,e);});processed++;
+    }
     else if(at-Date.parse(row.updated_at)>15*60000)hold(row,e,'comprovante não localizado');
     continue;
    }
@@ -135,6 +140,7 @@ export async function tickLiveFlows(deps={}){
    let text='';
    tx(()=>{apply({type:'start'},{choose:()=>{const v=pick(row.project_id,row.version,step,true);text=render(v.text,lead);return v;}});});
    if(!text||text.length>1500||/\{\{/.test(text)){hold(row,e,'mensagem inválida');continue;}
+   e.renderedText=text;persist(row,e);
    try{
     registerApiOutboundIntent({session:row.session_id,jid:row.jid,type:'TEXT',text});
     const ack=await (deps.send||waRequest)('/api/messages/'+encodeURIComponent(row.session_id)+'/'+encodeURIComponent(row.jid)+'/send',{method:'POST',data:{message:{text}}});
