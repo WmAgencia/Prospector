@@ -3,7 +3,7 @@
 // text/media verifiers before this monitor runs. NEVER sends to a prospect.
 import {all,getSetting} from './db.mjs';
 import {queueNotice} from './notifications.mjs';
-import {acceptsProposalAudio} from './prospector-sales-signals.mjs';
+import {acceptsProposalAudio,declinesProposalAudio} from './prospector-sales-signals.mjs';
 import {wantsPortfolioPitchAudio} from './portfolio-pitch-audio.mjs';
 
 const stepNames={GREETING:'Primeira abordagem',INTRO:'Pedido de autorização',AUDIO:'Áudio da proposta',VIDEO:'Vídeo do portfólio',PERMISSION:'Autorização do cliente'};
@@ -20,7 +20,7 @@ export function prospectingStepVerification({at=new Date(),days=7,limit=50}={}){
  const counts={GREETING:resultStep(),INTRO:resultStep(),AUDIO:resultStep(),VIDEO:resultStep()};
  const issues=[], seen=new Set();
  const add=({lead_id,phone,business,session_id,step,code,status,at:when,greeting_id,manual_takeover=0,lead_stage='',urgency=2})=>{
-  const dedupe=String(lead_id)+':'+step+':'+code;
+  const dedupe=String(lead_id)+':'+String(greeting_id||'')+':'+step+':'+code;
   if(seen.has(dedupe))return;
   seen.add(dedupe);
   issues.push({leadId:lead_id,phone:phone||null,business:business||'Empresa',
@@ -110,7 +110,7 @@ export function prospectingStepVerification({at=new Date(),days=7,limit=50}={}){
   if(p.stage==='SENT'&&p.sent_at&&active){
    const replies=all("SELECT body,state,received_at FROM waakg_inbox WHERE lead_id=? AND session_id=? AND received_at>=? ORDER BY received_at DESC LIMIT 15",
     p.lead_id,p.session_id,p.sent_at);
-   const yes=replies.find(r=>r.state==='REVIEW'&&(acceptsProposalAudio(r.body)||wantsPortfolioPitchAudio(r.body)));
+   const yes=replies.find((r,index)=>r.state==='REVIEW'&&(acceptsProposalAudio(r.body)||wantsPortfolioPitchAudio(r.body))&&!replies.slice(0,index).some(newer=>newer.state!=='REVIEW'||declinesProposalAudio(newer.body)));
    if(yes){
     permission.received++;
     if(stamp(yes.received_at)<pendingCutoff){

@@ -10,8 +10,8 @@ export const INITIAL_PENDING_MAX_AGE_MINUTES=8;
 export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,senderReady=true}={}){
  const b=initialBudget(at),hour=hourSP(at);
  // Modern outreach uses prospecting_batch_items, not legacy workflow jobs.
- const approach=approachQueueStatus();
- const approachStates=Object.fromEntries(all("SELECT status,COUNT(*) n FROM prospecting_batch_items WHERE attempt_at IS NOT NULL AND date(attempt_at,'-3 hours')=date('now','-3 hours') GROUP BY status").map(x=>[x.status,x.n]));
+ const approach=approachQueueStatus(at);
+ const approachStates=Object.fromEntries(all("SELECT status,COUNT(*) n FROM prospecting_batch_items WHERE attempt_at IS NOT NULL AND date(attempt_at,'-3 hours')=date(?,'-3 hours') GROUP BY status",at.toISOString()).map(x=>[x.status,x.n]));
  const approachAccepted=approachStates.SENT||0;
  const approachUnknown=approachStates.UNKNOWN||0;
  const approachSending=approachStates.SENDING||0;
@@ -40,7 +40,7 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
   // Always use the SAME eligibility gate as the real autonomous sender.
   // Previously cold-first=false reported invitation-ready leads as READY even
   // though eligibleLead() rejected all of them for missing documented consent.
-  const queue=approachQueueStatus(),ready=autonomousReadyCount(at)+queue.waiting;
+  const queue=approachQueueStatus(at),ready=autonomousReadyCount(at)+queue.waiting;
   const requiresConsent=queue.requiresDocumentedOptIn;
   invitationQueue={
    total:invitationQueue.total,ready,
@@ -70,6 +70,8 @@ export function queueHealth({at=new Date(),waStatus='DISCONNECTED',busy=false,se
  else if(!senderReady)reason='SESSION_COOLDOWN';
  else if(autonomous){
   if(!insideApproachWindow(at))reason='OUTSIDE_WINDOW';
+  else if(approach.dailyBudget.remaining<=0)reason='DAILY_CAP_REACHED';
+  else if(approach.nextEarliestAt&&Date.parse(approach.nextEarliestAt)>at.getTime())reason='WAITING_CADENCE';
   else if(invitationQueue.ready===0)reason=invitationQueue.awaitingConsent>0?'AWAITING_CONSENT':'NO_ELIGIBLE_LEADS';
  }
  else if(!getSetting('auto_initial',false))reason='AUTOMATION_DISABLED';

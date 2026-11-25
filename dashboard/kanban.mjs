@@ -9,9 +9,9 @@ export const KANBAN_STAGES=['queued','approaching','no_interest','interested','c
 
 function cardStatus(row){
  if(row.stage==='CLOSED_WON')return null;
- const manual=Boolean(row.manually_replied||row.manual_takeover===1);
- if(row.hot_notice||row.stage==='INTERESTED')return 'interested';
+ const manual=row.manual_takeover==null?Boolean(row.manually_replied):row.manual_takeover===1;
  if(row.opted_out||row.stage==='NO_INTEREST'&&!row.queue_id)return 'no_interest';
+ if(row.stage==='INTERESTED'||(row.hot_notice&&manual&&row.stage!=='NO_INTEREST'))return 'interested';
  if(manual)return 'conversing';
  // Receiving an actual reply is independent proof the original greeting arrived.
  if(row.first_reply_id&&row.last_batch_at)return 'approaching';

@@ -338,9 +338,17 @@ export async function tickSalesAgent(deps={}){
  workerBusy=true;
  try{
   const queue=all("SELECT provider_id,jid FROM groq_auto_events WHERE state='PENDING' AND at<=? ORDER BY at LIMIT 12",now());
-  const candidates=queue.filter(x=>!active.has(x.jid)).slice(0,4);
+  const candidates=[];const seen=new Set(active);
+   for(const row of queue){if(seen.has(row.jid))continue;seen.add(row.jid);candidates.push(row);if(candidates.length===4)break;}
   for(const row of candidates)active.add(row.jid);
-  const outcomes=await Promise.all(candidates.map(x=>handleSalesTurn(x.provider_id,deps).catch(()=>({state:'ERROR'})).finally(()=>active.delete(x.jid))));
+  const outcomes=await Promise.all(candidates.map(x=>handleSalesTurn(x.provider_id,deps).catch(error=>{
+    const current=one('SELECT state FROM groq_auto_events WHERE provider_id=?',x.provider_id);
+    // Never replay an event if a transport may already have been attempted.
+    const state=['PROCESSING','SENDING'].includes(current?.state)?'UNKNOWN':'REVIEW';
+    run("UPDATE groq_auto_events SET state=?,error='Unexpected worker exception; verify before retry' WHERE provider_id=? AND state IN ('PENDING','PROCESSING','SENDING')",state,x.provider_id);
+    audit('GROQ_WORKER_ERROR',null,{providerId:x.provider_id,state,errorType:error?.name||'Error'});
+    return {state};
+   }).finally(()=>active.delete(x.jid))));
   return {status:'OK',processed:outcomes.length,states:outcomes.map(x=>x.state)};
  }finally{workerBusy=false;}
 }
