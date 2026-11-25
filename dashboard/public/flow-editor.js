@@ -3,7 +3,7 @@ const kinds={text:'Mensagem de texto',audio:'Áudio',video:'Vídeo',image:'Image
 const isMessage=k=>['text','audio','video','image','document'].includes(k);
 const icons={folder:'<path d="M3 7V5h7l2 3h9v12H3z"/>',text:'<path d="M4 4h16v13H9l-5 4zM8 9h8M8 13h6"/>',audio:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3"/>',video:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/>',image:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',document:'<path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h8"/>',reply:'<path d="M20 16H9l-5 4V4h16zM8 9h8M8 13h6"/>',delay:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',condition:'<path d="M12 3v5M5 21v-5l7-8 7 8v5"/><circle cx="12" cy="3" r="2"/>',ai:'<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/>',handoff:'<circle cx="12" cy="7" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 4H4v12"/>',search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',plus:'<path d="M12 5v14M5 12h14"/>'};
 const icon=k=>'<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(icons[k]||icons.folder)+'</svg>';
-let root,api,projects=[],current=null,selected=null,query='',loading=false,loaded=false,error='',dirty=false,zoom=1,simulating=false,simulationLead=1,busy=false;
+let root,api,projects=[],current=null,selected=null,query='',loading=false,loaded=false,error='',dirty=false,zoom=1,simulating=false,simulationLead=1,busy=false,projectDialog=null;
 const uid=()=>crypto.randomUUID();
 const btn=(action,label,extra='')=>'<button type="button" data-flow="'+action+'" '+extra+'>'+label+'</button>';
 const readonly=()=>!!current?.protected;
@@ -42,10 +42,14 @@ function simulation(){
 function editor(){
  return '<div class="pf-editor"><div class="pf-edit-top"><div>'+btn('back','← Projetos','class="pf-back"')+'<h2>'+esc(current.name)+'</h2><span class="pf-niche">'+esc(current.niche||'Sem nicho')+'</span></div><div class="pf-actions"><span class="pf-chip">'+(readonly()?'Fluxo atual · protegido':dirty?'Alterações não salvas':'Salvo')+'</span>'+(!readonly()?btn('settings','Configurar projeto')+btn('save','Salvar')+btn('version','Salvar versão','class="pf-primary"'):'')+'</div></div><div class="pf-edit-toolbar"><span>Editor visual</span><span class="pf-toolbar-note">'+(readonly()?'Espelho somente leitura do fluxo existente':'Ambiente de edição e simulação · sem disparos reais')+'</span>'+btn('simulate','Simular')+(!readonly()?'<select data-field="addKind" aria-label="Tipo da nova etapa">'+Object.entries(kinds).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+btn('add-step',icon('plus')+' Etapa','class="pf-primary"'):'')+'</div><div class="pf-workspace"><div class="pf-canvas"><div class="pf-track" style="zoom:'+zoom+'">'+current.definition.steps.map((s,i)=>node(s,i)).join('<div class="pf-wire"><span>›</span></div>')+'</div><div class="pf-zoom">'+btn('zoom-out','−')+'<span>'+Math.round(zoom*100)+'%</span>'+btn('zoom-in','+')+btn('fullscreen','⛶','title="Tela cheia"')+'</div></div>'+panel()+'</div>'+(simulating?simulation():'')+'</div>';
 }
+function projectDialogHtml(){
+ if(!projectDialog)return '';
+ return '<div class="pf-modal-backdrop"><form class="pf-modal" data-flow-form role="dialog" aria-modal="true" aria-labelledby="pf-modal-title"><div class="pf-modal-heading"><span class="pf-folder">'+icon('folder')+'</span><div><h3 id="pf-modal-title">'+(projectDialog.action==='duplicate'?'Duplicar projeto':'Criar projeto')+'</h3><p>Organize sua estratégia de prospecção.</p></div>'+btn('cancel-project','×','class="pf-icon" aria-label="Fechar"')+'</div><label>Nome do projeto<input name="name" maxlength="100" required placeholder="Ex.: Eventos e casamentos" value="'+esc(projectDialog.name||'')+'"></label><label>Nicho de atuação<input name="niche" maxlength="120" placeholder="Ex.: Espaços de eventos" value="'+esc(projectDialog.niche||'')+'"></label><label>Descrição<textarea name="description" rows="3" maxlength="500" placeholder="Objetivo deste fluxo">'+esc(projectDialog.description||'')+'</textarea></label><div class="pf-modal-actions">'+btn('cancel-project','Cancelar')+'<button type="submit" class="pf-primary">'+(projectDialog.action==='duplicate'?'Duplicar':'Criar projeto')+'</button></div></form></div>';
+}
 function paint(){
  if(!root)return;
  const canvas=root.querySelector('.pf-canvas'),x=canvas?.scrollLeft||0,y=canvas?.scrollTop||0;
- root.innerHTML=(error?'<div class="pf-error" role="alert">'+esc(error)+'</div>':'')+(loading?'<div class="pf-empty">Carregando projetos...</div>':current?editor():library());
+ root.innerHTML=(error?'<div class="pf-error" role="alert">'+esc(error)+'</div>':'')+(loading?'<div class="pf-empty">Carregando projetos...</div>':current?editor():library())+projectDialogHtml();
  const next=root.querySelector('.pf-canvas');if(next){next.scrollLeft=x;next.scrollTop=y;}
 }
 async function refresh(){
@@ -67,9 +71,10 @@ async function onClick(e){
  const action=b.dataset.flow,s=step();
  if(action==='new'||action==='duplicate'){
   const prior=projects.find(p=>p.id===b.dataset.id);
-  const name=prompt('Nome do projeto',prior?prior.name+' (cópia)':'');if(!name?.trim())return;
-  const result=await mutate(action,{id:prior?.id,name});if(result){projects.unshift(result);current=structuredClone(result);selected=null;dirty=false;paint();}return;
+  projectDialog={action,id:prior?.id,name:prior?prior.name+' (cópia)':'',niche:prior?.niche||'',description:prior?.description||''};
+  paint();root.querySelector('[data-flow-form] input')?.focus();return;
  }
+ if(action==='cancel-project'){projectDialog=null;paint();return;}
  if(action==='open'){current=structuredClone(projects.find(p=>p.id===b.dataset.id));selected=null;dirty=false;simulating=false;zoom=1;}
  else if(action==='back'){if(dirty&&!confirm('Sair sem salvar as alterações?'))return;current=null;selected=null;dirty=false;simulating=false;}
  else if(action==='select'){selected={step:b.dataset.step,variant:b.dataset.variant};}
@@ -94,6 +99,7 @@ async function onClick(e){
  paint();
 }
 function onInput(e){
+ if(projectDialog&&e.target.closest('[data-flow-form]')&&['name','niche','description'].includes(e.target.name)){projectDialog[e.target.name]=e.target.value;return;}
  const f=e.target.dataset.field;if(!f)return;
  if(f==='search'){query=e.target.value;const pos=e.target.selectionStart;paint();const input=root.querySelector('[data-field="search"]');input?.focus();input?.setSelectionRange(pos,pos);return;}
  if(!current||readonly()||f==='addKind')return;
@@ -109,8 +115,14 @@ function onInput(e){
  const badge=root.querySelector('.pf-actions .pf-chip');if(badge)badge.textContent='Alterações não salvas';
  if(f==='text'&&item){const preview=root.querySelector('.pf-preview div');if(preview)preview.textContent=item.text.replaceAll('{{nome}}','Carlos').replaceAll('{{empresa}}','Empresa Exemplo').replaceAll('{{cidade}}','Sorocaba');}
 }
+async function submitProject(e){
+ if(!e.target.matches('[data-flow-form]'))return;e.preventDefault();
+ if(!projectDialog||busy)return;
+ const result=await mutate(projectDialog.action,projectDialog);
+ if(result){projects.unshift(result);current=structuredClone(result);selected=null;dirty=false;projectDialog=null;simulating=false;zoom=1;paint();}
+}
 export function mountProspectorFlow(host,request){
  api=request;
- if(!root){root=document.createElement('section');root.className='pf-root';root.addEventListener('click',e=>{void onClick(e).catch(err=>{error=err.message;paint();});});root.addEventListener('input',onInput);}
+ if(!root){root=document.createElement('section');root.className='pf-root';root.addEventListener('click',e=>{void onClick(e).catch(err=>{error=err.message;paint();});});root.addEventListener('input',onInput);root.addEventListener('submit',e=>{void submitProject(e);});}
  host.append(root);if(!loaded&&!loading)void refresh();
 }
