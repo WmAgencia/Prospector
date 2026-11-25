@@ -406,6 +406,9 @@ async function body(req,limit=3*1024*1024){
 }
 async function json(req){const b=await body(req);return b.length?JSON.parse(b.toString('utf8')):{};}
 const allowedSettings=new Set(['decision_learning_enabled','decision_engine_enabled','paused','auto_initial','min_minutes','daily_limit','business_start','business_end','initial_interval_seconds','discovery_target_daily','discovery_start_hour','automation_enabled','segments','cities','discovery_sources','discovery_auto_enabled','autonomous_outreach_enabled','discovery_priority','discovery_brazil_wide','score_weights','owner_phone_a','owner_phone_b','owner_notifications_enabled','owner_report_hour']);
+function conversationSnapshot(){
+ return all('SELECT t.*,l.business,l.name,l.phone,l.stage FROM threads t JOIN leads l ON l.id=t.lead_id ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1000').filter(t=>prospectorLeadEligible(t.lead_id)).map(t=>({...t,...contactProfile(t.lead_id)}));
+}
 function snapshot(){
  const leadOrigins=all('SELECT o.lead_id,o.source,o.verified FROM lead_origins o WHERE o.lead_id IN (SELECT id FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000) ORDER BY o.at DESC');
   const originsByLead=new Map();for(const origin of leadOrigins){if(!originsByLead.has(origin.lead_id))originsByLead.set(origin.lead_id,[]);originsByLead.get(origin.lead_id).push(origin);}
@@ -414,7 +417,7 @@ function snapshot(){
   if(!lastSiteReview.has(row.lead_id)){try{lastSiteReview.set(row.lead_id,JSON.parse(row.detail));}catch{}}
  }
  const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000').filter(l=>l.source!=='WHATSAPP_INBOUND'||prospectorLeadEligible(l.id)).map(l=>{const origins=originsByLead.get(l.id)||[];return {...l,origins:[...new Set(origins.map(o=>o.source))],siteEvidence:lastSiteReview.get(l.id)||null,...scoreLead(l,origins)};});
- const threads=all('SELECT t.*,l.business,l.name,l.phone,l.stage FROM threads t JOIN leads l ON l.id=t.lead_id ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1000').filter(t=>prospectorLeadEligible(t.lead_id)).map(t=>({...t,...contactProfile(t.lead_id)}));
+ const threads=conversationSnapshot();
  const workflows=all('SELECT * FROM workflows ORDER BY is_default DESC,updated_at DESC').map(w=>({...w,enabled:!!w.enabled,segments:JSON.parse(w.segments_json||'[]'),steps:JSON.parse(w.steps)}));
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
@@ -525,6 +528,7 @@ async function handler(req,res){
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
   }
   if(req.method==='GET'&&pathname==='/api/state')return respond(res,200,snapshot());
+  if(req.method==='GET'&&pathname==='/api/conversations/local')return respond(res,200,{threads:conversationSnapshot()});
   if(req.method==='GET'&&pathname==='/api/approvals'){
    try{return respond(res,200,listLeadApprovals({
     status:url.searchParams.get('status')||'PENDING',
