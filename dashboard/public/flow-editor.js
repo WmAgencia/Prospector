@@ -90,9 +90,10 @@ function onInput(e){
  else return;
  change();
  const badge=root.querySelector('.pf-actions .pf-chip');if(badge)badge.textContent='Alterações não salvas';
+ if(f==='text'&&item){const preview=root.querySelector('.pf-preview div');if(preview)preview.textContent=item.text.replaceAll('{{nome}}','Carlos').replaceAll('{{empresa}}','Empresa Exemplo').replaceAll('{{cidade}}','Sorocaba');}
 }
 export function mountProspectorFlow(host,request){
  api=request;
- if(!root){root=document.createElement('section');root.className='pf-root';root.addEventListener('click',e=>{void onClick(e).catch(err=>{error=err.message;paint();});});root.addEventListener('input',onInput);root.addEventListener('change',e=>{if(e.target.dataset.field!=='search'&&e.target.dataset.field!=='addKind')paint();});}
+ if(!root){root=document.createElement('section');root.className='pf-root';root.addEventListener('click',e=>{void onClick(e).catch(err=>{error=err.message;paint();});});root.addEventListener('input',onInput);}
  host.append(root);if(!loaded&&!loading)void refresh();
 }
