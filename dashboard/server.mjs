@@ -1,7 +1,7 @@
 import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
 import {handlePlatform,isPrimaryClient} from './platform.mjs';
-import {listFlowProjects,mutateFlowProject} from './flow-projects.mjs';
+import {listFlowProjects,mutateFlowProject,flowSimulation} from './flow-projects.mjs';
 import {handleTraining} from './training.mjs';
 import {handleFranciscaPanel} from './francisca-panel.mjs';
 import {monthlyProspectingCalendar} from './prospecting-calendar.mjs';
@@ -527,6 +527,9 @@ async function handler(req,res){
   if(pathname==='/api/events'){
    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
    res.write('event: ready\ndata: {}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
+  }
+  if(pathname==='/api/flow/simulation'&&req.method==='POST'){
+   try{return respond(res,200,flowSimulation(await json(req)));}catch(e){return respond(res,400,{error:String(e.message).slice(0,200)});}
   }
   if(pathname==='/api/flow/projects'){
    if(req.method==='GET')return respond(res,200,listFlowProjects());
