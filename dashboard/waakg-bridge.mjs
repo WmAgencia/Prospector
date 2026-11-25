@@ -24,6 +24,7 @@ import {takeover} from './runtime.mjs';
 
 db.exec("CREATE TABLE IF NOT EXISTS waakg_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,jid TEXT NOT NULL,provider_id TEXT NOT NULL UNIQUE,lead_id TEXT,body TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'REVIEW',draft TEXT,received_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS waakg_manual_outbox(id TEXT PRIMARY KEY,inbox_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,requested_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_waakg_inbox_lead_session_time ON waakg_inbox(lead_id,session_id,received_at)");
 const base=(process.env.WA_AKG_BASE_URL||"").replace(/\/$/,"");
 const configuredBase=base==="https://wa-akg-production-f9f0.up.railway.app";
 const safeEq=(a,b)=>{const x=Buffer.from(String(a||"")),y=Buffer.from(String(b||""));return x.length===y.length&&crypto.timingSafeEqual(x,y);};
