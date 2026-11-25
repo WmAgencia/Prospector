@@ -332,3 +332,13 @@ h1,h2,h3,h4{font-family:'Plus Jakarta Sans','DM Sans',sans-serif;letter-spacing:
  .kanban-overview-actions{justify-content:space-between}
  .kanban-dashboard{gap:8px}
 }
+
+/* Persistent contact metadata controls in the conversation header. */
+.chat-profile-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.chat-contact-filters{display:flex;gap:6px;padding:4px 12px 10px;flex:0 0 auto}
+.chat-contact-filters button.active{font-weight:700;border-color:currentColor}
+.chat-favorite.is-favorite,.favorite-star{color:#b88616}
+.chat-favorite{font-size:18px;line-height:1;min-width:36px}
+.chat-heading{flex-wrap:wrap;gap:8px}
+.chat-heading>div:not(.chat-profile-actions){min-width:0;overflow-wrap:anywhere}
+.chat-heading .chat-profile-actions button{white-space:nowrap}
