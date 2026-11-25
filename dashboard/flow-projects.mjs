@@ -4,6 +4,7 @@ import {db,all,one,run,now,id,tx,getSetting} from './db.mjs';
 import {WESLEY_INTRO,INTRO_DELAY_MS,PITCH_PREVIEW_DELAY_MS,PITCH_PREVIEW_TEXT} from './prospecting-introduction.mjs';
 import {PITCH_AUDIO_OFFER_BRL,PITCH_AUDIO_SECONDS} from './portfolio-pitch-audio.mjs';
 import {prospectingWindowLabel} from './outreach-window.mjs';
+import {assignVariant,newExecution,reduceExecution} from './flow-engine.mjs';
 const isInternal=()=>!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
 const kinds=new Set(['text','audio','video','image','document','reply','delay','condition','ai','handoff']);
 const sending=new Set(['text','audio','video','image','document']);
@@ -12,6 +13,51 @@ const uid=v=>/^[a-zA-Z0-9_-]{1,80}$/.test(String(v||''));
 function init(){
  db.exec("CREATE TABLE IF NOT EXISTS flow_projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,niche TEXT NOT NULL DEFAULT '',description TEXT NOT NULL DEFAULT '',draft TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,published_version INTEGER,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
  db.exec("CREATE TABLE IF NOT EXISTS flow_project_versions(project_id TEXT NOT NULL REFERENCES flow_projects(id),version INTEGER NOT NULL,definition TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(project_id,version))");
+}
+function initSimulation(){
+ init();
+ db.exec("CREATE TABLE IF NOT EXISTS flow_simulations(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,version INTEGER NOT NULL,definition TEXT NOT NULL,execution TEXT NOT NULL,clock INTEGER NOT NULL,revision INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
+ db.exec("CREATE TABLE IF NOT EXISTS flow_simulation_variants(project_id TEXT NOT NULL,version INTEGER NOT NULL,step_id TEXT NOT NULL,variant_id TEXT NOT NULL,total INTEGER NOT NULL,PRIMARY KEY(project_id,version,step_id,variant_id))");
+}
+export function flowSimulation(input={}){
+ if(input.id==='consecom-current'||input.projectId==='consecom-current')throw Error('O fluxo operacional Consecom não pode ser executado neste simulador.');
+ initSimulation();
+ return tx(()=>{
+  if(input.action==='start'){
+   const p=one('SELECT * FROM flow_projects WHERE id=?',clean(input.projectId,80));
+   if(!p?.published_version)throw Error('Salve uma versão do projeto para testar.');
+   const v=one('SELECT definition FROM flow_project_versions WHERE project_id=? AND version=?',p.id,p.published_version);
+   const definition=validateFlow(JSON.parse(v.definition),{publish:true});
+   const key=id(),at=Date.now(),execution=newExecution(definition,at);
+   run('INSERT INTO flow_simulations(id,project_id,version,definition,execution,clock,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',key,p.id,p.published_version,JSON.stringify(definition),JSON.stringify(execution),at,now(),now());
+   return {id:key,projectId:p.id,version:p.published_version,definition,execution,clock:at,revision:1,simulation:true};
+  }
+  const row=one('SELECT * FROM flow_simulations WHERE id=?',clean(input.id,80));
+  if(!row)throw Error('Simulação não encontrada.');
+  const definition=JSON.parse(row.definition),current=JSON.parse(row.execution);
+  const format=(execution,clock,revision)=>({id:row.id,projectId:row.project_id,version:row.version,definition,execution,clock,revision,simulation:true});
+  if(input.action==='get')return format(current,row.clock,row.revision);
+  if(input.action!=='advance'||Number(input.revision)!==row.revision)throw Error('Simulação desatualizada.');
+  const step=definition.steps[current.cursor];if(!step)return format(current,row.clock,row.revision);
+  const choice=String(input.choice||'next'),at=current.state==='WAIT_TIME'&&choice==='next'?Math.max(row.clock,current.dueAt):row.clock+1;
+  let event;
+  if(['optout','refusal','takeover'].includes(choice))event={type:choice};
+  else if(choice==='uncertain')event={type:'uncertain'};
+  else if(current.state==='READY')event={type:'start'};
+  else if(current.state==='RESERVED')event={type:'accepted',providerId:'sim-'+row.id+'-'+current.cursor};
+  else if(current.state==='WAIT_PROOF')event={type:'proof',providerId:current.providerId,status:'DELIVERED'};
+  else if(current.state==='WAIT_TIME')event={type:'tick'};
+  else if(current.state==='WAIT_REPLY'&&['reply','permission','interest','automatic'].includes(choice))event={type:'inbound',id:'sim-in-'+row.revision,automatic:choice==='automatic',intent:choice};
+  else throw Error('Escolha uma resposta para avançar.');
+  const execution=reduceExecution(definition,current,event,{at,choose:variants=>{
+   const counts=Object.fromEntries(all('SELECT variant_id,total FROM flow_simulation_variants WHERE project_id=? AND version=? AND step_id=?',row.project_id,row.version,step.id).map(x=>[x.variant_id,x.total]));
+   const chosen=assignVariant(variants,counts);
+   run('INSERT INTO flow_simulation_variants(project_id,version,step_id,variant_id,total) VALUES(?,?,?,?,1) ON CONFLICT(project_id,version,step_id,variant_id) DO UPDATE SET total=total+1',row.project_id,row.version,step.id,chosen.id);
+   return chosen;
+  }});
+  run('UPDATE flow_simulations SET execution=?,clock=?,revision=revision+1,updated_at=? WHERE id=?',JSON.stringify(execution),at,now(),row.id);
+  return format(execution,at,row.revision+1);
+ });
 }
 function internalProject(){
  return {id:'consecom-current',name:'Consecom · Fluxo atual',niche:'Prospecção Consecom',description:'Espelho das etapas principais do motor existente. Somente leitura. Não executa envios.',protected:true,status:'legacy',revision:0,definition:{steps:[
