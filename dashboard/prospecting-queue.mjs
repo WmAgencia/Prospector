@@ -1,4 +1,5 @@
 import {ownerProspectionPaused} from './prospection-pause.mjs';
+import {previewLiveGreeting,reserveLiveGreeting} from './flow-runtime.mjs';
 // One explicitly approved list, persisted in the Prospector volume.
 // Every send attempt is at least 90 seconds after the previous attempt.
 // A send timeout is UNKNOWN and is never retried automatically.
@@ -246,7 +247,9 @@ export async function tickApproachQueue(deps={}){
   if(!wa.connected||!session)return {status:wa.reason||'OFFLINE'};
   if(process.env.PROSPECTOR_TENANT_ID&&!getSetting('training_active',null))return {status:'TRAINING_REVIEW_REQUIRED'};
   const recipient=one('SELECT name,business FROM leads WHERE id=?',next.lead_id);
-  const message=greetingForProspect(recipient,new Date(time));
+  const flowPlan=previewLiveGreeting(next.lead_id);
+  if(flowPlan?.blocked){run("UPDATE prospecting_batch_items SET status='SKIPPED',error='Fluxo visual: autorização ou mensagem inválida' WHERE id=? AND status='QUEUED'",next.id);return {status:'SKIPPED'};}
+  const message=flowPlan?.text||greetingForProspect(recipient,new Date(time));
   // A brand-new step has no transport attempt yet. Inspect the same sender's
   // actual WhatsApp conversation before reserving the first POST.
   // Unit tests using mock transport remain isolated from the live gateway.
@@ -279,6 +282,7 @@ export async function tickApproachQueue(deps={}){
    if(one('SELECT status FROM prospecting_batch_items WHERE id=?',next.id)?.status!=='QUEUED')return false;
    if(!eligibleLead(next.lead_id,next.id,false,batch.origin==='AUTONOMOUS'))return false;
    if(rotating&&rotationCursor()!==wa.cursor)return false;
+   if(!reserveLiveGreeting({plan:flowPlan,leadId:next.lead_id,greetingId:next.id,sessionId:session,jid:next.phone+'@s.whatsapp.net',at:nowMs}))return false;
    // Reserve both the attempt and its next random interval atomically. Polling,
    // failures and process restarts never reroll or shorten the chosen wait.
    run('UPDATE prospecting_send_clock SET last_attempt_ms=?,interval_ms=? WHERE id=1',nowMs,chooseApproachInterval(latest.interval_ms));
