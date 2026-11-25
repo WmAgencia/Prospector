@@ -1,21 +1,68 @@
 // Remote WA-AKG chat synchronization and manual replies.
 import {waRequest,selectedWaSession,waControlStatus} from "./waakg-control.mjs";
 import {db,one,all,run,now,phone,addLead,getThread,addMessage,audit,stage} from "./db.mjs";
-import {leadSession} from './waakg-session-registry.mjs';
+import {leadSession,managedSessions} from './waakg-session-registry.mjs';
 import {prospectorChatVisible} from './whatsapp-roles.mjs';
 import {takeover} from './runtime.mjs';
 db.exec("CREATE TABLE IF NOT EXISTS waakg_remote_outbox(id TEXT PRIMARY KEY,jid TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL)");
 const jidAllowed=j=>/^\d{10,15}@s\.whatsapp\.net$/.test(j);
 function currentId(jid){const lead=jid?one('SELECT id FROM leads WHERE phone=?',phone(jid.split('@')[0])):null;const s=lead?leadSession(lead.id):selectedWaSession();if(!s)throw Error("Conecte seu WhatsApp em Conexões");return encodeURIComponent(s);}
+// Names and favorites are tenant-local metadata; never change a recipient's JID.
+db.exec("CREATE TABLE IF NOT EXISTS waakg_contact_profiles(lead_id TEXT PRIMARY KEY REFERENCES leads(id), whatsapp_name TEXT NOT NULL DEFAULT '', custom_name TEXT NOT NULL DEFAULT '', favorite INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)");
+export function validWhatsAppName(value){
+ if(typeof value!=='string')return '';
+ const name=value.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,120);
+ if(!name||/^\+?[\d\s().-]+$/.test(name)||/@(?:s\.whatsapp\.net|lid|g\.us)$/i.test(name)||/^Contato WhatsApp(?: \d+)?$/i.test(name))return '';
+ return name;
+}
+export function whatsappProfileName(chat){
+ const last=chat?.lastMessage;
+ const inbound=last&&last.fromMe===false;
+ return [chat?.pushName,chat?.notifyName,chat?.notify,chat?.contact?.pushName,chat?.contact?.notify,
+  inbound?last.pushName:null,inbound?last.senderName:null,chat?.contact?.name,chat?.name,chat?.verifiedName]
+  .map(validWhatsAppName).find(Boolean)||'';
+}
+export function contactProfile(leadId){
+ const l=one('SELECT id,name,business,phone FROM leads WHERE id=?',leadId);
+ const profile=one('SELECT whatsapp_name,custom_name,favorite FROM waakg_contact_profiles WHERE lead_id=?',leadId);
+ return {name:profile?.custom_name||profile?.whatsapp_name||validWhatsAppName(l?.name)||l?.business||l?.phone||'Contato',
+  whatsappName:profile?.whatsapp_name||'',customName:profile?.custom_name||'',favorite:profile?.favorite===1};
+}
+export function saveContactProfile({leadId,name,favorite}={}){
+ const l=one('SELECT id,phone FROM leads WHERE id=?',String(leadId||''));
+ if(!l||!prospectorChatVisible({jid:l.phone+'@s.whatsapp.net',sessionId:leadSession(l.id)}))throw Error('Contato fora da prospecção autorizada');
+ if(name!==undefined&&(typeof name!=='string'||name.length>120||name.trim()&&!validWhatsAppName(name)))throw Error('Nome inválido');
+ if(favorite!==undefined&&typeof favorite!=='boolean')throw Error('Favorito inválido');
+ run("INSERT OR IGNORE INTO waakg_contact_profiles(lead_id,updated_at) VALUES(?,?)",l.id,now());
+ if(name!==undefined)run("UPDATE waakg_contact_profiles SET custom_name=?,updated_at=? WHERE lead_id=?",validWhatsAppName(name),now(),l.id);
+ if(favorite!==undefined)run("UPDATE waakg_contact_profiles SET favorite=?,updated_at=? WHERE lead_id=?",favorite?1:0,now(),l.id);
+ return {leadId:l.id,...contactProfile(l.id)};
+}
 export async function remoteChats(){
- const s=await waControlStatus();
- if(!s.connected)return {connected:false,items:[]};
- const result=await waRequest("/api/chat/"+currentId());
- const items=(Array.isArray(result.data)?result.data:[]).map(x=>({
-  id:"wa:"+String(x.jid||""),jid:String(x.jid||""),name:String(x.name||x.notify||x.jid||"Contato").slice(0,80),business:String(x.name||x.notify||x.jid||"Contato").slice(0,80),
-  phone:String(x.jid||"").split("@")[0],last_message_at:x.lastMessage?.timestamp||null,preview:String(x.lastMessage?.content||"").slice(0,180)
- })).filter(x=>prospectorChatVisible({jid:x.jid,sessionId:s.sessionId})).slice(0,80);
- return {connected:true,items};
+ const listed=await waRequest('/api/sessions').catch(()=>null);
+ const sessions=managedSessions();
+ const results=await Promise.allSettled(sessions.map(async ({session_id:sid})=>{
+  const status=await waControlStatus(sid,listed?.data);
+  if(!status.connected)return {connected:false,items:[]};
+  const result=await waRequest('/api/chat/'+encodeURIComponent(sid));
+  const items=[];
+  for(const x of Array.isArray(result.data)?result.data:[]){
+   const jid=String(x.jid||x.remoteJid||'');
+   if(!prospectorChatVisible({jid,sessionId:sid}))continue;
+   const number=phone(jid.split('@')[0]),lead=one('SELECT id,business FROM leads WHERE phone=?',number);
+   if(!lead||leadSession(lead.id)!==sid)continue;
+   const waName=whatsappProfileName(x);
+   if(waName)run("INSERT INTO waakg_contact_profiles(lead_id,whatsapp_name,updated_at) VALUES(?,?,?) ON CONFLICT(lead_id) DO UPDATE SET whatsapp_name=excluded.whatsapp_name,updated_at=excluded.updated_at WHERE whatsapp_name<>excluded.whatsapp_name",lead.id,waName,now());
+   items.push({id:'wa:'+jid,jid,sessionId:sid,leadId:lead.id,business:lead.business,phone:number,...contactProfile(lead.id),
+    last_message_at:x.lastMessage?.timestamp||null,preview:String(x.lastMessage?.content||'').slice(0,180)});
+  }
+  return {connected:true,items};
+ }));
+ const successful=results.filter(r=>r.status==='fulfilled').map(r=>r.value);
+ const unique=new Map();
+ for(const row of successful.flatMap(x=>x.items))unique.set(row.phone,row);
+ const items=[...unique.values()].sort((a,b)=>Number(b.favorite)-Number(a.favorite)||(Date.parse(b.last_message_at)||0)-(Date.parse(a.last_message_at)||0));
+ return {connected:successful.some(x=>x.connected),partial:results.some(x=>x.status==='rejected'),items:items.slice(0,1000)};
 }
 export function mergeAudioTranscripts(remote,transcriptions){
  const out=[...remote];
