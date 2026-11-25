@@ -959,3 +959,57 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .kanban-columns::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
 .kanban-column-items{flex:1 1 0!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;scrollbar-width:none!important;-ms-overflow-style:none!important;overscroll-behavior:contain}
 .kanban-column-items::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+
+/* Conversations: viewport-bound WhatsApp workspace. Other views unchanged. */
+html:has(.conversations-shell),body:has(.conversations-shell){height:100%;min-height:0!important;overflow:hidden!important;overscroll-behavior:none}
+body:has(.conversations-shell) #app{height:100dvh;min-height:0;overflow:hidden}
+.shell.conversations-shell{height:100dvh!important;max-height:100dvh;min-height:0!important;overflow:hidden!important;margin:0!important}
+.conversations-shell>.body{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;overflow:hidden}
+.conversations-shell .top{flex:0 0 auto;height:65px;min-height:65px;padding:9px 22px!important}
+.conversations-shell .main-wrap{flex:1 1 0;min-height:0;overflow:hidden}
+.conversations-shell .main-footer{display:none!important}
+.conversations-shell .notice:not(.hidden){flex:none;margin:6px 12px 0;padding:7px 12px;max-height:68px;overflow:hidden}
+.conversations-shell #view.content{display:flex;flex:1 1 0;min-height:0;min-width:0;width:100%;max-width:none!important;padding:8px 10px 10px!important;margin:0;overflow:hidden}
+.conversations-shell .chats{display:grid;grid-template-columns:clamp(270px,24vw,355px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);flex:1 1 0;width:100%;height:100%;min-width:0;min-height:0!important;max-height:none!important;overflow:hidden;border-radius:12px}
+.conversations-shell .chat-list{display:flex;flex-direction:column;height:100%;min-height:0;max-height:none!important;overflow:hidden!important}
+.conversations-shell .chats-title{flex:none;padding:15px 17px!important}
+.conversations-shell .chat-list>.field{flex:none;margin:10px 14px!important;width:calc(100% - 28px)!important}
+.conversations-shell .chat-contact-filters{flex:none;padding:0 14px 9px}
+.conversations-shell .contacts-scroll{flex:1 1 0;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d6c9ed transparent}
+.conversations-shell .chat-panel{display:flex;flex-direction:column;height:100%;min-height:0;max-height:none;min-width:0;overflow:hidden}
+.conversations-shell .chat-heading{flex:0 0 auto;min-height:66px;padding:9px 15px!important;gap:10px;flex-wrap:wrap}
+.conversations-shell .chat-heading>div:not(.chat-profile-actions){flex:1 1 100px;min-width:0}
+.conversations-shell .chat-heading>.chat-profile-actions{flex:0 0 auto}
+.conversations-shell .chat-handoff{margin-left:5px}
+.conversations-shell .message-feed{flex:1 1 0;min-height:0!important;max-height:none!important;height:auto;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d6c9ed transparent;scroll-behavior:auto!important}
+.conversations-shell .bubble-wrap{flex:0 0 auto;min-width:0}
+.conversations-shell .bubble{overflow-wrap:anywhere}
+.conversations-shell .chat-panel .composer{flex:0 0 auto;margin:0;padding:10px 12px!important}
+.conversations-shell .chat-blank{flex:1 1 0;min-height:0}
+.conversations-shell .contacts-scroll:focus-visible,.conversations-shell .message-feed:focus-visible{outline:2px solid #9c79ef;outline-offset:-2px}
+/* Keep the assistant accessible without covering the composer. */
+body:has(.conversations-shell) .francisca-widget{right:auto;left:8px;bottom:66px;align-items:flex-start}
+body:has(.conversations-shell) .francisca-orb{width:48px;height:48px;border-width:2px}
+body:has(.conversations-shell) .francisca-orb span{font-size:22px}
+body:has(.conversations-shell) .francisca-orb small{font-size:6px}
+@media(max-width:940px){
+ .shell.conversations-shell{display:block}
+ .conversations-shell .top{height:60px;min-height:60px;padding:8px 12px!important}
+ body:has(.conversations-shell) .francisca-widget{left:8px;bottom:76px}
+}
+@media(max-width:700px){
+ .conversations-shell #view.content{padding:4px!important}
+ .conversations-shell .chats{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,34%) minmax(0,1fr);border-radius:8px}
+ .conversations-shell .chat-list{border-right:0!important;border-bottom:1px solid #ece7f6}
+ .conversations-shell .chats-title{padding:6px 12px!important}
+ .conversations-shell .chats-title h3{font-size:15px}
+ .conversations-shell .chat-list>.field{margin:5px 10px!important;width:calc(100% - 20px)!important;min-height:32px}
+ .conversations-shell .chat-contact-filters{padding:0 10px 5px}
+ .conversations-shell .chat-heading{min-height:56px;padding:6px 10px!important;gap:6px}
+ .conversations-shell .chat-heading .avatar{width:34px;height:34px}
+ .conversations-shell .chat-handoff{padding:7px 9px;font-size:10px;margin-left:0}
+ .conversations-shell .chat-panel .composer{padding:6px!important}
+ body:has(.conversations-shell) .francisca-widget{bottom:68px;left:4px}
+ body:has(.conversations-shell) .francisca-orb{width:38px;height:38px}
+ body:has(.conversations-shell) .francisca-orb small{display:none}
+}
