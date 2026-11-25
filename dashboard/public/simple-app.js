@@ -115,7 +115,7 @@ function n(msg){
  },4300);
 }
 async function api(path,opts={}){
- const r=await fetch(path,{credentials:"same-origin",cache:"no-store",...opts,headers:{"Accept":"application/json",...(opts.body?{"Content-Type":"application/json"}:{}),...(opts.headers||{})}});
+ const r=await fetch(path,{credentials:"same-origin",cache:"no-store",...((!opts.method||opts.method==="GET")?{signal:AbortSignal.timeout(18000)}:{}),...opts,headers:{"Accept":"application/json",...(opts.body?{"Content-Type":"application/json"}:{}),...(opts.headers||{})}});
  let data=await r.json().catch(()=>({}));
  if(!r.ok)throw Error(data.error||data.message||"Servidor indisponível (HTTP "+r.status+")");
  return data;
@@ -1225,7 +1225,7 @@ async function loadOutreachHours(){
  try{const r=await api('/api/settings/outreach-hours');outreachHours=r.hours;if(view==='settings')render();}
  catch(e){n(e.message);}
 }
-let renderedConversationId=null;
+let renderedConversationId=null,lastMessageRefresh=0;
 function render(){
  const sameView=view==='conversations'&&!!q('.conversations-shell');
  const contactsTop=sameView?(q('.contacts-scroll')?.scrollTop||0):0;
@@ -1248,7 +1248,7 @@ function render(){
   if(feed){feed.scrollTop=sameThread&&!wasAtBottom?oldTop:feed.scrollHeight;}
   if(input&&sameThread&&draft){input.value=draft;if(wasTyping){input.focus({preventScroll:true});if(selection)input.setSelectionRange(...selection);}}
   renderedConversationId=selectedThread;
-  if(selectedThread)loadMessages(selectedThread,{forceBottom:!sameThread});
+  if(selectedThread&&(!sameThread||Date.now()-lastMessageRefresh>10000)){lastMessageRefresh=Date.now();loadMessages(selectedThread,{forceBottom:!sameThread});}
  }else renderedConversationId=null;
  if(view==="connections"&&!wa)refreshWa(false);
 }
@@ -1303,10 +1303,23 @@ async function refreshConsentPolicy(){
  catch(e){consentPolicy={enforced:true,canDisable:false,policyStatus:'UNKNOWN',message:'Não foi possível verificar a política. A proteção permanece ativa.',policyUrl:'https://whatsappbusiness.com/policy/'};if(view==='settings')render();}
 }
 async function refreshVoiceMetrics(){try{voiceMetrics=await api('/api/ai/voice-metrics');if(view==='settings')render();}catch{voiceMetrics=null;}}
+let chatsInFlight=null;
 async function loadChats(){
- // The backend checks every managed sender, even when the primary is offline.
- try{const r=await api("/api/whatsapp/chats");remoteChats=Array.isArray(r.items)?r.items:[];if(view==="conversations")render();}
- catch(e){n("Não foi possível sincronizar o histórico do WhatsApp: "+e.message);}
+ if(chatsInFlight)return chatsInFlight;
+ chatsInFlight=(async()=>{
+  // Local conversations are immediately usable while the provider synchronizes.
+  const local=api('/api/conversations/local').then(r=>{
+   state={...(state||{}),threads:Array.isArray(r.threads)?r.threads:[]};
+   if(view==='conversations')render();
+  }).catch(()=>{});
+  const remote=api('/api/whatsapp/chats').then(r=>{
+   const items=Array.isArray(r.items)?r.items:[];
+   if(r.connected||items.length)remoteChats=items;
+   if(view==='conversations')render();
+  }).catch(e=>{if(view==='conversations'&&!conversationThreads().length)n('Não foi possível sincronizar o WhatsApp: '+e.message);});
+  await Promise.allSettled([local,remote]);
+ })().finally(()=>{chatsInFlight=null;});
+ return chatsInFlight;
 }
 function parseMapsCSV(source){
  const text=String(source||"").replace(/^\uFEFF/,"");
@@ -1390,9 +1403,15 @@ async function loadProspects(){
   if(view==="prospects")render();
  }catch(e){prospectError=e.message;if(view==="prospects")render();n(e.message);}finally{prospectLoading=false;}
 }
+const messageRequests=new Map();
 async function loadMessages(id,{forceBottom=false}={}){
  try{
-  const items=id.startsWith("wa:")?await api("/api/whatsapp/chat-messages?jid="+encodeURIComponent(id.slice(3))):await api("/api/threads/"+encodeURIComponent(id)+"/messages");
+  let request=messageRequests.get(id);
+  if(!request){
+   request=api(id.startsWith("wa:")?"/api/whatsapp/chat-messages?jid="+encodeURIComponent(id.slice(3)):"/api/threads/"+encodeURIComponent(id)+"/messages").finally(()=>messageRequests.delete(id));
+   messageRequests.set(id,request);
+  }
+  const items=await request;
   if(selectedThread!==id||view!=="conversations")return;
   messages=Array.isArray(items)?items:[];
   const feed=q("#messages");if(!feed)return;
@@ -1403,12 +1422,14 @@ async function loadMessages(id,{forceBottom=false}={}){
   if(!id.startsWith("wa:"))await post("/api/threads/"+encodeURIComponent(id)+"/read",{}).catch(()=>{});
  }catch(e){if(selectedThread!==id||view!=="conversations")return;const feed=q("#messages");if(feed&&!messages.length)feed.textContent="Não foi possível carregar a conversa.";}
 }
+let kanbanPendingKey='';
 async function loadKanban(){
- const ticket=++kanbanRequestSeq;
  const query=new URLSearchParams({period:kanbanPeriod});
  if(kanbanPeriod==='custom'){query.set('from',kanbanCustomFrom);query.set('to',kanbanCustomTo);}
- kanbanLoading=true;kanbanError='';
  const requestKey=query.toString();
+ if(kanbanLoading&&kanbanPendingKey===requestKey)return;
+ const ticket=++kanbanRequestSeq;
+ kanbanPendingKey=requestKey;kanbanLoading=true;kanbanError='';
  if(kanbanLoadedPeriod!==requestKey)kanban=null;
  if(view==='overview')render();
  try{
@@ -1422,27 +1443,34 @@ async function loadKanban(){
   if(ticket!==kanbanRequestSeq)return;
   kanbanError=e.message;
  }finally{
-  if(ticket===kanbanRequestSeq){kanbanLoading=false;if(view==='overview')render();}
+  if(ticket===kanbanRequestSeq){kanbanLoading=false;kanbanPendingKey='';if(view==='overview')render();}
  }
 }
+let reloadInFlight=null;
 async function reload(){
+ if(reloadInFlight)return reloadInFlight;
+ reloadInFlight=reloadCurrentView().finally(()=>{reloadInFlight=null;});
+ return reloadInFlight;
+}
+async function reloadCurrentView(){
  if(!workspaceInitialized){
-  workspaceInitialized=true;
-  try{platformContext=await api('/api/platform/context');}
+  try{platformContext=await api('/api/platform/context');workspaceInitialized=true;}
   catch(e){root.innerHTML='<main class="load-error"><h2>Não foi possível acessar o painel</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';return;}
   if(platformContext.role!=='master'&&view==='clients')view='overview';
   if(platformContext.role==='master'&&(!location.hash||!['dashboard','clients','credits','settings'].includes(view)))view='dashboard';
-  // Show a working dashboard immediately; large API snapshots and WhatsApp
-  // sync are loaded after first paint instead of delaying the whole layout.
   render();
  }
+ lastRefresh=Date.now();
  try{
-  if(platformContext.role==="master"){await Promise.all([loadClients(),loadMasterMetrics()]);lastRefresh=Date.now();render();return;}
-  state=await api("/api/state");lastRefresh=Date.now();
-  if(!trainingState)await loadTraining();
-  if(!creditState)await loadCredits();
-  if(view==="clients")await loadClients();else if(view==="training")await loadTraining();else if(view==="credits"){render();await loadCredits();}else if(view==="prospects")await loadProspects();else if(view==="conversations")await loadChats();else if(view==="overview")await loadKanban();else render();
- }catch(e){if(!state)root.innerHTML='<main class="load-error"><h2>Não foi possível abrir o Prospector</h2><p>'+esc(e.message)+'</p><button onclick="location.reload()">Tentar novamente</button></main>';else n(e.message);}
+  if(platformContext.role==='master'){await Promise.all([loadClients(),loadMasterMetrics()]);render();return;}
+  // Critical path is only the active screen. No training/billing/full CRM gate.
+  if(view==='overview'){await loadKanban();return;}
+  if(view==='conversations'){await loadChats();return;}
+  if(view==='training'){await loadTraining();return;}
+  if(view==='credits'){await loadCredits();return;}
+  if(view==='prospects'){await loadProspects();return;}
+  state=await api('/api/state');render();
+ }catch(e){n(e.message);}
 }
 document.addEventListener("click",async ev=>{
  const el=ev.target.closest("[data-tab],[data-action],[data-thread],[data-filter],[data-kanban-chat]");if(!el)return;
@@ -1793,12 +1821,15 @@ setInterval(async()=>{
  if(platformContext.role!=='master'&&Date.now()-billingLastChecked>(billingCheckoutReturn?6000:30000))await loadCredits();
  if(view!=="training"&&trainingState?.runs?.some(x=>x.status==='RUNNING'))await loadTraining();
  if(view==="training"){await loadTraining();return;}
- if(view==="conversations"&&Date.now()-lastRefresh>24000)await reload();
- else if(Date.now()-lastRefresh>45000&&state)await reload();
+ if(view==='conversations'){
+  if(selectedThread&&Date.now()-lastMessageRefresh>10000){lastMessageRefresh=Date.now();void loadMessages(selectedThread);}
+  if(Date.now()-lastRefresh>24000)void reload();
+ }else if(Date.now()-lastRefresh>45000)void reload();
 },7000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWa()});
 window.addEventListener("online",()=>refreshWa());
 await reload();
-await refreshWa();
+void refreshWa();
+if(platformContext.role!=='master'&&view!=='credits'&&!creditState)void loadCredits();
 if(view==='prospects')await Promise.all([loadCalendar(),loadScope()]);
 if(view==='settings')await loadOutreachHours();
