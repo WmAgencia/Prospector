@@ -5,6 +5,7 @@ import {WESLEY_INTRO,INTRO_DELAY_MS,PITCH_PREVIEW_DELAY_MS,PITCH_PREVIEW_TEXT} f
 import {PITCH_AUDIO_OFFER_BRL,PITCH_AUDIO_SECONDS} from './portfolio-pitch-audio.mjs';
 import {prospectingWindowLabel} from './outreach-window.mjs';
 import {assignVariant,newExecution,reduceExecution} from './flow-engine.mjs';
+import {liveFlowSupported,setLiveRoute} from './flow-runtime.mjs';
 const isInternal=()=>!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true';
 const kinds=new Set(['text','audio','video','image','document','reply','delay','condition','ai','handoff']);
 const sending=new Set(['text','audio','video','image','document']);
@@ -100,7 +101,7 @@ export function validateFlow(input,{publish=false}={}){
 }
 const parse=r=>({id:r.id,name:r.name,niche:r.niche,description:r.description,definition:JSON.parse(r.draft),revision:r.revision,publishedVersion:r.published_version,createdAt:r.created_at,updatedAt:r.updated_at,status:r.published_version?'versioned':'draft',execution:'simulation_only'});
 export function listFlowProjects(){
- init();const internal=isInternal();return {items:[...(internal?[internalProject()]:[]),...all('SELECT * FROM flow_projects ORDER BY updated_at DESC LIMIT 500').map(parse)],protected:internal,executionEnabled:false};
+ init();const internal=isInternal();return {items:[...(internal?[internalProject()]:[]),...all('SELECT * FROM flow_projects ORDER BY updated_at DESC LIMIT 500').map(parse)],protected:internal,executionEnabled:liveFlowSupported()};
 }
 export function mutateFlowProject(action,input={}){
  if(input.id==='consecom-current')throw Error('O fluxo Consecom está protegido e não pode ser alterado neste editor.');
@@ -123,6 +124,12 @@ export function mutateFlowProject(action,input={}){
    const name=clean(input.name,100);if(!name)throw Error('Informe o nome do projeto.');
    const definition=validateFlow(input.definition);
    run('UPDATE flow_projects SET name=?,niche=?,description=?,draft=?,revision=revision+1,updated_at=? WHERE id=?',name,clean(input.niche,120),clean(input.description,500),JSON.stringify(definition),now(),row.id);
+  }else if(action==='activate'||action==='deactivate'){
+   if(action==='activate'&&input.confirm!==true)throw Error('Confirme a ativação para contatos autorizados.');
+   const v=one('SELECT definition FROM flow_project_versions WHERE project_id=? AND version=?',row.id,row.published_version||0);
+   if(!v)throw Error('Salve uma versão antes de ativar.');
+   const definition=JSON.parse(v.definition);
+   setLiveRoute({projectId:row.id,niche:definition.niche,version:row.published_version,definition:validateFlow(definition,{publish:true}),enabled:action==='activate'});
   }else if(action==='version'){
    const definition=validateFlow(JSON.parse(row.draft),{publish:true});
    const version=(row.published_version||0)+1;
