@@ -25,6 +25,8 @@ export const requiresDocumentedOptIn=()=>process.env.PROSPECTOR_COLD_FIRST_APPRO
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batches(id TEXT PRIMARY KEY,status TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_batch_items(id TEXT PRIMARY KEY,batch_id TEXT NOT NULL REFERENCES prospecting_batches(id),lead_id TEXT NOT NULL REFERENCES leads(id),phone TEXT NOT NULL,status TEXT NOT NULL,attempt_at TEXT,error TEXT,created_at TEXT NOT NULL,UNIQUE(batch_id,lead_id))");
 db.exec("CREATE INDEX IF NOT EXISTS idx_prospecting_batch_items ON prospecting_batch_items(status,batch_id,created_at)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_prospecting_items_lead_status ON prospecting_batch_items(lead_id,status,attempt_at)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_prospecting_items_phone_status ON prospecting_batch_items(phone,status,attempt_at)");
 if(!db.prepare('PRAGMA table_info(prospecting_batches)').all().some(x=>x.name==='origin'))
  db.exec("ALTER TABLE prospecting_batches ADD COLUMN origin TEXT NOT NULL DEFAULT 'MANUAL'");
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_send_clock(id INTEGER PRIMARY KEY CHECK(id=1),last_attempt_ms INTEGER NOT NULL DEFAULT 0)");
