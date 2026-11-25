@@ -1,7 +1,7 @@
 // WA-AKG webhook receiver and consent-gated WhatsApp transport.
 // No credentials here. No automatic message sending. WAL-backed idempotency.
 import crypto from "node:crypto";
-import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit} from "./db.mjs";
+import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit,tx} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
 import {classifyContact,prospectorChatEligible,prospectorLeadEligible} from "./whatsapp-roles.mjs";
 import {queueInboundTurn} from "./groq-sales-automation.mjs";
@@ -114,7 +114,12 @@ export async function receiveWebhook(req){
  if(!text.trim())return {status:200,body:{accepted:true,ignored:true}};
  return recordInboundTranscript({sessionId:sid,jid,unique,content:text});
 }
-export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,source='TEXT'}={}){
+export function recordInboundTranscript(input={}){
+ // All local writes and queue reservations form a single synchronous transaction.
+ // No network I/O is performed here; outbound workers run after commit.
+ return tx(()=>persistInboundTranscript(input));
+}
+function persistInboundTranscript({sessionId:sid,jid,unique,content:text,source='TEXT'}={}){
  if(!/^\d{10,15}@s\.whatsapp\.net$/.test(jid||'')||!String(unique||'').includes(':'))return {status:400,body:{accepted:false,error:'INVALID_INBOUND'}};
  if(one("SELECT id FROM waakg_inbox WHERE provider_id=?",unique))return {status:200,body:{accepted:true,duplicate:true}};
  const content=String(text||'').trim().slice(0,2000);
@@ -153,14 +158,14 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
   }
  }
  if(identity.role==='PROSPECT_APPROACHED'){
-  if(state==='REVIEW'&&lead.stage!=='CONVERSING')stage(lead.id,'CONVERSING','PROSPECT_REPLIED');
+  if(state==='REVIEW'&&!['CONVERSING','INTERESTED','CLOSED_WON'].includes(lead.stage))stage(lead.id,'CONVERSING','PROSPECT_REPLIED');
   const outcome=state==='OPT_OUT'?'OPT_OUT':state==='HUMAN'?'HUMAN_REVIEW':state==='NO_INTEREST'?'NO_INTEREST':null;
   if(outcome)recordSalesOutcome({leadId:lead.id,status:outcome,providerId:unique,evidence:content,notify:outcome!=='NO_INTEREST'&&outcome!=='OPT_OUT'});
   if(state==='NO_INTEREST'&&lead.stage!=='NO_INTEREST')queueProspectorFarewell({leadId:lead.id,sessionId:sid,jid});
   if(state==='REVIEW'&&process.env.PROSPECTOR_AUTONOMOUS_FIRST_REPLY==='true')grantAutonomousFirstReply(lead.id,content);
  }
  // A human-owned conversation must never enqueue an introduction or an AI turn.
- if(one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover===1&&state==='REVIEW')state='HUMAN';
+ if(state==='REVIEW'&&(lead.stage==='INTERESTED'||lead.stage==='CLOSED_WON'||one('SELECT manual_takeover FROM threads WHERE id=?',thread.id)?.manual_takeover===1))state='HUMAN';
  const at=now();
  run("INSERT INTO waakg_inbox(id,session_id,jid,provider_id,lead_id,body,state,received_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id(),sid,jid,unique,lead.id,content,state,at,at);
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
