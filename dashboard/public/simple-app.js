@@ -36,7 +36,7 @@ let offerType='portfolio';
 const icons={overview:"▦",conversations:"◉",prospects:"⌕",approvals:"✓",connections:"◫",settings:"⚙"};
 let view=Object.keys(tabs).includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"overview";
 let salesResults=null,state=null,wa=null,ai=null,voiceMetrics=null,remoteChats=[],selectedThread=null,messages=[],groqSalesProfile=null,interactiveState=null,prospects=null,approachQueue=null,kanban=null,mapsJob=null,mapsResearch=null,mapsTimer=null,mapsPolling=false,prospectFilter="uncontacted",selectedLeadIds=new Set(),approachPreview=null,niche="",city="",busy=false,notice="",qrResult=null,chatFilter="",lastRefresh=0,searchSource="osm",prospectError="",prospectLoading=false,handoffPending=false,consentPolicy=null,consentPolicyBusy=false;
-let kanbanPeriod="all",kanbanCustomFrom="",kanbanCustomTo="",kanbanLoading=false,kanbanRequestSeq=0;
+let kanbanPeriod="all",kanbanCustomFrom="",kanbanCustomTo="",kanbanLoading=false,kanbanRequestSeq=0,kanbanError="",kanbanLoadedPeriod="",favoriteOnly=false;
 try{const chosen=sessionStorage.getItem("prospector-kanban-period");if(["all","today","7d","30d","custom"].includes(chosen))kanbanPeriod=chosen;}catch{}
 const prospectDay=()=>new Date().toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"});
 const brazilDayOffset=(day,offset)=>new Date(Date.parse(day+"T12:00:00Z")+offset*86400000).toISOString().slice(0,10);
@@ -1042,7 +1042,7 @@ function overview(){
   ['conversing','Conversando','Atendimento assumido por você']
  ];
  const total=Object.values(k.counts||{}).reduce((x,y)=>x+Number(y||0),0);
- const metricValue=value=>kanbanLoading?'—':value;
+ const metricValue=value=>kanbanLoading&&!kanban?'—':value;
  const startupChecks=[
   {label:'Conectar WhatsApp',done:!!wa?.connected,tab:'connections'},
   {label:'Treinar sua IA',done:!!(state?.settings?.training_active||trainingState?.profile),tab:'training'},
@@ -1073,6 +1073,7 @@ function overview(){
    stat('Prospecções',metricValue(k.prospections??'—'),kanbanPeriod==='all'?'Abordagens enviadas':'Abordagens no período')+
   stat('Empresas acompanhadas',metricValue(total),'Com atividade registrada')+stat('Abordando',metricValue(k.counts?.approaching||0),'Em contato')+
   stat('Interessados',metricValue(k.counts?.interested||0),'Prioridade comercial')+stat('Conversando',metricValue(k.counts?.conversing||0),'Atendimento humano')+'</div>'+
+  (kanbanError?'<section class="panel" role="alert"><strong>Não foi possível atualizar o Kanban.</strong><p>'+esc(kanbanError)+'</p><button class="secondary compact" data-action="refresh-kanban">Tentar novamente</button></section>':'')+
   '<div class="kanban-board-title"><h3>Kanban de oportunidades</h3><small>'+(kanbanLoading?'Carregando prospecções...':kanbanPeriod==='all'?'Fila de hoje: '+(k.scheduledToday?.scheduled||0)+' selecionados · '+(k.scheduledToday?.accepted||0)+' aceitos pelo gateway.':'Contatos e abordagens do intervalo, com as confirmações de cada etapa.')+'</small></div>'+
   '<div class="kanban-columns" aria-label="Kanban comercial">'+definition.map(([key,label,description])=>
    '<section class="kanban-column kanban-'+key+'"><header><div class="kanban-column-head"><strong>'+esc(label)+'</strong><span>'+esc(k.counts?.[key]||0)+'</span></div><small>'+esc(description)+'</small></header><div class="kanban-column-items" tabindex="0" role="region" aria-label="Contatos: '+esc(label)+'">'+
@@ -1098,12 +1099,25 @@ function chatHandoffButton(chosen){
   ' title="'+esc(tooltip)+'" aria-label="'+esc(label)+'" aria-pressed="'+(status.manualTakeover?'true':'false')+'">'+
   (handoffPending?'Alterando...':label)+'</button>';
 }
+function conversationThreads(){
+ const local=state?.threads||[];
+ const ids=new Set(remoteChats.map(t=>t.phone));
+ return [...remoteChats,...local.filter(t=>!ids.has(t.phone))]
+  .sort((a,b)=>Number(!!b.favorite)-Number(!!a.favorite)||(Date.parse(b.last_message_at)||0)-(Date.parse(a.last_message_at)||0));
+}
 function conversations(){
- const local=state?.threads||[];const ids=new Set(remoteChats.map(t=>t.phone));const threads=[...remoteChats,...local.filter(t=>!ids.has(t.phone))].filter(t=>!chatFilter||[t.name,t.business,t.phone].some(v=>String(v||"").toLowerCase().includes(chatFilter.toLowerCase())));
- if((!selectedThread||!threads.some(t=>t.id===selectedThread))&&threads.length)selectedThread=threads[0].id;
+ const all=conversationThreads(),threads=all.filter(t=>(!favoriteOnly||t.favorite)&&
+  (!chatFilter||[t.name,t.whatsappName,t.business,t.phone].some(v=>String(v||'').toLowerCase().includes(chatFilter.toLowerCase()))));
+ if((!selectedThread||!threads.some(t=>t.id===selectedThread))&&threads.length){selectedThread=threads[0].id;messages=[];}
  const chosen=threads.find(t=>t.id===selectedThread)||null;
+ const label=t=>t.name||t.business||t.phone||'Contato';
+ const displayNumber=v=>{const p=String(v||'').replace(/\D/g,'');return /^55\d{10,11}$/.test(p)?'+55 ('+p.slice(2,4)+') '+p.slice(4,-4)+'-'+p.slice(-4):String(v||'');};
  const bubble=messages.map(m=>'<div class="bubble-wrap '+(m.direction==="out"?"out":"in")+'"><div class="bubble">'+esc(m.body||"[Mídia]")+'<small>'+stamp(m.at)+' · '+esc(m.direction==="out"?"Enviada":"Recebida")+'</small></div></div>').join("");
- return '<section class="chats"><div class="chat-list"><div class="chats-title"><div><h3>Mensagens</h3><p>'+threads.length+' conversas</p></div><span class="small-pill">WhatsApp</span></div><input id="chat-search" class="field" placeholder="Buscar conversa..." value="'+esc(chatFilter)+'">'+(threads.length?threads.map(t=>'<button data-thread="'+esc(t.id)+'" class="chat-person '+(selectedThread===t.id?"selected":"")+'"><span class="avatar">'+esc((t.name||t.business||"?")[0])+'</span><span class="info"><strong>'+esc(t.name||t.business||t.phone)+'</strong><small>'+esc(t.phone||"")+'</small>'+(t.contactRole?'<small class="contact-role-tag">'+esc(({OWNER:'Proprietário',EXISTING_CLIENT:'Cliente existente',PROSPECT_APPROACHED:'Abordado',INBOUND_NEW:'Novo contato',UNVERIFIED:'Não verificado'})[t.contactRole]||'Não verificado')+'</small>':'')+'</span><time>'+stamp(t.last_message_at)+'</time></button>').join(""):'<div class="empty">Suas conversas aparecerão aqui quando chegarem mensagens.</div>')+'</div><div class="chat-panel">'+(chosen?'<div class="chat-heading"><span class="avatar">'+esc((chosen.name||chosen.business)[0])+'</span><div><strong>'+esc(chosen.name||chosen.business)+'</strong><small>'+esc(chosen.phone||"")+'</small>'+(chosen.contactRole?'<small class="contact-role-tag">'+esc(({OWNER:'Proprietário',EXISTING_CLIENT:'Cliente existente',PROSPECT_APPROACHED:'Abordado pelo Prospector',INBOUND_NEW:'Novo contato',UNVERIFIED:'Não verificado'})[chosen.contactRole]||'Não verificado')+'</small>':'')+'</div>'+chatHandoffButton(chosen)+'</div><div class="message-feed" id="messages">'+(bubble||'<p class="empty">Carregando mensagens...</p>')+'</div>'+'<form class="composer" id="send-form"><input id="chat-text" autocomplete="off" maxlength="1500" placeholder="Escreva uma mensagem..." aria-label="Mensagem"><button class="primary" type="submit">Enviar ↗</button></form>':'<div class="chat-blank"><div class="big-icon">◉</div><h3>Suas conversas, organizadas.</h3><p>Conecte o WhatsApp e receba mensagens para começar.</p><button class="primary" data-tab="connections">Conectar WhatsApp</button></div>')+'</div></section>';
+ const role=t=>t.contactRole?'<small class="contact-role-tag">'+esc(({OWNER:'Proprietário',EXISTING_CLIENT:'Cliente existente',PROSPECT_APPROACHED:'Abordado',INBOUND_NEW:'Novo contato',UNVERIFIED:'Não verificado'})[t.contactRole]||'Não verificado')+'</small>':'';
+ const controls=chosen?'<div class="chat-profile-actions"><button type="button" class="secondary compact chat-favorite '+(chosen.favorite?'is-favorite':'')+'" data-action="favorite-contact" title="'+(chosen.favorite?'Remover dos favoritos':'Favoritar contato')+'" aria-pressed="'+!!chosen.favorite+'">'+(chosen.favorite?'★':'☆')+'</button><button type="button" class="secondary compact" data-action="edit-contact" title="Editar nome do contato">Editar</button></div>':'';
+ return '<section class="chats"><div class="chat-list"><div class="chats-title"><div><h3>Mensagens</h3><p>'+threads.length+' conversas</p></div><span class="small-pill">WhatsApp</span></div><input id="chat-search" class="field" placeholder="Buscar nome ou número..." value="'+esc(chatFilter)+'"><div class="chat-contact-filters"><button type="button" class="secondary compact '+(!favoriteOnly?'active':'')+'" data-action="chat-all" aria-pressed="'+!favoriteOnly+'">Todas</button><button type="button" class="secondary compact '+(favoriteOnly?'active':'')+'" data-action="chat-favorites" aria-pressed="'+favoriteOnly+'">★ Favoritos ('+all.filter(t=>t.favorite).length+')</button></div>'+
+ (threads.length?threads.map(t=>'<button data-thread="'+esc(t.id)+'" class="chat-person '+(selectedThread===t.id?'selected':'')+'"><span class="avatar">'+esc(label(t)[0])+'</span><span class="info"><strong>'+esc(label(t))+(t.favorite?' <span class="favorite-star" aria-label="Favorito">★</span>':'')+'</strong><small>'+esc(displayNumber(t.phone))+'</small>'+role(t)+'</span><time>'+stamp(t.last_message_at)+'</time></button>').join(''):'<div class="empty">'+(favoriteOnly?'Nenhum contato favorito.':'Nenhuma conversa encontrada.')+'</div>')+
+ '</div><div class="chat-panel">'+(chosen?'<div class="chat-heading"><span class="avatar">'+esc(label(chosen)[0])+'</span><div><strong>'+esc(label(chosen))+'</strong><small>'+esc(displayNumber(chosen.phone))+'</small>'+role(chosen)+'</div>'+controls+chatHandoffButton(chosen)+'</div><div class="message-feed" id="messages">'+(bubble||'<p class="empty">Carregando mensagens...</p>')+'</div><form class="composer" id="send-form"><input id="chat-text" autocomplete="off" maxlength="1500" placeholder="Escreva uma mensagem..." aria-label="Mensagem"><button class="primary" type="submit">Enviar ↗</button></form>':'<div class="chat-blank"><div class="big-icon">◉</div><h3>Suas conversas, organizadas.</h3><p>Selecione uma conversa para começar.</p></div>')+'</div></section>';
 }
 
 function prospecting(){
@@ -1243,7 +1257,7 @@ async function refreshWa(redraw=true){
     qrResult=await api("/api/whatsapp/qr"+waSessionQuery()).catch(e=>({qr:null,message:e.message}));
    }else if(view==="connections")qrResult=null;
    if(redraw&&(changed||sessionListChanged||(view==="connections"&&oldQr!==(qrResult?.qr||null))))render();
-   if(view==="conversations"&&w.connected&&(!wasConnected||!remoteChats.length))await loadChats();
+   if(view==="conversations"&&((w.connected&&!wasConnected)||sessionListChanged))await loadChats();
   }catch(e){
    const changed=wa?.ok!==false||wa?.message!==e.message;
    wa={ok:false,status:"ERROR",message:e.message,connected:false};
@@ -1271,7 +1285,7 @@ async function refreshConsentPolicy(){
 }
 async function refreshVoiceMetrics(){try{voiceMetrics=await api('/api/ai/voice-metrics');if(view==='settings')render();}catch{voiceMetrics=null;}}
 async function loadChats(){
- if(!wa?.connected){remoteChats=[];if(view==="conversations")render();return;}
+ // The backend checks every managed sender, even when the primary is offline.
  try{const r=await api("/api/whatsapp/chats");remoteChats=Array.isArray(r.items)?r.items:[];if(view==="conversations")render();}
  catch(e){n("Não foi possível sincronizar o histórico do WhatsApp: "+e.message);}
 }
@@ -1372,15 +1386,20 @@ async function loadKanban(){
  const ticket=++kanbanRequestSeq;
  const query=new URLSearchParams({period:kanbanPeriod});
  if(kanbanPeriod==='custom'){query.set('from',kanbanCustomFrom);query.set('to',kanbanCustomTo);}
- kanbanLoading=true;kanban=null;
+ kanbanLoading=true;kanbanError='';
+ const requestKey=query.toString();
+ if(kanbanLoadedPeriod!==requestKey)kanban=null;
  if(view==='overview')render();
  try{
-  const [board,outcomes]=await Promise.all([api('/api/kanban?'+query.toString()),api('/api/sales/outcomes').catch(()=>null)]);
+  const board=await api('/api/kanban?'+query.toString());
+  const outcomes=salesResults;
+  api('/api/sales/outcomes').then(x=>{if(ticket===kanbanRequestSeq)salesResults=x;}).catch(()=>{});
   if(ticket!==kanbanRequestSeq)return;
-  kanban=board;salesResults=outcomes;
+  if(!board?.columns||!board?.counts)throw Error('Resposta do Kanban inválida');
+  kanban=board;kanbanLoadedPeriod=requestKey;salesResults=outcomes;
  }catch(e){
   if(ticket!==kanbanRequestSeq)return;
-  n('Não foi possível carregar o Kanban: '+e.message);
+  kanbanError=e.message;
  }finally{
   if(ticket===kanbanRequestSeq){kanbanLoading=false;if(view==='overview')render();}
  }
@@ -1423,6 +1442,23 @@ document.addEventListener("click",async ev=>{
  const action=el.dataset.action;
  try{
   if(await platformAction(action,el))return;
+  if(action==='chat-all'||action==='chat-favorites'){favoriteOnly=action==='chat-favorites';render();return;}
+  if(action==='edit-contact'||action==='favorite-contact'){
+   const chosen=conversationThreads().find(x=>x.id===selectedThread);
+   if(!chosen)return;
+   const leadId=chosen.leadId||chosen.lead_id;
+   if(!leadId){n('Contato ainda não está vinculado ao cadastro.');return;}
+   let update={leadId};
+   if(action==='favorite-contact')update.favorite=!chosen.favorite;
+   else{
+    const values=await confirmInApp({title:'Editar contato',description:'O número '+String(chosen.phone||'')+' permanece vinculado ao WhatsApp original. Deixe o nome em branco para usar o nome sincronizado.',confirmLabel:'Salvar',fields:'<label>Nome do contato<input class="field" name="name" maxlength="120" value="'+esc(chosen.customName||chosen.name||'')+'"></label>'});
+    if(!values)return;update.name=String(values.name||'').trim();
+   }
+   const saved=await post('/api/whatsapp/contact-profile',update);
+   for(const row of [...remoteChats,...(state?.threads||[])])if((row.leadId||row.lead_id)===leadId)Object.assign(row,saved);
+   n(action==='favorite-contact'?(saved.favorite?'Contato favoritado.':'Contato removido dos favoritos.'):'Nome atualizado.');
+   render();return;
+  }
   if(action==="toggle-chat-handoff"){
    const chatId=selectedThread;
    const chosen=[...remoteChats,...(state?.threads||[])].find(x=>x.id===chatId);
@@ -1490,7 +1526,7 @@ document.addEventListener("click",async ev=>{
    try{sessionStorage.setItem("prospector-kanban-custom",JSON.stringify({from,to}));}catch{}
    await loadKanban();return;
   }
-  if(action==="refresh-kanban"){await loadKanban();n('Kanban atualizado.');return;}
+  if(action==="refresh-kanban"){await loadKanban();if(!kanbanError)n('Kanban atualizado.');return;}
   if(action==="menu"){q("#side")?.classList.toggle("mobile-open");q(".scrim")?.classList.toggle("visible");return;}
   if(action==="close-menu"){q("#side")?.classList.remove("mobile-open");q(".scrim")?.classList.remove("visible");return;}
   if(action==="refresh"){await reload();n("Dados atualizados.");return;}
