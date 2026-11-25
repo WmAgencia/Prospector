@@ -287,7 +287,7 @@ let pitchFollowupBusy=false;
 // one actual network attempt for each recipient and video.
 const pitchFollowupCheckAfter=new Map();
 export async function tickPitchFollowup(deps={}){
- if(ownerProspectionPaused()||getSetting('paused',true))return {state:'PAUSED'};
+ if(ownerProspectionPaused())return {state:'PAUSED'}; // Global emergency stop only; initial approach pause is independent.
  if(pitchFollowupBusy)return {state:'BUSY'};
  const {currentTime=()=>Date.now(),status=waControlStatus,sendVideo=sendOfferVideoMedia,loadVideo=readPitchVideo}=deps;
  pitchFollowupBusy=true;
@@ -422,7 +422,7 @@ export async function tickPitchFollowup(deps={}){
   if(!run("UPDATE prospecting_introductions SET followup_status='SENDING',followup_attempt_at=?,updated_at=? WHERE lead_id=? AND stage='VOICE_SENT' AND followup_status='WAITING' AND followup_due_at<=?",
    atIso,now(),p.lead_id,atIso).changes)return {state:'BUSY'};
   try{
-   if(ownerProspectionPaused()||getSetting('paused',true))throw Error('PAUSED_DURING_SEND');
+   if(ownerProspectionPaused())throw Error('PAUSED_DURING_SEND');
    if(one('SELECT manual_takeover FROM threads WHERE lead_id=?',p.lead_id)?.manual_takeover===1||
       introductionStatus(p.lead_id)?.stage!=='VOICE_SENT')throw Error('MANUAL_TAKEOVER');
    beginPitchDelivery({leadId:p.lead_id,greetingId:p.greeting_id,kind:'VIDEO',sessionId:p.session_id,jid:p.phone+'@s.whatsapp.net'});
