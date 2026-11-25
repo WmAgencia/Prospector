@@ -2,6 +2,7 @@ import {handleMcp} from './mcp-server.mjs';
 import http from 'node:http';
 import {handlePlatform,isPrimaryClient} from './platform.mjs';
 import {listFlowProjects,mutateFlowProject,flowSimulation} from './flow-projects.mjs';
+import {liveFlowSupported,tickLiveFlows} from './flow-runtime.mjs';
 import {handleTraining} from './training.mjs';
 import {handleFranciscaPanel} from './francisca-panel.mjs';
 import {monthlyProspectingCalendar} from './prospecting-calendar.mjs';
@@ -977,6 +978,7 @@ const autonomousQueueTimer=setInterval(()=>{
   if(result.status==='QUEUED'){console.info('[automatic approach]',JSON.stringify({queued:result.queued,window:'08:00-17:30',cadence:approachQueueStatus().cadence,preloaded:cold&&minutes<8*60,requiresVerifiedName:cold}));notify();}
  }catch(error){console.warn('[automatic approach]',String(error?.message||error).slice(0,140));}
 },5000);
+if(liveFlowSupported())setInterval(()=>{tickLiveFlows().then(r=>{if(r.processed)notify();}).catch(e=>console.warn('[visual flow]',String(e?.message||e).slice(0,120)));},5000).unref();
 const prospectQueueTimer=setInterval(()=>{if(ownerProspectionPaused())return;tickApproachQueue().then(result=>{
  if(['SENT','UNKNOWN','SKIPPED','COMPLETED'].includes(result.status))notify();
  if(result.status==='UNKNOWN')console.warn('[prospect queue] send status UNKNOWN: manual review required');
