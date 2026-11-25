@@ -14,8 +14,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: node --test tests/flow-projects.test.mjs tests/flow-engine.test.mjs
-      - run: node --check dashboard/server.mjs && node --check dashboard/platform.mjs
+      - run: node --test tests/flow-projects.test.mjs tests/flow-engine.test.mjs tests/flow-runtime.test.mjs
+      - run: node --check dashboard/server.mjs && node --check dashboard/platform.mjs && node --check dashboard/flow-runtime.mjs
   baseline:
     runs-on: ubuntu-latest
     timeout-minutes: 10
