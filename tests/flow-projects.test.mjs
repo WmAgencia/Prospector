@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {spawnSync} from 'node:child_process';
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-flow-library-'));
 process.env.PROSPECTOR_DATA_DIR=dir;
 delete process.env.PROSPECTOR_TENANT_ID;
@@ -44,5 +45,12 @@ test('external tenant cannot see or change owner reference',()=>{
  process.env.PROSPECTOR_TENANT_ID='synthetic-tenant';process.env.PROSPECTOR_TENANT_INTERNAL='false';
  try{assert.equal(listFlowProjects().items.some(p=>p.id==='consecom-current'),false);assert.throws(()=>mutateFlowProject('duplicate',{id:'consecom-current'}),/protegido/);}
  finally{delete process.env.PROSPECTOR_TENANT_ID;delete process.env.PROSPECTOR_TENANT_INTERNAL;}
+});
+test('browser modules compile as ESM',()=>{
+ for(const file of ['simple-app.js','flow-editor.js']){
+  const source=fs.readFileSync(new URL('../dashboard/public/'+file,import.meta.url),'utf8');
+  const check=spawnSync(process.execPath,['--input-type=module','--check'],{input:source,encoding:'utf8'});
+  assert.equal(check.status,0,check.stderr);
+ }
 });
 test.after(()=>{d.db.close();fs.rmSync(dir,{recursive:true,force:true});});
