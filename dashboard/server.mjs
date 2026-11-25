@@ -67,7 +67,7 @@ import {statusConcierge,flushPersonalNotices} from './personal-concierge.mjs';
 import {approachQueueStatus,enqueueApprovedApproaches,enrollAutonomousApproaches,cancelApproachQueue,tickApproachQueue,preloadApproachQueue} from './prospecting-queue.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
 import {resumeOwnerApprovedProspecting} from './prospection-resume.mjs';
-import {apply250DailyLimit,applyOwnerDailyLimit100} from './daily-approach-rollout.mjs';
+import {apply250DailyLimit,applyOwnerDailyLimit100,applyOwnerDailyLimit90} from './daily-approach-rollout.mjs';
 import {offerAbStatus,attachOriginalAbAudio,setOfferAbPlan,tickOfferReferences} from './consecom-offer-ab.mjs';
 import {saoPauloClock,insideApproachWindow} from './outreach-window.mjs';
 import {outreachConsentControl,requestOutreachConsentControl} from './outreach-consent-control.mjs';
@@ -82,7 +82,7 @@ import {tickProspectorFarewells} from './prospector-farewell.mjs';
 import {portfolioPitchAudioHealth} from './portfolio-pitch-audio.mjs';
 import {bootstrapConsecomCampaign} from './consecom-campaign-bootstrap.mjs';
 import {scraperStatus,startMapsScrape,pollMapsScrape,importMapsScrape,refreshActiveMapsScrapes,automaticMapsDiscovery} from './gosom-maps.mjs';
-import {remoteChats,remoteMessages,sendRemoteReply} from './waakg-conversations.mjs';
+import {remoteChats,remoteMessages,sendRemoteReply,contactProfile,saveContactProfile} from './waakg-conversations.mjs';
 import {conversationHandoffStatus,changeConversationHandoff} from './conversation-handoff.mjs';
 import {recoverPreWebhookManualChat} from './owner-manual-recovery.mjs';
 import {auditPitchRescue,queueVerifiedPitchRescue,pitchRescueLiveStatus} from './pitch-rescue-audit.mjs';
@@ -312,6 +312,7 @@ const dailyCap250Result=apply250DailyLimit();
 console.info('[daily 250 limit]',JSON.stringify(dailyCap250Result));
 const dailyCap100Result=applyOwnerDailyLimit100();
 console.info('[owner daily 100 limit]',JSON.stringify(dailyCap100Result));
+console.info('[owner daily 90 limit]',JSON.stringify(applyOwnerDailyLimit90()));
 console.info('[proposal voice asset]',JSON.stringify(portfolioPitchAudioHealth()));
 const ownerResumeResult=resumeOwnerApprovedProspecting();
 if(ownerResumeResult.status==='RESUMED_WITH_CONSENT_GATES')
@@ -413,7 +414,7 @@ function snapshot(){
   if(!lastSiteReview.has(row.lead_id)){try{lastSiteReview.set(row.lead_id,JSON.parse(row.detail));}catch{}}
  }
  const leads=all('SELECT * FROM leads ORDER BY COALESCE(last_activity_at,created_at) DESC LIMIT 2000').filter(l=>l.source!=='WHATSAPP_INBOUND'||prospectorLeadEligible(l.id)).map(l=>{const origins=originsByLead.get(l.id)||[];return {...l,origins:[...new Set(origins.map(o=>o.source))],siteEvidence:lastSiteReview.get(l.id)||null,...scoreLead(l,origins)};});
- const threads=all('SELECT t.*,l.business,l.name,l.phone,l.stage FROM threads t JOIN leads l ON l.id=t.lead_id ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1000').filter(t=>prospectorLeadEligible(t.lead_id));
+ const threads=all('SELECT t.*,l.business,l.name,l.phone,l.stage FROM threads t JOIN leads l ON l.id=t.lead_id ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 1000').filter(t=>prospectorLeadEligible(t.lead_id)).map(t=>({...t,...contactProfile(t.lead_id)}));
  const workflows=all('SELECT * FROM workflows ORDER BY is_default DESC,updated_at DESC').map(w=>({...w,enabled:!!w.enabled,segments:JSON.parse(w.segments_json||'[]'),steps:JSON.parse(w.steps)}));
  const settings={};for(const x of all('SELECT key,value FROM settings'))try{settings[x.key]=JSON.parse(x.value);}catch{}
  const meetings=all("SELECT m.*,l.business,l.name FROM meetings m JOIN leads l ON m.lead_id=l.id ORDER BY m.start_at ASC LIMIT 100");
@@ -554,11 +555,15 @@ async function handler(req,res){
   if(req.method==='GET'&&pathname==='/api/whatsapp/chats'){try{
   const chats=await remoteChats();
   return respond(res,200,{...chats,items:(chats.items||[]).map(c=>{
-   const role=classifyContact({jid:c.jid,sessionId:selectedWaSession()});
+   const role=classifyContact({jid:c.jid,sessionId:c.sessionId||selectedWaSession()});
    const lead=one('SELECT id FROM leads WHERE phone=?',phone(c.phone));
    return {...c,contactRole:role.role,relationshipReason:role.reason,leadId:lead?.id||null,handoff:conversationHandoffStatus(c.id)};
   })});
  }catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
+  if(req.method==='POST'&&pathname==='/api/whatsapp/contact-profile'){
+   try{const out=saveContactProfile(await json(req));notify();return respond(res,200,out);}
+   catch(e){return respond(res,400,{error:String(e.message).slice(0,120)});}
+  }
   if(req.method==='GET'&&pathname==='/api/whatsapp/chat-messages'){try{return respond(res,200,await remoteMessages(url.searchParams.get('jid')||''));}catch(e){return respond(res,503,{error:String(e.message).slice(0,160)});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/reply-remote'){const r=await sendRemoteReply(await json(req));if(r.status===200)notify();return respond(res,r.status,r.body);}
   if(req.method==='GET'&&pathname==='/api/whatsapp/handoff')return respond(res,200,conversationHandoffStatus(url.searchParams.get('chatId')));
