@@ -189,8 +189,8 @@ export async function tickIntroductions(deps={}){
   if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
   // This is a brand-new stage (no previous network attempt). Read actual
   // WhatsApp history before issuing its one permitted transport request.
-  const intro=voiceRequested?null:reserveIntroAB(db,{greetingId:item.greeting_id,sessionId:item.session_id,enabled:(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&process.env.PROSPECTOR_INTRO_AB_ENABLED!=='false'});
-  const introText=intro?.message||WESLEY_INTRO;
+  let intro=voiceRequested?null:reserveIntroAB(db,{greetingId:item.greeting_id,sessionId:item.session_id,enabled:(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&process.env.PROSPECTOR_INTRO_AB_ENABLED!=='false'});
+  let introText=intro?.message||WESLEY_INTRO;
   const fetchHistory=deps.fetchHistory||(!deps.status&&!deps.send&&!deps.sendAudio?waRequest:null);
   if(fetchHistory){
    // Both copy variants are checked against the same history snapshot so a
@@ -199,9 +199,17 @@ export async function tickIntroductions(deps={}){
    const fetchOnce=(...args)=>historyPromise??=(Promise.resolve().then(()=>fetchHistory(...args)));
    const args={sessionId:item.session_id,jid:item.phone+'@s.whatsapp.net',kind:voiceRequested?'AUDIO':'TEXT',at:new Date(at),fetchChat:fetchOnce};
    let proof=await preflightNewStep({...args,text:voiceRequested?'':introText});
-   if(!voiceRequested&&proof.state==='CLEAR'){
-    const alternate=await preflightNewStep({...args,text:introText===WESLEY_INTRO?WESLEY_INTRO_B:WESLEY_INTRO});
-    if(alternate.state!=='CLEAR')proof={...alternate,state:alternate.state==='UNAVAILABLE'?'UNAVAILABLE':'POSSIBLE_EXISTING'};
+   if(!voiceRequested&&(proof.state==='CLEAR'||proof.state==='EXISTS')){
+    const otherText=introText===WESLEY_INTRO?WESLEY_INTRO_B:WESLEY_INTRO;
+    const alternate=await preflightNewStep({...args,text:otherText});
+    if(proof.state==='CLEAR'&&alternate.state==='EXISTS'){
+     // Reconcile the exact variant already sent, without another transport.
+     intro={variant:otherText===WESLEY_INTRO?'A':'B',message:otherText};
+     introText=otherText;proof=alternate;
+     run('UPDATE prospector_intro_ab SET variant=?,message=? WHERE greeting_id=? AND session_id=?',intro.variant,introText,item.greeting_id,item.session_id);
+    }else if(alternate.state!=='CLEAR'){
+     proof={...alternate,state:alternate.state==='UNAVAILABLE'?'UNAVAILABLE':'POSSIBLE_EXISTING'};
+    }
    }
    if(proof.state==='UNAVAILABLE')return {state:'HISTORY_UNAVAILABLE'};
    if(!voiceRequested&&proof.state==='EXISTS'){
