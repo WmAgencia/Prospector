@@ -1,6 +1,7 @@
 // WA-AKG webhook receiver and consent-gated WhatsApp transport.
 // No credentials here. No automatic message sending. WAL-backed idempotency.
 import crypto from "node:crypto";
+import {liveOwnsLead,liveAiOwnsLead} from './flow-runtime.mjs';
 import {db,one,all,run,id,now,phone,addLead,getThread,addMessage,stopLead,stage,audit} from "./db.mjs";
 import {aiDraft} from "./ai-groq.mjs";
 import {classifyContact,prospectorChatEligible,prospectorLeadEligible} from "./whatsapp-roles.mjs";
@@ -166,6 +167,10 @@ export function recordInboundTranscript({sessionId:sid,jid,unique,content:text,s
  audit("WAAKG_INBOUND",lead.id,{event:"message.received",state,session:sid,source,role:identity.role});
  // The owner has already been routed above, including the sandbox exception.
  if(firstInbound&&state==='REVIEW'&&configuredClosing()?.mode!=='complete')queueInboundBrief({leadId:lead.id,phone:lead.phone,body:content,source:source==="AUDIO"?"WHATSAPP_AUDIO":"WHATSAPP_INBOUND"});
+ if(liveOwnsLead(lead.id)){
+  if(state==='REVIEW'&&liveAiOwnsLead(lead.id,sid))queueInboundTurn({providerId:unique,jid,sessionId:sid});
+  return {status:200,body:{accepted:true,processed:true,visualFlow:true}};
+ }
  const introRoute=state==='HUMAN'?{managed:true,queueAi:false,state:'HUMAN'}:
   identity.role==='PROSPECT_APPROACHED'?
   routeIntroductionReply({leadId:lead.id,providerId:unique,body:content,inboxState:state,receivedAt:at}):{managed:false,queueAi:true};

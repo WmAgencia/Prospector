@@ -1,8 +1,13 @@
-// Prospector: five focused views. Deliberately no legacy campaign modules.
+// Prospector workspace.
+let flowModulePromise=null;
+function openFlowEditor(host){
+ flowModulePromise ||= import('./flow-editor.js').catch(error=>{flowModulePromise=null;throw error;});
+ flowModulePromise.then(module=>{if(view==='flow'&&host.isConnected)module.mountProspectorFlow(host,api);}).catch(error=>{if(host.isConnected)host.textContent='Não foi possível abrir o Prospector Flow: '+error.message;});
+}
 const q=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
-const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",approvals:"Aprovações",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
+const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",flow:"Prospector Flow",approvals:"Aprovações",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
 let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="all",trainingAllConfirmed=false,trainingBusy=false,clientAccess="",demoLoginCredentials=null;
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
 let billingReminderOpen=false,billingReminderDismissed=false,billingDemoExhausted=false,billingDemoStep=0,billingDemoPackage='',billingLastChecked=0;
@@ -146,8 +151,9 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
 function nav(viewName){if(view==='training'&&viewName!=='training')interviewStopVoice();n('');if(platformContext.role==="master"&&!["dashboard","clients","credits","settings"].includes(viewName))viewName="overview";if((viewName==="clients"||viewName==="dashboard")&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName=platformContext.role==="master"?"dashboard":"overview";if(viewName==="overview"&&platformContext.role==="master")viewName="dashboard";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients")loadClients();if(view==="dashboard")loadMasterMetrics();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();if(view==="approvals")loadApprovals();}
 
 function glyph(key){
- if(globalThis.ProspectorIcons&&key!=="approvals")return globalThis.ProspectorIcons.svg(key);
+ if(globalThis.ProspectorIcons&&key!=="approvals"&&key!=="flow")return globalThis.ProspectorIcons.svg(key);
  const paths={
+ flow:'<rect x="3" y="3" width="6" height="6" rx="2"/><rect x="15" y="15" width="6" height="6" rx="2"/><path d="M9 6h6a3 3 0 0 1 3 3v6M6 9v9h9"/>',
  approvals:'<path d="m9 12 2 2 4-4"/><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8"/>',
  overview:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
  prospects:'<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5M8 11h6M11 8v6"/>',
@@ -1239,6 +1245,7 @@ function render(){
  const selection=wasTyping?[oldInput.selectionStart,oldInput.selectionEnd]:null;
  shell();
  const el=q("#view");
+ if(view==="flow"){openFlowEditor(el);return;}
  el.innerHTML={dashboard:masterDashboard,clients:clientsView,overview,conversations,prospects:prospecting,approvals:approvalsView,connections,training:trainingView,credits:creditsView,settings}[view]();
  if(view==='training'){const feed=q('.training-interview-feed');if(feed)feed.scrollTop=feed.scrollHeight;}
  if(view==='conversations'){
@@ -1464,6 +1471,7 @@ async function reloadCurrentView(){
  try{
   if(platformContext.role==='master'){await Promise.all([loadClients(),loadMasterMetrics()]);render();return;}
   // Critical path is only the active screen. No training/billing/full CRM gate.
+  if(view==='flow')return;
   if(view==='overview'){await loadKanban();return;}
   if(view==='conversations'){await loadChats();return;}
   if(view==='training'){await loadTraining();return;}

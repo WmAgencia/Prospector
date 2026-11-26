@@ -1,0 +1,113 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'prospector-flow-runtime-'));
+process.env.PROSPECTOR_DATA_DIR=dir;
+process.env.WA_AKG_SESSION_ID='synthetic-flow-session';
+process.env.PROSPECTOR_FLOW_LIVE_ENABLED='true';
+delete process.env.PROSPECTOR_TENANT_ID;
+const d=await import('../dashboard/db.mjs');
+const {liveFlowSupported,setLiveRoute,previewLiveGreeting,reserveLiveGreeting,liveFirstText,liveOwnsLead,liveAiOwnsLead,tickLiveFlows}=await import('../dashboard/flow-runtime.mjs');
+const {bindLeadSession}=await import('../dashboard/waakg-session-registry.mjs');
+const {listFlowProjects,mutateFlowProject,flowProjectMetrics}=await import('../dashboard/flow-projects.mjs');
+const sid='synthetic-flow-session';
+const definition={steps:[{id:'first',kind:'text',name:'Abordagem',variants:[{id:'a',text:'Olá!',weight:1},{id:'b',text:'Bom dia!',weight:1}]},{id:'reply',kind:'reply',name:'Resposta',variants:[]}]};
+test('internal owner cannot activate visual execution even with external rollout flag',async()=>{
+ assert.equal(liveFlowSupported(),false);
+ assert.equal(previewLiveGreeting('missing'),null);
+ assert.equal(liveOwnsLead('missing'),false);
+ assert.throws(()=>setLiveRoute({projectId:'x',niche:'Eventos',version:1,definition,enabled:true}),/indisponível/);
+ assert.equal((await tickLiveFlows({send:()=>{throw Error('must not send')}})).processed,0);
+ assert.deepEqual(flowProjectMetrics('missing'),{total:0,completed:0,cancelled:0,human:0,review:0,inProgress:0,activeVersion:null,variants:[]});
+ assert.equal(d.one("SELECT 1 FROM sqlite_master WHERE name='flow_live_runs'"),undefined);
+});
+test('external execution requires rollout flag, explicit activation, matching niche and documented opt-in',()=>{
+ process.env.PROSPECTOR_TENANT_ID='synthetic-flow-tenant';process.env.PROSPECTOR_TENANT_INTERNAL='false';
+ try{
+  assert.equal(liveFlowSupported(),true);
+  const project=mutateFlowProject('create',{name:'Eventos',niche:'Eventos'});
+  project.definition=definition;
+  const saved=mutateFlowProject('save',project),version=mutateFlowProject('version',{id:saved.id,revision:saved.revision});
+  assert.throws(()=>mutateFlowProject('activate',{id:version.id,revision:version.revision}),/Confirme/);
+  mutateFlowProject('activate',{id:version.id,revision:version.revision,confirm:true});
+  const lead=d.addLead({business:'Empresa fictícia',phone:'5515987654310',source:'TEST',segment:'Eventos',contact_permission:true}).lead;
+  d.run('UPDATE leads SET segment=? WHERE id=?','Eventos',lead.id);
+  assert.equal(previewLiveGreeting(lead.id).blocked,true);
+  d.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Synthetic explicit consent fixture'});
+  const plan=previewLiveGreeting(lead.id);assert.equal(plan.variantId,'a');
+  bindLeadSession(lead.id,sid);
+  const greeting=d.id();
+  assert.equal(d.tx(()=>reserveLiveGreeting({plan,leadId:lead.id,greetingId:greeting,sessionId:sid,jid:lead.phone+'@s.whatsapp.net',at:Date.now()})),true);
+  assert.equal(liveFirstText(greeting),'Olá!');
+  assert.equal(liveOwnsLead(lead.id),true);
+  const stats=flowProjectMetrics(project.id);
+  assert.equal(stats.total,1);
+  assert.equal(stats.inProgress,1);
+  assert.equal(stats.activeVersion,1);
+  assert.deepEqual(stats.variants,[{version:1,stepId:'first',variantId:'a',reservations:1}]);
+  assert.equal(flowProjectMetrics('unrelated-project').total,0);
+  assert.equal(listFlowProjects().items.find(p=>p.id===project.id).metrics.total,1);
+  d.run("UPDATE flow_live_runs SET state='REVIEW' WHERE greeting_id=?",greeting);
+  assert.equal(flowProjectMetrics(project.id).review,1);
+  assert.equal(flowProjectMetrics(project.id).inProgress,0);
+  assert.equal(previewLiveGreeting(lead.id).variantId,'b');
+  assert.equal(listFlowProjects().items.some(p=>p.protected),false);
+  process.env.PROSPECTOR_FLOW_LIVE_ENABLED='false';
+  assert.equal(previewLiveGreeting(lead.id),null);
+  assert.equal(liveOwnsLead(lead.id),true);
+ }finally{delete process.env.PROSPECTOR_TENANT_ID;delete process.env.PROSPECTOR_TENANT_INTERNAL;delete process.env.PROSPECTOR_FLOW_LIVE_ENABLED;}
+});
+test('media and Francisca are opt-in adapters and owner remains isolated',()=>{
+ process.env.PROSPECTOR_TENANT_ID='synthetic-flow-tenant';process.env.PROSPECTOR_TENANT_INTERNAL='false';process.env.PROSPECTOR_FLOW_LIVE_ENABLED='true';
+ const first=definition.steps[0],permission={id:'permission',kind:'condition',condition:'permission',variants:[]},audio={id:'audio',kind:'audio',variants:[{id:'audio-a',mediaId:'synthetic-audio',text:'',weight:1}]},ai={id:'ai',kind:'ai',variants:[]};
+ try{
+  d.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)','synthetic-audio','Synthetic audio','audio','audio/ogg','synthetic.ogg',256,d.now());
+  const projectId='synthetic-media-route',niche='Media fixtures';
+  const route=steps=>setLiveRoute({projectId,niche,version:1,definition:{steps},enabled:true});
+  assert.throws(()=>route([first,permission,audio]),/Mídia requer/);
+  process.env.PROSPECTOR_FLOW_MEDIA_ENABLED='true';
+  assert.throws(()=>route([first,audio]),/Mídia requer/);
+  assert.throws(()=>route([first,permission,{...audio,variants:[{...audio.variants[0],mediaId:'unknown'}]}]),/Mídia requer/);
+  assert.doesNotThrow(()=>route([first,permission,audio]));
+  assert.throws(()=>route([first,ai]),/Francisca exige/);
+  process.env.PROSPECTOR_FLOW_AI_ENABLED='true';
+  assert.throws(()=>route([first,ai,permission]),/última etapa/);
+  assert.doesNotThrow(()=>route([first,permission,audio,ai]));
+  assert.equal(liveAiOwnsLead('missing',sid),false);
+ }finally{for(const key of ['PROSPECTOR_TENANT_ID','PROSPECTOR_TENANT_INTERNAL','PROSPECTOR_FLOW_LIVE_ENABLED','PROSPECTOR_FLOW_MEDIA_ENABLED','PROSPECTOR_FLOW_AI_ENABLED'])delete process.env[key];}
+});
+test('audio and video require exact provider receipts before advancing to Francisca',async()=>{
+ process.env.PROSPECTOR_TENANT_ID='synthetic-flow-tenant';process.env.PROSPECTOR_TENANT_INTERNAL='false';process.env.PROSPECTOR_FLOW_LIVE_ENABLED='true';process.env.PROSPECTOR_FLOW_MEDIA_ENABLED='true';process.env.PROSPECTOR_FLOW_AI_ENABLED='true';
+ const lead=d.addLead({business:'Synthetic media lead',phone:'5515987654321',source:'TEST',segment:'Media fixtures',contact_permission:true}).lead;
+ d.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Synthetic explicit consent fixture'});
+ bindLeadSession(lead.id,sid);
+ const jid=lead.phone+'@s.whatsapp.net',greeting=d.id(),at=Date.now(),projectId='synthetic-media-route',stamp=d.now();
+ const audio=Buffer.alloc(256);audio.write('OggS');
+ const video=Buffer.alloc(1024);video.write('ftyp',4);
+ fs.mkdirSync(path.join(dir,'media'),{recursive:true});
+ fs.writeFileSync(path.join(dir,'media','synthetic.ogg'),audio);
+ fs.writeFileSync(path.join(dir,'media','synthetic.mp4'),video);
+ d.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)','synthetic-video','Synthetic video','video','video/mp4','synthetic.mp4',video.length,stamp);
+ const def={steps:[definition.steps[0],{id:'permission',kind:'condition',condition:'permission',variants:[]},{id:'audio',kind:'audio',variants:[{id:'audio-a',mediaId:'synthetic-audio',text:'',weight:1}]},{id:'video',kind:'video',variants:[{id:'video-a',mediaId:'synthetic-video',text:'Portfólio',weight:1}]},{id:'ai',kind:'ai',variants:[]}]};
+ const execution={cursor:2,state:'READY',enteredAt:at,dueAt:null,assignments:{},lastInboundId:null,history:[]};
+ d.run('INSERT INTO flow_live_runs(greeting_id,lead_id,project_id,version,session_id,jid,definition,execution,first_text,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',greeting,lead.id,projectId,1,sid,jid,JSON.stringify(def),JSON.stringify(execution),'Synthetic','READY',stamp,stamp);
+ let sends=[],messages=[];
+ const deps={status:async()=>({connected:true}),send:async()=>{throw Error('unexpected text transport');},sendAudio:async args=>{assert.equal(args.session,sid);assert.deepEqual(args.bytes,audio);sends.push('audio');return {accepted:true,messageId:'audio-proof-1'};},sendVideo:async args=>{assert.equal(args.caption,'Portfólio');assert.deepEqual(args.bytes,video);sends.push('video');return {accepted:true,messageId:'video-proof-1'};},history:async()=>({messages})};
+ const row=()=>d.one('SELECT state,execution FROM flow_live_runs WHERE greeting_id=?',greeting);
+ try{
+  await tickLiveFlows(deps);assert.equal(row().state,'WAIT_PROOF');assert.deepEqual(sends,['audio']);
+  messages=[{fromMe:true,keyId:'unrelated-id',type:'AUDIO',status:'DELIVERED',remoteJid:jid}];
+  await tickLiveFlows(deps);assert.equal(row().state,'WAIT_PROOF');assert.deepEqual(sends,['audio']);
+  messages=[{fromMe:true,keyId:'audio-proof-1',type:'AUDIO',status:'DELIVERED',remoteJid:jid}];
+  await tickLiveFlows(deps);assert.equal(JSON.parse(row().execution).cursor,3);
+  await tickLiveFlows(deps);assert.equal(row().state,'WAIT_PROOF');assert.deepEqual(sends,['audio','video']);
+  messages=[{fromMe:true,keyId:'video-proof-1',type:'VIDEO',status:'DELIVERED',remoteJid:jid}];
+  await tickLiveFlows(deps);assert.equal(JSON.parse(row().execution).cursor,4);
+  await tickLiveFlows(deps);assert.equal(row().state,'AI');
+  assert.equal(liveAiOwnsLead(lead.id,sid),true);assert.equal(liveAiOwnsLead(lead.id,'other-session'),false);
+  await tickLiveFlows(deps);assert.deepEqual(sends,['audio','video']);
+ }finally{for(const key of ['PROSPECTOR_TENANT_ID','PROSPECTOR_TENANT_INTERNAL','PROSPECTOR_FLOW_LIVE_ENABLED','PROSPECTOR_FLOW_MEDIA_ENABLED','PROSPECTOR_FLOW_AI_ENABLED'])delete process.env[key];}
+});
+test.after(()=>{d.db.close();fs.rmSync(dir,{recursive:true,force:true});});

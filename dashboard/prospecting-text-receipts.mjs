@@ -95,6 +95,8 @@ async function expectedTextForReceipt(record){
  if(msg?.body)return msg.body;
  // The transport may have succeeded before the local message was persisted.
  // Recover the approved source copy, not an arbitrary message.
+ const {liveFirstText}=await import('./flow-runtime.mjs');
+ if(record.kind==='GREETING'){const original=liveFirstText(record.greeting_id);if(original)return original;}
  const {WESLEY_INTRO,greetingForProspect}=await import('./prospecting-introduction.mjs');
  if(record.kind==='INTRO')return WESLEY_INTRO;
  const lead=one('SELECT * FROM leads WHERE id=?',record.lead_id);

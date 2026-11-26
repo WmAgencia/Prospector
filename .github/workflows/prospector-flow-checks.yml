@@ -1,0 +1,32 @@
+name: Prospector Flow isolated checks
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test tests/flow-projects.test.mjs tests/flow-engine.test.mjs tests/flow-runtime.test.mjs
+      - run: node --check dashboard/server.mjs && node --check dashboard/platform.mjs && node --check dashboard/flow-runtime.mjs && node --check dashboard/flow-projects.mjs && node --input-type=module --check < dashboard/public/flow-editor.js
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || 'main' }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Run unchanged main branch suite
+        run: npm test
