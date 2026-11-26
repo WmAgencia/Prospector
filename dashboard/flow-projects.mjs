@@ -88,7 +88,9 @@ export function validateFlow(input,{publish=false}={}){
     const weight=Number(v.weight??1);if(!Number.isInteger(weight)||weight<1||weight>10000)throw Error('Peso inválido');
     const text=clean(v.text,5000);
     if(publish&&s.kind==='text'&&!text)throw Error('Preencha todas as mensagens.');
-    return {id:v.id,text,weight};
+    const mediaId=clean(v.mediaId,80);
+    if(mediaId&&(!['audio','video','image','document'].includes(s.kind)||!uid(mediaId)||!one('SELECT 1 FROM media WHERE id=? AND kind=?',mediaId,s.kind)))throw Error('Mídia inválida para esta etapa.');
+    return {id:v.id,text,weight,...(mediaId?{mediaId}:{})};
    });
    if(publish&&!out.variants.length)throw Error('Adicione uma variante de mensagem.');
   }
@@ -119,7 +121,7 @@ export function flowProjectMetrics(projectId){
  return result;
 }
 export function listFlowProjects(){
- init();const internal=isInternal();return {items:[...(internal?[internalProject()]:[]),...all('SELECT * FROM flow_projects ORDER BY updated_at DESC LIMIT 500').map(r=>({...parse(r),metrics:flowProjectMetrics(r.id)}))],protected:internal,executionEnabled:liveFlowSupported()};
+ init();const internal=isInternal();return {items:[...(internal?[internalProject()]:[]),...all('SELECT * FROM flow_projects ORDER BY updated_at DESC LIMIT 500').map(r=>({...parse(r),metrics:flowProjectMetrics(r.id)}))],protected:internal,executionEnabled:liveFlowSupported(),media:all('SELECT id,name,kind,mime,bytes FROM media ORDER BY created_at DESC LIMIT 500').map(r=>({...r}))};
 }
 export function mutateFlowProject(action,input={}){
  if(input.id==='consecom-current')throw Error('O fluxo Consecom está protegido e não pode ser alterado neste editor.');
