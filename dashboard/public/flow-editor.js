@@ -3,7 +3,7 @@ const kinds={text:'Mensagem de texto',audio:'Áudio',video:'Vídeo',image:'Image
 const isMessage=k=>['text','audio','video','image','document'].includes(k);
 const icons={folder:'<path d="M3 7V5h7l2 3h9v12H3z"/>',text:'<path d="M4 4h16v13H9l-5 4zM8 9h8M8 13h6"/>',audio:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3"/>',video:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/>',image:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',document:'<path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h8"/>',reply:'<path d="M20 16H9l-5 4V4h16zM8 9h8M8 13h6"/>',delay:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',condition:'<path d="M12 3v5M5 21v-5l7-8 7 8v5"/><circle cx="12" cy="3" r="2"/>',ai:'<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/>',handoff:'<circle cx="12" cy="7" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 4H4v12"/>',search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',plus:'<path d="M12 5v14M5 12h14"/>'};
 const icon=k=>'<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(icons[k]||icons.folder)+'</svg>';
-let root,api,projects=[],current=null,selected=null,query='',loading=false,loaded=false,error='',dirty=false,zoom=1,simulating=false,simulationLead=1,busy=false,projectDialog=null,simulationRun=null;
+let root,api,projects=[],current=null,selected=null,query='',loading=false,loaded=false,error='',dirty=false,zoom=1,simulating=false,simulationLead=1,busy=false,projectDialog=null,simulationRun=null,executionEnabled=false;
 const uid=()=>crypto.randomUUID();
 const btn=(action,label,extra='')=>'<button type="button" data-flow="'+action+'" '+extra+'>'+label+'</button>';
 const readonly=()=>!!current?.protected;
@@ -58,8 +58,13 @@ function metricsPanel(){
  const variants=(m.variants||[]).map(v=>{const step=current.definition.steps.find(s=>s.id===v.stepId),index=step?.variants.findIndex(x=>x.id===v.variantId)??-1;return '<p>'+esc('V'+v.version+' · '+(step?.name||v.stepId)+' · '+(index>=0?'Variante '+(index<26?String.fromCharCode(65+index):index+1):v.variantId))+' — '+esc(v.reservations)+' reserva(s)</p>';}).join('');
  return '<div class="pf-sim"><div class="pf-sim-head"><strong>Métricas reais do projeto</strong><span>'+esc(m.activeVersion===null?'Sem versão ativa':'Versão ativa '+m.activeVersion)+'</span>'+btn('refresh-metrics','Atualizar')+'</div><div class="pf-actions">'+items.map(([label,value])=>'<span class="pf-chip">'+esc(label)+': '+esc(value)+'</span>').join('')+'</div><p><small>As métricas consideram todas as versões. Reservas de variantes não equivalem a entregas confirmadas.</small></p>'+variants+'</div>';
 }
+function liveActions(){
+ if(readonly()||!executionEnabled||!current.publishedVersion)return '';
+ const active=current.metrics?.activeVersion;
+ return (active!=null?btn('deactivate','Desativar novas execuções'):'')+(active!==current.publishedVersion?btn('activate','Ativar versão '+current.publishedVersion,'class="pf-primary"'): '');
+}
 function editor(){
- return '<div class="pf-editor"><div class="pf-edit-top"><div>'+btn('back','← Projetos','class="pf-back"')+'<h2>'+esc(current.name)+'</h2><span class="pf-niche">'+esc(current.niche||'Sem nicho')+'</span></div><div class="pf-actions"><span class="pf-chip">'+(readonly()?'Fluxo atual · protegido':dirty?'Alterações não salvas':'Salvo')+'</span>'+(!readonly()?btn('settings','Configurar projeto')+btn('save','Salvar')+btn('version','Salvar versão','class="pf-primary"'):'')+'</div></div><div class="pf-edit-toolbar"><span>Editor visual</span><span class="pf-toolbar-note">'+(readonly()?'Espelho somente leitura do fluxo existente':'Ambiente de edição e simulação · sem disparos reais')+'</span>'+btn('simulate','Simular')+(!readonly()?'<select data-field="addKind" aria-label="Tipo da nova etapa">'+Object.entries(kinds).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+btn('add-step',icon('plus')+' Etapa','class="pf-primary"'):'')+'</div><div class="pf-workspace"><div class="pf-canvas"><div class="pf-track" style="zoom:'+zoom+'">'+current.definition.steps.map((s,i)=>node(s,i)).join('<div class="pf-wire"><span>›</span></div>')+'</div><div class="pf-zoom">'+btn('zoom-out','−')+'<span>'+Math.round(zoom*100)+'%</span>'+btn('zoom-in','+')+btn('fullscreen','⛶','title="Tela cheia"')+'</div></div>'+panel()+'</div>'+(simulating?simulation():'')+metricsPanel()+'</div>';
+ return '<div class="pf-editor"><div class="pf-edit-top"><div>'+btn('back','← Projetos','class="pf-back"')+'<h2>'+esc(current.name)+'</h2><span class="pf-niche">'+esc(current.niche||'Sem nicho')+'</span></div><div class="pf-actions"><span class="pf-chip">'+(readonly()?'Fluxo atual · protegido':dirty?'Alterações não salvas':'Salvo')+'</span>'+(!readonly()?btn('settings','Configurar projeto')+btn('save','Salvar')+btn('version','Salvar versão','class="pf-primary"')+liveActions():'')+'</div></div><div class="pf-edit-toolbar"><span>Editor visual</span><span class="pf-toolbar-note">'+(readonly()?'Espelho somente leitura do fluxo existente':(executionEnabled?'Versões salvas podem ser ativadas para contatos autorizados':'Ambiente de edição e simulação · sem disparos reais'))+'</span>'+btn('simulate','Simular')+(!readonly()?'<select data-field="addKind" aria-label="Tipo da nova etapa">'+Object.entries(kinds).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+btn('add-step',icon('plus')+' Etapa','class="pf-primary"'):'')+'</div><div class="pf-workspace"><div class="pf-canvas"><div class="pf-track" style="zoom:'+zoom+'">'+current.definition.steps.map((s,i)=>node(s,i)).join('<div class="pf-wire"><span>›</span></div>')+'</div><div class="pf-zoom">'+btn('zoom-out','−')+'<span>'+Math.round(zoom*100)+'%</span>'+btn('zoom-in','+')+btn('fullscreen','⛶','title="Tela cheia"')+'</div></div>'+panel()+'</div>'+(simulating?simulation():'')+metricsPanel()+'</div>';
 }
 function projectDialogHtml(){
  if(!projectDialog)return '';
@@ -72,7 +77,7 @@ function paint(){
  const next=root.querySelector('.pf-canvas');if(next){next.scrollLeft=x;next.scrollTop=y;}
 }
 async function refresh(){
- loading=true;paint();try{const r=await api('/api/flow/projects');projects=r.items||[];loaded=true;error='';}catch(e){error=e.message;}finally{loading=false;paint();}
+ loading=true;paint();try{const r=await api('/api/flow/projects');projects=r.items||[];executionEnabled=r.executionEnabled===true;loaded=true;error='';}catch(e){error=e.message;}finally{loading=false;paint();}
 }
 async function mutate(action,payload){
  if(busy)return null;busy=true;error='';
@@ -110,6 +115,13 @@ async function onClick(e){
  else if(action==='fullscreen'){if(document.fullscreenElement)await document.exitFullscreen();else await root.requestFullscreen?.();return;}
  else if(!readonly()){
   if(action==='save'){await save();return;}
+  if(action==='activate'||action==='deactivate'){
+   if(!executionEnabled)return;
+   if(action==='activate'&&dirty){error='Salve e versione as alterações antes de ativar.';paint();return;}
+   if(!confirm(action==='activate'?'Ativar a versão salva somente para contatos com consentimento documentado?':'Desativar novas execuções deste projeto? As conversas já iniciadas continuam na versão original.'))return;
+   const result=await mutate(action,{id:current.id,revision:current.revision,confirm:true});
+   if(result){current={...current,metrics:result.metrics,revision:result.revision};projects=projects.map(p=>p.id===result.id?result:p);}paint();return;
+  }
   if(action==='version'){if(dirty&&!await save())return;const result=await mutate('version',{id:current.id,revision:current.revision});if(result){current=result;projects=projects.map(p=>p.id===result.id?result:p);}paint();return;}
   if(action==='add-step'){const kind=root.querySelector('[data-field="addKind"]').value;const n={id:uid(),kind,name:kinds[kind],variants:isMessage(kind)?[{id:uid(),text:'',weight:1}]:[],...(kind==='delay'?{seconds:10}:{}),...(kind==='condition'?{condition:'reply'}:{})};current.definition.steps.push(n);selected={step:n.id,variant:n.variants[0]?.id};change();}
   if(action==='variant'){const target=current.definition.steps.find(x=>x.id===b.dataset.step),v={id:uid(),text:'',weight:1};target.variants.push(v);selected={step:target.id,variant:v.id};change();}
