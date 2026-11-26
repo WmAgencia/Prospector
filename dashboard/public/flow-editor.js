@@ -51,8 +51,15 @@ async function runSimulation(action,extra={}){
  const r=await api('/api/flow/simulation',{method:'POST',body:JSON.stringify({action,...extra})});
  simulationRun=r;simulating=true;paint();
 }
+function metricsPanel(){
+ if(readonly()||!current.metrics)return '';
+ const m=current.metrics;
+ const items=[['Execuções',m.total],['Em andamento',m.inProgress],['Concluídas',m.completed],['Atendimento humano',m.human],['Canceladas',m.cancelled],['Em revisão',m.review]];
+ const variants=(m.variants||[]).map(v=>{const step=current.definition.steps.find(s=>s.id===v.stepId),index=step?.variants.findIndex(x=>x.id===v.variantId)??-1;return '<p>'+esc('V'+v.version+' · '+(step?.name||v.stepId)+' · '+(index>=0?'Variante '+(index<26?String.fromCharCode(65+index):index+1):v.variantId))+' — '+esc(v.reservations)+' reserva(s)</p>';}).join('');
+ return '<div class="pf-sim"><div class="pf-sim-head"><strong>Métricas reais do projeto</strong><span>'+esc(m.activeVersion===null?'Sem versão ativa':'Versão ativa '+m.activeVersion)+'</span>'+btn('refresh-metrics','Atualizar')+'</div><div class="pf-actions">'+items.map(([label,value])=>'<span class="pf-chip">'+esc(label)+': '+esc(value)+'</span>').join('')+'</div><p><small>As métricas consideram todas as versões. Reservas de variantes não equivalem a entregas confirmadas.</small></p>'+variants+'</div>';
+}
 function editor(){
- return '<div class="pf-editor"><div class="pf-edit-top"><div>'+btn('back','← Projetos','class="pf-back"')+'<h2>'+esc(current.name)+'</h2><span class="pf-niche">'+esc(current.niche||'Sem nicho')+'</span></div><div class="pf-actions"><span class="pf-chip">'+(readonly()?'Fluxo atual · protegido':dirty?'Alterações não salvas':'Salvo')+'</span>'+(!readonly()?btn('settings','Configurar projeto')+btn('save','Salvar')+btn('version','Salvar versão','class="pf-primary"'):'')+'</div></div><div class="pf-edit-toolbar"><span>Editor visual</span><span class="pf-toolbar-note">'+(readonly()?'Espelho somente leitura do fluxo existente':'Ambiente de edição e simulação · sem disparos reais')+'</span>'+btn('simulate','Simular')+(!readonly()?'<select data-field="addKind" aria-label="Tipo da nova etapa">'+Object.entries(kinds).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+btn('add-step',icon('plus')+' Etapa','class="pf-primary"'):'')+'</div><div class="pf-workspace"><div class="pf-canvas"><div class="pf-track" style="zoom:'+zoom+'">'+current.definition.steps.map((s,i)=>node(s,i)).join('<div class="pf-wire"><span>›</span></div>')+'</div><div class="pf-zoom">'+btn('zoom-out','−')+'<span>'+Math.round(zoom*100)+'%</span>'+btn('zoom-in','+')+btn('fullscreen','⛶','title="Tela cheia"')+'</div></div>'+panel()+'</div>'+(simulating?simulation():'')+'</div>';
+ return '<div class="pf-editor"><div class="pf-edit-top"><div>'+btn('back','← Projetos','class="pf-back"')+'<h2>'+esc(current.name)+'</h2><span class="pf-niche">'+esc(current.niche||'Sem nicho')+'</span></div><div class="pf-actions"><span class="pf-chip">'+(readonly()?'Fluxo atual · protegido':dirty?'Alterações não salvas':'Salvo')+'</span>'+(!readonly()?btn('settings','Configurar projeto')+btn('save','Salvar')+btn('version','Salvar versão','class="pf-primary"'):'')+'</div></div><div class="pf-edit-toolbar"><span>Editor visual</span><span class="pf-toolbar-note">'+(readonly()?'Espelho somente leitura do fluxo existente':'Ambiente de edição e simulação · sem disparos reais')+'</span>'+btn('simulate','Simular')+(!readonly()?'<select data-field="addKind" aria-label="Tipo da nova etapa">'+Object.entries(kinds).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select>'+btn('add-step',icon('plus')+' Etapa','class="pf-primary"'):'')+'</div><div class="pf-workspace"><div class="pf-canvas"><div class="pf-track" style="zoom:'+zoom+'">'+current.definition.steps.map((s,i)=>node(s,i)).join('<div class="pf-wire"><span>›</span></div>')+'</div><div class="pf-zoom">'+btn('zoom-out','−')+'<span>'+Math.round(zoom*100)+'%</span>'+btn('zoom-in','+')+btn('fullscreen','⛶','title="Tela cheia"')+'</div></div>'+panel()+'</div>'+(simulating?simulation():'')+metricsPanel()+'</div>';
 }
 function projectDialogHtml(){
  if(!projectDialog)return '';
@@ -87,7 +94,8 @@ async function onClick(e){
   paint();root.querySelector('[data-flow-form] input')?.focus();return;
  }
  if(action==='cancel-project'){projectDialog=null;paint();return;}
- if(action==='open'){current=structuredClone(projects.find(p=>p.id===b.dataset.id));selected=null;dirty=false;simulating=false;zoom=1;}
+ if(action==='open'){current=structuredClone(projects.find(p=>p.id===b.dataset.id));selected=null;dirty=false;simulating=false;simulationRun=null;zoom=1;}
+ else if(action==='refresh-metrics'){const r=await api('/api/flow/projects');const p=r.items?.find(p=>p.id===current.id);if(p){current.metrics=p.metrics;projects=projects.map(x=>x.id===p.id?{...x,metrics:p.metrics}:x);}paint();return;}
  else if(action==='back'){if(dirty&&!confirm('Sair sem salvar as alterações?'))return;current=null;selected=null;dirty=false;simulating=false;}
  else if(action==='select'){selected={step:b.dataset.step,variant:b.dataset.variant};}
  else if(action==='settings'||action==='deselect'){selected=null;}
@@ -133,7 +141,7 @@ async function submitProject(e){
  if(!e.target.matches('[data-flow-form]'))return;e.preventDefault();
  if(!projectDialog||busy)return;
  const result=await mutate(projectDialog.action,projectDialog);
- if(result){projects.unshift(result);current=structuredClone(result);selected=null;dirty=false;projectDialog=null;simulating=false;zoom=1;paint();}
+ if(result){projects.unshift(result);current=structuredClone(result);selected=null;dirty=false;projectDialog=null;simulating=false;simulationRun=null;zoom=1;paint();}
 }
 export function mountProspectorFlow(host,request){
  api=request;
