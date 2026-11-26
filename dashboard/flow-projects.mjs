@@ -100,8 +100,26 @@ export function validateFlow(input,{publish=false}={}){
  return {steps};
 }
 const parse=r=>({id:r.id,name:r.name,niche:r.niche,description:r.description,definition:JSON.parse(r.draft),revision:r.revision,publishedVersion:r.published_version,createdAt:r.created_at,updatedAt:r.updated_at,status:r.published_version?'versioned':'draft',execution:'simulation_only'});
+// Read-only aggregate telemetry; never creates live tables or exposes contact data.
+export function flowProjectMetrics(projectId){
+ const result={total:0,completed:0,cancelled:0,human:0,review:0,inProgress:0,activeVersion:null,variants:[]};
+ if(isInternal())return result;
+ if(one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='flow_live_routes'")){
+  result.activeVersion=one('SELECT version FROM flow_live_routes WHERE project_id=? AND enabled=1',projectId)?.version??null;
+ }
+ if(one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='flow_live_runs'")){
+  for(const row of all('SELECT state,COUNT(*) n FROM flow_live_runs WHERE project_id=? GROUP BY state',projectId)){
+   const key=({COMPLETE:'completed',CANCELLED:'cancelled',HUMAN:'human',REVIEW:'review'})[row.state]||'inProgress';
+   result[key]+=row.n;result.total+=row.n;
+  }
+ }
+ if(one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='flow_live_variants'")){
+  result.variants=all('SELECT version,step_id AS stepId,variant_id AS variantId,total AS reservations FROM flow_live_variants WHERE project_id=? ORDER BY version,step_id,variant_id',projectId);
+ }
+ return result;
+}
 export function listFlowProjects(){
- init();const internal=isInternal();return {items:[...(internal?[internalProject()]:[]),...all('SELECT * FROM flow_projects ORDER BY updated_at DESC LIMIT 500').map(parse)],protected:internal,executionEnabled:liveFlowSupported()};
+ init();const internal=isInternal();return {items:[...(internal?[internalProject()]:[]),...all('SELECT * FROM flow_projects ORDER BY updated_at DESC LIMIT 500').map(r=>({...parse(r),metrics:flowProjectMetrics(r.id)}))],protected:internal,executionEnabled:liveFlowSupported()};
 }
 export function mutateFlowProject(action,input={}){
  if(input.id==='consecom-current')throw Error('O fluxo Consecom está protegido e não pode ser alterado neste editor.');
@@ -115,7 +133,7 @@ export function mutateFlowProject(action,input={}){
    if(!name)throw Error('Informe o nome do projeto.');
    const key=id(),at=now(),definition=previous?JSON.parse(previous.draft):{steps:[{id:id(),name:'Abordagem',kind:'text',variants:[{id:id(),text:'',weight:1}]}]};
    run('INSERT INTO flow_projects(id,name,niche,description,draft,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',key,name.slice(0,100),clean(input.niche??previous?.niche,120),clean(input.description??previous?.description,500),JSON.stringify(definition),at,at);
-   return parse(one('SELECT * FROM flow_projects WHERE id=?',key));
+   return {...parse(one('SELECT * FROM flow_projects WHERE id=?',key)),metrics:flowProjectMetrics(key)};
   }
   const row=one('SELECT * FROM flow_projects WHERE id=?',clean(input.id,80));
   if(!row)throw Error('Projeto não encontrado.');
@@ -136,6 +154,6 @@ export function mutateFlowProject(action,input={}){
    run('INSERT INTO flow_project_versions(project_id,version,definition,created_at) VALUES(?,?,?,?)',row.id,version,JSON.stringify({name:row.name,niche:row.niche,description:row.description,...definition}),now());
    run('UPDATE flow_projects SET published_version=?,revision=revision+1,updated_at=? WHERE id=?',version,now(),row.id);
   }else throw Error('Operação inválida.');
-  return parse(one('SELECT * FROM flow_projects WHERE id=?',row.id));
+  return {...parse(one('SELECT * FROM flow_projects WHERE id=?',row.id)),metrics:flowProjectMetrics(row.id)};
  });
 }
