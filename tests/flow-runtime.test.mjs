@@ -9,7 +9,7 @@ process.env.WA_AKG_SESSION_ID='synthetic-flow-session';
 process.env.PROSPECTOR_FLOW_LIVE_ENABLED='true';
 delete process.env.PROSPECTOR_TENANT_ID;
 const d=await import('../dashboard/db.mjs');
-const {liveFlowSupported,setLiveRoute,previewLiveGreeting,reserveLiveGreeting,liveFirstText,liveOwnsLead,tickLiveFlows}=await import('../dashboard/flow-runtime.mjs');
+const {liveFlowSupported,setLiveRoute,previewLiveGreeting,reserveLiveGreeting,liveFirstText,liveOwnsLead,liveAiOwnsLead,tickLiveFlows}=await import('../dashboard/flow-runtime.mjs');
 const {bindLeadSession}=await import('../dashboard/waakg-session-registry.mjs');
 const {listFlowProjects,mutateFlowProject,flowProjectMetrics}=await import('../dashboard/flow-projects.mjs');
 const sid='synthetic-flow-session';
@@ -58,5 +58,24 @@ test('external execution requires rollout flag, explicit activation, matching ni
   assert.equal(previewLiveGreeting(lead.id),null);
   assert.equal(liveOwnsLead(lead.id),true);
  }finally{delete process.env.PROSPECTOR_TENANT_ID;delete process.env.PROSPECTOR_TENANT_INTERNAL;delete process.env.PROSPECTOR_FLOW_LIVE_ENABLED;}
+});
+test('media and Francisca are opt-in adapters and owner remains isolated',()=>{
+ process.env.PROSPECTOR_TENANT_ID='synthetic-flow-tenant';process.env.PROSPECTOR_TENANT_INTERNAL='false';process.env.PROSPECTOR_FLOW_LIVE_ENABLED='true';
+ const first=definition.steps[0],permission={id:'permission',kind:'condition',condition:'permission',variants:[]},audio={id:'audio',kind:'audio',variants:[{id:'audio-a',mediaId:'synthetic-audio',text:'',weight:1}]},ai={id:'ai',kind:'ai',variants:[]};
+ try{
+  d.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)','synthetic-audio','Synthetic audio','audio/ogg','synthetic.ogg',256,d.now());
+  const projectId='synthetic-media-route',niche='Media fixtures';
+  const route=steps=>setLiveRoute({projectId,niche,version:1,definition:{steps},enabled:true});
+  assert.throws(()=>route([first,permission,audio]),/Mídia requer/);
+  process.env.PROSPECTOR_FLOW_MEDIA_ENABLED='true';
+  assert.throws(()=>route([first,audio]),/Mídia requer/);
+  assert.throws(()=>route([first,permission,{...audio,variants:[{...audio.variants[0],mediaId:'unknown'}]}]),/Mídia requer/);
+  assert.doesNotThrow(()=>route([first,permission,audio]));
+  assert.throws(()=>route([first,ai]),/Francisca exige/);
+  process.env.PROSPECTOR_FLOW_AI_ENABLED='true';
+  assert.throws(()=>route([first,ai,permission]),/última etapa/);
+  assert.doesNotThrow(()=>route([first,permission,audio,ai]));
+  assert.equal(liveAiOwnsLead('missing',sid),false);
+ }finally{for(const key of ['PROSPECTOR_TENANT_ID','PROSPECTOR_TENANT_INTERNAL','PROSPECTOR_FLOW_LIVE_ENABLED','PROSPECTOR_FLOW_MEDIA_ENABLED','PROSPECTOR_FLOW_AI_ENABLED'])delete process.env[key];}
 });
 test.after(()=>{d.db.close();fs.rmSync(dir,{recursive:true,force:true});});
