@@ -25,6 +25,9 @@ import {beginPitchDelivery,acknowledgePitchDelivery,unknownPitchDelivery,cancelP
 import {reserveTextReceipt,acceptTextReceipt,unknownTextReceipt,extractTextMessageId,receiveTextReceiptStatus} from './prospecting-text-receipts.mjs';
 import {preflightNewStep} from './prospecting-chat-history.mjs';
 import {queueNotice} from './notifications.mjs';
+import {WESLEY_INTRO,WESLEY_INTRO_B,initIntroAB,reserveIntroAB} from './prospecting-intro-ab.mjs';
+export {WESLEY_INTRO,WESLEY_INTRO_B};
+initIntroAB(db);
 
 export const INTRO_DELAY_MS=30_000;
 export const PITCH_PREVIEW_DELAY_MS=10_000;
@@ -37,7 +40,6 @@ export function readPitchVideo(){
   throw Error('PITCH_VIDEO_SOURCE_INVALID');
  return {bytes,caption:PITCH_PREVIEW_TEXT,durationSeconds:44.166667};
 }
-export const WESLEY_INTRO='Meu nome é Wesley, sou dono da agência Consecom. Eu tô entrando em contato porque queria fazer uma proposta pra vocês. Posso te mandar um áudio explicando a ideia?';
 db.exec("CREATE TABLE IF NOT EXISTS prospecting_introductions(lead_id TEXT PRIMARY KEY REFERENCES leads(id),phone TEXT NOT NULL,session_id TEXT NOT NULL,greeting_id TEXT NOT NULL,stage TEXT NOT NULL,first_reply_id TEXT,first_reply_at TEXT,due_at TEXT,attempt_at TEXT,sent_at TEXT,reason TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_introduction_due ON prospecting_introductions(stage,due_at)");
 for(const column of ['followup_due_at','followup_status','followup_attempt_at','followup_sent_at']){
@@ -187,11 +189,28 @@ export async function tickIntroductions(deps={}){
   if(!eligible()){cancelIntroduction(item.lead_id,'ELIGIBILITY_CHANGED');return {state:'CANCELLED'};}
   // This is a brand-new stage (no previous network attempt). Read actual
   // WhatsApp history before issuing its one permitted transport request.
+  let intro=voiceRequested?null:reserveIntroAB(db,{greetingId:item.greeting_id,sessionId:item.session_id,enabled:(!process.env.PROSPECTOR_TENANT_ID||process.env.PROSPECTOR_TENANT_INTERNAL==='true')&&process.env.PROSPECTOR_INTRO_AB_ENABLED!=='false'});
+  let introText=intro?.message||WESLEY_INTRO;
   const fetchHistory=deps.fetchHistory||(!deps.status&&!deps.send&&!deps.sendAudio?waRequest:null);
   if(fetchHistory){
-   const proof=await preflightNewStep({sessionId:item.session_id,jid:item.phone+'@s.whatsapp.net',
-    kind:voiceRequested?'AUDIO':'TEXT',text:voiceRequested?'':WESLEY_INTRO,
-    at:new Date(at),fetchChat:fetchHistory});
+   // Both copy variants are checked against the same history snapshot so a
+   // pre-migration or manually sent alternative cannot trigger a duplicate.
+   let historyPromise;
+   const fetchOnce=(...args)=>historyPromise??=(Promise.resolve().then(()=>fetchHistory(...args)));
+   const args={sessionId:item.session_id,jid:item.phone+'@s.whatsapp.net',kind:voiceRequested?'AUDIO':'TEXT',at:new Date(at),fetchChat:fetchOnce};
+   let proof=await preflightNewStep({...args,text:voiceRequested?'':introText});
+   if(!voiceRequested&&(proof.state==='CLEAR'||proof.state==='EXISTS')){
+    const otherText=introText===WESLEY_INTRO?WESLEY_INTRO_B:WESLEY_INTRO;
+    const alternate=await preflightNewStep({...args,text:otherText});
+    if(proof.state==='CLEAR'&&alternate.state==='EXISTS'){
+     // Reconcile the exact variant already sent, without another transport.
+     intro={variant:otherText===WESLEY_INTRO?'A':'B',message:otherText};
+     introText=otherText;proof=alternate;
+     run('UPDATE prospector_intro_ab SET variant=?,message=? WHERE greeting_id=? AND session_id=?',intro.variant,introText,item.greeting_id,item.session_id);
+    }else if(alternate.state!=='CLEAR'){
+     proof={...alternate,state:alternate.state==='UNAVAILABLE'?'UNAVAILABLE':'POSSIBLE_EXISTING'};
+    }
+   }
    if(proof.state==='UNAVAILABLE')return {state:'HISTORY_UNAVAILABLE'};
    if(!voiceRequested&&proof.state==='EXISTS'){
     const messageId=String(proof.message?.keyId||proof.message?.key?.id||'');
@@ -208,8 +227,8 @@ export async function tickIntroductions(deps={}){
      stamp,stamp,item.lead_id);
     const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
     if(thread&&!one('SELECT id FROM messages WHERE provider_id=?','intro:'+item.greeting_id))
-     addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:WESLEY_INTRO,status:'sent'});
-    audit('PROSPECT_PERMISSION_TEXT_ALREADY_IN_WHATSAPP',item.lead_id,{messageId,duplicateAvoided:true});
+     addMessage({threadId:thread.id,providerId:'intro:'+item.greeting_id,direction:'out',body:introText,status:'sent'});
+    audit('PROSPECT_PERMISSION_TEXT_ALREADY_IN_WHATSAPP',item.lead_id,{messageId,duplicateAvoided:true,variant:intro.variant});
     return {state:'SENT',fromHistory:true};
    }
    if(proof.state!=='CLEAR'){
@@ -242,7 +261,7 @@ export async function tickIntroductions(deps={}){
     if(!stillAutomated())throw Error('TEXT_OWNER_TAKEOVER');
     reserveTextReceipt({leadId:item.lead_id,greetingId:item.greeting_id,kind:'INTRO',sessionId:item.session_id,jid:item.phone+'@s.whatsapp.net'});
     const ack=await send('/api/messages/'+encodeURIComponent(item.session_id)+'/'+encodeURIComponent(item.phone+'@s.whatsapp.net')+'/send',
-     {method:'POST',data:{message:{text:WESLEY_INTRO}}});
+     {method:'POST',data:{message:{text:introText}}});
     if(ack.status!==true)throw Error('TEXT_UNCONFIRMED');
     acceptTextReceipt({leadId:item.lead_id,greetingId:item.greeting_id,kind:'INTRO',providerId:extractTextMessageId(ack)});
    }
@@ -254,11 +273,11 @@ export async function tickIntroductions(deps={}){
    const thread=one('SELECT id FROM threads WHERE lead_id=?',item.lead_id);
    if(thread)addMessage({threadId:thread.id,
     providerId:(voiceRequested?'intro-voice:':'intro:')+item.greeting_id,direction:'out',
-    body:voiceRequested?'[Áudio original do Wesley: proposta de portfólio R$ 550]':WESLEY_INTRO,
+    body:voiceRequested?'[Áudio original do Wesley: proposta de portfólio R$ 550]':introText,
     status:'sent'});
    audit(voiceRequested?'PROSPECT_PITCH_AUDIO_SENT':'PROSPECT_INTRO_SENT',item.lead_id,
     voiceRequested?{voice:true,sourceSha256:PITCH_AUDIO_ORIGINAL_SHA256,offerBRL:550,delaySeconds:30,
-     gatewayAccepted:true,verifiedOnPhone:false}:{delaySeconds:30});
+     gatewayAccepted:true,verifiedOnPhone:false}:{delaySeconds:30,variant:intro.variant,sessionId:item.session_id});
    return {state:nextStage,leadId:item.lead_id,verifiedOnPhone:false};
   }catch(error){
    if(['VOICE_OWNER_TAKEOVER','TEXT_OWNER_TAKEOVER'].includes(String(error?.message||''))){

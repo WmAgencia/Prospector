@@ -11,7 +11,7 @@ process.env.PROSPECTOR_GROUP_IMPORT_JID='12036302123456789@g.us';
 const db=await import('../dashboard/db.mjs');
 const {acceptsProposalAudio,interestedAfterProposal,declinesProposalAudio}=await import('../dashboard/prospector-sales-signals.mjs');
 const {wantsPortfolioPitchAudio}=await import('../dashboard/portfolio-pitch-audio.mjs');
-const {registerGreeting,routeIntroductionReply,introductionStatus,tickIntroductions,WESLEY_INTRO}=await import('../dashboard/prospecting-introduction.mjs');
+const {registerGreeting,routeIntroductionReply,introductionStatus,tickIntroductions,WESLEY_INTRO,WESLEY_INTRO_B}=await import('../dashboard/prospecting-introduction.mjs');
 const {recordInboundTranscript}=await import('../dashboard/waakg-bridge.mjs');
 const {tickProspectorFarewells,queueProspectorFarewell,PROSPECTOR_FAREWELL}=await import('../dashboard/prospector-farewell.mjs');
 const {handleSalesTurn,flushInterestAlerts}=await import('../dashboard/groq-sales-automation.mjs');
@@ -26,15 +26,18 @@ function prospect(){
  assert.equal(registerGreeting({leadId:lead.id,greetingId,sessionId:'consecom-principal'}),true);
  return {lead,jid,thread,greetingId};
 }
-async function introText({lead,jid},time=Date.now()-41000){
+async function introText({lead,jid,greetingId},time=Date.now()-41000){
  const first=routeIntroductionReply({leadId:lead.id,providerId:'hello-'+lead.id,body:'Oi, tudo certo',receivedAt:new Date(time)});
  assert.equal(first.state,'WAITING');
  let textCount=0, audioCount=0;
+ const assignedCount=db.one('SELECT COUNT(*) n FROM prospector_intro_ab WHERE session_id=?','consecom-principal').n;
+ const expected=assignedCount%2===0?WESLEY_INTRO:WESLEY_INTRO_B;
  const result=await tickIntroductions({currentTime:()=>Date.now(),status:async()=>({connected:true}),session:()=> 'consecom-principal',
-  send:async(_route,{data})=>{textCount++;assert.equal(data.message.text,WESLEY_INTRO);return {status:true};},
+  send:async(_route,{data})=>{textCount++;assert.equal(data.message.text,expected);return {status:true};},
   sendAudio:async()=>{audioCount++;return {accepted:true};}});
  assert.equal(result.state,'SENT',JSON.stringify(result));
  assert.equal(textCount,1);assert.equal(audioCount,0);
+ assert.equal(db.one('SELECT message FROM prospector_intro_ab WHERE greeting_id=?',greetingId).message,expected);
  return result;
 }
 test('short positive replies authorize original audio but refusals do not',()=>{
