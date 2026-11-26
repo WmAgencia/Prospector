@@ -114,7 +114,7 @@ export function flowProjectMetrics(projectId){
   }
  }
  if(one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='flow_live_variants'")){
-  result.variants=all('SELECT version,step_id AS stepId,variant_id AS variantId,total AS reservations FROM flow_live_variants WHERE project_id=? ORDER BY version,step_id,variant_id',projectId);
+  result.variants=all('SELECT version,step_id AS stepId,variant_id AS variantId,total AS reservations FROM flow_live_variants WHERE project_id=? ORDER BY version,step_id,variant_id',projectId).map(row=>({...row}));
  }
  return result;
 }
