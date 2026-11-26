@@ -11,7 +11,7 @@ delete process.env.PROSPECTOR_TENANT_ID;
 const d=await import('../dashboard/db.mjs');
 const {liveFlowSupported,setLiveRoute,previewLiveGreeting,reserveLiveGreeting,liveFirstText,liveOwnsLead,tickLiveFlows}=await import('../dashboard/flow-runtime.mjs');
 const {bindLeadSession}=await import('../dashboard/waakg-session-registry.mjs');
-const {listFlowProjects,mutateFlowProject}=await import('../dashboard/flow-projects.mjs');
+const {listFlowProjects,mutateFlowProject,flowProjectMetrics}=await import('../dashboard/flow-projects.mjs');
 const sid='synthetic-flow-session';
 const definition={steps:[{id:'first',kind:'text',name:'Abordagem',variants:[{id:'a',text:'Olá!',weight:1},{id:'b',text:'Bom dia!',weight:1}]},{id:'reply',kind:'reply',name:'Resposta',variants:[]}]};
 test('internal owner cannot activate visual execution even with external rollout flag',async()=>{
@@ -20,6 +20,7 @@ test('internal owner cannot activate visual execution even with external rollout
  assert.equal(liveOwnsLead('missing'),false);
  assert.throws(()=>setLiveRoute({projectId:'x',niche:'Eventos',version:1,definition,enabled:true}),/indisponível/);
  assert.equal((await tickLiveFlows({send:()=>{throw Error('must not send')}})).processed,0);
+ assert.deepEqual(flowProjectMetrics('missing'),{total:0,completed:0,cancelled:0,human:0,review:0,inProgress:0,activeVersion:null,variants:[]});
  assert.equal(d.one("SELECT 1 FROM sqlite_master WHERE name='flow_live_runs'"),undefined);
 });
 test('external execution requires rollout flag, explicit activation, matching niche and documented opt-in',()=>{
@@ -41,6 +42,16 @@ test('external execution requires rollout flag, explicit activation, matching ni
   assert.equal(d.tx(()=>reserveLiveGreeting({plan,leadId:lead.id,greetingId:greeting,sessionId:sid,jid:lead.phone+'@s.whatsapp.net',at:Date.now()})),true);
   assert.equal(liveFirstText(greeting),'Olá!');
   assert.equal(liveOwnsLead(lead.id),true);
+  const stats=flowProjectMetrics(project.id);
+  assert.equal(stats.total,1);
+  assert.equal(stats.inProgress,1);
+  assert.equal(stats.activeVersion,1);
+  assert.deepEqual(stats.variants,[{version:1,stepId:'first',variantId:'a',reservations:1}]);
+  assert.equal(flowProjectMetrics('unrelated-project').total,0);
+  assert.equal(listFlowProjects().items.find(p=>p.id===project.id).metrics.total,1);
+  d.run("UPDATE flow_live_runs SET state='REVIEW' WHERE greeting_id=?",greeting);
+  assert.equal(flowProjectMetrics(project.id).review,1);
+  assert.equal(flowProjectMetrics(project.id).inProgress,0);
   assert.equal(previewLiveGreeting(lead.id).variantId,'b');
   assert.equal(listFlowProjects().items.some(p=>p.protected),false);
   process.env.PROSPECTOR_FLOW_LIVE_ENABLED='false';
