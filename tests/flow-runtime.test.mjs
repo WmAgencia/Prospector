@@ -63,7 +63,7 @@ test('media and Francisca are opt-in adapters and owner remains isolated',()=>{
  process.env.PROSPECTOR_TENANT_ID='synthetic-flow-tenant';process.env.PROSPECTOR_TENANT_INTERNAL='false';process.env.PROSPECTOR_FLOW_LIVE_ENABLED='true';
  const first=definition.steps[0],permission={id:'permission',kind:'condition',condition:'permission',variants:[]},audio={id:'audio',kind:'audio',variants:[{id:'audio-a',mediaId:'synthetic-audio',text:'',weight:1}]},ai={id:'ai',kind:'ai',variants:[]};
  try{
-  d.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)','synthetic-audio','Synthetic audio','audio/ogg','synthetic.ogg',256,d.now());
+  d.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)','synthetic-audio','Synthetic audio','audio','audio/ogg','synthetic.ogg',256,d.now());
   const projectId='synthetic-media-route',niche='Media fixtures';
   const route=steps=>setLiveRoute({projectId,niche,version:1,definition:{steps},enabled:true});
   assert.throws(()=>route([first,permission,audio]),/Mídia requer/);
@@ -89,7 +89,7 @@ test('audio and video require exact provider receipts before advancing to Franci
  fs.mkdirSync(path.join(dir,'media'),{recursive:true});
  fs.writeFileSync(path.join(dir,'media','synthetic.ogg'),audio);
  fs.writeFileSync(path.join(dir,'media','synthetic.mp4'),video);
- d.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)','synthetic-video','Synthetic video','video/mp4','synthetic.mp4',video.length,stamp);
+ d.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)','synthetic-video','Synthetic video','video','video/mp4','synthetic.mp4',video.length,stamp);
  const def={steps:[definition.steps[0],{id:'permission',kind:'condition',condition:'permission',variants:[]},{id:'audio',kind:'audio',variants:[{id:'audio-a',mediaId:'synthetic-audio',text:'',weight:1}]},{id:'video',kind:'video',variants:[{id:'video-a',mediaId:'synthetic-video',text:'Portfólio',weight:1}]},{id:'ai',kind:'ai',variants:[]}]};
  const execution={cursor:2,state:'READY',enteredAt:at,dueAt:null,assignments:{},lastInboundId:null,history:[]};
  d.run('INSERT INTO flow_live_runs(greeting_id,lead_id,project_id,version,session_id,jid,definition,execution,first_text,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',greeting,lead.id,projectId,1,sid,jid,JSON.stringify(def),JSON.stringify(execution),'Synthetic','READY',stamp,stamp);
