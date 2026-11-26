@@ -18,7 +18,7 @@ import {queueNotice} from './notifications.mjs';
 import {ownerProspectionPaused} from './prospection-pause.mjs';
 const external=()=>!!process.env.PROSPECTOR_TENANT_ID&&process.env.PROSPECTOR_TENANT_INTERNAL!=='true'&&process.env.PROSPECTOR_DEMO_MODE!=='true';
 export const liveFlowSupported=()=>external()&&process.env.PROSPECTOR_FLOW_LIVE_ENABLED==='true';
-const supported=new Set(['text','reply','delay','condition','handoff','audio','video']);
+const supported=new Set(['text','reply','delay','condition','handoff','audio','video','ai']);
 const mediaKind=k=>k==='audio'||k==='video';
 function mediaAsset(variant,kind){
  const m=one('SELECT * FROM media WHERE id=? AND kind=?',variant?.mediaId||'',kind);
@@ -50,7 +50,8 @@ export function setLiveRoute({projectId,niche,version,definition,enabled}){
  if(enabled&&(!definition?.steps?.length||definition.steps[0].kind!=='text'||definition.steps.some(s=>!supported.has(s.kind))))throw Error('Esta versão aceita texto, espera, resposta, condições e transferência humana. Mídia e IA exigem validação adicional.');
  if(enabled){
   let permission=false;
-  for(const step of definition.steps){
+  for(const [index,step] of definition.steps.entries()){
+   if(step.kind==='ai'&&(process.env.PROSPECTOR_FLOW_AI_ENABLED!=='true'||index!==definition.steps.length-1))throw Error('A Francisca exige adaptador habilitado e deve ser a última etapa.');
    if(step.kind==='condition'&&step.condition==='permission')permission=true;
    if(mediaKind(step.kind)){
     if(process.env.PROSPECTOR_FLOW_MEDIA_ENABLED!=='true'||!permission||step.variants.some(v=>!mediaAsset(v,step.kind)))throw Error('Mídia requer autorização específica, arquivo válido e habilitação do adaptador.');
@@ -100,6 +101,12 @@ export function liveOwnsLead(leadId){
  if(!external()||!one("SELECT 1 FROM sqlite_master WHERE name='flow_live_runs'"))return false;
  return !!one('SELECT 1 FROM flow_live_runs WHERE lead_id=?',leadId);
 }
+// Only future inbound events may be delegated; no replay of earlier messages.
+export function liveAiOwnsLead(leadId,sessionId){
+ if(!liveFlowSupported()||process.env.PROSPECTOR_FLOW_AI_ENABLED!=='true'||ownerProspectionPaused()||!documentedOptIn(leadId)||!conversationAuthorized(leadId)||!isManagedSession(sessionId)||leadSession(leadId)!==sessionId)return false;
+ if(!one("SELECT 1 FROM sqlite_master WHERE name='flow_live_runs'"))return false;
+ return one('SELECT state,session_id FROM flow_live_runs WHERE lead_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1',leadId)?.state==='AI';
+}
 function persist(row,e,state=e.state){
  run('UPDATE flow_live_runs SET execution=?,state=?,updated_at=? WHERE greeting_id=?',JSON.stringify(e),state,now(),row.greeting_id);
 }
@@ -112,7 +119,7 @@ export async function tickLiveFlows(deps={}){
  if(!liveFlowSupported()||ownerProspectionPaused()||busy)return {processed:0};
  init();busy=true;let processed=0;
  try{
-  const rows=all("SELECT * FROM flow_live_runs WHERE state NOT IN ('COMPLETE','CANCELLED','HUMAN','REVIEW') ORDER BY updated_at LIMIT 20");
+  const rows=all("SELECT * FROM flow_live_runs WHERE state NOT IN ('COMPLETE','CANCELLED','HUMAN','REVIEW','AI') ORDER BY updated_at LIMIT 20");
   for(const row of rows){
    const def=JSON.parse(row.definition);let e=JSON.parse(row.execution);const at=Date.now();
    const lead=one('SELECT * FROM leads WHERE id=?',row.lead_id);
@@ -159,6 +166,10 @@ export async function tickLiveFlows(deps={}){
    }
    if(e.state==='RESERVED'){hold(row,e,'processamento interrompido');continue;}
    if(e.state!=='READY')continue;
+   if(step.kind==='ai'){
+    if(process.env.PROSPECTOR_FLOW_AI_ENABLED!=='true'||!isManagedSession(row.session_id)){hold(row,e,'Francisca indisponível');continue;}
+    e.state='AI';e.history.push({type:'ai_delegated',stepId:step.id,at});persist(row,e);processed++;continue;
+   }
    if(step.kind==='handoff'){
     tx(()=>{run('UPDATE threads SET manual_takeover=1 WHERE lead_id=?',row.lead_id);apply({type:'start'});queueNotice('flow-handoff:'+row.greeting_id,'FLOW_HANDOFF','Prospector Flow: conversa pronta para atendimento humano. https://wa.me/'+lead.phone,row.lead_id);});processed++;continue;
    }
