@@ -1,0 +1,16 @@
+name: Introduction A/B checks
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  intro-ab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/prospecting-intro-ab.test.mjs
+      - run: node --check dashboard/prospecting-intro-ab.mjs && node --check dashboard/prospecting-introduction.mjs
