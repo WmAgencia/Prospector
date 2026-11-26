@@ -47,7 +47,7 @@ export function setLiveRoute({projectId,niche,version,definition,enabled}){
  if(!liveFlowSupported())throw Error('Execução real indisponível nesta conta.');
  init();
  const key=normalizedNiche(niche);if(!key)throw Error('Defina um nicho exato.');
- if(enabled&&(!definition?.steps?.length||definition.steps[0].kind!=='text'||definition.steps.some(s=>!supported.has(s.kind))))throw Error('Esta versão aceita texto, espera, resposta, condições e transferência humana. Mídia e IA exigem validação adicional.');
+ if(enabled&&(!definition?.steps?.length||definition.steps[0].kind!=='text'||definition.steps.some(s=>!supported.has(s.kind))))throw Error('O fluxo real deve começar com texto e usar apenas etapas suportadas: texto, áudio, vídeo, resposta, espera, condição, Francisca e transferência humana.');
  if(enabled){
   let permission=false;
   for(const [index,step] of definition.steps.entries()){
@@ -105,7 +105,8 @@ export function liveOwnsLead(leadId){
 export function liveAiOwnsLead(leadId,sessionId){
  if(!liveFlowSupported()||process.env.PROSPECTOR_FLOW_AI_ENABLED!=='true'||ownerProspectionPaused()||!documentedOptIn(leadId)||!conversationAuthorized(leadId)||!isManagedSession(sessionId)||leadSession(leadId)!==sessionId)return false;
  if(!one("SELECT 1 FROM sqlite_master WHERE name='flow_live_runs'"))return false;
- return one('SELECT state,session_id FROM flow_live_runs WHERE lead_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1',leadId)?.state==='AI';
+ const row=one('SELECT state,session_id FROM flow_live_runs WHERE lead_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1',leadId);
+ return row?.state==='AI'&&row.session_id===sessionId;
 }
 function persist(row,e,state=e.state){
  run('UPDATE flow_live_runs SET execution=?,state=?,updated_at=? WHERE greeting_id=?',JSON.stringify(e),state,now(),row.greeting_id);
@@ -177,7 +178,7 @@ export async function tickLiveFlows(deps={}){
    if(mediaKind(step.kind)&&process.env.PROSPECTOR_FLOW_MEDIA_ENABLED!=='true'){hold(row,e,'adaptador de mídia desabilitado');continue;}
    const status=await (deps.status||waControlStatus)(row.session_id);
    if(!status.connected){run('UPDATE flow_live_runs SET updated_at=? WHERE greeting_id=?',now(),row.greeting_id);continue;}
-   if(!conversationAuthorized(row.lead_id)||!documentedOptIn(row.lead_id)||leadSession(row.lead_id)!==row.session_id){hold(row,e,'permissão alterada');continue;}
+   if(ownerProspectionPaused()||!isManagedSession(row.session_id)||!conversationAuthorized(row.lead_id)||!documentedOptIn(row.lead_id)||leadSession(row.lead_id)!==row.session_id){hold(row,e,'permissão alterada');continue;}
    let text='';
    tx(()=>{apply({type:'start'},{choose:()=>{const v=pick(row.project_id,row.version,step,true);text=render(v.text,lead);return v;}});});
    if((step.kind==='text'&&!text)||(step.kind==='video'&&!text)||text.length>(step.kind==='video'?1024:1500)||/\{\{/.test(text)){hold(row,e,'mensagem inválida');continue;}
