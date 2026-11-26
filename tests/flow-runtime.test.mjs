@@ -78,4 +78,36 @@ test('media and Francisca are opt-in adapters and owner remains isolated',()=>{
   assert.equal(liveAiOwnsLead('missing',sid),false);
  }finally{for(const key of ['PROSPECTOR_TENANT_ID','PROSPECTOR_TENANT_INTERNAL','PROSPECTOR_FLOW_LIVE_ENABLED','PROSPECTOR_FLOW_MEDIA_ENABLED','PROSPECTOR_FLOW_AI_ENABLED'])delete process.env[key];}
 });
+test('audio and video require exact provider receipts before advancing to Francisca',async()=>{
+ process.env.PROSPECTOR_TENANT_ID='synthetic-flow-tenant';process.env.PROSPECTOR_TENANT_INTERNAL='false';process.env.PROSPECTOR_FLOW_LIVE_ENABLED='true';process.env.PROSPECTOR_FLOW_MEDIA_ENABLED='true';process.env.PROSPECTOR_FLOW_AI_ENABLED='true';
+ const lead=d.addLead({business:'Synthetic media lead',phone:'5515987654321',source:'TEST',segment:'Media fixtures',contact_permission:true}).lead;
+ d.audit('CONSENT_UPDATED',lead.id,{permitted:true,evidence:'Synthetic explicit consent fixture'});
+ bindLeadSession(lead.id,sid);
+ const jid=lead.phone+'@s.whatsapp.net',greeting=d.id(),at=Date.now(),projectId='synthetic-media-route',stamp=d.now();
+ const audio=Buffer.alloc(256);audio.write('OggS');
+ const video=Buffer.alloc(1024);video.write('ftyp',4);
+ fs.mkdirSync(path.join(dir,'media'),{recursive:true});
+ fs.writeFileSync(path.join(dir,'media','synthetic.ogg'),audio);
+ fs.writeFileSync(path.join(dir,'media','synthetic.mp4'),video);
+ d.run('INSERT INTO media(id,name,kind,mime,filename,bytes,created_at) VALUES(?,?,?,?,?,?,?)','synthetic-video','Synthetic video','video/mp4','synthetic.mp4',video.length,stamp);
+ const def={steps:[definition.steps[0],{id:'permission',kind:'condition',condition:'permission',variants:[]},{id:'audio',kind:'audio',variants:[{id:'audio-a',mediaId:'synthetic-audio',text:'',weight:1}]},{id:'video',kind:'video',variants:[{id:'video-a',mediaId:'synthetic-video',text:'Portfólio',weight:1}]},{id:'ai',kind:'ai',variants:[]}]};
+ const execution={cursor:2,state:'READY',enteredAt:at,dueAt:null,assignments:{},lastInboundId:null,history:[]};
+ d.run('INSERT INTO flow_live_runs(greeting_id,lead_id,project_id,version,session_id,jid,definition,execution,first_text,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',greeting,lead.id,projectId,1,sid,jid,JSON.stringify(def),JSON.stringify(execution),'Synthetic','READY',stamp,stamp);
+ let sends=[],messages=[];
+ const deps={status:async()=>({connected:true}),send:async()=>{throw Error('unexpected text transport');},sendAudio:async args=>{assert.equal(args.session,sid);assert.deepEqual(args.bytes,audio);sends.push('audio');return {accepted:true,messageId:'audio-proof-1'};},sendVideo:async args=>{assert.equal(args.caption,'Portfólio');assert.deepEqual(args.bytes,video);sends.push('video');return {accepted:true,messageId:'video-proof-1'};},history:async()=>({messages})};
+ const row=()=>d.one('SELECT state,execution FROM flow_live_runs WHERE greeting_id=?',greeting);
+ try{
+  await tickLiveFlows(deps);assert.equal(row().state,'WAIT_PROOF');assert.deepEqual(sends,['audio']);
+  messages=[{fromMe:true,keyId:'unrelated-id',type:'AUDIO',status:'DELIVERED',remoteJid:jid}];
+  await tickLiveFlows(deps);assert.equal(row().state,'WAIT_PROOF');assert.deepEqual(sends,['audio']);
+  messages=[{fromMe:true,keyId:'audio-proof-1',type:'AUDIO',status:'DELIVERED',remoteJid:jid}];
+  await tickLiveFlows(deps);assert.equal(JSON.parse(row().execution).cursor,3);
+  await tickLiveFlows(deps);assert.equal(row().state,'WAIT_PROOF');assert.deepEqual(sends,['audio','video']);
+  messages=[{fromMe:true,keyId:'video-proof-1',type:'VIDEO',status:'DELIVERED',remoteJid:jid}];
+  await tickLiveFlows(deps);assert.equal(JSON.parse(row().execution).cursor,4);
+  await tickLiveFlows(deps);assert.equal(row().state,'AI');
+  assert.equal(liveAiOwnsLead(lead.id,sid),true);assert.equal(liveAiOwnsLead(lead.id,'other-session'),false);
+  await tickLiveFlows(deps);assert.deepEqual(sends,['audio','video']);
+ }finally{for(const key of ['PROSPECTOR_TENANT_ID','PROSPECTOR_TENANT_INTERNAL','PROSPECTOR_FLOW_LIVE_ENABLED','PROSPECTOR_FLOW_MEDIA_ENABLED','PROSPECTOR_FLOW_AI_ENABLED'])delete process.env[key];}
+});
 test.after(()=>{d.db.close();fs.rmSync(dir,{recursive:true,force:true});});
