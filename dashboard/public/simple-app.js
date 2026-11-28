@@ -2,7 +2,7 @@
 const q=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const stamp=d=>d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
-const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",approvals:"Aprovações",connections:"Conexões",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
+const tabs={dashboard:"Dashboard",clients:"Clientes",overview:"Visão geral",conversations:"Conversas",prospects:"Prospecção",approvals:"Aprovações",connections:"Conexões",pulse:"Prospector Pulse",training:"Treinamento da IA",credits:"Créditos",settings:"Configurações"};
 let platformContext={role:"client",name:"Meu espaço"},clientList=[],creditState=null,creditRequests=[],clientSearch="",clientStatusFilter="all",trainingState=null,offerAbState=null,trainingChats=[],trainingSelection=new Set(),trainingMode="all",trainingAllConfirmed=false,trainingBusy=false,clientAccess="",demoLoginCredentials=null;
 let workspaceInitialized=false,masterMetrics=null,masterCreateOpen=false;
 let billingReminderOpen=false,billingReminderDismissed=false,billingDemoExhausted=false,billingDemoStep=0,billingDemoPackage='',billingLastChecked=0;
@@ -143,9 +143,10 @@ function confirmInApp({title,description,confirmLabel='Confirmar',fields='',dang
  });
 }
 
-function nav(viewName){if(view==='training'&&viewName!=='training')interviewStopVoice();n('');if(platformContext.role==="master"&&!["dashboard","clients","credits","settings"].includes(viewName))viewName="overview";if((viewName==="clients"||viewName==="dashboard")&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName=platformContext.role==="master"?"dashboard":"overview";if(viewName==="overview"&&platformContext.role==="master")viewName="dashboard";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients")loadClients();if(view==="dashboard")loadMasterMetrics();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();if(view==="approvals")loadApprovals();}
+function nav(viewName){if(view==='training'&&viewName!=='training')interviewStopVoice();n('');if(platformContext.role==="master"&&!["dashboard","clients","credits","settings"].includes(viewName))viewName="overview";if((viewName==="clients"||viewName==="dashboard")&&platformContext.role!=="master")viewName="overview";if(!tabs[viewName])viewName=platformContext.role==="master"?"dashboard":"overview";if(viewName==="overview"&&platformContext.role==="master")viewName="dashboard";view=viewName;location.hash="/"+view;render();if(platformContext.role==="master"){if(view==="clients")loadClients();if(view==="dashboard")loadMasterMetrics();return;}if(view==="connections"){if(!qrOpening)refreshWa();}if(view==="pulse")void loadPulse();if(view==="prospects"){loadCalendar();loadScope();}if(view==="conversations")loadChats();if(view==="overview")loadKanban();if(view==="clients")loadClients();if(view==="training")loadTraining();if(view==="credits")loadCredits();if(view==="settings")loadOutreachHours();if(view==="approvals")loadApprovals();}
 
 function glyph(key){
+ if(key==="pulse")return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M2 12h5l3-7 4 14 3-7h5"/></svg>';
  if(globalThis.ProspectorIcons&&key!=="approvals")return globalThis.ProspectorIcons.svg(key);
  const paths={
  approvals:'<path d="m9 12 2 2 4-4"/><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8"/>',
@@ -1149,6 +1150,25 @@ function whatsappAccountsPanel(){
  '<form class="wa-add-form" id="wa-add-form"><label>Nome do novo WhatsApp<input id="new-wa-label" name="label" maxlength="70" placeholder="Ex.: Comercial 01 ou Atendimento" required></label><button type="submit" data-action="add-wa" class="primary" '+(busy?'disabled':'')+'>+ Conectar mais um WhatsApp</button></form>'+
  '<p class="footnote">Cada número tem sua própria sessão. A cadência de novas abordagens é compartilhada entre os canais.</p></section>';
 }
+let pulseSnapshot=null,pulseError='',pulseLoading=false;
+async function loadPulse(){
+ if(platformContext.role==='master'||pulseLoading)return;
+ pulseLoading=true;
+ try{pulseSnapshot=await api('/api/whatsapp/pulse');pulseError='';}
+ catch{pulseSnapshot=null;pulseError='Não foi possível consultar o diagnóstico agora.';}
+ finally{pulseLoading=false;if(view==='pulse')render();}
+}
+function pulseView(){
+ const items=pulseSnapshot?.items||[];
+ const count=state=>items.filter(x=>x.state===state).length;
+ const labels={ONLINE:'Operacional',UNSTABLE:'Instável',OFFLINE:'Desconectado',UNKNOWN:'Indeterminado'};
+ return '<section class="panel"><div class="master-section-head"><div><span class="kicker">MONITORAMENTO DE CONEXÕES</span><h2>Prospector Pulse</h2><p>Verificação automática do transporte a cada 3 minutos, inclusive com o painel fechado.</p></div><button type="button" class="secondary compact" data-action="refresh-pulse">Atualizar painel</button></div>'+
+ cards([['Operacionais',count('ONLINE'),'Socket confirmado'],['Instáveis',count('UNSTABLE'),'Sessão sem transporte ativo'],['Desconectados',count('OFFLINE'),'Conexão encerrada'],['Indeterminados',count('UNKNOWN'),'Verificação sem evidência']])+
+ '<p role="status">'+esc(pulseError||(pulseSnapshot?.checkedAt?'Última verificação: '+stamp(pulseSnapshot.checkedAt):'Aguardando primeira verificação'))+'</p>'+
+ '<p>Este painel verifica a conexão real; não confirma envio ou recebimento de mensagens. Nenhuma mensagem de diagnóstico automática está ativa.</p>'+
+ (items.length?'<div class="master-ranking">'+items.map(x=>'<div class="master-ranking-row"><div><strong>'+esc(x.label)+'</strong><small>Última conexão confirmada: '+esc(stamp(x.lastOnlineAt))+'</small></div><span class="tag '+(x.state==='ONLINE'?'green':'')+'">'+esc(labels[x.state]||labels.UNKNOWN)+'</span></div>').join('')+'</div>':'<p>Nenhuma sessão verificada até o momento.</p>')+
+ '<div class="actions"><button type="button" class="secondary" data-tab="connections">Gerenciar conexões</button><button type="button" class="secondary" data-tab="settings">Configurações de prospecção</button></div></section>';
+}
 function connections(){
  const item=waAccounts.find(x=>x.session_id===connectionSession);
  return whatsappAccountsPanel()+(waModalOpen?'<div class="wa-modal-backdrop" role="presentation"><section class="wa-modal" role="dialog" aria-modal="true" aria-labelledby="wa-modal-title"><button type="button" class="wa-modal-close" data-action="close-wa-modal" aria-label="Fechar">'+glyph('close')+'</button><span class="kicker">CONEXÃO WHATSAPP</span><h2 id="wa-modal-title">'+esc(item?.label||'Novo número')+'</h2><p>No celular, abra WhatsApp → <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong>. Depois escaneie o código.</p><div class="wa-modal-qr">'+(wa?.connected?'<div class="wa-connected-success"><span>✓</span><h3>Conectado!</h3><p>Seu WhatsApp está pronto. Esta janela fecha automaticamente.</p></div>':qrResult?.qr?'<img class="qr-image" src="'+esc(qrResult.qr)+'" alt="QR Code para conectar este WhatsApp"><small>Escaneie com o seu WhatsApp</small>':'<div class="wa-qr-loading"><span class="wa-qr-skeleton">▦</span><strong>Aguardando QR Code</strong><small>'+esc(qrResult?.message||'Preparando o pareamento')+'</small></div>')+'</div><div class="wa-modal-actions">'+(wa?.connected?'<button type="button" class="secondary" data-action="disconnect">Desconectar número</button>':'<button type="button" class="secondary" data-action="connect">Atualizar QR Code</button>')+'<button type="button" class="primary" data-action="close-wa-modal">Fechar</button></div></section></div>':'');
@@ -1239,7 +1259,7 @@ function render(){
  const selection=wasTyping?[oldInput.selectionStart,oldInput.selectionEnd]:null;
  shell();
  const el=q("#view");
- el.innerHTML={dashboard:masterDashboard,clients:clientsView,overview,conversations,prospects:prospecting,approvals:approvalsView,connections,training:trainingView,credits:creditsView,settings}[view]();
+ el.innerHTML={dashboard:masterDashboard,clients:clientsView,overview,conversations,prospects:prospecting,approvals:approvalsView,connections,pulse:pulseView,training:trainingView,credits:creditsView,settings}[view]();
  if(view==='training'){const feed=q('.training-interview-feed');if(feed)feed.scrollTop=feed.scrollHeight;}
  if(view==='conversations'){
   const list=q('.contacts-scroll');if(list)list.scrollTop=contactsTop;
@@ -1464,6 +1484,7 @@ async function reloadCurrentView(){
  try{
   if(platformContext.role==='master'){await Promise.all([loadClients(),loadMasterMetrics()]);render();return;}
   // Critical path is only the active screen. No training/billing/full CRM gate.
+  if(view==='pulse'){await loadPulse();return;}
   if(view==='overview'){await loadKanban();return;}
   if(view==='conversations'){await loadChats();return;}
   if(view==='training'){await loadTraining();return;}
@@ -1490,7 +1511,8 @@ document.addEventListener("click",async ev=>{
  if(el.dataset.filter){prospectFilter=el.dataset.filter;selectedLeadIds.clear();approachPreview=null;await loadProspects();return;}
  const action=el.dataset.action;
  try{
-  if(await platformAction(action,el))return;
+  if(action==='refresh-pulse'){await loadPulse();return;}
+   if(await platformAction(action,el))return;
   if(action==='chat-all'||action==='chat-favorites'){favoriteOnly=action==='chat-favorites';render();return;}
   if(action==='edit-contact'||action==='favorite-contact'){
    const chosen=conversationThreads().find(x=>x.id===selectedThread);
