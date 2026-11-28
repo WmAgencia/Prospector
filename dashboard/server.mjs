@@ -53,6 +53,8 @@ import {authorizeCallBridge,processCallBridge,callBridgeStatus} from './francisc
 import {voiceMetricsSummary} from './francisca-call-observability.mjs';
 import {sendOneTimeFranciscaTrial} from './francisca-owner-trial.mjs';
 import {waRequest,waControlStatus,waOperationalStatus,waSessionList,waCreateSession,waIdentityStatus,waConnect,waGetQR,waDisconnect,selectedWaSession} from './waakg-control.mjs';
+import {createPulse} from './prospector-pulse.mjs';
+import {managedSessions as pulseManagedSessions} from './waakg-session-registry.mjs';
 import {gatewayConnectionView,refreshGatewayConnection} from './waakg-live-status.mjs';
 import {prospectingList,prospectingSearch} from './prospecting-search.mjs';
 import {processProspectingSchedule} from './francisca-panel-actions.mjs';
@@ -477,6 +479,11 @@ async function discovery(payload){
  audit('DISCOVERY',null,{q,added,examined});
  notify();return {added,examined,results};
 }
+// Tenant-local, in-memory health snapshot; no message writes.
+const pulseMonitor=createPulse({list:async()=>pulseManagedSessions(),check:id=>waControlStatus(id)});
+const pulseTimer=setInterval(()=>void pulseMonitor.refresh().catch(()=>{}),180000);
+pulseTimer.unref();
+setTimeout(()=>void pulseMonitor.refresh().catch(()=>{}),10000).unref();
 async function handler(req,res){
  try{
   securityHeaders(res);
@@ -576,6 +583,7 @@ async function handler(req,res){
   }
   if(req.method==='GET'&&pathname==='/api/whatsapp/interactive-preview'){try{return respond(res,200,interactivePreview({mode:url.searchParams.get('mode')||'introduction'}));}catch(e){return respond(res,400,{error:e.message});}}
   if(req.method==='POST'&&pathname==='/api/whatsapp/interactive-send'){const result=await sendApprovedInteractive(await json(req));if(result.status===200)notify();return respond(res,result.status,result.body);}
+  if(req.method==='GET'&&pathname==='/api/whatsapp/pulse')return respond(res,200,pulseMonitor.snapshot());
   if(req.method==='GET'&&pathname==='/api/whatsapp/sessions')return respond(res,200,await waSessionList());
   if(req.method==='POST'&&pathname==='/api/whatsapp/sessions'){const v=await json(req);return respond(res,201,await waCreateSession(v.name));}
   if(req.method==='GET'&&pathname==='/api/whatsapp/status')return respond(res,200,url.searchParams.get('sessionId')?await waControlStatus(url.searchParams.get('sessionId')):await waOperationalStatus());
@@ -1238,4 +1246,4 @@ if(process.env.RUN_WAAKG_WEBHOOK_SMOKE==="true"){
  },2500).unref();
 }
 
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(ownerHandoffWebhookTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{clearInterval(interval);clearInterval(syncInterval);clearInterval(osmTimer);clearInterval(mapsStatusTimer);clearInterval(autonomousQueueTimer);clearInterval(prospectQueueTimer);clearInterval(prospectIntroductionTimer);clearInterval(ownerHandoffWebhookTimer);clearInterval(agentBridgeTimer);clearInterval(customerAiTimer);clearInterval(audioTranscriptionTimer);clearInterval(healthTimer);clearInterval(pulseTimer);server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),7000).unref();});
