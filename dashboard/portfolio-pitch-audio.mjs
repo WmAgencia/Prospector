@@ -1,11 +1,15 @@
 // Voice pitch recorded by the Consecom owner for the R$550 portfolio campaign.
 // Stored as secret, split environment values on Railway (never in GitHub).
-// A restart reuses a private cached AAC file on the Railway volume.
+// Original OGG/Opus bytes are verified on each load.
 import crypto from 'node:crypto';
 import {declinesProposalAudio} from './prospector-sales-signals.mjs';
 
-export const PITCH_AUDIO_ORIGINAL_SHA256='521cb9a803ef65daf0aa2ff2e918c9a859876577fb56bb9362140bf0a182c019';
-export const PITCH_AUDIO_SECONDS=102.3665;
+// Allow only the two verified owner recordings during the rolling asset update.
+// The active recording is selected by its configured digest, never by fallback on invalid bytes.
+const LEGACY_PITCH_SHA='521cb9a803ef65daf0aa2ff2e918c9a859876577fb56bb9362140bf0a182c019';
+const CURRENT_PITCH_SHA='627ebb7c98aea8f5aa3efb59ef6df2eb9e80a8481fd48644f139d3d740c24dc4';
+export const PITCH_AUDIO_ORIGINAL_SHA256=process.env.PROSPECTOR_PITCH_AUDIO_SOURCE_SHA256||LEGACY_PITCH_SHA;
+export const PITCH_AUDIO_SECONDS=PITCH_AUDIO_ORIGINAL_SHA256===CURRENT_PITCH_SHA?85.5265:102.3665;
 export const PITCH_AUDIO_OFFER_BRL=550;
 const hash=buffer=>crypto.createHash('sha256').update(buffer).digest('hex');
 const normalized=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
@@ -31,7 +35,8 @@ export function readPortfolioPitchAudio(){
  if(values.some(x=>!x||!/^[A-Za-z0-9+/=]+$/.test(x)))throw Error('PITCH_AUDIO_PART_MISSING');
  const encoded=values.join('');
  const original=Buffer.from(encoded,'base64');
- if(original.length<100000||original.length>2*1024*1024||
+ if(![LEGACY_PITCH_SHA,CURRENT_PITCH_SHA].includes(PITCH_AUDIO_ORIGINAL_SHA256)||
+  original.length<100000||original.length>2*1024*1024||
   hash(original)!==PITCH_AUDIO_ORIGINAL_SHA256||
   process.env.PROSPECTOR_PITCH_AUDIO_SOURCE_SHA256!==PITCH_AUDIO_ORIGINAL_SHA256)
   throw Error('PITCH_AUDIO_SOURCE_INVALID');
